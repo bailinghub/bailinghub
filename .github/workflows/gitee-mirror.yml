@@ -1,0 +1,55 @@
+name: Gitee Mirror
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitee-mirror
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: sync main and tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure Gitee SSH identity
+        shell: bash
+        env:
+          GITEE_MIRROR_SSH_KEY: ${{ secrets.GITEE_MIRROR_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$GITEE_MIRROR_SSH_KEY"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$GITEE_MIRROR_SSH_KEY" > "$HOME/.ssh/bailinghub_gitee_mirror"
+          chmod 600 "$HOME/.ssh/bailinghub_gitee_mirror"
+          ssh-keyscan -H gitee.com >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          {
+            echo 'Host gitee.com'
+            echo '  IdentityFile ~/.ssh/bailinghub_gitee_mirror'
+            echo '  IdentitiesOnly yes'
+            echo '  StrictHostKeyChecking yes'
+          } > "$HOME/.ssh/config"
+          chmod 600 "$HOME/.ssh/config"
+
+      - name: Mirror canonical main and release tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin --prune --force --tags
+          git remote add gitee git@gitee.com:bailinghub/bailinghub.git
+          git push --force gitee refs/remotes/origin/main:refs/heads/main
+          git push --force gitee --tags
