@@ -61,6 +61,14 @@ Run the architecture boundary tests before submitting changes:
 npm test
 ```
 
+## Community Distributions And Independent Implementations
+
+BailingHub welcomes independently maintained distributions, industry adaptations, ecosystem components, and ACC implementations. Community projects may keep their own names, roadmaps, maintainer teams, and governance. They are not required to contribute every modification upstream.
+
+Reusable improvements are welcome as Issues, Discussions, or Pull Requests. Strong independent projects may also request a future listing through the official BailingHub ecosystem surface, provided that their origin, maintainers, compatibility, and independent status are clear. A listing is not certification, warranty, endorsement, or a transfer of maintenance responsibility.
+
+See [Community Derivatives And Ecosystem Collaboration](docs/ECOSYSTEM.en.md) for the complete policy and [中文说明](docs/ECOSYSTEM.md) for the Chinese version.
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the Apache License 2.0.

@@ -220,6 +220,10 @@ BailingHub `v0.1.0` 是首个公开版本。我们希望它经得起更多真实
 
 提出问题时，建议附上业务场景、预期行为、最小复现步骤和脱敏后的 trace；贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
+### 衍生项目与生态
+
+我们欢迎社区创建独立发行版、行业适配、执行器、连接器和 ACC 独立实现。衍生项目可以保持自己的名称、方向与治理；通用改进欢迎回到上游，优秀的独立项目未来也可以申请在官方生态页面展示。展示不代表官方认证、商业担保或维护责任转移。完整原则见 [社区衍生与生态合作](docs/ECOSYSTEM.md)。
+
 ## 开源基础与第三方软件
 
 百灵中枢采用开放的 [ACC（Agent Capability Contract）](https://www.agentcapability.org) 能力声明契约，服务端基于 Node.js / TypeScript，控制台基于 Vue / Element Plus / Pinia，默认使用独立的 MySQL 服务持久化运行状态。
