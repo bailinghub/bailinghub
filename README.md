@@ -106,7 +106,7 @@ BAILING_INSTALL_MODE=image curl -fsSL https://www.bailinghub.com/install.sh | sh
 BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
 ```
 
-官方镜像默认地址：
+面向中国网络的默认镜像位于阿里云 ACR：
 
 ```text
 crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:<version>
@@ -114,7 +114,22 @@ crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-de
 crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-mysql:8.4
 ```
 
-一键安装默认使用官方同步的 MySQL 8.4 镜像，默认镜像模式下不依赖 Docker Hub。企业环境如需使用内部镜像源，可通过 `BAILING_MYSQL_IMAGE` 覆盖。
+全球开发者也可以使用 GHCR：
+
+```text
+ghcr.io/bailinghub/bailinghub:<version>
+ghcr.io/bailinghub/bailing-demo-business:<version>
+```
+
+```bash
+BAILING_INSTALL_MODE=image \
+BAILING_IMAGE_REGISTRY=ghcr.io \
+BAILING_IMAGE_NAMESPACE=bailinghub \
+BAILING_MYSQL_IMAGE=mysql:8.4 \
+curl -fsSL https://www.bailinghub.com/install.sh | sh
+```
+
+国内默认安装使用官方同步的 MySQL 8.4 镜像，不依赖 Docker Hub；GHCR 安装使用上游 `mysql:8.4`。企业环境可通过 `BAILINGHUB_IMAGE`、`BAILING_DEMO_BUSINESS_IMAGE` 和 `BAILING_MYSQL_IMAGE` 覆盖为内部镜像源。
 
 打开 http://localhost:18900/console/ ，用 `admin / bailing-demo-admin` 登录；或按 [docs/DEMO.md](docs/DEMO.md) 直接用 curl 触发 `demo_support` 路由，跑通「业务系统暴露工具 → 中枢治理 → agent 调工具 → 审计」。
 

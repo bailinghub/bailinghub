@@ -77,6 +77,7 @@
     "images:publish": "BAILING_PUSH_IMAGES=1 sh scripts/publish-images.sh",
     "images:publish-mysql": "BAILING_PUSH_IMAGES=1 sh scripts/publish-mysql-image.sh",
     "images:check": "sh scripts/check-image-tags.sh",
+    "images:check:ghcr": "BAILING_IMAGE_REGISTRY=ghcr.io BAILING_IMAGE_NAMESPACE=bailinghub BAILING_MYSQL_IMAGE=mysql:8.4 sh scripts/check-image-tags.sh",
     "sdk:test": "php sdk/php/examples/build-spec.php | tsx scripts/sdk-contract-test.ts",
     "sdk:test7": "php sdk/php7/examples/build-spec.php | tsx scripts/sdk-contract-test.ts",
     "sdk:test-node": "node sdk/node/examples/build-spec.mjs | tsx scripts/sdk-contract-test.ts",

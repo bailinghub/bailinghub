@@ -86,6 +86,18 @@ Use source mode for audit or development:
 BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
 ```
 
+Use the public GHCR images outside China:
+
+```bash
+BAILING_INSTALL_MODE=image \
+BAILING_IMAGE_REGISTRY=ghcr.io \
+BAILING_IMAGE_NAMESPACE=bailinghub \
+BAILING_MYSQL_IMAGE=mysql:8.4 \
+curl -fsSL https://www.bailinghub.com/install.sh | sh
+```
+
+The default image registry is the Aliyun ACR mirror for networks in China. Both registries publish the same versioned BailingHub and demo application images.
+
 ## Option C: Local Development
 
 Requirements:

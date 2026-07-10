@@ -107,6 +107,23 @@ Use source mode for auditing or development:
 BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
 ```
 
+Global prebuilt images are published on GHCR:
+
+```text
+ghcr.io/bailinghub/bailinghub:<version>
+ghcr.io/bailinghub/bailing-demo-business:<version>
+```
+
+```bash
+BAILING_INSTALL_MODE=image \
+BAILING_IMAGE_REGISTRY=ghcr.io \
+BAILING_IMAGE_NAMESPACE=bailinghub \
+BAILING_MYSQL_IMAGE=mysql:8.4 \
+curl -fsSL https://www.bailinghub.com/install.sh | sh
+```
+
+An Aliyun ACR mirror remains the default for networks in China. Enterprise environments can override `BAILINGHUB_IMAGE`, `BAILING_DEMO_BUSINESS_IMAGE`, and `BAILING_MYSQL_IMAGE` with internal registries.
+
 ## How Business Tools Work
 
 A business system publishes selected APIs as tools:
