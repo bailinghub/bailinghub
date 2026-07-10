@@ -35,6 +35,8 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [ECOSYSTEM.en.md](ECOSYSTEM.en.md) | Policy for community distributions, independent implementations, and future ecosystem listings. |
+| [ECOSYSTEM.md](ECOSYSTEM.md) | Chinese ecosystem and derivatives policy. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

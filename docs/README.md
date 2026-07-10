@@ -48,6 +48,8 @@
 
 | 文档 | 用途 |
 |---|---|
+| [ECOSYSTEM.md](ECOSYSTEM.md) | 社区发行版、独立实现、生态组件和未来官方展示的原则。 |
+| [ECOSYSTEM.en.md](ECOSYSTEM.en.md) | English policy for derivatives, independent implementations, and ecosystem listings. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |
