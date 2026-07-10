@@ -11,6 +11,7 @@ PACKAGE_VERSION="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\
 TAG="${BAILING_IMAGE_TAG:-$PACKAGE_VERSION}"
 [ -n "$TAG" ] || TAG="0.1.0"
 MYSQL_TAG="${BAILING_MYSQL_IMAGE_TAG:-8.4}"
+MYSQL_IMAGE="${BAILING_MYSQL_IMAGE:-$REGISTRY/$NAMESPACE/bailing-mysql:$MYSQL_TAG}"
 PLATFORM="${BAILING_IMAGE_PLATFORM:-linux/amd64}"
 PLATFORM_ARCH="${PLATFORM#*/}"
 PLATFORM_OS="${PLATFORM%%/*}"
@@ -18,7 +19,7 @@ PLATFORM_OS="${PLATFORM%%/*}"
 images="
 $REGISTRY/$NAMESPACE/bailinghub:$TAG
 $REGISTRY/$NAMESPACE/bailing-demo-business:$TAG
-$REGISTRY/$NAMESPACE/bailing-mysql:$MYSQL_TAG
+$MYSQL_IMAGE
 "
 
 if ! command -v docker >/dev/null 2>&1; then

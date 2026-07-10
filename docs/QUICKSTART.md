@@ -28,6 +28,22 @@
 docker compose up --build
 ```
 
+全新 Ubuntu/Debian 服务器默认从国内 ACR 镜像安装：
+
+```bash
+BAILING_INSTALL_MODE=image curl -fsSL https://www.bailinghub.com/install.sh | sh
+```
+
+需要使用全球 GHCR 镜像时：
+
+```bash
+BAILING_INSTALL_MODE=image \
+BAILING_IMAGE_REGISTRY=ghcr.io \
+BAILING_IMAGE_NAMESPACE=bailinghub \
+BAILING_MYSQL_IMAGE=mysql:8.4 \
+curl -fsSL https://www.bailinghub.com/install.sh | sh
+```
+
 它会启动中枢、MySQL 和 demo 业务系统，并自动创建 `demo_support` 路由、`demo-business` 工具源、`demo-app` 接入方和 `admin` 后台账号。完整演示见 [DEMO.md](DEMO.md)。
 
 手动部署：Node ≥ 22 + MySQL。复制 `.env.example` 到部署环境并设置 `BAILING_ENV=production`、`BAILING_TOKEN`、MySQL 连接、模型凭证等变量；按合规要求可设置 `BAILING_AUDIT_RETENTION_DAYS`（默认 0，不自动删除审计）。执行 `npm run db:init` 初始化数据库结构，`npm run admin:create` 建管理员，启动 `src/server.ts`，登录 `/console/`。本地烟测可直接用 `config.example.json` + jsonl 状态，完整能力请使用 MySQL。
