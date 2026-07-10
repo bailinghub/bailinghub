@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/executor-token.schema.json",
+  "title": "Bailing Executor Token Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "allowed_targets", "enabled"],
+  "properties": {
+    "name": { "$ref": "common.schema.json#/$defs/resourceName", "title": "标识", "description": "执行器接入令牌的稳定名字，便于审计、轮换和停用；不是执行器实例 ID。" },
+    "allowed_targets": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "title": "可认领目标",
+      "description": "使用这把令牌的执行器只能认领这些 executor target；生产建议最小授权。"
+    },
+    "enabled": { "type": "boolean", "title": "启用", "description": "停用后，使用这把令牌的新认领请求会被拒绝。" },
+    "description": { "type": "string", "title": "说明", "description": "给后台维护者看的备注，不参与调度授权。" }
+  }
+}

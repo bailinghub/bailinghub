@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/target.schema.json",
+  "title": "Bailing Target Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "kind", "stateless", "needs_project", "timeout_ms", "enabled"],
+  "properties": {
+    "name": { "$ref": "common.schema.json#/$defs/resourceName" },
+    "kind": { "type": "string", "enum": ["inhub", "executor"] },
+    "stateless": { "type": "boolean" },
+    "needs_project": { "type": "boolean" },
+    "timeout_ms": { "type": "integer", "minimum": 0, "maximum": 3600000 },
+    "enabled": { "type": "boolean" },
+    "description": { "type": "string" }
+  }
+}

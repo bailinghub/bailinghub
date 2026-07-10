@@ -1,0 +1,22 @@
+{
+  "name": "@bailinghub/connect",
+  "version": "0.1.0",
+  "description": "BailingHub hub business-side SDK for tool specs, HMAC verification, callbacks and authz probes.",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src",
+    "examples",
+    "README.md"
+  ],
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build:spec": "node examples/build-spec.mjs"
+  }
+}

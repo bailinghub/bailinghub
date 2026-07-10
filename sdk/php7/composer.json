@@ -1,0 +1,18 @@
+{
+    "name": "bailing/connect-php7",
+    "description": "百灵中枢业务侧接入 SDK（PHP 7.3 兼容版）：fluent builder 声明 AI 可调接口、sha256 签名校验、访客票据签发、spec 托管。零依赖，无注解无反射——产出与 8.x 注解版完全一致的 spec。",
+    "type": "library",
+    "license": "Apache-2.0",
+    "authors": [
+        { "name": "百灵中枢" }
+    ],
+    "require": {
+        "php": ">=7.3",
+        "ext-json": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Bailing\\Connect\\": "src/"
+        }
+    }
+}

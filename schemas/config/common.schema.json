@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/common.schema.json",
+  "title": "Bailing Config Common Definitions",
+  "$defs": {
+    "resourceName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9_-]{1,63}$"
+    },
+    "routeKey": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "jsonObject": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "url": {
+      "type": "string",
+      "minLength": 1
+    },
+    "budgetPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "window": { "type": "string", "enum": ["hour", "day", "month"] },
+        "window_hours": { "type": "integer", "minimum": 1 },
+        "hard_cost_usd": { "type": "number", "exclusiveMinimum": 0 },
+        "hard_tokens": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "deliveryConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["type"],
+      "properties": {
+        "type": { "$ref": "#/$defs/nonEmptyString" },
+        "url": { "type": "string" },
+        "channel": { "type": "string" },
+        "to": { "type": "string" },
+        "to_field": { "type": "string" }
+      }
+    },
+    "knowledgeConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kb_id": { "type": "string", "minLength": 1 },
+        "kb_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "top_k": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "min_score": { "type": "number", "minimum": 0, "maximum": 1 },
+        "inject": { "type": "string", "enum": ["chunk", "doc"] },
+        "max_docs": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "page_boost": { "type": "boolean" }
+      }
+    },
+    "memoryConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "recent_messages": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "recent_budget_chars": { "type": "integer", "minimum": 200, "maximum": 40000 },
+        "per_message_chars": { "type": "integer", "minimum": 50, "maximum": 12000 },
+        "summary_enabled": { "type": "boolean" },
+        "summary_trigger_chars": { "type": "integer", "minimum": 500, "maximum": 40000 },
+        "summary_keep_recent": { "type": "integer", "minimum": 0, "maximum": 40 },
+        "summary_max_chars": { "type": "integer", "minimum": 200, "maximum": 8000 },
+        "summary_model": { "type": "string", "maxLength": 100 }
+      }
+    },
+    "llmTargetConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["credential"],
+      "properties": {
+        "credential": { "$ref": "#/$defs/resourceName" },
+        "model": { "type": "string", "minLength": 1 },
+        "system_prompt": { "type": "string" },
+        "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+        "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 3600000 },
+        "input": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "image": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "credential": { "$ref": "#/$defs/resourceName" },
+                "model": { "type": "string", "minLength": 1 },
+                "mode": { "type": "string", "enum": ["tool", "prepass", "inline", "off"] },
+                "max_calls": { "type": "integer", "minimum": 1, "maximum": 30 }
+              }
+            },
+            "audio": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "credential": { "$ref": "#/$defs/resourceName" },
+                "model": { "type": "string", "minLength": 1 },
+                "mode": { "type": "string", "enum": ["transcribe", "inline", "off"] },
+                "max_bytes": { "type": "integer", "minimum": 1024, "maximum": 52428800 },
+                "max_seconds": { "type": "integer", "minimum": 1, "maximum": 600 }
+              }
+            },
+            "file": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "credential": { "$ref": "#/$defs/resourceName" },
+                "model": { "type": "string", "minLength": 1 },
+                "mode": { "type": "string", "enum": ["extract", "summarize", "inline", "off"] },
+                "max_bytes": { "type": "integer", "minimum": 1024, "maximum": 104857600 },
+                "max_chars": { "type": "integer", "minimum": 1000, "maximum": 200000 }
+              }
+            },
+            "video": { "type": "object", "additionalProperties": true }
+          }
+        }
+      }
+    },
+    "genericTargetConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 3600000 }
+      }
+    },
+    "routeToolsConfig": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["provider", "allow"],
+            "properties": {
+              "provider": { "$ref": "#/$defs/resourceName" },
+              "allow": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 },
+                "uniqueItems": true
+              },
+              "subject_field": { "type": "string", "minLength": 1 },
+              "retrieval": { "$ref": "#/$defs/jsonObject" }
+            }
+          }
+        },
+        "max_calls": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "builtin": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "send_message": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["channels"],
+              "properties": {
+                "channels": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "type": "string", "minLength": 1 },
+                  "uniqueItems": true
+                }
+              }
+            }
+          }
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["type"],
+          "properties": {
+            "type": { "type": "string", "minLength": 1 },
+            "url": { "type": "string" },
+            "to": { "type": "string" }
+          }
+        }
+      },
+      "not": {
+        "anyOf": [
+          { "required": ["provider"] },
+          { "required": ["allow"] },
+          { "required": ["subject_field"] },
+          { "required": ["send_channels"] },
+          { "required": ["approver"] },
+          { "required": ["source"] }
+        ]
+      }
+    }
+  }
+}

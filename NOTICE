@@ -1,0 +1,23 @@
+BailingHub
+Copyright 2026 BailingHub contributors
+
+This product includes software developed by BailingHub contributors.
+
+The names "BailingHub", "百灵中枢", and related marks
+identify the project and its maintainers. The Apache License 2.0 does
+not grant trademark rights except for reasonable and customary use in
+describing the origin of the work.
+
+This product includes material derived from the Agent Capability
+Contract (ACC), available at:
+https://github.com/agent-capability/agent-capability-contract
+
+ACC is an open specification for Agent-to-Business capability declaration.
+
+ACC was initially proposed by the BailingHub project and is maintained as
+an implementation-neutral open contract.
+
+Truthful compatibility statements such as "implements ACC v1" are allowed.
+
+Do not imply official ACC certification or maintainer endorsement unless
+explicitly granted.

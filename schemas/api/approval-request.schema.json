@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/api/approval-request.schema.json",
+  "title": "Bailing Approval Intent Request",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["kind", "approval_id", "job_id", "tool", "args_hash", "intent"],
+  "properties": {
+    "kind": { "type": "string", "const": "tool_approval_request" },
+    "approval_id": { "type": ["string", "integer"] },
+    "job_id": { "type": "string" },
+    "route": { "type": "string" },
+    "provider": { "type": "string" },
+    "tool": { "type": "string" },
+    "scope": { "type": "string" },
+    "risk": { "type": "string", "enum": ["low", "medium", "high"] },
+    "args_hash": { "type": "string", "minLength": 16 },
+    "args": { "type": "object", "additionalProperties": true },
+    "on_behalf_of": { "type": ["string", "null"] },
+    "intent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string" },
+        "summary": { "type": "string" },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

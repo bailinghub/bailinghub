@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/page-context.schema.json",
+  "title": "Bailing Page Context Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entry_key", "url_pattern", "enabled"],
+  "properties": {
+    "id": { "type": "integer", "minimum": 1 },
+    "entry_key": {
+      "type": "string",
+      "pattern": "^pub_[A-Za-z0-9_-]{8,64}$"
+    },
+    "url_pattern": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "page_key": { "type": "string", "maxLength": 64 },
+    "page_name": { "type": "string", "maxLength": 128 },
+    "description": { "type": "string", "maxLength": 1000 },
+    "priority": { "type": "integer" },
+    "enabled": { "type": "boolean" }
+  }
+}

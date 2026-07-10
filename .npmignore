@@ -1,0 +1,56 @@
+# Exclude hidden local/tooling state from source packages.
+.*
+!.dockerignore
+!.env.example
+!.gitignore
+!.npmignore
+node_modules/
+web-admin/node_modules/
+.deploy-backup/
+.oss-dist/
+.oss-publish/
+bailinghub-*.tgz
+*.bak.*
+*.bak.*/
+src.bak.*/
+
+# Private official site. The open-source package ships the console, widget,
+# schemas, SDKs and demo app, but not the product website.
+web/site/
+web/site-dist/
+deploy/
+
+# Generated console build and local runtime state.
+web/console/
+web/console.bak.*/
+data/
+config.json
+.env
+.paused
+build-info.json
+*.log
+.DS_Store
+._*
+
+# Local operator profiles and notes.
+brain/profiles.local.json
+brain/**/*.local.json
+brain/**/*.local.md
+internal/
+
+# Internal operating notes, not part of the open-source distribution.
+*.internal.md
+*.private.md
+
+# Private edition extensions. The public package may expose neutral
+# edition/scope interfaces, but never ships private implementation code.
+private/
+enterprise/
+src/private/
+src/enterprise/
+sql/private/
+sql/enterprise/
+web-admin/src/private/
+web-admin/src/platform/
+*.private.*
+*.enterprise.*

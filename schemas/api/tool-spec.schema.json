@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/api/tool-spec.schema.json",
+  "title": "Bailing Tool Source OpenAPI Spec",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["openapi", "info", "paths"],
+  "properties": {
+    "openapi": { "type": "string", "pattern": "^3\\." },
+    "info": {
+      "type": "object",
+      "required": ["title", "version"],
+      "properties": {
+        "title": { "type": "string" },
+        "version": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "paths": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "operationId": { "type": "string" },
+            "summary": { "type": "string" },
+            "description": { "type": "string" },
+            "x-agent-capability": {
+              "$ref": "../agent-capability-contract.schema.json"
+            }
+          }
+        }
+      }
+    }
+  }
+}

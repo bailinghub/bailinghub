@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/route.schema.json",
+  "title": "Bailing Route Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["route_key", "name", "enabled", "target", "target_config", "profile", "session_policy"],
+  "properties": {
+    "route_key": {
+      "$ref": "common.schema.json#/$defs/routeKey",
+      "title": "场景标识",
+      "description": "业务系统、聊天入口或渠道触发本场景时使用的稳定标识，保存后不建议改名。"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "title": "名称",
+      "description": "后台展示的人类可读名称。"
+    },
+    "enabled": {
+      "type": "boolean",
+      "title": "启用",
+      "description": "关闭后该路由不再接受触发。"
+    },
+    "target": {
+      "$ref": "common.schema.json#/$defs/resourceName",
+      "title": "调度目标",
+      "description": "本场景交给哪个中枢内置目标或外部执行器目标处理。"
+    },
+    "target_config": {
+      "$ref": "common.schema.json#/$defs/jsonObject",
+      "title": "目标配置",
+      "description": "传给目标适配器的结构化配置；llm 使用模型凭证、模型和提示词等字段。"
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "title": "项目",
+      "description": "需要本地项目目录的执行器目标使用的项目登记名。"
+    },
+    "profile": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "title": "角色档",
+      "description": "执行器可选的角色档或任务模板；llm 场景通常不用填写。"
+    },
+    "permission": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "title": "权限",
+      "description": "发送给执行器或大脑的权限边界提示，如 readonly、readwrite、full。"
+    },
+    "session_policy": {
+      "type": "string",
+      "enum": ["new", "fixed", "per_key", "passthrough"],
+      "title": "会话连续性",
+      "description": "仅 /run API 直接触发生效，控制业务触发多次调用是否接续同一会话。"
+    },
+    "session_fixed_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 191,
+      "title": "固定会话 ID",
+      "description": "session_policy=fixed 时使用的固定会话标识；留空时可由运行期自动创建。"
+    },
+    "session_key_field": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 191,
+      "title": "会话键字段",
+      "description": "session_policy=per_key/passthrough 时，从 metadata 中读取该字段作为会话键。"
+    },
+    "default_callback_url": {
+      "type": "string",
+      "title": "默认回调地址",
+      "description": "未在 delivery 中显式配置 webhook 时使用的默认回调地址。"
+    },
+    "delivery": {
+      "$ref": "common.schema.json#/$defs/deliveryConfig",
+      "title": "送达",
+      "description": "任务结束后如何把结果推回业务侧、渠道或其他承接方。"
+    },
+    "knowledge": {
+      "$ref": "common.schema.json#/$defs/knowledgeConfig",
+      "title": "知识注入",
+      "description": "每次执行前要注入的知识库检索配置。"
+    },
+    "retry": {
+      "type": "object",
+      "title": "重试",
+      "description": "送达或瞬时失败场景的重试配置。",
+      "additionalProperties": false,
+      "properties": {
+        "max": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "backoff_ms": { "type": "integer", "minimum": 500, "maximum": 300000 }
+      }
+    },
+    "tools": {
+      "$ref": "common.schema.json#/$defs/routeToolsConfig",
+      "title": "工具治理",
+      "description": "本路由可调用的业务工具源、内置动作和高风险审批承接配置。"
+    },
+    "audience": {
+      "type": "object",
+      "title": "受众策略",
+      "description": "声明哪些接入方、渠道、租户、角色、主体或受众类型可以进入本路由；route=auto 使用 auto、priority 和 keywords 做可审计分诊。",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "title": "启用受众闸" },
+        "auto": { "type": "boolean", "title": "参与自动分诊" },
+        "priority": { "type": "integer", "minimum": -1000, "maximum": 1000, "title": "分诊优先级" },
+        "keywords": { "type": "array", "items": { "type": "string" }, "title": "分诊关键词" },
+        "clients": { "type": "array", "items": { "type": "string" }, "title": "允许接入方" },
+        "channels": { "type": "array", "items": { "type": "string" }, "title": "允许渠道" },
+        "tenants": { "type": "array", "items": { "type": "string" }, "title": "允许租户" },
+        "roles": { "type": "array", "items": { "type": "string" }, "title": "允许角色" },
+        "principals": { "type": "array", "items": { "type": "string" }, "title": "允许主体" },
+        "audiences": { "type": "array", "items": { "type": "string" }, "title": "允许受众类型" },
+        "anonymous": { "type": "boolean", "title": "允许匿名主体" }
+      }
+    },
+    "memory": {
+      "$ref": "common.schema.json#/$defs/memoryConfig",
+      "title": "对话记忆",
+      "description": "路由会话历史装配、逐字窗口和滚动摘要配置。"
+    },
+    "budget": {
+      "$ref": "common.schema.json#/$defs/budgetPolicy",
+      "title": "成本预算闸",
+      "description": "按路由维度限制模型成本或 token 用量，命中硬限后拒绝新任务。"
+    },
+    "description": {
+      "type": "string",
+      "title": "说明",
+      "description": "给后台管理员看的补充备注。"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "session_policy": { "const": "fixed" } }, "required": ["session_policy"] },
+      "then": { "required": ["session_fixed_id"] }
+    },
+    {
+      "if": { "properties": { "session_policy": { "const": "per_key" } }, "required": ["session_policy"] },
+      "then": { "required": ["session_key_field"] }
+    }
+  ]
+}

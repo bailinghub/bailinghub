@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bailing-connect"
+version = "0.1.0"
+description = "BailingHub hub business-side SDK for tool specs, HMAC verification, callbacks and authz probes."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+authors = [
+  { name = "BailingHub" }
+]
+keywords = ["bailing", "ai", "tools", "openapi", "hmac"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bailing_connect*"]

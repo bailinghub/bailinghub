@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/chat-entry.schema.json",
+  "title": "Bailing Chat Entry Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "route_key", "allowed_origins", "rate_limit_per_min", "enabled"],
+  "properties": {
+    "entry_key": {
+      "type": "string",
+      "pattern": "^pub_[A-Za-z0-9_-]{8,64}$"
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "route_key": { "$ref": "common.schema.json#/$defs/routeKey" },
+    "enabled": { "type": "boolean" },
+    "allowed_origins": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "rate_limit_per_min": { "type": "integer", "minimum": 1, "maximum": 600 },
+    "ticket_client": { "$ref": "common.schema.json#/$defs/resourceName" },
+    "bucket": { "$ref": "common.schema.json#/$defs/resourceName" },
+    "title": { "type": "string", "maxLength": 64 },
+    "greeting": { "type": "string", "maxLength": 255 },
+    "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{3,8}$" },
+    "appearance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": { "type": "integer", "minimum": 280, "maximum": 720 },
+        "height": { "type": "integer", "minimum": 360, "maximum": 900 },
+        "title_align": { "type": "string", "enum": ["center", "left"] },
+        "position": { "type": "string", "enum": ["right", "left"] },
+        "offset_x": { "type": "integer", "minimum": 0, "maximum": 400 },
+        "offset_y": { "type": "integer", "minimum": 0, "maximum": 400 },
+        "avatar": { "type": "string", "pattern": "^https?://.+" },
+        "launcher_icon": { "type": "string", "pattern": "^https?://.+" },
+        "resizable": { "type": "boolean" },
+        "ai_notice": { "type": "boolean" }
+      }
+    },
+    "description": { "type": "string" }
+  }
+}

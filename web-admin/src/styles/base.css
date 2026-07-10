@@ -1,0 +1,272 @@
+/* 百灵中枢 · 设计 token（docs/DESIGN.md v1）——以 Element Plus CSS 变量形式落地。
+ * 暖纸色系：纸感、克制、信息密度优先。 */
+:root {
+  --el-border-radius-base: 0;
+  --el-border-radius-small: 0;
+  --el-border-radius-round: 0;
+  --el-border-radius-circle: 0;
+  --bz-mono: 'JetBrains Mono', ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* 深色 + 绿色主题（与官网 site.css 同一套色板：近黑底 + 克制 GitHub 绿，不刺眼）。
+ * 走 Element Plus 官方 dark 模式（html.dark；dark/css-vars.css 已在 main.ts 引入，把上百个组件深色变量设好），
+ * 这里只覆盖品牌色与确切底色，避免下拉/弹窗/表格 hover 漏白。 */
+html.dark {
+  --el-color-primary: #3fb950;
+  --el-color-primary-light-3: #2f9d45;
+  --el-color-primary-light-5: #266f33;
+  --el-color-primary-light-7: #1d4f26;
+  --el-color-primary-light-8: #173f20;
+  --el-color-primary-light-9: #112a17;
+  --el-color-primary-dark-2: #56d364;
+  --el-color-success: #3fb950;
+  --el-color-warning: #d9a514;
+  --el-color-danger: #ff6b6b;
+  --el-color-error: #ff6b6b;
+  --el-color-info: #9aa0a8;
+
+  --el-bg-color: #0e1013;
+  --el-bg-color-page: #0a0b0d;
+  --el-bg-color-overlay: #14171c;
+
+  --el-text-color-primary: #e6e8eb;
+  --el-text-color-regular: #c9ced4;
+  --el-text-color-secondary: #9aa0a8;
+  --el-text-color-placeholder: #6b7178;
+  --el-text-color-disabled: #565b62;
+
+  --el-border-color-darker: rgba(255, 255, 255, .18);
+  --el-border-color-dark: rgba(255, 255, 255, .14);
+  --el-border-color: rgba(255, 255, 255, .12);
+  --el-border-color-light: rgba(255, 255, 255, .1);
+  --el-border-color-lighter: rgba(255, 255, 255, .07);
+  --el-border-color-extra-light: rgba(255, 255, 255, .05);
+
+  --el-fill-color-darker: rgba(255, 255, 255, .1);
+  --el-fill-color-dark: rgba(255, 255, 255, .08);
+  --el-fill-color: rgba(255, 255, 255, .06);
+  --el-fill-color-light: rgba(255, 255, 255, .04);
+  --el-fill-color-lighter: rgba(255, 255, 255, .03);
+  --el-fill-color-blank: #0e1013;
+
+  --el-mask-color: rgba(10, 11, 13, .8);
+  --el-mask-color-extra-light: rgba(10, 11, 13, .3);
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; }
+body {
+  margin: 0;
+  font: 14px/1.5 'Noto Sans SC', 'HarmonyOS Sans SC', 'PingFang SC', -apple-system, system-ui, sans-serif;
+  background: var(--el-bg-color-page);
+  color: var(--el-text-color-primary);
+}
+code, .mono { font-family: var(--bz-mono); font-size: 0.92em; }
+code { background: var(--el-fill-color); padding: 1px 5px; }
+
+/* 方正品牌策略：后台与官网统一采用直角视觉。
+ * Element Plus 组件、页面局部样式、内联 el-card 圆角均在这里归零；
+ * 后续只有确有语义必要的圆形图标才应单独显式例外。 */
+body *,
+body *::before,
+body *::after {
+  border-radius: 0 !important;
+}
+
+/* ── 阅读舒适层 ──
+ * 全局 size=small 保持按钮/输入框紧凑（信息密度优先），
+ * 但"读"的密度单独放松：small 表格默认 4px 行距 + 12px 字号，宽屏下阅读疲劳。
+ * base.css 在 element-plus/dist/index.css 之后引入，同特异度后者生效。 */
+.el-table {
+  font-size: 13px;
+  --el-table-border-color: var(--el-border-color-lighter);
+  width: 100%;
+}                                                   /* small 默认 12px */
+.el-table .el-table__cell { padding: 9px 0; }      /* small 默认 4px 0，行高约 38px */
+/* 表格需要 border=true 才有列拖拽能力；视觉上仍保持“行列表”而不是重网格：
+ * - 正文竖线和外框隐藏；
+ * - 横向行分隔保留；
+ * - 表头右缘提供轻量拖拽手柄。 */
+.el-table--border::after,
+.el-table--border::before,
+.el-table--border .el-table__inner-wrapper::after,
+.el-table__inner-wrapper::before { background-color: transparent; }
+.el-table__border-left-patch { display: none; }
+.el-table td.el-table__cell,
+.el-table th.el-table__cell.is-leaf { border-bottom-color: var(--el-border-color-lighter); }
+.el-table--border .el-table__cell { border-right-color: transparent; }
+.el-table th.el-table__cell { position: relative; }
+.el-table th.el-table__cell .cell { padding-right: 22px; }
+.el-table th.el-table__cell::after {
+  content: "";
+  position: absolute;
+  top: 24%;
+  right: 3px;
+  width: 5px;
+  height: 52%;
+  border-left: 1px solid var(--el-border-color);
+  border-right: 1px solid var(--el-border-color);
+  background: transparent;
+  opacity: .22;
+  cursor: col-resize;
+  pointer-events: none;
+}
+.el-table th.el-table__cell:hover::after {
+  opacity: .95;
+  border-color: var(--el-color-primary);
+}
+.el-table th.el-table__cell:hover {
+  background:
+    linear-gradient(to right, transparent calc(100% - 10px), rgba(63, 185, 80, .08));
+}
+.el-table thead tr th.el-table__cell:last-child::after,
+.el-table thead tr:has(th.gutter:last-child) th.el-table__cell:nth-last-child(2)::after {
+  display: none;
+}
+.el-table thead tr th.el-table__cell:last-child:hover,
+.el-table thead tr:has(th.gutter:last-child) th.el-table__cell:nth-last-child(2):hover {
+  background: transparent;
+}
+.el-table__column-resize-proxy {
+  background: var(--el-color-primary);
+  width: 2px;
+}
+.el-card { --el-card-padding: 24px; }              /* 默认 20px */
+.el-form--label-top .el-form-item { margin-bottom: 22px; }  /* 抽屉表单项间距，默认 18px */
+/* 本版 EP 对 label-top 没有 label 高度覆盖：small 的 height:24px 锁死，
+ * 长说明 label（如路由页）折行即撑破盒子叠到输入框上。放开高度 + 留 label→输入间隙。 */
+.el-form--label-top .el-form-item .el-form-item__label { display: block; height: auto; line-height: 1.5; margin-bottom: 6px; }
+.el-drawer__body { padding-top: 16px; }            /* 抽屉标题与首个表单项之间松一口气 */
+.el-drawer { max-width: 96vw; }                    /* 固定 px 抽屉在小窗口下永不超视口（防整体横滚） */
+
+/* ── 填写舒适层 ──
+ * 抽屉/对话框是"录入"场景：输入控件放大一档（高 24→32、字号 12→13），打字不憋屈；
+ * 列表、工具条、表格内按钮维持 small 信息密度不动。 */
+.el-drawer .el-input--small, .el-dialog .el-input--small { --el-input-height: 32px; font-size: 13px; }
+.el-drawer .el-select--small .el-select__wrapper, .el-dialog .el-select--small .el-select__wrapper { min-height: 32px; padding: 4px 12px; font-size: 13px; }
+.el-drawer .el-textarea__inner, .el-dialog .el-textarea__inner { font-size: 13px; line-height: 1.7; padding: 8px 12px; }
+
+/* 下拉面板宽度=输入框宽度（main.ts 全局改了 fit-input-width 默认值），
+ * 长说明选项折行展示而不是撑宽面板——面板不再比输入框宽，就永远贴着输入框向下展开。 */
+.el-select-dropdown .el-select-dropdown__item { white-space: normal; height: auto; line-height: 1.5; padding-top: 5px; padding-bottom: 5px; }
+
+/* ── Console UX primitives ──
+ * Keep page forms consistent: short labels, details in HelpTip, and complex
+ * drawers split into decision tabs.
+ */
+.el-drawer:has(.console-tabs) { --console-drawer-x: clamp(20px, 4vw, 48px); }
+.el-drawer:has(.console-tabs) .el-drawer__header { margin-bottom: 0; padding-bottom: 14px; }
+.el-drawer__body:has(.console-tabs) { padding: 0; }
+.console-tabs { --el-tabs-header-height: 42px; }
+.console-tabs .el-tabs__header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  margin: 0 0 20px;
+  padding: 0 var(--console-drawer-x);
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.console-tabs .el-tabs__content { min-height: 260px; padding: 0 var(--console-drawer-x) 18px; }
+.field-required {
+  margin-left: 4px;
+  color: var(--el-color-danger);
+  font-size: 0;
+  font-weight: 700;
+  vertical-align: -1px;
+}
+.field-required::after { content: "*"; font-size: 15px; line-height: 1; }
+.field-hint { margin-top: 4px; width: 100%; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary); }
+
+/* ── 接入代码弹窗 ──
+ * 用在“调用代码 / 嵌入代码”等复制即接入场景：上下文选择、必要提醒、单代码卡片分层展示。
+ */
+.code-dialog .el-dialog__body { padding-top: 8px; }
+.code-context {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-fill-color-lighter);
+}
+.code-context-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.code-context-label { color: var(--el-text-color-secondary); font-size: 12px; }
+.code-context-select { width: min(360px, 100%); }
+.code-context-note { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.6; }
+.code-notices {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.code-notices.compact { margin-bottom: 12px; }
+.code-notice {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 9px 11px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-left: 3px solid var(--el-color-info);
+  background: var(--el-fill-color-lighter);
+}
+.code-notice b { font-size: 12px; line-height: 1.6; color: var(--el-text-color-primary); }
+.code-notice span { min-width: 0; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary); }
+.code-notice.info { border-left-color: var(--el-color-info); }
+.code-notice.warning { border-left-color: var(--el-color-warning); }
+.code-notice.success { border-left-color: var(--el-color-success); }
+.code-tabs .el-tabs__header { margin-bottom: 12px; }
+.snippet-card {
+  border: 1px solid var(--el-border-color-lighter);
+  background: var(--el-bg-color);
+}
+.snippet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.snippet-head b { font-size: 14px; line-height: 1.5; }
+.snippet-head p {
+  margin: 4px 0 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.snippet-head .el-button { flex: none; }
+.snippet-code {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 0;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
+  font: 12px/1.58 var(--bz-mono);
+  white-space: pre;
+}
+.snippet-code.compact {
+  max-height: 140px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.snippet-code.tall { max-height: 460px; }
+.snippet-notes {
+  display: grid;
+  gap: 6px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--el-border-color-lighter);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .code-notice { grid-template-columns: 1fr; gap: 2px; }
+  .snippet-head { flex-direction: column; }
+  .snippet-head .el-button { width: 100%; }
+}

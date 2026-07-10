@@ -1,0 +1,58 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 18900,
+    "token": ""
+  },
+  "display_tz": "Asia/Shanghai",
+  "display_tz_label": "北京时间",
+  "audit_retention_days": 0,
+  "concurrency": 2,
+  "killSwitchFile": ".paused",
+  "claudeBin": "claude",
+  "defaultProfile": "readonly",
+  "brainDir": "brain",
+  "state": {
+    "backend": "jsonl",
+    "jsonlPath": "data/jobs.jsonl",
+    "mysql": {
+      "host": "REPLACE_ME",
+      "port": 21950,
+      "database": "bailinghub",
+      "user": "REPLACE_ME",
+      "password": "REPLACE_ME"
+    }
+  },
+  "projects": {
+    "self": ".",
+    "_example_business_app": "/srv/example-business-app"
+  },
+  "llm_credentials": {
+    "deepseek": {
+      "base_url": "https://api.deepseek.com",
+      "api_key": "REPLACE_ME"
+    }
+  },
+  "_brand_说明": "对外产出署名（送达消息落款/告警标题），部署方可改。",
+  "brand": {
+    "name": "百灵中枢"
+  },
+  "_alerts_说明": "自监控告警出口，复用送达插座：type=webhook 签名直发；要走自有渠道 X（企微/钉钉/短信…）则 type 填 X 并注册 X-notify 执行器目标 + 带 to 收件人。不配 = 只记审计不外发。",
+  "alerts": {
+    "type": "webhook",
+    "url": "https://REPLACE_ME/告警接收地址",
+    "cooldown_min": 60
+  },
+  "_executor_说明": "仅执行器进程(tsx src/executor.ts)读取；中枢 server 进程忽略。hub_url 填中枢地址，token 与中枢 server.token 一致。wait_ms 应小于网关或 CDN 的源站响应超时；调小不影响真实任务延迟。",
+  "executor": {
+    "hub_url": "https://REPLACE_ME（中枢地址）",
+    "token": "REPLACE_ME",
+    "executor_id": "worker-01",
+    "targets": [
+      "claude-code"
+    ],
+    "wait_ms": 12000,
+    "concurrency": 1
+  },
+  "_channels_说明": "入站消息渠道已改为后台「渠道」菜单管理（DB 表 bz_channels），不再写 config.json。回调地址=https://中枢域名/<平台>/<渠道标识>。"
+}

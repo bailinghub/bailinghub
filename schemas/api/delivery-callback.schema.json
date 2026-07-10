@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/api/delivery-callback.schema.json",
+  "title": "Bailing Delivery Callback",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["kind", "job_id", "route", "status"],
+  "properties": {
+    "kind": { "type": "string", "const": "delivery" },
+    "job_id": { "type": "string", "minLength": 1 },
+    "request_id": { "type": "string" },
+    "route": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["done", "error", "cancelled"]
+    },
+    "result": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "summary": { "type": "string" },
+        "detail": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "error": { "type": ["string", "null"] },
+    "trace_id": { "type": "string" }
+  }
+}

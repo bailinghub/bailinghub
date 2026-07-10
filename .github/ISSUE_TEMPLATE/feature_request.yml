@@ -1,0 +1,53 @@
+name: Feature request
+description: Propose a new capability or integration.
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the business integration problem first. The best proposals map clearly to BailingHub's boundaries: routes, targets, tools, approvals, channels, storage, knowledge, memory, or observability.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What cannot be done cleanly today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should BailingHub add or change?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What workarounds or existing extension points did you consider?
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Routing
+        - Tool governance
+        - Approval flow
+        - Executor / target
+        - Channel
+        - Web widget
+        - Knowledge / memory
+        - Console UX
+        - SDK
+        - Deployment / operations
+        - Documentation
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: This request is about the open-source framework, not a private deployment.
+          required: true

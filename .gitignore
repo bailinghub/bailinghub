@@ -1,0 +1,44 @@
+# Exclude hidden local/tooling state by default. Keep public repo metadata tracked.
+.*
+!.dockerignore
+!.env.example
+!.github/
+!.github/**
+!.gitignore
+!.npmignore
+
+node_modules/
+data/
+.oss-dist/
+.oss-publish/
+bailinghub-*.tgz
+config.json
+.env
+.paused
+build-info.json
+*.log
+.DS_Store
+web/console/
+web/site/
+web/site-dist/
+deploy/
+targets.local.json
+internal/
+
+# 部署方本地定制（brain 叠加层）：仓库跟踪默认文件，定制写进同名 .local 兄弟文件，
+# 升级 git pull 只动默认文件、永不碰下面这些，因此不会 merge 冲突。详见 brain/README.md。
+brain/profiles.local.json
+brain/**/*.local.json
+brain/**/*.local.md
+
+# Private edition extensions stay outside the public repository by default.
+private/
+enterprise/
+src/private/
+src/enterprise/
+sql/private/
+sql/enterprise/
+web-admin/src/private/
+web-admin/src/platform/
+*.private.*
+*.enterprise.*

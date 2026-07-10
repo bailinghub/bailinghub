@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/channel.schema.json",
+  "title": "Bailing Channel Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "kind", "route_key", "config", "enabled"],
+  "properties": {
+    "name": {
+      "$ref": "common.schema.json#/$defs/resourceName",
+      "title": "渠道标识",
+      "description": "渠道唯一标识，也是平台回调 URL 的路径段。建好后不建议改名。"
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "title": "类型",
+      "description": "外部平台类型。当前生产可用类型为企业微信。"
+    },
+    "route_key": {
+      "$ref": "common.schema.json#/$defs/routeKey",
+      "title": "绑定路由",
+      "description": "该渠道收到的用户消息会交给这条路由处理。"
+    },
+    "config": {
+      "type": "object",
+      "title": "平台参数",
+      "description": "该渠道适配器需要的平台密钥、主动推送凭证和运行参数。",
+      "additionalProperties": true,
+      "properties": {
+        "corpid": {
+          "type": "string",
+          "title": "企业 ID",
+          "description": "企业微信企业 ID；主动推、告警通知和慢回答推送需要填写。"
+        },
+        "token": {
+          "type": "string",
+          "title": "Token",
+          "description": "企业微信接收消息配置中的 Token；编辑时留空表示保留原值。"
+        },
+        "aes_key": {
+          "type": "string",
+          "title": "EncodingAESKey",
+          "description": "企业微信接收消息配置中的 EncodingAESKey；编辑时留空表示保留原值。"
+        },
+        "agentid": {
+          "type": "string",
+          "title": "AgentId",
+          "description": "平台应用 ID。需要慢回答主动推、告警通知或业务主动推送时填写。"
+        },
+        "secret": {
+          "type": "string",
+          "title": "Secret",
+          "description": "平台应用 Secret。需要主动推送时填写；编辑时留空表示保留原值。"
+        },
+        "reply_wait_ms": {
+          "type": "integer",
+          "minimum": 300,
+          "maximum": 4500,
+          "title": "被动回复等待窗口",
+          "description": "平台被动回复窗口内等待大脑回答的最长时间，超过后改走主动推。"
+        },
+        "bucket": {
+          "type": "string",
+          "title": "图片存储桶",
+          "description": "用户发图时用于落桶保存的对象存储桶；留空表示不落桶。"
+        }
+      }
+    },
+    "enabled": {
+      "type": "boolean",
+      "title": "启用",
+      "description": "关闭后该渠道不再接收入站消息，也不再用于主动推送。"
+    },
+    "description": {
+      "type": "string",
+      "title": "说明",
+      "description": "给后台管理员看的补充备注。"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "wecom" } }, "required": ["kind"] },
+      "then": {
+        "properties": {
+          "config": { "required": ["token", "aes_key"] }
+        }
+      }
+    }
+  ]
+}

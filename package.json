@@ -1,0 +1,101 @@
+{
+  "name": "bailinghub",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Open-source ACC runtime and agent control plane for existing business systems.",
+  "license": "Apache-2.0",
+  "homepage": "https://www.bailinghub.com",
+  "exports": {
+    "./extension-api": {
+      "types": "./src/extension-api.ts",
+      "default": "./src/extension-api.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bailinghub/bailinghub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bailinghub/bailinghub/issues"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "ai-agent",
+    "agent-gateway",
+    "agent-tools",
+    "middleware",
+    "llm",
+    "openapi",
+    "mcp",
+    "self-hosted",
+    "tool-governance",
+    "audit-trail",
+    "human-in-the-loop",
+    "approval-workflow",
+    "ai-middleware",
+    "workflow",
+    "chatbot"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "executor": "tsx src/executor.ts",
+    "executor:watch": "tsx watch src/executor.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "db:init": "tsx scripts/init-db.ts",
+    "demo:seed": "tsx scripts/seed-demo.ts",
+    "admin:create": "tsx scripts/create-admin.ts",
+    "doctor": "tsx scripts/doctor.ts",
+    "selftest": "tsx scripts/selftest.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "build:info": "node scripts/write-build-info.mjs",
+    "demo:e2e": "tsx scripts/demo-e2e.ts",
+    "e2e:console": "node scripts/e2e-console.mjs",
+    "security:scan": "node scripts/security-scan.mjs",
+    "notices:generate": "node scripts/generate-third-party-notices.mjs",
+    "notices:check": "node scripts/generate-third-party-notices.mjs --check",
+    "assets:generate": "node scripts/generate-readme-assets.mjs",
+    "assets:check": "node scripts/generate-readme-assets.mjs --check",
+    "docs:check": "node scripts/check-doc-links.mjs",
+    "examples:check": "node scripts/validate-examples.mjs",
+    "audit:deps": "npm audit --audit-level=low && npm --prefix web-admin audit --audit-level=low",
+    "web-admin:check": "npm --prefix web-admin run build && npm --prefix web-admin audit --audit-level=low",
+    "oss:guard": "node scripts/oss-boundary-check.mjs",
+    "oss:export": "node scripts/export-oss.mjs",
+    "oss:verify": "node scripts/verify-oss-export.mjs",
+    "release:audit": "npm run security:scan && npm run oss:guard && node scripts/release-audit.mjs",
+    "github:verify": "node scripts/verify-github-repo.mjs",
+    "release:check": "npm run notices:check && npm run assets:check && npm run audit:deps && npm run typecheck && npm test && npm run web-admin:check && npm run docs:check && npm run examples:check && npm run sdk:test && npm run sdk:test7 && npm run sdk:test-node && npm run sdk:test-python && npm run sdk:test-runtime && npm run sdk:test-p1 && npm run release:audit && npm run oss:verify && npm run github:verify",
+    "images:build": "sh scripts/publish-images.sh",
+    "images:publish": "BAILING_PUSH_IMAGES=1 sh scripts/publish-images.sh",
+    "images:publish-mysql": "BAILING_PUSH_IMAGES=1 sh scripts/publish-mysql-image.sh",
+    "images:check": "sh scripts/check-image-tags.sh",
+    "sdk:test": "php sdk/php/examples/build-spec.php | tsx scripts/sdk-contract-test.ts",
+    "sdk:test7": "php sdk/php7/examples/build-spec.php | tsx scripts/sdk-contract-test.ts",
+    "sdk:test-node": "node sdk/node/examples/build-spec.mjs | tsx scripts/sdk-contract-test.ts",
+    "sdk:test-python": "python3 sdk/python/examples/build_spec.py | tsx scripts/sdk-contract-test.ts",
+    "sdk:test-runtime": "node scripts/sdk-runtime-test.mjs",
+    "sdk:test-p1": "node scripts/sdk-p1-check.mjs",
+    "sdk:pack": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php.tgz -s '|^php|bailing-connect-php|' -C sdk php",
+    "sdk:pack7": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php7.tgz -s '|^php7|bailing-connect-php7|' -C sdk php7"
+  },
+  "dependencies": {
+    "mammoth": "^1.12.0",
+    "mysql2": "^3.11.4",
+    "pdfjs-dist": "^5.7.284",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "playwright": "^1.61.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

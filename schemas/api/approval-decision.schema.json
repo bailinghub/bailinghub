@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/api/approval-decision.schema.json",
+  "title": "Bailing Approval Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["decision", "args_hash", "decided_by"],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "deny"]
+    },
+    "args_hash": {
+      "type": "string",
+      "minLength": 16,
+      "description": "Hash returned by the original approval intent. Approval only applies to that frozen argument snapshot."
+    },
+    "decided_by": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "comment": {
+      "type": "string",
+      "maxLength": 1000
+    }
+  }
+}

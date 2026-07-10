@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/client.schema.json",
+  "title": "Bailing Client Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["app_id", "name", "allowed_routes", "allowed_channels", "rate_limit_per_min", "enabled"],
+  "properties": {
+    "app_id": {
+      "$ref": "common.schema.json#/$defs/resourceName",
+      "title": "AppID",
+      "description": "接入方的稳定标识。业务侧使用后不建议改名；留空创建时可由中枢自动生成。"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "title": "名称",
+      "description": "后台展示的人类可读名称。"
+    },
+    "allowed_routes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "title": "可调路由",
+      "description": "该接入方允许触发的 route_key 白名单；生产环境建议只授权实际需要的路由。"
+    },
+    "allowed_channels": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true,
+      "title": "可推渠道白名单",
+      "description": "该接入方调用 /send 主动推消息时允许使用的渠道；留空表示禁止主动推任何渠道。"
+    },
+    "rate_limit_per_min": {
+      "type": "integer",
+      "minimum": 0,
+      "title": "限速",
+      "description": "该接入方每分钟最多调用次数；0 表示不限。/run 与 /send 共用同一限速桶。"
+    },
+    "budget": {
+      "$ref": "common.schema.json#/$defs/budgetPolicy",
+      "title": "成本预算闸",
+      "description": "按接入方维度限制模型成本或 token 用量，命中硬限后拒绝新任务。"
+    },
+    "enabled": {
+      "type": "boolean",
+      "title": "启用",
+      "description": "关闭后该接入方 token 不再允许调用。"
+    },
+    "description": {
+      "type": "string",
+      "title": "说明",
+      "description": "给后台管理员看的补充备注。"
+    }
+  }
+}

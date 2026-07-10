@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/tool-definition.schema.json",
+  "title": "Bailing ToolDefinition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "name",
+    "source",
+    "method",
+    "path",
+    "description",
+    "scope",
+    "risk",
+    "confirmRequired",
+    "rateLimitPerMin",
+    "requiresSubject",
+    "sensitive",
+    "readonly",
+    "idempotent",
+    "timeoutMs",
+    "confirmPrompt",
+    "context",
+    "extensions",
+    "inputSchema",
+    "paramIn"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bailing.tool-definition.v1" },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["openapi", "overlay", "sdk", "mcp", "manual"]
+    },
+    "method": {
+      "type": "string",
+      "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^/"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 191
+    },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "confirmRequired": { "type": "boolean" },
+    "rateLimitPerMin": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "rateLimit": { "$ref": "#/$defs/rateLimit" },
+    "requiresSubject": { "type": "boolean" },
+    "sensitive": { "type": "boolean" },
+    "readonly": { "type": "boolean" },
+    "idempotent": { "type": "boolean" },
+    "timeoutMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 600000
+    },
+    "confirmPrompt": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "confirmWhen": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/confirmCondition" }
+    },
+    "context": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "type": "string", "minLength": 1, "maxLength": 100 }
+    },
+    "outcome": { "$ref": "#/$defs/outcome" },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^x-(bailing|business)-"
+      },
+      "additionalProperties": true
+    },
+    "inputSchema": {
+      "type": "object",
+      "description": "JSON Schema object passed to LLM/tool callers.",
+      "required": ["type", "properties"],
+      "properties": {
+        "type": { "const": "object" },
+        "properties": { "type": "object" },
+        "required": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "paramIn": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["query", "body", "path", "header"]
+      }
+    }
+  },
+  "$defs": {
+    "confirmCondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["param", "op"],
+      "properties": {
+        "param": { "type": "string", "minLength": 1, "maxLength": 191 },
+        "op": {
+          "type": "string",
+          "enum": [">", ">=", "<", "<=", "==", "!=", "in", "contains", "exists"]
+        },
+        "value": true,
+        "label": { "type": "string", "minLength": 1, "maxLength": 120 }
+      }
+    },
+    "rateLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "window"],
+      "properties": {
+        "count": { "type": "integer", "minimum": 1 },
+        "window": { "type": "string", "enum": ["1s", "1m", "1h", "1d"] }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "sideEffect"],
+      "properties": {
+        "result": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "sideEffect": { "type": "string", "enum": ["none", "read", "write", "notify", "external"] }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "path", "code", "message"],
+      "properties": {
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning", "info"]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "suggestion": { "type": "string", "minLength": 1 }
+      }
+    },
+    "compileResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tools", "diagnostics"],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": { "$ref": "#" }
+        },
+        "diagnostics": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/diagnostic" }
+        }
+      }
+    }
+  }
+}

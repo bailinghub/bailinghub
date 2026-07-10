@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible defect in BailingHub.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please include enough detail for maintainers to reproduce the issue without access to your private systems.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reproducible setup, request, route, tool spec, or config snippet.
+      placeholder: |
+        1. Start with ...
+        2. Configure ...
+        3. Run ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Runtime and deployment details.
+      placeholder: |
+        - BailingHub version:
+        - Node.js version:
+        - Storage backend: mysql/jsonl
+        - Deployment: Docker/manual
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or trace
+      description: Paste relevant logs, trace events, or sanitized request/response samples. Remove tokens, keys, passwords, and personal data.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed secrets and personal data from this report.
+          required: true
+        - label: I searched existing issues and docs before opening this report.
+          required: true

@@ -1,0 +1,114 @@
+{
+  "readonly": {
+    "description": "通用只读档（出厂默认）：读/搜代码、看 git 历史、常用只读命令。禁止写文件与一切变更动作。场景措辞自定义=复制本档加 appendSystemPromptFile。",
+    "model": "sonnet",
+    "maxTurns": 24,
+    "timeoutMs": 360000,
+    "permissionMode": "default",
+    "allowedTools": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git blame:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)"
+    ],
+    "disallowedTools": [
+      "Edit",
+      "Write",
+      "NotebookEdit"
+    ]
+  },
+  "tool-agent": {
+    "description": "通用工具档：只读档 + 放行 curl。路由挂 tools 时，认领件附带的【业务工具】说明可经中枢统一代理调用业务接口（白名单/风险闸/限流/审计/签名全在中枢侧），本档只是让大脑发得出这个 HTTP 调用。",
+    "model": "sonnet",
+    "maxTurns": 24,
+    "timeoutMs": 360000,
+    "permissionMode": "default",
+    "allowedTools": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(curl:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)"
+    ],
+    "disallowedTools": [
+      "Edit",
+      "Write",
+      "NotebookEdit"
+    ]
+  },
+  "triage-readonly": {
+    "description": "【参考场景档】工单初查：只读调查并按 agents/triage.md 的 schema 输出结构化结论。是\"场景档怎么写\"的示例，可整档删除不影响内核。",
+    "model": "sonnet",
+    "maxTurns": 24,
+    "timeoutMs": 360000,
+    "permissionMode": "default",
+    "allowedTools": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git blame:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)"
+    ],
+    "disallowedTools": [
+      "Edit",
+      "Write",
+      "NotebookEdit"
+    ],
+    "appendSystemPromptFile": "agents/triage.md",
+    "structuredOutput": true
+  },
+  "code-review": {
+    "description": "【参考场景档】代码审查：只读审增量，按 agents/code-review.md 的 schema 输出结构化审查结论。可整档删除不影响内核。",
+    "model": "sonnet",
+    "maxTurns": 32,
+    "timeoutMs": 360000,
+    "permissionMode": "default",
+    "allowedTools": [
+      "Read",
+      "Grep",
+      "Glob",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git diff:*)",
+      "Bash(git status:*)",
+      "Bash(git blame:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)"
+    ],
+    "disallowedTools": [
+      "Edit",
+      "Write",
+      "NotebookEdit"
+    ],
+    "appendSystemPromptFile": "agents/code-review.md",
+    "structuredOutput": true
+  }
+}

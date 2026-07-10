@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/api/kb-doc-upsert.schema.json",
+  "title": "Bailing Knowledge Document Upsert",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "content"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "content": { "type": "string", "minLength": 1 },
+    "content_type": {
+      "type": "string",
+      "enum": ["text", "markdown"],
+      "default": "markdown"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

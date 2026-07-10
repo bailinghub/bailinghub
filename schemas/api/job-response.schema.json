@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/api/job-response.schema.json",
+  "title": "Bailing Job Response",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["id", "status"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "route": { "type": "string" },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "running", "done", "error", "cancelled"]
+    },
+    "result": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "summary": { "type": "string" },
+        "detail": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "error": { "type": ["string", "null"] },
+    "created_at": { "type": "string" },
+    "updated_at": { "type": "string" }
+  }
+}

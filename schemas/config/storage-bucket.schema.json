@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/config/storage-bucket.schema.json",
+  "title": "Bailing Storage Bucket Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "kind", "path_prefix", "enabled"],
+  "properties": {
+    "name": { "$ref": "common.schema.json#/$defs/resourceName" },
+    "kind": { "type": "string", "enum": ["local", "cos", "oss", "s3"] },
+    "region": { "type": "string" },
+    "bucket": { "type": "string", "minLength": 1 },
+    "endpoint": { "type": "string" },
+    "access_key": { "type": "string" },
+    "secret_key": { "type": "string" },
+    "public_base_url": { "type": "string", "minLength": 1 },
+    "path_prefix": { "type": "string", "minLength": 1 },
+    "enabled": { "type": "boolean" },
+    "description": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "cos" } }, "required": ["kind"] },
+      "then": { "required": ["region", "bucket", "public_base_url"] }
+    },
+    {
+      "if": { "properties": { "kind": { "enum": ["oss", "s3"] } }, "required": ["kind"] },
+      "then": { "required": ["bucket", "public_base_url"] }
+    }
+  ]
+}
