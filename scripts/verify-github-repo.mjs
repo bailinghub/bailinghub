@@ -43,10 +43,16 @@ const requiredFiles = [
   'README.md',
   'assets/bailinghub-lockup.svg',
   'assets/bailinghub-lockup-dark.svg',
+  'assets/bailinghub-lockup.png',
+  'assets/bailinghub-lockup-dark.png',
   'assets/architecture-overview.zh-CN.svg',
   'assets/architecture-overview.zh-CN-dark.svg',
   'assets/architecture-overview.en.svg',
   'assets/architecture-overview.en-dark.svg',
+  'assets/architecture-overview.zh-CN.png',
+  'assets/architecture-overview.zh-CN-dark.png',
+  'assets/architecture-overview.en.png',
+  'assets/architecture-overview.en-dark.png',
   'LICENSE',
   'NOTICE',
   'THIRD_PARTY_NOTICES.md',
@@ -74,8 +80,8 @@ const requiredFiles = [
 for (const file of requiredFiles) requireFile(file);
 
 assertIncludes('README.md', [
-  'assets/bailinghub-lockup.svg',
-  'assets/architecture-overview.zh-CN.svg',
+  'assets/bailinghub-lockup.png',
+  'assets/architecture-overview.zh-CN.png',
   'THIRD_PARTY_NOTICES.md',
   'https://trial.bailinghub.com/console/login',
   'issues/new?template=bug_report.yml',
