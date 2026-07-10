@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/bailinghub-lockup-dark.svg">
-    <img alt="百灵中枢 BailingHub" src="assets/bailinghub-lockup.svg" width="288">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/bailinghub-lockup-dark.png">
+    <img alt="百灵中枢 BailingHub" src="assets/bailinghub-lockup.png" width="288">
   </picture>
 </p>
 
@@ -45,8 +45,8 @@ npm run doctor
 项目边界和长期取舍见 [VISION.md](VISION.md)；整体架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-overview.zh-CN-dark.svg">
-  <img src="assets/architecture-overview.zh-CN.svg" width="100%" alt="百灵中枢从业务触发、路由与上下文装配、大脑调度、安全治理到结果送达的架构图">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-overview.zh-CN-dark.png">
+  <img src="assets/architecture-overview.zh-CN.png" width="100%" alt="百灵中枢从业务触发、路由与上下文装配、大脑调度、安全治理到结果送达的架构图">
 </picture>
 
 ## 这是什么、不是什么

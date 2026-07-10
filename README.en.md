@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/bailinghub-lockup-dark.svg">
-    <img alt="BailingHub" src="assets/bailinghub-lockup.svg" width="288">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/bailinghub-lockup-dark.png">
+    <img alt="BailingHub" src="assets/bailinghub-lockup.png" width="288">
   </picture>
 </p>
 
@@ -187,8 +187,8 @@ export default buildOpenApiSpec({
 ## Typical Architecture
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-overview.en-dark.svg">
-  <img src="assets/architecture-overview.en.svg" width="100%" alt="BailingHub architecture from business triggers through routing, context assembly, brain dispatch, governance, and result delivery">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-overview.en-dark.png">
+  <img src="assets/architecture-overview.en.png" width="100%" alt="BailingHub architecture from business triggers through routing, context assembly, brain dispatch, governance, and result delivery">
 </picture>
 
 ## Core Capabilities

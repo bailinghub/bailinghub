@@ -164,6 +164,12 @@ for (const file of [
   'assets/architecture-overview.zh-CN-dark.svg',
   'assets/architecture-overview.en.svg',
   'assets/architecture-overview.en-dark.svg',
+  'assets/bailinghub-lockup.png',
+  'assets/bailinghub-lockup-dark.png',
+  'assets/architecture-overview.zh-CN.png',
+  'assets/architecture-overview.zh-CN-dark.png',
+  'assets/architecture-overview.en.png',
+  'assets/architecture-overview.en-dark.png',
 ]) {
   if (!existsSync(join(exportDir, file))) throw new Error(`OSS export is missing ${file}.`);
 }
