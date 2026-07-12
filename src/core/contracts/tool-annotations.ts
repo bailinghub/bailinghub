@@ -18,6 +18,8 @@ export interface ToolAnnotations {
   sensitive: boolean;
   readonly: boolean | null;
   idempotent: boolean | null;
+  timeoutPresent: boolean;
+  timeoutRaw: unknown;
   timeoutMs: number;
   whenToUse: string;
   returns: string;
@@ -52,6 +54,8 @@ export function toolAnnotationsOf(op: Record<string, unknown>): ToolAnnotations 
     sensitive: audit?.['sensitive'] === true,
     readonly: execution?.['readonly'] === true ? true : null,
     idempotent: execution?.['idempotent'] === true ? true : null,
+    timeoutPresent: !!execution && Object.hasOwn(execution, 'timeout_ms'),
+    timeoutRaw: execution?.['timeout_ms'],
     timeoutMs: parseTimeout(execution?.['timeout_ms']),
     whenToUse: String(guidance?.['when_to_use'] ?? '').trim(),
     returns: String(guidance?.['returns'] ?? '').trim(),

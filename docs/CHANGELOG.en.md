@@ -38,5 +38,6 @@ Included:
 - official website docs and one-line installer;
 - OSS export guard, docs checks, example checks, and release audit scripts.
 - ACC operation timeouts are preserved from 1 to 600000 milliseconds and rejected when out of range; audit write failures emit redacted structured events with a process-local `/health` counter; model credential source conflicts are diagnosed while traces record only the non-secret `config` or `db` source.
+- OpenAPI compilation now fails closed for `cookie`, unknown, or missing parameter locations instead of silently mapping them to query. ACC `timeout_ms` remains integer-only; quoted numeric strings are rejected with an actionable diagnostic.
 
 Production deployments still need environment-specific domain, TLS, backups, monitoring, secret management, credential rotation, and approval workflow integration.

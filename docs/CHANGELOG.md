@@ -42,5 +42,6 @@
 - **开源仓库门面**：根目录提供标准 `LICENSE`、`NOTICE`、`SECURITY.md`、`CONTRIBUTING.md`；`package.json` 标注 Apache-2.0；`LICENSING.md` 收敛为当前许可证说明；示例配置和流水线文档不含本机绝对路径、真实域名或内部人员标识。
 - **配置巡检**：启动时自动检查 route、target、client、channel、chat entry、alert rule、tool provider、storage bucket、executor token、知识库等配置的结构和跨表引用；后台可通过 `GET /admin/api/config-diagnostics` 手动查看。
 - **契约与运行期收口**：ACC `execution.timeout_ms` 在 `1..600000` 毫秒范围内原值生效，超界声明在工具编译期明确拒绝；审计写失败统一产生脱敏结构化日志并在 `/health` 暴露进程级计数；模型凭证同名来源进入配置体检，模型请求 trace 仅记录 `config` / `db` 来源而不记录密钥。
+- **OpenAPI 编译 fail-closed**：`parameters[].in` 仅支持 `query`、`path`、`header`；`cookie`、未知或缺失位置会产生稳定 error diagnostic 并跳过整个 operation，避免静默改写请求语义。ACC `timeout_ms` 保持严格整数类型，字符串数字会明确报错并提示去掉引号。
 - **数据库结构**：首版结构包含 `043_rate_limits.sql`、`044_job_run_after.sql`、`045_job_claim_lease.sql`、`046_tool_authz_probe.sql`、`047_route_audience.sql`。
 - **验证方式**：`npm run typecheck`、`npm run test`、`npm run smoke`、`npm run sdk:test`、`npm run sdk:test7`、`npm run sdk:test-node`、`npm run sdk:test-python`、`npm run db:init`。
