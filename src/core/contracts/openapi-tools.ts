@@ -3,6 +3,7 @@ import { AGENT_CAPABILITY_KEY, deriveRisk, toolAnnotationsOf } from './tool-anno
 import { TOOL_DEFINITION_SCHEMA_VERSION, hasToolDefinitionErrors, validateToolDefinition, type ToolCompileResult, type ToolConfirmCondition, type ToolConfirmOp, type ToolDefinition, type ToolDiagnostic, type ToolParamLocation } from './tool-definition';
 
 const CONFIRM_OPS = new Set<ToolConfirmOp>(['>', '>=', '<', '<=', '==', '!=', 'in', 'contains', 'exists']);
+const SUPPORTED_PARAMETER_LOCATIONS = new Set<ToolParamLocation>(['query', 'path', 'header']);
 
 export type OpenApiSpecFormat = 'json' | 'yaml';
 export type OpenApiSpecParseResult =
@@ -57,19 +58,44 @@ export function compileOpenApiTools(specText: string): ToolCompileResult {
       if (op['deprecated'] === true) { diagnostics.push({ severity: 'error', path: loc, code: 'deprecated', message: '已标记 deprecated，不暴露（业务平滑下线中）', suggestion: '如仍需 AI 调用，请先取消 deprecated 或新增替代工具' }); continue; }
       const scope = ann.scope;
       if (!scope) { diagnostics.push({ severity: 'error', path: loc, code: 'missing_scope', message: '缺 x-agent-capability.scope', suggestion: '为 operation 添加 x-agent-capability.scope，例如 tenant.staff.read，并在路由 allow 中授权' }); continue; }
+      if (ann.timeoutPresent && typeof ann.timeoutRaw !== 'number') {
+        diagnostics.push({
+          severity: 'error',
+          path: loc,
+          code: 'invalid_timeout_type',
+          message: `x-agent-capability.execution.timeout_ms 必须是 JSON/YAML 整数，当前收到 ${describeValue(ann.timeoutRaw)}`,
+          suggestion: 'YAML 请写 timeout_ms: 5000（不要加引号）；不需要覆盖时请删除该字段',
+        });
+        continue;
+      }
 
       const props: Record<string, unknown> = {};
       const required: string[] = [];
       const paramIn: Record<string, ToolParamLocation> = {};
+      let unsupportedParameterLocation = false;
       for (const prm of (op.parameters ?? []) as any[]) {
         if (!prm?.name || !prm?.schema) continue;
-        const where = String(prm.in ?? 'query');
-        const pin: ToolParamLocation = where === 'path' || where === 'header' ? where : 'query';
+        const where = typeof prm.in === 'string' ? prm.in.trim() : '';
+        if (!SUPPORTED_PARAMETER_LOCATIONS.has(where as ToolParamLocation)) {
+          unsupportedParameterLocation = true;
+          diagnostics.push({
+            severity: 'error',
+            path: loc,
+            code: 'unsupported_param_location',
+            message: `参数 ${prm.name} 的 OpenAPI in 位置 ${where ? JSON.stringify(where) : '未声明'} 当前不受支持；为避免改变请求语义，该 operation 不暴露`,
+            suggestion: where === 'cookie'
+              ? '当前支持 query / path / header 和 application/json requestBody；身份与会话信息建议使用签名头和业务侧授权'
+              : '为该参数显式设置 in: query、in: path 或 in: header，或将业务参数放入 application/json requestBody',
+          });
+          continue;
+        }
+        const pin = where as ToolParamLocation;
         props[prm.name] = { ...prm.schema, description: prm.description ?? prm.schema.description };
         paramIn[prm.name] = pin;
         if (prm.required || pin === 'path') required.push(prm.name);
         if (!prm.description && !prm.schema.description) diagnostics.push({ severity: 'warning', path: loc, code: 'param_missing_description', message: `参数 ${prm.name} 缺少 description，AI 填参稳定性会下降`, suggestion: '给参数补充 description、enum、format 或 default，帮助 AI 准确填参' });
       }
+      if (unsupportedParameterLocation) continue;
       const bodySchema = op.requestBody?.content?.['application/json']?.schema;
       if (bodySchema?.properties) {
         for (const [k, v] of Object.entries<any>(bodySchema.properties)) {
@@ -127,6 +153,13 @@ export function compileOpenApiTools(specText: string): ToolCompileResult {
     }
   }
   return { tools, diagnostics };
+}
+
+function describeValue(value: unknown): string {
+  const type = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+  let rendered = '';
+  try { rendered = JSON.stringify(value); } catch { rendered = String(value); }
+  return rendered === undefined ? type : `${type} ${rendered}`;
 }
 
 function parseConfirmWhen(raw: unknown, path: string, diagnostics: ToolDiagnostic[]): ToolConfirmCondition[] | null {
