@@ -131,6 +131,11 @@ test('public route: widget.js GET 返回公开组件脚本', async () => {
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['content-type'], 'text/javascript; charset=utf-8');
   assert.ok(res.body.length > 0);
+  const body = Buffer.from(res.body).toString('utf8');
+  assert.match(body, /cfg\.enabled === false/);
+  assert.match(body, /powered_by_visible/);
+  assert.match(body, /catch \{ host\.remove\(\); return; \}/);
+  assert.match(body, /host\.style\.visibility = 'visible'/);
 });
 
 test('public route: /uploads/* 公开读取本地媒体且限制在 data/uploads 内', async () => {

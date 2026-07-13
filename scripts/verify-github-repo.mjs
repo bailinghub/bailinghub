@@ -67,6 +67,7 @@ const requiredFiles = [
   '.npmignore',
   '.github/workflows/ci.yml',
   '.github/workflows/images.yml',
+  '.github/workflows/gitee-mirror.yml',
   '.github/ISSUE_TEMPLATE/bug_report.yml',
   '.github/ISSUE_TEMPLATE/feature_request.yml',
   '.github/pull_request_template.md',
@@ -75,6 +76,7 @@ const requiredFiles = [
   'scripts/publish-mysql-image.sh',
   'docs/DEMO.md',
   'docs/RELEASE_NOTES_v0.1.0.md',
+  'docs/RELEASE_NOTES_v0.1.1.md',
   'docs/CHANGELOG.md',
 ];
 for (const file of requiredFiles) requireFile(file);

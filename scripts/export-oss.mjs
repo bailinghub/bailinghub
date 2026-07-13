@@ -13,6 +13,7 @@ const tarNoMetadataArgs = ['--no-xattrs'];
 const extraRepoFiles = [
   '.github/workflows/ci.yml',
   '.github/workflows/images.yml',
+  '.github/workflows/gitee-mirror.yml',
   '.github/ISSUE_TEMPLATE/bug_report.yml',
   '.github/ISSUE_TEMPLATE/feature_request.yml',
   '.github/pull_request_template.md',

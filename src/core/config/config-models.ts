@@ -228,6 +228,8 @@ function chatAppearance(v: unknown): ChatEntry['appearance'] | undefined {
   const launcherIcon = safeHttpUrl(apIn.launcher_icon); if (launcherIcon) appearance.launcher_icon = launcherIcon;
   if (apIn.resizable === true) appearance.resizable = true;
   if (apIn.ai_notice === false) appearance.ai_notice = false;
+  if (apIn.powered_by_visible === false) appearance.powered_by_visible = false;
+  const poweredByText = optionalStr(apIn.powered_by_text); if (poweredByText) appearance.powered_by_text = poweredByText.slice(0, 80);
   return Object.keys(appearance).length ? appearance : undefined;
 }
 

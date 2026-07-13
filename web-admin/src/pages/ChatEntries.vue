@@ -47,10 +47,12 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="运行保护" width="160">
+      <el-table-column label="运行保护" width="126">
         <template #default="{ row }">
           <div class="protection-stack">
-            <el-tag size="small" effect="plain" :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag>
+            <el-tooltip :content="row.enabled ? '聊天组件展示中' : '聊天组件已暂停'" placement="top">
+              <el-switch :model-value="!!row.enabled" :loading="entryToggleKey === row.entry_key" @change="toggleEntry(row, Boolean($event))" />
+            </el-tooltip>
             <span class="muted">限速 {{ row.rate_limit_per_min }}/分/IP</span>
           </div>
         </template>
@@ -84,6 +86,14 @@
     <el-form label-position="top">
       <el-tabs v-model="chatFormTab" class="console-tabs">
         <el-tab-pane label="基础接入" name="basic">
+      <el-form-item>
+        <template #label>聊天组件 <HelpTip title="聊天组件启停">
+          <p>关闭后，已经嵌入业务页面的脚本仍可保留，但悬浮按钮和聊天窗口都不会展示，新消息、历史、上传和评价接口也会停止服务。</p>
+          <p>重新开启后，业务页面无需改代码，访客下次加载页面即可恢复。</p>
+        </HelpTip></template>
+        <el-switch v-model="form.enabled" />
+        <span class="state-copy">{{ form.enabled ? '展示并接收新会话' : '暂停展示与新会话' }}</span>
+      </el-form-item>
       <el-form-item label="名称"><el-input v-model="form.name" placeholder="如 在线助手" /></el-form-item>
       <el-form-item>
         <template #label>绑定路由 <span class="field-required">必填</span> <HelpTip title="绑定路由">
@@ -154,6 +164,17 @@
         </HelpTip></template>
         <el-switch v-model="form.ai_notice" />
       </el-form-item>
+      <el-form-item>
+        <template #label>品牌标识 <HelpTip title="组件底部品牌标识">
+          <p>控制聊天窗口底部是否展示品牌文案。关闭后整行收起，不会留下空白区域。</p>
+          <p>开源版允许部署方使用自己的品牌；留空文案时使用当前中枢的默认品牌名称。</p>
+        </HelpTip></template>
+        <el-switch v-model="form.powered_by_visible" />
+        <span class="state-copy">{{ form.powered_by_visible ? '显示' : '隐藏' }}</span>
+      </el-form-item>
+      <el-form-item v-if="form.powered_by_visible" label="品牌文案">
+        <el-input v-model="form.powered_by_text" maxlength="80" show-word-limit placeholder="留空使用当前中枢的默认品牌文案" />
+      </el-form-item>
       <el-form-item label="气泡位置">
         <div class="position-config">
           <div class="row">
@@ -181,7 +202,6 @@
         </el-tab-pane>
         <el-tab-pane label="发布" name="publish">
       <el-form-item label="说明（可选）"><el-input v-model="form.description" /></el-form-item>
-      <el-form-item v-if="editing" label="启用"><el-switch v-model="form.enabled" /></el-form-item>
         </el-tab-pane>
       </el-tabs>
     </el-form>
@@ -379,8 +399,9 @@ const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
 const chatFormTab = ref<'basic' | 'appearance' | 'publish'>('basic');
-const APPEARANCE_DEFAULTS = { title_align: 'center', width: 400, height: 600, position: 'right', offset_x: 24, offset_y: 24, avatar: '', launcher_icon: '', resizable: false, ai_notice: true };
+const APPEARANCE_DEFAULTS = { title_align: 'center', width: 400, height: 600, position: 'right', offset_x: 24, offset_y: 24, avatar: '', launcher_icon: '', resizable: false, ai_notice: true, powered_by_visible: true, powered_by_text: '' };
 const form = reactive({ entry_key: '', name: '', route_key: '', origins_text: '', ticket_client: '', bucket: '', title: '', greeting: '', color: '#3fb950', ...APPEARANCE_DEFAULTS, rate_limit_per_min: 20, description: '', enabled: true });
+const entryToggleKey = ref('');
 
 function routeOf(routeKey?: string): any | undefined {
   return routes.value.find((r) => r.route_key === routeKey);
@@ -526,6 +547,7 @@ function openEdit(row: any): void {
     offset_x: Number.isFinite(Number(ap.offset_x)) ? Number(ap.offset_x) : 24,
     offset_y: Number.isFinite(Number(ap.offset_y)) ? Number(ap.offset_y) : 24,
     avatar: ap.avatar || '', launcher_icon: ap.launcher_icon || '', resizable: !!ap.resizable, ai_notice: ap.ai_notice !== false,
+    powered_by_visible: ap.powered_by_visible !== false, powered_by_text: ap.powered_by_text || '',
     rate_limit_per_min: row.rate_limit_per_min, description: row.description || '', enabled: !!row.enabled,
   });
   open.value = true;
@@ -577,6 +599,8 @@ async function save(): Promise<void> {
         ...(form.launcher_icon.trim() ? { launcher_icon: form.launcher_icon.trim() } : {}),
         ...(form.resizable ? { resizable: true } : {}),
         ...(form.ai_notice === false ? { ai_notice: false } : {}),
+        ...(form.powered_by_visible === false ? { powered_by_visible: false } : {}),
+        ...(form.powered_by_text.trim() ? { powered_by_text: form.powered_by_text.trim() } : {}),
       },
       description: form.description.trim() || undefined, enabled: form.enabled,
     };
@@ -593,6 +617,37 @@ async function save(): Promise<void> {
 }
 function openEmbed(row: any): void { embedRow.value = row; embedTab.value = 'script'; ticketTab.value = 'node'; embedOpen.value = true; }
 function openDemo(row: any): void { window.open(`${HOST}/widget/demo/${row.entry_key}`, '_blank'); }
+function entryPayload(row: any, enabled: boolean): Record<string, unknown> {
+  return {
+    entry_key: row.entry_key,
+    name: row.name,
+    route_key: row.route_key,
+    enabled,
+    allowed_origins: Array.isArray(row.allowed_origins) ? row.allowed_origins : [],
+    rate_limit_per_min: row.rate_limit_per_min,
+    ticket_client: row.ticket_client || undefined,
+    bucket: row.bucket || undefined,
+    title: row.title || undefined,
+    greeting: row.greeting || undefined,
+    color: row.color || undefined,
+    appearance: row.appearance || undefined,
+    description: row.description || undefined,
+  };
+}
+async function toggleEntry(row: any, enabled: boolean): Promise<void> {
+  const previous = !!row.enabled;
+  row.enabled = enabled;
+  entryToggleKey.value = row.entry_key;
+  try {
+    await api('/admin/api/chat-entries', { method: 'POST', body: JSON.stringify(entryPayload(row, enabled)) });
+    ElMessage.success(enabled ? '聊天组件已恢复展示' : '聊天组件已暂停并隐藏');
+  } catch (e) {
+    row.enabled = previous;
+    ElMessage.error((e as Error).message);
+  } finally {
+    entryToggleKey.value = '';
+  }
+}
 async function handleEntryCommand(command: string, row: any): Promise<void> {
   if (command === 'page-context') { await openPageCtx(row); return; }
   if (command === 'ratings') { await openRatings(row); }
@@ -619,6 +674,14 @@ onMounted(load);
 .offset-row {
   padding-top: 2px;
 }
+.state-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .mono { font-family: var(--bz-mono); font-size: 12px; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -628,6 +691,9 @@ onMounted(load);
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+.protection-stack {
+  min-width: 86px;
 }
 .entry-main b {
   min-width: 0;

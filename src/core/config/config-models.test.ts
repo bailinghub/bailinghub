@@ -186,6 +186,8 @@ test('prepareChatEntryConfig: 生成入口、校验引用并收紧外观', async
       launcher_icon: 'javascript:bad',
       resizable: true,
       ai_notice: false,
+      powered_by_visible: false,
+      powered_by_text: '  由示例业务驱动  ',
     },
   }, {
     routeExists: async (key) => key === 'chat.main',
@@ -210,6 +212,8 @@ test('prepareChatEntryConfig: 生成入口、校验引用并收紧外观', async
     avatar: 'https://cdn.example.com/a.png',
     resizable: true,
     ai_notice: false,
+    powered_by_visible: false,
+    powered_by_text: '由示例业务驱动',
   });
 
   const missingRoute = await prepareChatEntryConfig({ name: 'x', route_key: 'missing' }, {

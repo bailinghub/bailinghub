@@ -119,7 +119,7 @@ POST /admin/api/routes/auto-preview
 | `POST /chat/:entry_key` | 体 `{message, visitor_id?, ticket?, thread_id?}`。`thread_id`（字母数字_-，≤32 字符）：同一身份下的平行会话切分键——开新会话=换新值，延续已有会话=复用，不带=单线程续聊；会话与对话总账同键切分，且写入 metadata.thread_id 供任务详情对账。返回 `{done:false, job_id, visitor_id}` 后，组件通过 SSE 结果流接收状态和最终回答 |
 | `GET /chat/:entry_key/events/:job_id` | **SSE 结果流**：只能订阅本入口发起的任务，事件包括 `open/status/ping/done/failed/timeout`；`done` 事件携带 `{done:true, reply, job_id, visitor_id, references?, attachments?}` |
 | `GET /chat/:entry_key/thread?visitor_id=&thread_id=&ticket=` | **拉服务端会话总账**：组件重开、或异步迟到结果（如审批批准后重跑的回复落在另一条任务里）回灌用——按与提问一致的身份重建线索、只读返回正序消息。身份纪律同 `POST /chat`（带票按 uid、无票按 visitor，票坏=401） |
-| `GET /chat/:entry_key/config` | 组件配置：标题/开场白/主色/品牌，**外观**（窗口尺寸/标题对齐/气泡位置与偏移/头像/自定义气泡图标）、`upload`（关联了对象存储桶才为 true，组件据此露出「📎 添加图片」）。控制台改完即生效 |
+| `GET /chat/:entry_key/config` | 组件状态与配置：停用入口返回 `{enabled:false}`，组件静默不挂载；启用时返回标题/开场白/主色/品牌，**外观**（窗口尺寸/标题对齐/气泡位置与偏移/头像/自定义气泡图标/底部品牌标识）、`upload`。控制台改完后，业务页面无需改嵌入代码 |
 | `POST /chat/:entry_key/rate/:job_id` | **评价回答**：体 `{rating:"up"\|"down"\|"note", visitor_id, comment?}`；`note` 表示只提交文字反馈，此时 `comment` 必填。只能评自己问出来的那条（visitor_id 须与提问时一致）；一答一评，重评覆盖。运营在控制台「聊天入口 → 评价」看汇总 |
 
 **引用来源**：路由挂了知识库时，回答附 `references: [{seq, title, score, snippet}]`（本次检索命中），正文中模型按 `[n]` 标注实际引用的资料编号——消费方可据此展示"答案出处"。完整快照（含 doc_id）在 job 的 `dispatch.kb_refs`，`/run` 触发的任务同样携带。
@@ -144,6 +144,7 @@ ticket  = "v1." + payload + "." + HMAC_SHA256_hex(接入方token, payload)
 这两项由组件自动上报 + 中枢服务端处理，**业务侧零代码**，只在控制台配置：
 
 - **页面上下文（page context）**：组件每条消息自动带上访客当前页面（`location` 的 path+query+hash，对 token/手机号等敏感键「留键抹值」脱敏 + `document.title`）。中枢按控制台「聊天入口 → 页面登记」的登记表（URL 模式 / 显式 `page_key` → 页面名+说明）**寻址**出用户所在页面，注入【当前页面】线索帮 AI 定位问题（如在分销页提问更可能是问分销）。命中页面落 `metadata.page_context`，控制台任务详情「发起页面」可见。**寻址（URL→哪个页面）走精确/模式匹配的登记表，不丢给向量检索**；页面→该看哪些文档才交给知识库（路由开「页面感知检索」时把页面主题前置进 KB 检索 query 偏置本页文档，全局仍兜底）。安全：页面上下文是**用户侧可伪造线索**，只作理解/检索提示，**绝不用于鉴权或工具放行**。
+- **运营启停与品牌**：控制台可直接暂停某个聊天入口。已嵌入的 `script` 无需删除，组件在公开配置返回停用状态后不会展示悬浮按钮，同时聊天、历史、上传和评价端点继续在服务端拒绝访问；恢复入口后，下次加载页面自动重新展示。外观页可隐藏底部品牌标识，或把默认“由百灵中枢驱动”替换为部署方自己的文案。
 - **对话记忆层（rolling summary）**：路由级可配（控制台「触发路由 → 对话记忆」，**默认关、行为不变**）。开启后超过水位线的早期对话被**异步增量压缩**成结构化摘要（关键事实/已定决策/待办/用户偏好），后续派发把「摘要 + 最近若干轮」一起注入，长会话不爆上下文。总账（`bz_messages`）始终是真值，摘要只是缓存视图。
 
 ## 2. 查询：`GET /jobs/:job_id`
