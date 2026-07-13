@@ -194,6 +194,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/*.en.md` | English companion docs for public open-source usage, architecture, tools, SDK, and compatibility |
 | `docs/CHANNELS.md` | 入站渠道（企微等）接入说明 |
 | `docs/CHANGELOG.md` | 发布记录：公开版本发布后，每次对外可见变更都在这里说明 |
+| `docs/RELEASE_NOTES_v0.1.1.md` | `v0.1.1` 聊天组件运营控制与接入边界修复说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |

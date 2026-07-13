@@ -37,7 +37,9 @@
         "avatar": { "type": "string", "pattern": "^https?://.+" },
         "launcher_icon": { "type": "string", "pattern": "^https?://.+" },
         "resizable": { "type": "boolean" },
-        "ai_notice": { "type": "boolean" }
+        "ai_notice": { "type": "boolean" },
+        "powered_by_visible": { "type": "boolean" },
+        "powered_by_text": { "type": "string", "maxLength": 80 }
       }
     },
     "description": { "type": "string" }

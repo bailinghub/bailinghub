@@ -75,8 +75,9 @@
   if (!Array.isArray(history)) history = [];
   let pending = false;
   let pendingAtt = null; // 待发送的媒体附件 {type,url,name,uploading?,error?}（单个，再选/录会替换）
-  let cfg = { title: '在线咨询', greeting: '', color: '#7a5b3a', brand: '',
-    width: 400, height: 600, title_align: 'center', position: 'right', offset_x: 24, offset_y: 24, avatar: '', launcher_icon: '', resizable: false, ai_notice: true };
+  let cfg = { enabled: true, title: '在线咨询', greeting: '', color: '#7a5b3a', brand: '',
+    width: 400, height: 600, title_align: 'center', position: 'right', offset_x: 24, offset_y: 24, avatar: '', launcher_icon: '', resizable: false, ai_notice: true,
+    powered_by_visible: true, powered_by_text: '' };
 
   function saveHistory() {
     try { localStorage.setItem(LS_HISTORY, JSON.stringify(history.slice(-50))); } catch { /* 容量/隐私模式 */ }
@@ -91,7 +92,7 @@
 
   // ---- DOM（Shadow DOM 隔离，不污染宿主页面）----
   const host = document.createElement('div');
-  host.style.cssText = 'position:fixed;z-index:2147483000;bottom:0;right:0;width:0;height:0;';
+  host.style.cssText = 'position:fixed;z-index:2147483000;bottom:0;right:0;width:0;height:0;visibility:hidden;';
   document.body.appendChild(host);
   const root = host.attachShadow({ mode: 'open' });
 
@@ -179,6 +180,7 @@
       font-size: 13px; cursor: pointer; flex-shrink: 0; }
     .foot button:disabled { opacity: .45; cursor: default; }
     .brand { text-align: center; font-size: 11px; color: #b8b0a4; padding: 4px 0 6px; background: #fff; }
+    .brand:empty { display: none; }
     .refs { align-self: flex-start; max-width: 82%; font-size: 11px; color: #8a8378; line-height: 1.6;
       margin-top: -4px; padding: 0 4px; }
     .refs b { color: #6f685c; font-weight: 600; }
@@ -698,7 +700,11 @@
       throw err;
     }
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.reply || j.error || ('HTTP ' + r.status));
+    if (!r.ok) {
+      const err = new Error(j.reply || j.error || ('HTTP ' + r.status));
+      err.status = r.status;
+      throw err;
+    }
     return j;
   }
 
@@ -1098,14 +1104,15 @@
   }
   if (voiceBtn) voiceBtn.addEventListener('click', () => { if (!pending && !voiceBtn.disabled) void toggleRecord(); });
 
-  // ---- 启动：拉配置（标题/开场白/主色），失败用兜底值照常可用 ----
+  // ---- 启动：先拉入口状态与外观；状态未知时 fail-closed，避免展示一个无法工作的入口 ----
   (async () => {
     try {
       const c = await api(`/chat/${ENTRY}/config`, { method: 'GET' });
       cfg = { ...cfg, ...c };
-    } catch { /* 配置拉不到不阻塞（入口被删时首条消息会报错提示） */ }
+    } catch { host.remove(); return; }
+    if (cfg.enabled === false) { host.remove(); return; }
     titleEl.textContent = cfg.title || '在线咨询';
-    brandEl.textContent = cfg.brand ? `由 ${cfg.brand} 驱动` : '';
+    brandEl.textContent = cfg.powered_by_visible === false ? '' : (cfg.powered_by_text || (cfg.brand ? `由 ${cfg.brand} 驱动` : ''));
     setAccent(cfg.color || '#7a5b3a');
     applyAppearance(); // 尺寸/位置偏移/标题对齐/头像/自定义气泡图标
     // 访客上次拖到的位置优先于配置初始位（夹回当前视口；admin 改了初始位则首次新访客仍用配置）
@@ -1115,6 +1122,7 @@
     if (voiceBtn) voiceBtn.style.display = cfg.upload && canRecordAudio() ? '' : 'none';
     renderHistory();
     void syncServerHistory();   // 本地先即时上屏，再用服务端总账补齐迟到（审批后等）的回复
+    host.style.visibility = 'visible';
     if (AUTO_OPEN) { panel.classList.add('open'); inputEl.focus(); }
   })();
 })();

@@ -282,6 +282,8 @@ export interface ChatAppearance {
   launcher_icon?: string;     // 自定义气泡图标 URL（空=用内置对话气泡图标）
   resizable?: boolean;        // 允许访客拖面板边框改宽高（默认 false；桌面端生效，手机端全屏忽略；尺寸按访客本地持久化，夹到 width/height 同上下限）
   ai_notice?: boolean;        // AI 内容提示（默认 true）：每条 AI 回复下方展示提示，复制时附带提示；关闭则两处都不加
+  powered_by_visible?: boolean; // 底部品牌标识（默认 true）；关闭后不保留空白占位
+  powered_by_text?: string;   // 品牌文案（空=由部署配置生成默认“由 <brand> 驱动”）
 }
 
 /** 媒体存储登记：聊天上传的图片/语音/附件落盘或落桶取永久 URL。local 开箱即用；业务桶=业务 CDN、加商品零转存。secret_key 不回显。 */

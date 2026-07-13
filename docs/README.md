@@ -50,6 +50,8 @@
 |---|---|
 | [ECOSYSTEM.md](ECOSYSTEM.md) | 社区发行版、独立实现、生态组件和未来官方展示的原则。 |
 | [ECOSYSTEM.en.md](ECOSYSTEM.en.md) | English policy for derivatives, independent implementations, and ecosystem listings. |
+| [RELEASE_NOTES_v0.1.1.md](RELEASE_NOTES_v0.1.1.md) | `v0.1.1` 聊天组件运营控制与接入边界修复说明。 |
+| [RELEASE_NOTES_v0.1.1.en.md](RELEASE_NOTES_v0.1.1.en.md) | English `v0.1.1` release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

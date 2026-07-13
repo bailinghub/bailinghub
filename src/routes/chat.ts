@@ -389,13 +389,15 @@ export async function handleChatConfigFor(deps: ChatApiDeps, req: IncomingMessag
   const { config: cfgStore } = await chatRuntime(deps, `chat_config:${entryKey}`);
   if (!cfgStore) { send(res, 400, { error: '聊天入口需要 mysql 后端' }); return; }
   const entry = await cfgStore.chatEntries.get(entryKey);
-  if (!entry || !entry.enabled) { send(res, 404, { error: '聊天入口不存在或已停用' }); return; }
+  if (!entry) { send(res, 404, { error: '聊天入口不存在' }); return; }
   if (!chatOriginAllowed(entry, req)) { send(res, 403, { error: '该站点未被允许嵌入此聊天入口' }); return; }
+  if (!entry.enabled) { send(res, 200, { enabled: false }); return; }
   // 附件上传开关：默认使用内置本地媒体存储；配置外部对象存储只是生产增强，不再是功能硬前置。
   const upload = true;
   // 外观：服务端套默认值后扁平下发，组件直接用（缺省也保留组件内置兜底）
   const ap = entry.appearance ?? {};
   send(res, 200, {
+    enabled: true,
     title: entry.title || entry.name, greeting: entry.greeting ?? '', color: entry.color || '#7a5b3a', brand: deps.cfg.brand.name, upload,
     width: ap.width ?? 400, height: ap.height ?? 600,
     title_align: ap.title_align === 'left' ? 'left' : 'center',
@@ -404,6 +406,8 @@ export async function handleChatConfigFor(deps: ChatApiDeps, req: IncomingMessag
     avatar: ap.avatar ?? '', launcher_icon: ap.launcher_icon ?? '',
     resizable: ap.resizable === true,
     ai_notice: ap.ai_notice !== false,
+    powered_by_visible: ap.powered_by_visible !== false,
+    powered_by_text: ap.powered_by_text || `由 ${deps.cfg.brand.name} 驱动`,
   });
 }
 
