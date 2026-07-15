@@ -14,8 +14,8 @@ https://github.com/agent-capability/agent-capability-contract
 
 ACC is an open specification for Agent-to-Business capability declaration.
 
-ACC was initially proposed by the BailingHub project and is maintained as
-an implementation-neutral open contract.
+BailingHub contributed early implementation experience to the development of
+ACC v1. ACC is maintained as an implementation-neutral open contract.
 
 Truthful compatibility statements such as "implements ACC v1" are allowed.
 
