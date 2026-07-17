@@ -747,13 +747,14 @@
         <section class="snippet-card">
           <div class="snippet-head">
             <div>
-              <b>给 Agent 的执行器接入说明</b>
-              <p>目标是让 agent 自己挂成「{{ codeRoute?.target }}」执行器，并循环认领任务。</p>
+              <b>给 Agent 的执行器接入引导</b>
+              <p>这里只复制本次连接参数；完整流程由版本化 Skill 承载，支持原生 Skill 或普通 Markdown 阅读。</p>
             </div>
-            <el-button type="primary" @click="copyText(execCode)">复制说明</el-button>
+            <el-button type="primary" @click="copyText(execCode)">复制引导</el-button>
           </div>
           <pre class="snippet-code tall">{{ execCode }}</pre>
           <div class="snippet-notes">
+            <span>这段引导不包含令牌；Agent 应让你在本机安全输入，不能要求把令牌粘贴进对话。</span>
             <span>执行器 token 请在「执行器」页签发，按 target 授权、可吊销、可审计。</span>
             <span>出站长轮询即可工作，内网机器不需要公网 IP，也不需要开放端口。</span>
           </div>
@@ -1472,67 +1473,28 @@ curl -H 'Authorization: Bearer ${c.token}' '${base}/jobs/<job_id>'
 \`\`\`
 `;
 });
-// 承接方向：一段「发给智能体即自助接入」的执行器技能文档（agent 读完自己挂成执行器、循环拉活）
+// 承接方向：后台只交付本次连接参数；稳定流程由公开、可版本化的 Skill 承载。
 const execCode = computed(() => {
   const r = codeRoute.value;
   if (!r) return '';
   const base = location.origin;
-  return `# 技能：作为「执行器」接入百灵中枢，认领并处理「${r.target}」任务
-#
-# 把以下整段发给你的 agent。它读完照做，就能把本机挂成一个
-# 常驻执行器：出站长轮询从中枢认领派给「${r.target}」的任务，用自身能力处理，再回报结果。
-# 全程只有 本机 → 中枢 的出站 HTTP，无需公网 IP、不用开端口、不用 WebSocket。
-#
-# ── 给智能体的指令（照做即可）─────────────────────────────────
-# 你的任务：把本机接入百灵中枢，作为「${r.target}」的执行器常驻干活。
-#
-# 第 0 步（必做，先问用户，别自己猜这两个值）：
-#   a) 执行器令牌 token：请用户到中枢控制台「执行器」页点「签发令牌」，把生成的令牌发给你（只显示一次）。
-#      —— 没拿到就跟用户要，别乱填。
-#   b) 执行器名字 executor_id：问用户想叫什么（如 worker-dev-1 / agent-prod-1）。这是本机在中枢的【唯一身份】。
-#      一旦挂上去就尽量别再改；改名会注册成另一个新执行器，原名字的心跳记录可在控制台注销。
-#
-# 第 1 步：先分清【谁来处理任务】——这决定你走 A 还是 B，别一上来就纠结命令。
-#   「执行器」= 邮差(认领任务/回报结果，固定动作) + 大脑(读懂任务、给出答案)。中枢只把任务正文(job.input)交给你，
-#   它不替你决定大脑是谁。所以问自己一句：这台机器上到底谁动脑处理任务？
-#     · 就是你自己（正在读这段的 agent 本身）→ 走【方式 A】，最自然，没有什么“命令”要填。
-#     · 是另一个现成的命令行工具/脚本（某个 CLI、脚本或服务封装）→ 走【方式 B】，用 executor.mjs 当外壳去调它。
-#
-# ════ 方式 A：你自己就是大脑，直接说协议 ════
-# 不用下载 executor.mjs、不用任何 --cmd。你（用你能力内的方式：后台任务 / 定时 / 一段小循环脚本）跑这个循环：
-#   1) 认领: POST ${base}/executor/claim
-#           Header: Authorization: Bearer <第 0 步的执行器令牌>
-#           Body: {"executor_id":"<第 0 步定好的名字>","targets":["${r.target}"],"wait_ms":12000,"capabilities":{"runtime":"<你的运行时名称>"}}
-#           → 200 {"job": {job_id, input, profile, project_path, session, ...}}  有活；  {"job": null}  此刻没活，再轮询。
-#   2) 处理: job.input 就是要你处理的内容。【用你自己的智能去完成它】——这一步没有外部命令，就是你动脑。
-#   3) 回报: POST ${base}/executor/result
-#           Body: {"job_id":"...","ok":true,"output":{"text":"你的答案"}}     失败: {"job_id":"...","ok":false,"error":"原因"}
-#   4) 回到第 1 步，不停循环。崩溃/断网没来得及回报的任务，中枢会自动重排，不丢。
-#   （每轮 claim 带上 executor_id + capabilities，就等于上报心跳+能力，控制台「执行器」页能看到你在线。）
-#
-# ════ 方式 B：用通用执行器 executor.mjs 当外壳，--cmd 指向现成命令 ════
-# （你自己不直接处理、而是转交给某个命令行工具/脚本时才用这条。）
-# 1) 下载（单文件 · 零依赖 · 需 Node ≥ 18）：
-curl -fsSL ${base}/connect/executor.mjs -o bailing-executor.mjs
-# 2) 后台常驻启动（填入第 0 步的令牌和名字）：
-nohup node bailing-executor.mjs \\
-  --hub ${base} \\
-  --token <第 0 步的执行器令牌> \\
-  --targets ${r.target} \\
-  --executor-id <第 0 步定好的名字，定了就别改> \\
-  --runtime '<你的运行时名称>' \\
-  --cmd '<真正处理任务的命令，见下>' \\
-  > bailing-executor.log 2>&1 &
-#
-#   --cmd = executor.mjs 每收到一个任务就执行一次的命令：任务正文从 stdin 进、结果写 stdout、退出码非 0 = 失败。
-#   它就是“大脑”：任意能读 stdin、把结果写 stdout 的命令或脚本都可以。
-#   ⚠️ --cmd 'cat' 只是「回声自测」：把任务原样退回，仅用来验证 认领→回报 链路通。这期间用户真发消息会被【原样复读】（不是真回答）；
-#      验证通过后务必换成上面真正的大脑命令，否则聊天永远只会复读、cost 恒为 0。
-#   executor.mjs 替你跑邮差循环：长轮询认领 → 跑 --cmd（任务进 stdin）→ stdout 回报 → 再认领。每个任务还带环境变量供 --cmd 取用：
-#   BAILING_JOB_ID / BAILING_PROFILE / BAILING_SESSION_ID / BAILING_PROJECT_PATH / BAILING_METADATA（挂了业务工具还有 BAILING_TOOLS*）。
-# 3) 长期常驻：上面的 nohup，或交给 systemd / launchd / pm2，断了能自动拉起。
-#
-# 验证上线（两种方式通用）：到控制台「执行器」页能看到你的名字在线、接的 target 是「${r.target}」即成功；发条消息看是否回真实答案（不是复读）。`;
+  return `# 任务：把本机安全接入百灵中枢执行器
+
+请先读取并严格执行这份版本化接入 Skill：
+${base}/connect/skills/connect-bailinghub-executor/SKILL.md
+
+本次连接参数：
+- HUB_URL: ${base}
+- TARGET: ${r.target}
+- ROUTE_CONTEXT: ${r.route_key}（仅供理解场景，执行器按 TARGET 认领）
+- EXECUTOR_ID: 先询问用户并取得确认，不得自行猜测
+
+执行要求：
+1. 如果运行时原生支持 Skill，可将上述文档及其 references 作为 Skill 使用；否则把它当作机器可读操作手册执行，不要因缺少原生 Skill 功能而改写协议。
+2. 先完成文档中的环境预检和模式选择。默认使用官方通用执行器，只有能可靠维护常驻循环时才走直连协议。
+3. 执行器令牌必须让用户在本机隐藏输入或通过可信 secret manager 注入；不得要求用户把令牌粘贴进对话，不得写入命令参数、脚本、仓库或日志。
+4. 完成后只汇报 executor_id、target、运行时、常驻方式和验证结果，禁止回显任何密钥。
+5. 成功标准：控制台显示同一 executor_id 在线且 target 为「${r.target}」，专用测试任务返回真实处理结果而不是原样复读。`;
 });
 
 onMounted(async () => {

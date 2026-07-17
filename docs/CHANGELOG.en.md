@@ -20,6 +20,18 @@ Each public version should describe:
 - validation commands;
 - related docs.
 
+## v0.1.3 - Portable Executor Onboarding and OpenClaw Adapter
+
+Released on 2026-07-17.
+
+- Added the portable `connect-bailinghub-executor` Skill, covering installation decisions, token handling, the generic command wrapper, the OpenClaw recipe, the direct protocol, and explicit acceptance criteria.
+- Replaced the long console copy block with a minimal bootstrap containing only the hub URL, target, route context, and Skill URL. The receiving agent reads the Skill and confirms the local setup without putting the executor token in chat.
+- Added the dependency-free `openclaw-stdio.mjs` adapter, which maps BailingHub jobs to local OpenClaw agent calls, preserves session continuity, and writes only the final response to stdout.
+- The generic executor now prefers `BAILING_EXECUTOR_TOKEN`, keeps `--token` for compatibility, reports an independent heartbeat during long jobs, and returns `claim_token` so the hub can reject stale results after reassignment.
+- No database migration is required. `/run`, SDKs, signature formats, and existing executor HTTP endpoints are unchanged. Existing `--token` commands remain compatible, while local environment variables or a secret manager are recommended.
+- Validation: `npm run typecheck`, `npm test`, `npm --prefix web-admin run build`, `npm run release:check`, plus a representative OpenClaw end-to-end run.
+- Related docs: [RELEASE_NOTES_v0.1.3.en.md](RELEASE_NOTES_v0.1.3.en.md), [QUICKSTART.en.md](QUICKSTART.en.md), and [INTEGRATION.en.md](INTEGRATION.en.md).
+
 ## v0.1.2 - Server Token and Derived Credential Hardening
 
 Released on 2026-07-17.

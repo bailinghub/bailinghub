@@ -4,7 +4,7 @@
 // 全程只有本机 → 中枢的出站 HTTP，无需公网 IP、无需开端口、无需 WebSocket。
 //
 // 用法：
-//   node executor.mjs --hub https://你的中枢地址 --token <执行器令牌：控制台「执行器」页签发> \
+//   BAILING_EXECUTOR_TOKEN=<控制台「执行器」页签发的令牌> node executor.mjs --hub https://你的中枢地址 \
 //     --targets my-agent --cmd 'claude -p'
 //
 // 例子：
@@ -35,7 +35,8 @@ function arg(name, fallback = '') {
   return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 const HUB = arg('hub').replace(/\/+$/, '');
-const TOKEN = arg('token');
+// 生产环境优先用环境变量，避免令牌出现在 shell 历史与进程参数中；--token 保留兼容现有接入命令。
+const TOKEN = process.env.BAILING_EXECUTOR_TOKEN || arg('token') || '';
 const TARGETS = arg('targets').split(',').map((s) => s.trim()).filter(Boolean);
 const CMD = arg('cmd');
 const EXECUTOR_ID = arg('executor-id', hostname());
@@ -51,7 +52,7 @@ const CAPABILITIES = {};
 }
 
 if (!HUB || !TOKEN || !TARGETS.length || !CMD) {
-  console.error('用法：node executor.mjs --hub <中枢地址> --token <管理员token> --targets <目标名,可多个> --cmd <处理命令>');
+  console.error('用法：BAILING_EXECUTOR_TOKEN=<执行器令牌> node executor.mjs --hub <中枢地址> --targets <目标名,可多个> --cmd <处理命令>（也兼容 --token）');
   process.exit(1);
 }
 const headers = { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` };

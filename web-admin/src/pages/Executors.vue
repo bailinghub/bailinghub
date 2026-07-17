@@ -47,7 +47,7 @@
           </el-popconfirm>
         </template>
       </el-table-column>
-      <template #empty><div class="muted" style="padding: 14px">还没有执行器令牌。点「签发令牌」建一个，把它填进执行器的 <code>--token</code> 即可挂上来。</div></template>
+      <template #empty><div class="muted" style="padding: 14px">还没有执行器令牌。点「签发令牌」建一个；把完整令牌交给受信智能体，或填入 <code>executor.mjs</code> 的 <code>--token</code>。</div></template>
     </el-table>
   </el-card>
 
@@ -182,7 +182,7 @@
         </template>
       </el-table-column>
       <template #empty>
-        <div class="muted" style="padding: 16px">还没有执行器在线。先在上方签发一个令牌，再到「触发路由 → 调用代码 → 智能体技能·干活」复制接入指令发给你的智能体。</div>
+        <div class="muted" style="padding: 16px">还没有执行器在线。请先注册 executor 类型调度目标并让路由选择它，再在上方签发对应令牌；最后到「触发路由 → 调用代码 → 执行器接入」复制完整说明发给智能体。</div>
       </template>
     </el-table>
   </el-card>
@@ -214,9 +214,9 @@
     </template>
   </el-drawer>
 
-  <el-dialog v-model="tokenShow" title="令牌（只显示这一次，请立即复制）" width="520px">
+  <el-dialog v-model="tokenShow" title="新签发的完整令牌" width="520px">
     <el-alert type="warning" :closable="false" show-icon style="margin-bottom: 10px"
-      title="这是完整令牌，关闭后列表只显示掩码。把它填进执行器的 --token。" />
+      title="关闭后列表默认只显示掩码；需要再次使用时可点「复制完整令牌」，操作会记录审计。受信智能体直接使用该令牌；executor.mjs 请填入 --token。" />
     <div class="codewrap"><pre class="codeblock">{{ newToken }}</pre><el-button size="small" @click="copyText(newToken)">复制</el-button></div>
   </el-dialog>
 </template>
