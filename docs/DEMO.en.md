@@ -15,8 +15,11 @@ It starts:
 ## Start
 
 ```bash
+export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
+
+Keep the same `BAILING_TOKEN` for subsequent Compose commands, or save it in a local `.env` file. The one-line installer generates a random value automatically.
 
 Open:
 

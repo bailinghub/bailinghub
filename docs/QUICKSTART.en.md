@@ -30,8 +30,11 @@ Key objects:
 ## Option A: Docker Demo
 
 ```bash
+export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
+
+Keep the same `BAILING_TOKEN` for later `docker compose` commands, or save it in a local `.env` file. Only loopback-bound development mode may run without a token. Production and non-loopback listeners reject missing, short, or known placeholder values.
 
 Open:
 

@@ -45,7 +45,7 @@ services:
       BAILING_ENV: production
       BAILING_HOST: 0.0.0.0
       BAILING_PORT: 18900
-      BAILING_TOKEN: ${BAILING_TOKEN:-bailing-dev-admin-token-change-me}
+      BAILING_TOKEN: ${BAILING_TOKEN:-}
       BAILING_STATE_BACKEND: mysql
       BAILING_MYSQL_HOST: mysql
       BAILING_MYSQL_PORT: 3306

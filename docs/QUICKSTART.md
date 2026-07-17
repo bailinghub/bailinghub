@@ -25,8 +25,11 @@
 最快体验用 Docker：
 
 ```bash
+export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
+
+请在后续 `docker compose` 命令中沿用同一个 `BAILING_TOKEN`，或把生成值保存到本机 `.env`。仅 `development + 127.0.0.1/localhost/::1` 允许无 token 本地开发；生产模式或非回环监听会拒绝空值、短值和公开占位值。
 
 全新 Ubuntu/Debian 服务器默认从国内 ACR 镜像安装：
 

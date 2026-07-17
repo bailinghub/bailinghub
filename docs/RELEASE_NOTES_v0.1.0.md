@@ -21,6 +21,7 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 或者在源码目录直接运行：
 
 ```bash
+export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
 

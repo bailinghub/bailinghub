@@ -13,6 +13,7 @@ import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { ToolIndexService } from '../services/tools-index';
+import { requireServerToken } from '../core/platform/server-token';
 
 export interface ToolProxyDeps {
   cfg: AppConfig;
@@ -25,7 +26,9 @@ export interface ToolProxyDeps {
 
 /** 任务级工具凭证：HMAC(server.token, job_id.claim_token)。 */
 function toolTokenFor(jobId: string, claimToken: string, serverToken: string): string {
-  return createHmac('sha256', serverToken || 'bailing').update(`${jobId}.${claimToken}`).digest('hex');
+  return createHmac('sha256', requireServerToken(serverToken, '签发任务级工具凭证'))
+    .update(`${jobId}.${claimToken}`)
+    .digest('hex');
 }
 
 export async function toolsForWorkItemFor(deps: ToolProxyDeps, job: Job): Promise<Record<string, unknown> | null> {

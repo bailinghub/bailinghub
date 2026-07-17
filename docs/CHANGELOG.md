@@ -13,6 +13,18 @@
 - **验证方式**：部署方如何确认该版本运行正常；
 - **相关文档**：对应的契约、指南或示例。
 
+## v0.1.2 - 服务端根 token 与派生凭证安全加固
+
+发布日期：2026-07-17。
+
+- **移除固定密钥回退**：任务级 `tool_token`、任务回调和告警 webhook 不再回退到公开字面量；缺少根 token 时相关签名路径 fail-closed。
+- **收紧启动边界**：只有 `development` 且监听回环地址时允许无 token 本地开发；生产模式或非回环监听必须提供至少 24 字符、非公开占位值的 `BAILING_TOKEN`。
+- **收紧 Compose 默认值**：源码与镜像 Compose 文件不再内置可预测的管理 token；文档要求首次启动生成随机值，一键安装脚本继续自动生成并保存随机密钥。
+- **纵深防御**：无 token 的开发管理员回退同样限制在本机回环模式；安全扫描新增固定 fallback 与 Compose 可预测 token 检查。
+- **对接影响**：公开 HTTP、SDK、签名格式和数据库结构不变。升级生产或对外监听部署前必须设置强 `BAILING_TOKEN`；本机回环开发保持零配置兼容。
+- **验证方式**：`npm run typecheck`、`npm test`、`npm run security:scan`、`npm run release:check`。
+- **相关文档**：[RELEASE_NOTES_v0.1.2.md](RELEASE_NOTES_v0.1.2.md)、[SECURITY.md](../SECURITY.md)、[QUICKSTART.md](QUICKSTART.md)。
+
 ## v0.1.1 - 聊天组件运营控制与接入边界修复
 
 发布日期：2026-07-13。

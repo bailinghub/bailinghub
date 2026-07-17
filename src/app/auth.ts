@@ -6,6 +6,7 @@ import { ipOf, readBody, send } from './http';
 import { verifyPassword } from '../core/platform/password';
 import type { Client, ExecutorToken } from '../core/contracts/types';
 import type { AppConfig } from '../core/config/config';
+import { allowsUnauthenticatedLocalDevelopment } from '../core/platform/server-token';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 
 export type Principal =
@@ -75,7 +76,12 @@ export async function authenticateFor(deps: AuthRuntimeDeps, req: IncomingMessag
       if (sess) return { kind: 'admin', via: 'session', username: sess.username, role: sess.role };
     }
   }
-  if (!deps.cfg.server.token) return { kind: 'admin', via: 'token', username: 'dev' }; // 未配 token = 本地开发模式
+  if (!deps.cfg.server.token) {
+    // 无鉴权开发模式只允许绑定本机回环地址；loadConfig 也会对其他部署 fail-closed。
+    return allowsUnauthenticatedLocalDevelopment(deps.cfg.env, deps.cfg.server.host)
+      ? { kind: 'admin', via: 'token', username: 'dev' }
+      : null;
+  }
   const token = presentedToken(req, url);
   if (!token) return null;
   // 2) 管理 token（机器：执行器 / 运维脚本）
