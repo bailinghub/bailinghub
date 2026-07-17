@@ -7,7 +7,6 @@ const requiredFiles = ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'SECURITY.
 const allowedLiteralValues = new Set([
   'demo-tool-secret-change-me',
   'bailing-demo-client-token',
-  'bailing-dev-admin-token-change-me',
   'bailing-root-pass',
   'bailing-pass',
   'bailing-demo-admin',
@@ -38,6 +37,8 @@ const patterns = [
   { name: 'Tencent Cloud secret id', re: /\bAKID[A-Za-z0-9]{13,}\b/ },
   { name: 'known leaked password', re: rx(['Nie', '0712', '\\.\\.']) },
   { name: 'known managed MySQL host in source', re: rx(['sh-', 'cynosdb', 'mysql', '-[A-Za-z0-9.-]+', 'tencent', 'cdb\\.com']) },
+  { name: 'legacy fixed server token fallback', re: /server(?:Token|\.token)\s*\|\|\s*['"]bailing['"]/ },
+  { name: 'predictable Compose admin token', re: /BAILING_TOKEN:\s*\$\{BAILING_TOKEN:-[^}]+\}/ },
 ];
 
 function trackedAndUntrackedFiles() {

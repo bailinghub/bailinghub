@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { hostname } from 'node:os';
+import { assertServerTokenPolicy } from '../platform/server-token';
 
 export interface MysqlConfig {
   host: string;
@@ -132,7 +133,7 @@ export function loadConfig(): AppConfig {
     server: {
       host: env['BAILING_HOST'] ?? raw['server']?.host ?? '127.0.0.1',
       port: Number(env['BAILING_PORT'] ?? raw['server']?.port ?? 18900),
-      token: env['BAILING_TOKEN'] ?? raw['server']?.token ?? '',
+      token: String(env['BAILING_TOKEN'] ?? raw['server']?.token ?? '').trim(),
     },
     brand: { name: String(raw['brand']?.name ?? '百灵中枢') },
     displayTz: String(env['BAILING_DISPLAY_TZ'] ?? raw['display_tz'] ?? 'Asia/Shanghai'),
@@ -190,8 +191,8 @@ export function loadConfig(): AppConfig {
       api_key: String(creds[name]?.api_key ?? ''),
     };
   }
+  assertServerTokenPolicy({ env: cfg.env, host: cfg.server.host, token: cfg.server.token });
   if (cfg.env === 'production') {
-    requiredEnv('BAILING_TOKEN');
     if (cfg.state.backend === 'mysql') {
       requiredEnv('BAILING_MYSQL_HOST');
       requiredEnv('BAILING_MYSQL_DATABASE');

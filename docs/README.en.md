@@ -39,6 +39,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [ECOSYSTEM.md](ECOSYSTEM.md) | Chinese ecosystem and derivatives policy. |
 | [RELEASE_NOTES_v0.1.1.en.md](RELEASE_NOTES_v0.1.1.en.md) | `v0.1.1` release notes for widget operations and stricter integration boundaries. |
 | [RELEASE_NOTES_v0.1.1.md](RELEASE_NOTES_v0.1.1.md) | Chinese `v0.1.1` release notes. |
+| [RELEASE_NOTES_v0.1.2.en.md](RELEASE_NOTES_v0.1.2.en.md) | `v0.1.2` server-token and derived-credential security hardening. |
+| [RELEASE_NOTES_v0.1.2.md](RELEASE_NOTES_v0.1.2.md) | Chinese `v0.1.2` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

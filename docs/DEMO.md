@@ -13,8 +13,11 @@
 推荐先用透明的 Docker Compose 方式启动，便于你看清楚每个容器和配置项：
 
 ```bash
+export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
+
+后续 Compose 命令请沿用同一个 `BAILING_TOKEN`，或把它保存到本机 `.env`。一键安装脚本会自动生成随机值。
 
 如果是在一台全新的 Ubuntu/Debian 服务器上快速体验，也可以使用一键安装脚本。脚本会安装 Docker、下载官网提供的开源分发包、生成 `.env`、启动 demo，并打印后台账号密码：
 

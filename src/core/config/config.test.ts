@@ -77,7 +77,7 @@ test('loadConfig: 生产敏感项可完全由环境变量注入', () => {
     },
   }, {
     BAILING_ENV: 'production',
-    BAILING_TOKEN: 'env-token',
+    BAILING_TOKEN: 'env-token-that-is-long-and-random-123',
     BAILING_STATE_BACKEND: 'mysql',
     BAILING_MYSQL_HOST: '127.0.0.1',
     BAILING_MYSQL_PORT: '3307',
@@ -91,7 +91,7 @@ test('loadConfig: 生产敏感项可完全由环境变量注入', () => {
   }, () => {
     const cfg = loadConfig();
     assert.equal(cfg.env, 'production');
-    assert.equal(cfg.server.token, 'env-token');
+    assert.equal(cfg.server.token, 'env-token-that-is-long-and-random-123');
     assert.equal(cfg.state.mysql.host, '127.0.0.1');
     assert.equal(cfg.state.mysql.port, 3307);
     assert.equal(cfg.state.mysql.database, 'bailinghub');
@@ -110,5 +110,36 @@ test('loadConfig: NODE_ENV 不会隐式开启生产密钥闸', () => {
     const cfg = loadConfig();
     assert.equal(cfg.env, 'development');
     assert.equal(cfg.server.token, 'local-token');
+  });
+});
+
+test('loadConfig: 本地回环开发允许不配置 token', () => {
+  withTempConfig({
+    server: { host: '127.0.0.1', token: '' },
+    state: { backend: 'jsonl' },
+  }, { BAILING_ENV: 'development' }, () => {
+    const cfg = loadConfig();
+    assert.equal(cfg.server.token, '');
+  });
+});
+
+test('loadConfig: 非回环开发监听缺少 token 时拒绝启动', () => {
+  withTempConfig({
+    server: { host: '0.0.0.0', token: '' },
+    state: { backend: 'jsonl' },
+  }, { BAILING_ENV: 'development' }, () => {
+    assert.throws(() => loadConfig(), /BAILING_TOKEN 未配置/);
+  });
+});
+
+test('loadConfig: 生产模式拒绝公开示例 token', () => {
+  withTempConfig({
+    server: { token: 'REPLACE_ME' },
+    state: { backend: 'jsonl' },
+  }, {
+    BAILING_ENV: 'production',
+    BAILING_TOKEN: 'bailing-dev-admin-token-change-me',
+  }, () => {
+    assert.throws(() => loadConfig(), /BAILING_TOKEN 不安全/);
   });
 });

@@ -20,6 +20,18 @@ Each public version should describe:
 - validation commands;
 - related docs.
 
+## v0.1.2 - Server Token and Derived Credential Hardening
+
+Released on 2026-07-17.
+
+- Removed the public literal fallback from task tool tokens, job callbacks, and alert webhook signatures. Signing paths now fail closed when the root token is missing.
+- Only development mode bound to a loopback host may run without a token. Production or non-loopback listeners require an explicit non-placeholder `BAILING_TOKEN` of at least 24 characters.
+- Source and image Compose files no longer provide a predictable machine-admin token. The docs generate a random value, while the one-line installer continues to generate and persist one automatically.
+- The tokenless development-admin fallback is also restricted to loopback mode, and the security scanner rejects legacy fallback expressions and predictable Compose admin tokens.
+- Public HTTP, SDK, signature format, and database contracts are unchanged. Existing production or externally reachable deployments must set a strong `BAILING_TOKEN` before upgrading.
+- Validation: `npm run typecheck`, `npm test`, `npm run security:scan`, and `npm run release:check`.
+- Related docs: [RELEASE_NOTES_v0.1.2.en.md](RELEASE_NOTES_v0.1.2.en.md), [SECURITY.md](../SECURITY.md), and [QUICKSTART.en.md](QUICKSTART.en.md).
+
 ## v0.1.1 - Widget Operations and Stricter Integration Boundaries
 
 Released on 2026-07-13.

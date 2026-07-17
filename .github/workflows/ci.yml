@@ -125,6 +125,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+      - name: generate ephemeral demo admin token
+        run: echo "BAILING_TOKEN=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - run: docker compose up -d --build --wait
       - run: docker compose exec -T bailinghub npm run smoke
       - run: docker compose exec -T bailinghub npm run demo:e2e

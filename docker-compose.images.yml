@@ -18,7 +18,7 @@ services:
       retries: 30
 
   demo-business:
-    image: ${BAILING_DEMO_BUSINESS_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:0.1.0}
+    image: ${BAILING_DEMO_BUSINESS_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:0.1.2}
     environment:
       DEMO_HOST: 0.0.0.0
       DEMO_PORT: 19080
@@ -29,7 +29,7 @@ services:
       - "${BAILING_DEMO_PUBLIC_PORT:-19080}:19080"
 
   bailinghub:
-    image: ${BAILINGHUB_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:0.1.0}
+    image: ${BAILINGHUB_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:0.1.2}
     depends_on:
       mysql:
         condition: service_healthy
@@ -39,7 +39,7 @@ services:
       BAILING_ENV: production
       BAILING_HOST: 0.0.0.0
       BAILING_PORT: 18900
-      BAILING_TOKEN: ${BAILING_TOKEN:-bailing-dev-admin-token-change-me}
+      BAILING_TOKEN: ${BAILING_TOKEN:-}
       BAILING_STATE_BACKEND: mysql
       BAILING_MYSQL_HOST: mysql
       BAILING_MYSQL_PORT: 3306

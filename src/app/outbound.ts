@@ -8,6 +8,7 @@ import { signBody } from '../core/platform/signing';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { AppConfig } from '../core/config/config';
+import { requireServerToken } from '../core/platform/server-token';
 
 export { signBody };
 
@@ -58,7 +59,7 @@ export async function secretForJobWithDeps(deps: Pick<OutboundRuntimeDeps, 'cfg'
       if (c) return c.token;
     }
   }
-  return deps.cfg.server.token || 'bailing';
+  return requireServerToken(deps.cfg.server.token, '签署任务回调');
 }
 
 const OUTBOUND_BACKOFF_MS = [0, 2000, 10_000]; // 共 3 次尝试
@@ -113,7 +114,7 @@ export async function sendAlertWithDeps(deps: OutboundRuntimeDeps, key: string, 
   const content = `【${deps.cfg.brand.name}】运行告警\n${text}\n\n—— ${deps.cfg.brand.name}`;
   // 通用 webhook 直发到部署方自有接收端。
   if (webhookUrl) {
-    void postSignedWithDeps(deps, webhookUrl, { kind: 'alert', key, message: content }, deps.cfg.server.token || 'bailing', { job_id: '-', request_id: 'monitor', event: 'alert_webhook' });
+    void postSignedWithDeps(deps, webhookUrl, { kind: 'alert', key, message: content }, requireServerToken(deps.cfg.server.token, '签署告警 webhook'), { job_id: '-', request_id: 'monitor', event: 'alert_webhook' });
   }
   // 渠道出站：按规则把告警推给各收件人（channelSend 直推，不建 job）
   for (const rule of rules) {

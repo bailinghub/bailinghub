@@ -12,6 +12,7 @@ const requiredRepoFiles = [
   'CODE_OF_CONDUCT.md',
   'docs/RELEASE_NOTES_v0.1.0.md',
   'docs/RELEASE_NOTES_v0.1.1.md',
+  'docs/RELEASE_NOTES_v0.1.2.md',
   'docs/CHANGELOG.md',
   'config.example.json',
   '.env.example',

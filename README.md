@@ -31,6 +31,7 @@ In short: BailingHub is not another chatbot or agent framework. It is a self-hos
 需要在自己的环境验证完整闭环时：
 
 ```bash
+export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
 
@@ -85,8 +86,11 @@ npm run doctor
 最快体验完整闭环（中枢 + MySQL + demo 业务系统 + 工具源）：
 
 ```bash
+export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
+
+`BAILING_TOKEN` 是管理 API 与派生签名凭证的根密钥。Docker Compose 不再提供公开默认值；请在同一终端保留该环境变量，或把随机值写入本机 `.env`。一键安装脚本会自动生成并保存强随机值。
 
 全新 Ubuntu/Debian 服务器可用一键安装脚本快速体验；它只是把 Docker 安装、下载开源分发包、生成 `.env`、`docker compose up -d --build` 自动化，脚本内容在 [scripts/install.sh](scripts/install.sh) 可审计：
 
@@ -195,6 +199,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/CHANNELS.md` | 入站渠道（企微等）接入说明 |
 | `docs/CHANGELOG.md` | 发布记录：公开版本发布后，每次对外可见变更都在这里说明 |
 | `docs/RELEASE_NOTES_v0.1.1.md` | `v0.1.1` 聊天组件运营控制与接入边界修复说明 |
+| `docs/RELEASE_NOTES_v0.1.2.md` | `v0.1.2` 服务端根 token 与派生凭证安全加固说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |
