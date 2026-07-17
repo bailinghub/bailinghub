@@ -227,6 +227,43 @@ test('public route: source package 可作为一键安装脚本默认下载源', 
   assert.ok(res.body.length > 1000);
 });
 
+test('public route: OpenClaw stdio 适配器可作为单文件公开下载', async () => {
+  const res = new FakeResponse();
+  const handled = await handlePublicHttp(req('GET'), res as unknown as ServerResponse, new URL('http://local/connect/openclaw-stdio.mjs'));
+
+  assert.equal(handled, true);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['content-type'], 'text/javascript; charset=utf-8');
+  const body = Buffer.from(res.body).toString('utf8');
+  assert.match(body, /--agent/);
+  assert.match(body, /BAILING_SESSION_ID/);
+  assert.match(body, /OPENCLAW_FORWARD_BAILING_TOOLS/);
+});
+
+test('public route: 执行器接入 Skill 与按需参考文档可公开读取', async () => {
+  const skill = new FakeResponse();
+  const skillHandled = await handlePublicHttp(req('GET'), skill as unknown as ServerResponse, new URL('http://local/connect/skills/connect-bailinghub-executor/SKILL.md'));
+  assert.equal(skillHandled, true);
+  assert.equal(skill.statusCode, 200);
+  assert.equal(skill.headers['content-type'], 'text/markdown; charset=utf-8');
+  const skillBody = Buffer.from(skill.body).toString('utf8');
+  assert.match(skillBody, /name: connect-bailinghub-executor/);
+  assert.match(skillBody, /BAILING_EXECUTOR_TOKEN/);
+  assert.match(skillBody, /references\/direct-protocol\.md/);
+
+  const direct = new FakeResponse();
+  await handlePublicHttp(req('GET'), direct as unknown as ServerResponse, new URL('http://local/connect/skills/connect-bailinghub-executor/references/direct-protocol.md'));
+  assert.equal(direct.statusCode, 200);
+  const directBody = Buffer.from(direct.body).toString('utf8');
+  assert.match(directBody, /\/executor\/heartbeat/);
+  assert.match(directBody, /claim_token/);
+
+  const openclaw = new FakeResponse();
+  await handlePublicHttp(req('HEAD'), openclaw as unknown as ServerResponse, new URL('http://local/connect/skills/connect-bailinghub-executor/references/openclaw.md'));
+  assert.equal(openclaw.statusCode, 200);
+  assert.equal(openclaw.body.length, 0);
+});
+
 test('public route: 根路径进控制台且不托管官网资源', async () => {
   const root = new FakeResponse();
   const rootHandled = await handlePublicHttp(req('GET'), root as unknown as ServerResponse, new URL('http://local/'));

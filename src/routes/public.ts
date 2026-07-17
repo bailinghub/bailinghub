@@ -12,6 +12,11 @@ import type { AppConfig } from '../core/config/config';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 
 const SITE_PATHS = new Set(['/product', '/features', '/governance', '/docs', '/opensource', '/partners', '/pricing']);
+const EXECUTOR_SKILL_FILES = new Map<string, string>([
+  ['/connect/skills/connect-bailinghub-executor/SKILL.md', 'SKILL.md'],
+  ['/connect/skills/connect-bailinghub-executor/references/direct-protocol.md', 'references/direct-protocol.md'],
+  ['/connect/skills/connect-bailinghub-executor/references/openclaw.md', 'references/openclaw.md'],
+]);
 
 function chatCors(res: ServerResponse): void {
   res.setHeader('access-control-allow-origin', '*');
@@ -55,7 +60,11 @@ function publicSchemaFile(root: string, rel: string): string {
 function serveSourcePackage(deps: PublicHttpDeps, res: ServerResponse, head: boolean): void {
   const dir = mkdtempSync(join(tmpdir(), 'bailinghub-pack-'));
   try {
-    execFileSync('npm', ['pack', '--silent', '--pack-destination', dir], { cwd: deps.cfg.root, stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync('npm', ['pack', '--silent', '--pack-destination', dir], {
+      cwd: deps.cfg.root,
+      env: { ...process.env, npm_config_cache: join(dir, 'npm-cache') },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     const file = readdirSync(dir).find((name) => name.endsWith('.tgz'));
     if (!file) { send(res, 500, { error: 'source package not generated' }); return; }
     const body = readFileSync(join(dir, file));
@@ -145,6 +154,20 @@ export async function handlePublicHttpFor(deps: PublicHttpDeps, req: IncomingMes
 
   if (read && path === '/connect/executor.mjs') {
     serveStaticFile(res, join(deps.cfg.root, 'web', 'connect', 'executor.mjs'), 'text/javascript; charset=utf-8', head);
+    return true;
+  }
+  if (read && path === '/connect/openclaw-stdio.mjs') {
+    serveStaticFile(res, join(deps.cfg.root, 'web', 'connect', 'openclaw-stdio.mjs'), 'text/javascript; charset=utf-8', head);
+    return true;
+  }
+  const executorSkillFile = read ? EXECUTOR_SKILL_FILES.get(path) : undefined;
+  if (executorSkillFile) {
+    serveStaticFile(
+      res,
+      join(deps.cfg.root, 'web', 'connect', 'skills', 'connect-bailinghub-executor', executorSkillFile),
+      'text/markdown; charset=utf-8',
+      head,
+    );
     return true;
   }
   if (read && path === '/install.sh') {

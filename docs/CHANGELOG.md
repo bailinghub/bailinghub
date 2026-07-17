@@ -13,6 +13,18 @@
 - **验证方式**：部署方如何确认该版本运行正常；
 - **相关文档**：对应的契约、指南或示例。
 
+## v0.1.3 - 便携式执行器接入与 OpenClaw 适配
+
+发布日期：2026-07-17。
+
+- **便携式接入 Skill**：新增 `connect-bailinghub-executor`，把安装判断、令牌安全、通用命令包装、OpenClaw 配方、直连协议和成功验收条件收敛成可下载、可复用的 Agent Skill。
+- **控制台短引导**：路由页复制内容改为最小启动信息，只传中枢地址、目标名、路由上下文和 Skill 地址；执行器读取 Skill 后自行完成环境确认，避免在聊天中复制长篇协议或泄露令牌。
+- **OpenClaw stdio 适配**：新增零依赖 `openclaw-stdio.mjs`，将百灵任务映射为 OpenClaw 本地 agent 调用，保持会话关联，并只把最终文本写入 stdout。
+- **执行器安全与存活语义**：通用执行器优先从 `BAILING_EXECUTOR_TOKEN` 读取令牌，保留 `--token` 兼容；独立心跳覆盖长任务执行期；结果回报携带 `claim_token`，供中枢拒绝重排后的迟到结果。
+- **对接影响**：不新增数据库迁移，不改变 `/run`、SDK、签名格式或现有执行器 HTTP 端点。既有 `--token` 命令继续可用，推荐迁移到本地环境变量或密钥管理器。
+- **验证方式**：`npm run typecheck`、`npm test`、`npm --prefix web-admin run build`、`npm run release:check`，并完成 OpenClaw 代表性端到端验证。
+- **相关文档**：[RELEASE_NOTES_v0.1.3.md](RELEASE_NOTES_v0.1.3.md)、[QUICKSTART.md](QUICKSTART.md)、[第三方对接指南.md](第三方对接指南.md)、[INTEGRATION.en.md](INTEGRATION.en.md)。
+
 ## v0.1.2 - 服务端根 token 与派生凭证安全加固
 
 发布日期：2026-07-17。

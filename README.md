@@ -200,6 +200,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/CHANGELOG.md` | 发布记录：公开版本发布后，每次对外可见变更都在这里说明 |
 | `docs/RELEASE_NOTES_v0.1.1.md` | `v0.1.1` 聊天组件运营控制与接入边界修复说明 |
 | `docs/RELEASE_NOTES_v0.1.2.md` | `v0.1.2` 服务端根 token 与派生凭证安全加固说明 |
+| `docs/RELEASE_NOTES_v0.1.3.md` | `v0.1.3` 便携式执行器接入与 OpenClaw 适配说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |

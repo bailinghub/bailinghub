@@ -1,0 +1,4 @@
+interface:
+  display_name: "Connect BailingHub Executor"
+  short_description: "Connect a local agent or CLI to a BailingHub executor target"
+  default_prompt: "Connect this machine to the supplied BailingHub executor target using its scoped token securely."

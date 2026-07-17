@@ -66,14 +66,28 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 
 还要网页上直接聊？「聊天入口」页新建入口绑这条路由 → 拿一行 `<script>` 贴进任何网页（或直接发「在线演示页」链接给人试）。同步问答、按访客自动续聊；访客默认匿名。要带登录身份：入口配「票据签发方」，业务后端在登录页用自己的接入方 token 签短票（嵌入代码弹窗含 PHP 样例），组件 `data-ticket` 带上 → 验签通过的 uid 进任务元数据，可作工具调用的操作主体，会话跨设备连续。入口默认可上传图片、语音和常见文件（服务器本地 `data/uploads`），也可关联**媒体存储**切到业务对象存储；路由的**多模态输入策略**决定这些素材是先识别/转写/抽取，还是直送具备对应能力的模型或执行器。还能配**外观**（窗口尺寸/位置/头像/气泡图标/标题对齐）、**页面登记**让 Agent 知道访客在哪个页面提问——见下「可选增强」。
 
-**第 6 步 · 接本地大脑**（需要时，「调度目标」）：注册一个 executor 类目标 → 在你的机器上跑通用执行器：
+**第 6 步 · 接本地大脑**（需要时，「调度目标」）：注册一个 executor 类目标。优先在路由的「调用代码 → 执行器接入」复制短引导交给 Agent；完整、版本化的接入 Skill 也可直接读取：`<中枢地址>/connect/skills/connect-bailinghub-executor/SKILL.md`。
+
+手工接入时，在你的机器上运行通用执行器：
 
 ```bash
 curl -fsSL <中枢地址>/connect/executor.mjs -o bailing-executor.mjs
-node bailing-executor.mjs --hub <中枢地址> --token <执行器令牌：控制台「执行器」页签发> --targets <目标名> --cmd '<你的命令>'
+read -rsp 'BailingHub executor token: ' BAILING_EXECUTOR_TOKEN && printf '\n'
+export BAILING_EXECUTOR_TOKEN
+node bailing-executor.mjs --hub <中枢地址> --targets <目标名> --cmd '<你的命令>'
 ```
 
 约定只有三条：stdin 进任务、stdout 出结果、退出码非 0 = 失败。`--cmd './my-agent.sh'` 可以替换成任何能读 stdin、写 stdout 的命令。出站长轮询，内网机器即可。本仓 `src/executor.ts` 是带会话/能力档的进阶参考实现；可用 `BAILING_EXECUTOR_CONCURRENCY` 或 `executor.concurrency` 开多个本地 worker 并发认领，同 thread 串行仍由中枢调度保证。
+
+OpenClaw 已配置好模型 Provider 时，可再下载一个零依赖适配器，把上面的 `--cmd` 直接指向 OpenClaw：
+
+```bash
+curl -fsSL <中枢地址>/connect/openclaw-stdio.mjs -o bailing-openclaw.mjs
+node bailing-executor.mjs --hub <中枢地址> --targets <目标名> \
+  --runtime openclaw --cmd 'node bailing-openclaw.mjs --agent bailinghub-executor'
+```
+
+推荐给执行器单独创建 OpenClaw Agent，并使用 `minimal` 工具配置。适配器默认只转交任务正文和会话标识，不把业务工具令牌交给 OpenClaw；工具调用应在领取/回传链路跑通后再单独接入治理代理。
 
 **第 7 步 · 结果去哪**（三选一，可叠加）：
 - 不取回：fire-and-forget；

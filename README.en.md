@@ -219,13 +219,14 @@ export default buildOpenApiSpec({
 - [Tool Governance](docs/TOOLS_DESIGN.en.md)
 - [AI-Friendly Tool Design](docs/AI_FRIENDLY_TOOLS.en.md)
 - [Third-Party Integration](docs/INTEGRATION.en.md)
-- [Latest Release Notes](docs/RELEASE_NOTES_v0.1.1.en.md)
+- [Latest Release Notes](docs/RELEASE_NOTES_v0.1.3.en.md)
+- [v0.1.2 Release Notes](docs/RELEASE_NOTES_v0.1.2.en.md)
 - [First Public Release Notes](docs/RELEASE_NOTES_v0.1.0.en.md)
 - [Compatibility And Upgrade Policy](docs/COMPATIBILITY.en.md)
 
 ## Feedback and Contributions
 
-BailingHub `v0.1.0` is the first public release. We want its contracts and operational model to be tested against more real business systems, technology stacks, and industries. If a contract is unclear, integration is unnecessarily difficult, a security boundary needs scrutiny, or an important scenario is missing, please open a [bug report](https://github.com/bailinghub/bailinghub/issues/new?template=bug_report.yml), a [feature request](https://github.com/bailinghub/bailinghub/issues/new?template=feature_request.yml), or a pull request.
+BailingHub is an early public release. We want its contracts and operational model to be tested against more real business systems, technology stacks, and industries. If a contract is unclear, integration is unnecessarily difficult, a security boundary needs scrutiny, or an important scenario is missing, please open a [bug report](https://github.com/bailinghub/bailinghub/issues/new?template=bug_report.yml), a [feature request](https://github.com/bailinghub/bailinghub/issues/new?template=feature_request.yml), or a pull request.
 
 Useful reports include the business context, expected behavior, a minimal reproduction, and a sanitized trace. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 

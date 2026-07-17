@@ -66,3 +66,20 @@ You can use polling or signed callbacks:
 - callback: verify `X-Bailing-Signature` before consuming the result.
 
 Business systems should keep a fallback path in case callbacks fail or are retried.
+
+## Connect an External OpenClaw Executor
+
+Register an `executor` target and issue a target-scoped executor token in the console. The versioned machine-readable workflow is available at `<hub-url>/connect/skills/connect-bailinghub-executor/SKILL.md`. On the machine that will run OpenClaw:
+
+```bash
+curl -fsSL <hub-url>/connect/executor.mjs -o bailing-executor.mjs
+curl -fsSL <hub-url>/connect/openclaw-stdio.mjs -o bailing-openclaw.mjs
+read -rsp 'BailingHub executor token: ' BAILING_EXECUTOR_TOKEN && printf '\n'
+export BAILING_EXECUTOR_TOKEN
+node bailing-executor.mjs --hub <hub-url> --targets <target-name> \
+  --runtime openclaw --cmd 'node bailing-openclaw.mjs --agent bailinghub-executor'
+```
+
+The generic executor owns claim leases, heartbeats, retries, and result reporting. The OpenClaw adapter maps BailingHub session ids to OpenClaw sessions and emits only the final reply on stdout.
+
+Use a dedicated OpenClaw agent with a minimal tool profile. The adapter does not forward business-tool credentials by default; connect governed tool invocation only after the basic claim/result path has been verified.
