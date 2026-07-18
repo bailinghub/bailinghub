@@ -192,6 +192,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/CONTRACT.en.md` | English HTTP and wire contract summary |
 | `docs/TOOLS.en.md` | English tool provider and tool governance guide |
 | `docs/SDK.en.md` | English SDK guide for PHP, Node, Python, Java, Go, .NET, and any-language integration |
+| `docs/integrations/dify/` | Dify 通过中枢控制面发起受治理任务的中英文最小接入配方与校验脚本 |
 | `docs/TOOLS_MODEL.md` | **ACC 工具模型**：把 OpenAPI/SDK/Overlay/MCP 等来源统一成 Agent 工具治理抽象 |
 | `docs/TOOLS_DESIGN.md` | 工具插座设计：四道闸、审批车道、渐进式披露、签名 |
 | `docs/AI友好工具设计指南.md` | 开发者如何把老系统动作设计成 Agent 友好工具：最小接入、行业模板、风险选择 |

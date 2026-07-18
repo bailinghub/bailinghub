@@ -17,6 +17,8 @@
 | [CONTRACT.en.md](CONTRACT.en.md) | English HTTP and wire contract summary. |
 | [第三方对接指南.md](第三方对接指南.md) | 业务侧如何暴露工具、验签、授权与返回结果。 |
 | [INTEGRATION.en.md](INTEGRATION.en.md) | English third-party integration guide. |
+| [integrations/dify/README.md](integrations/dify/README.md) | Dify 通过 BailingHub `/run` 与 `/jobs/{job_id}` 发起受治理任务的最小接入配方。 |
+| [integrations/dify/README.en.md](integrations/dify/README.en.md) | English Dify + BailingHub minimal integration recipe. |
 
 ## 架构与模型
 
