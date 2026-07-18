@@ -212,6 +212,7 @@ export default buildOpenApiSpec({
 - [HTTP Contract](docs/CONTRACT.en.md)
 - [Business Tools and Governance](docs/TOOLS.en.md)
 - [SDK Guide](docs/SDK.en.md)
+- [Dify Integration Recipe](docs/integrations/dify/README.en.md)
 - [English Documentation Map](docs/README.en.md)
 - [Architecture](docs/ARCHITECTURE.en.md)
 - [Pipeline](docs/PIPELINE.en.md)

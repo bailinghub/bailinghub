@@ -1,0 +1,129 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "BailingHub Control Plane for Dify",
+    "version": "1.0.0",
+    "description": "Submit governed jobs to BailingHub and read their status. This tool does not expose business APIs directly."
+  },
+  "servers": [{ "url": "https://YOUR-BAILINGHUB-HOST" }],
+  "components": {
+    "securitySchemes": {
+      "bailinghubClientToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "BailingHub Client Token"
+      }
+    }
+  },
+  "security": [{ "bailinghubClientToken": [] }],
+  "paths": {
+    "/run": {
+      "post": {
+        "operationId": "bailinghub_start_job",
+        "summary": "Start a governed BailingHub job",
+        "description": "Create one idempotent job through an allowed BailingHub route. Reuse request_id only when retrying the same business request.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["request_id", "route", "input"],
+                "properties": {
+                  "request_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "description": "Stable idempotency key for this business request."
+                  },
+                  "route": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{1,63}$",
+                    "description": "A route explicitly allowed for the Dify client in BailingHub."
+                  },
+                  "input": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "The business task or user instruction. Do not include credentials."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Job accepted or an existing idempotent job returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["job_id", "status", "request_id"],
+                  "properties": {
+                    "job_id": { "type": "string", "description": "Job identifier used for status polling." },
+                    "status": {
+                      "type": "string",
+                      "enum": ["queued", "running", "dispatched", "done", "error", "rejected"]
+                    },
+                    "request_id": { "type": "string" },
+                    "route": { "type": "string" },
+                    "target": { "type": "string" }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid request or unavailable route." },
+          "401": { "description": "Missing or invalid BailingHub client token." },
+          "403": { "description": "The client is not allowed to use the requested route." },
+          "409": { "description": "Idempotency conflict or ambiguous automatic route." },
+          "429": { "description": "Client rate limit exceeded." }
+        }
+      }
+    },
+    "/jobs/{job_id}": {
+      "get": {
+        "operationId": "bailinghub_get_job",
+        "summary": "Read one BailingHub job",
+        "description": "Read a job created by the same BailingHub client. Poll only while the job is queued, running, or dispatched.",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "The job_id returned by bailinghub_start_job."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current job state and, when terminal, result or error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["job_id", "request_id", "status"],
+                  "properties": {
+                    "job_id": { "type": "string" },
+                    "request_id": { "type": "string" },
+                    "status": {
+                      "type": "string",
+                      "enum": ["queued", "running", "dispatched", "done", "error", "rejected"]
+                    },
+                    "result": { "description": "Final result when status is done." },
+                    "error": { "type": "string", "description": "Failure or rejection reason when present." }
+                  },
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing or invalid BailingHub client token." },
+          "404": { "description": "Job not found or not owned by this client." }
+        }
+      }
+    }
+  }
+}
