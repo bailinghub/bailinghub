@@ -119,7 +119,7 @@ The verifier never prints the token. Do not run the default probe against a prod
 
 ## Feedback
 
-If you reproduce this integration independently, open an Issue with the Dify shape you used (Agent or Workflow), the BailingHub version, the sanitized status sequence, and any friction you found. Never include tokens, business credentials, or production data.
+If you reproduce this integration independently, use the [independent validation report](https://github.com/bailinghub/bailinghub/issues/new?template=independent_validation.yml) and include the Dify shape you used (Agent or Workflow), the BailingHub version, the sanitized status sequence, and any friction you found. See the [Independent Validation Task](../../INDEPENDENT_VALIDATION.en.md) for the evidence rules and safety boundary. Never include tokens, business credentials, or production data.
 
 ## Primary References
 

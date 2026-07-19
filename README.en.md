@@ -60,6 +60,7 @@ If you need to serve multiple isolated organizations, run separate hub deploymen
 To validate the complete loop in your own environment:
 
 ```bash
+export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
 
@@ -86,6 +87,8 @@ The demo starts:
 - Audit and trace flows
 
 See [docs/DEMO.en.md](docs/DEMO.en.md) for the complete demo and [docs/QUICKSTART.en.md](docs/QUICKSTART.en.md) for the English quickstart.
+
+To test whether a new developer can reproduce the public path without private maintainer instructions, follow the [Independent Validation Task](docs/INDEPENDENT_VALIDATION.en.md). It uses only non-production demo data and provides an Issue form for PASS, partial, and failed results.
 
 ## One-Line Install
 
@@ -209,6 +212,7 @@ export default buildOpenApiSpec({
 - [Chinese README](README.md)
 - [English Quickstart](docs/QUICKSTART.en.md)
 - [Docker Demo](docs/DEMO.en.md)
+- [Independent Validation Task](docs/INDEPENDENT_VALIDATION.en.md)
 - [HTTP Contract](docs/CONTRACT.en.md)
 - [Business Tools and Governance](docs/TOOLS.en.md)
 - [SDK Guide](docs/SDK.en.md)
