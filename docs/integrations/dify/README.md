@@ -119,7 +119,7 @@ python3 verify_e2e.py \
 
 ## 反馈
 
-如果你完成了独立复现，欢迎提交 Issue，并附上 Dify 形态（Agent 或 Workflow）、BailingHub 版本、脱敏后的状态序列和遇到的问题。不要提交 Token、业务密钥或生产数据。
+如果你完成了独立复现，请使用 [独立验证报告模板](https://github.com/bailinghub/bailinghub/issues/new?template=independent_validation.yml)，并附上 Dify 形态（Agent 或 Workflow）、BailingHub 版本、脱敏后的状态序列和遇到的问题。完整的证据口径与安全边界见 [独立验证任务卡](../../INDEPENDENT_VALIDATION.md)。不要提交 Token、业务密钥或生产数据。
 
 ## 一手依据
 

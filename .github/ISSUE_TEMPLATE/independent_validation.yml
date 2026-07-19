@@ -1,0 +1,103 @@
+name: Independent validation / 独立验证
+description: Report an independent reproduction of a public BailingHub validation path.
+title: "[Validation]: "
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for independently validating BailingHub. A PASS, partial result, or failure is equally useful when it includes reproducible evidence.
+
+        感谢独立验证 BailingHub。PASS、部分通过和失败结果都具有价值，请提供可复现且已脱敏的证据。
+
+        Never include tokens, keys, passwords, a complete `.env`, personal information, or production business data.
+  - type: dropdown
+    id: track
+    attributes:
+      label: Validation track / 验证路径
+      options:
+        - Docker demo (core) / Docker demo（核心）
+        - Dify integration / Dify 接入
+        - Executor or OpenClaw / 执行器或 OpenClaw
+        - Other public recipe / 其他公开配方
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and commit / 版本与提交
+      placeholder: "v0.1.3, commit abc1234"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment / 环境
+      description: Include OS, CPU architecture, Docker and Compose versions, and installation mode.
+      placeholder: |
+        - OS:
+        - Architecture:
+        - Docker:
+        - Docker Compose:
+        - Installation mode: source / image / other
+    validations:
+      required: true
+  - type: dropdown
+    id: assistance
+    attributes:
+      label: Assistance level / 协助程度
+      options:
+        - Public docs only, no maintainer help / 仅公开文档，无维护者协助
+        - Public Issue or Discussion only / 仅公开 Issue 或 Discussion 协助
+        - Direct maintainer assistance / 获得维护者直接协助
+    validations:
+      required: true
+  - type: textarea
+    id: checkpoints
+    attributes:
+      label: Checkpoints and elapsed time / 检查点与耗时
+      description: Report each checkpoint and elapsed time excluding image downloads when possible.
+      placeholder: |
+        Elapsed time:
+
+        | Checkpoint | PASS / PARTIAL / FAIL | Notes |
+        |---|---|---|
+        | Services and /health | | |
+        | Console login | | |
+        | npm run smoke | | |
+        | npm run demo:e2e | | |
+    validations:
+      required: true
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Overall outcome / 总体结果
+      options:
+        - PASS
+        - PARTIAL
+        - FAIL
+    validations:
+      required: true
+  - type: textarea
+    id: friction
+    attributes:
+      label: First blocker and documentation clarity / 首个阻塞点与文档清晰度
+      description: What was the first blocker? Were public docs sufficient? Which step was least clear?
+      placeholder: "No blocker; docs were sufficient. / The first unclear step was ..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized evidence / 脱敏证据
+      description: Paste only the smallest relevant output, error, or trace after removing secrets and business data.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checks / 安全检查
+      options:
+        - label: I removed tokens, keys, passwords, personal information, and production data from this report.
+          required: true
+        - label: I used demo or non-production data and did not connect production workloads solely for this validation.
+          required: true

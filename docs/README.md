@@ -12,6 +12,8 @@
 | [QUICKSTART.en.md](QUICKSTART.en.md) | English quickstart for Docker demo, first route, and first business tool. |
 | [DEMO.md](DEMO.md) | Docker demo 闭环：中枢、MySQL、demo 业务系统、工具源、审计与 trace。 |
 | [DEMO.en.md](DEMO.en.md) | English Docker demo walkthrough. |
+| [INDEPENDENT_VALIDATION.md](INDEPENDENT_VALIDATION.md) | 陌生开发者仅凭公开资料验证 Docker demo 的任务卡、通过标准与反馈方式。 |
+| [INDEPENDENT_VALIDATION.en.md](INDEPENDENT_VALIDATION.en.md) | English independent validation task, pass criteria, and report path. |
 | [user-guide/README.md](user-guide/README.md) | 使用者/产品经理视角：从业务需求出发，理解为什么需要中枢、后台菜单怎么配、配完交给开发者什么。 |
 | [CONTRACT.md](CONTRACT.md) | 业务系统和中枢之间的稳定网络契约，接入前应先读。 |
 | [CONTRACT.en.md](CONTRACT.en.md) | English HTTP and wire contract summary. |

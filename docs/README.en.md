@@ -8,6 +8,8 @@ This directory contains public documentation for the open-source BailingHub proj
 |---|---|
 | [QUICKSTART.en.md](QUICKSTART.en.md) | Install BailingHub, run the Docker demo, create the first route, and connect the first business tool. |
 | [DEMO.en.md](DEMO.en.md) | Docker demo walkthrough: hub, MySQL, demo business system, tool provider, audit, and trace. |
+| [INDEPENDENT_VALIDATION.en.md](INDEPENDENT_VALIDATION.en.md) | Independent Docker demo task with objective pass criteria and a standard report path. |
+| [INDEPENDENT_VALIDATION.md](INDEPENDENT_VALIDATION.md) | Chinese independent validation task. |
 | [user-guide/README.en.md](user-guide/README.en.md) | User and product-owner guide: business goals, console concepts, and scenario-based setup. |
 | [CONTRACT.en.md](CONTRACT.en.md) | Stable HTTP and wire contract between business systems and the hub. |
 | [INTEGRATION.en.md](INTEGRATION.en.md) | Third-party integration guide for tools, signatures, authorization, and callback handling. |

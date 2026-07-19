@@ -43,6 +43,8 @@ docker compose up --build
 npm run doctor
 ```
 
+愿意帮助验证“陌生开发者能否仅凭公开资料独立跑通”时，请按 [独立验证任务卡](docs/INDEPENDENT_VALIDATION.md) 完成非生产 Docker demo，并通过专用 Issue 模板反馈 PASS、部分通过或失败结果。无需接入真实业务，也不要提交任何生产凭据。
+
 项目边界和长期取舍见 [VISION.md](VISION.md)；整体架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 <picture>
@@ -189,6 +191,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/QUICKSTART.en.md` | English quickstart for Docker demo, first route, and first business tool |
 | `docs/DEMO.md` | Docker Demo：20 分钟跑通 Agent 调业务工具闭环 |
 | `docs/DEMO.en.md` | English Docker demo walkthrough |
+| `docs/INDEPENDENT_VALIDATION.md` / `docs/INDEPENDENT_VALIDATION.en.md` | 陌生开发者仅凭公开资料完成非生产验证的中英文任务卡与客观通过标准 |
 | `docs/CONTRACT.en.md` | English HTTP and wire contract summary |
 | `docs/TOOLS.en.md` | English tool provider and tool governance guide |
 | `docs/SDK.en.md` | English SDK guide for PHP, Node, Python, Java, Go, .NET, and any-language integration |
