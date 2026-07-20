@@ -134,6 +134,9 @@ test('public route: widget.js GET 返回公开组件脚本', async () => {
   const body = Buffer.from(res.body).toString('utf8');
   assert.match(body, /cfg\.enabled === false/);
   assert.match(body, /powered_by_visible/);
+  assert.match(body, /addEventListener\('delta'/);
+  assert.match(body, /createLiveAssistant/);
+  assert.match(body, /Last-Event-ID/);
   assert.match(body, /catch \{ host\.remove\(\); return; \}/);
   assert.match(body, /host\.style\.visibility = 'visible'/);
 });

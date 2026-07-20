@@ -18,6 +18,7 @@ export const cfgStore = runtimeComposition.cfgStore;
 export const kbService = runtimeComposition.kbService;
 export const kbSync = runtimeComposition.kbSync;
 export const toolIndex = runtimeComposition.toolIndex;
+export const jobStream = runtimeComposition.jobStream;
 
 // ---- 运行时状态/配置 helper（引擎与路由共用，故与单例同处）----
 /** kill switch：存在该文件即全局暂停派活。 */

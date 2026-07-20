@@ -27,6 +27,7 @@ import type { Queue } from '../core/platform/queue';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { KbService } from '../services/kb';
 import type { ToolIndexService } from '../services/tools-index';
+import type { JobStreamBroker } from '../core/runtime/job-stream';
 
 const INHUB_SERIAL_LOCK_TTL_MS = 120_000;
 const INHUB_SERIAL_LOCK_MAX_WAIT_MS = 25 * 60 * 1000;
@@ -43,6 +44,7 @@ export interface EngineRuntimeDeps {
   resolveProjectPath: (name: string) => Promise<string | null>;
   now: () => string;
   sleep: (ms: number) => Promise<void>;
+  jobStream?: JobStreamBroker;
   launchGuard?: (spec: LaunchSpec) => Promise<LaunchGuardDecision> | LaunchGuardDecision;
 }
 
@@ -254,6 +256,7 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
     await deps.queue.run(async () => {
       if (deps.isPaused()) {
         await deps.stateStore.updateJob(job.job_id, { status: 'rejected', error: 'kill switch 暂停', executor_id: undefined, claimed_at: undefined, lease_until: undefined, dispatched_at: undefined, claim_token: undefined });
+        deps.jobStream?.seal(job.job_id);
         return;
       }
       const claimed = job.status === 'running'
@@ -285,12 +288,16 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
         makeSendToolDef: sendToolDef,
         runSendMessage: (sendJob, channels, args, audit) => runSendMessageFor(deps.configStore, sendJob, channels, args, audit),
         audit: (event, detail) => deps.stateStore.appendAudit({ ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event, detail }),
+        stream: job.source.startsWith('chat:') && deps.jobStream
+          ? (event) => { try { deps.jobStream?.publish(job.job_id, event); } catch { /* 临时输出不能影响权威任务链 */ } }
+          : undefined,
       });
       const result = await adapter.run(ctx);
 
       // 瞬时失败 + 路由配了重试 → 退避后重跑，不进终态（配置类错误 transient=false 不会走到这）
       const retry = retryDecision(job, route, result);
       if (retry) {
+        try { deps.jobStream?.publish(job.job_id, { type: 'reset', data: { reason: 'retry' } }); } catch { /* 临时输出不能影响重试 */ }
         await inhubRuntime.scheduleRetry(job, route, projectPath, fullInput, session, retry);
         return;
       }
@@ -329,6 +336,7 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
       sendAlert: (key, text) => sendAlertWithDeps(outboundRuntime, key, text),
       summarizeThread: summaryRuntime.maybeSummarizeThread,
     });
+    deps.jobStream?.seal(job.job_id);
   }
 
   return {

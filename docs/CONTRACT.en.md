@@ -1,6 +1,6 @@
 # HTTP Contract
 
-> Current contract: `bailing.contract.v2.12`. This is the only network boundary between a business system and BailingHub.
+> Current contract: `bailing.contract.v2.13`. This is the only network boundary between a business system and BailingHub.
 
 This document summarizes the public wire contract between a business system and BailingHub.
 
@@ -81,6 +81,21 @@ Content-Type: application/json
 ```
 
 The business system must verify the callback signature before consuming the payload.
+
+## Embedded Chat Streaming
+
+The embedded widget creates a job with `POST /chat/{entry_key}` and consumes its result through:
+
+```http
+GET /chat/{entry_key}/events/{job_id}
+Accept: text/event-stream
+```
+
+The base event set is `open`, `status`, `ping`, `done`, `failed`, and `timeout`. When incremental model output is available, the stream also emits `phase`, `reset`, and `delta` events under protocol `bailing.chat.stream.v1`.
+
+Incremental text is provisional transport data. It is not a durable conversation message, callback payload, or audit record. Clients must replace provisional output with the canonical `done` payload, which is rebuilt from the final job record. Event IDs are monotonic per job and support `Last-Event-ID` replay. A `reset` event instructs the client to discard provisional text before continuing.
+
+See [STREAMING.en.md](STREAMING.en.md) for event payloads, reconnect rules, provider fallback, audit boundaries, and multi-replica deployment requirements.
 
 ## Tool Provider Spec
 

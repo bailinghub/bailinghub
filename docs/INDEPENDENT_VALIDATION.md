@@ -7,7 +7,7 @@
 ## 验证范围
 
 - 验证对象：BailingHub 开源版 Docker demo；
-- 稳定基线：`v0.1.3`；
+- 稳定基线：`v0.1.4`；
 - 数据范围：仓库自带的 demo 订单、工单、退款和故障工具；
 - 预计用时：镜像和依赖下载完成后约 20 分钟；
 - 不需要：真实大模型 Key、生产 API、生产凭据或真实业务数据。
@@ -24,7 +24,7 @@
 ## 1. 获取稳定版本
 
 ```bash
-git clone --depth 1 --branch v0.1.3 https://github.com/bailinghub/bailinghub.git
+git clone --depth 1 --branch v0.1.4 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 git rev-parse HEAD
 ```
@@ -104,6 +104,7 @@ docker compose exec bailinghub npm run demo:e2e
 
 - [Dify 最小接入配方](integrations/dify/README.md)；
 - [执行器接入与 OpenClaw 适配](RELEASE_NOTES_v0.1.3.md)。
+- [网页聊天真实流式输出与可重连 SSE](RELEASE_NOTES_v0.1.4.md)。
 
 扩展验证请在同一 Issue 模板中选择对应路径，并说明是否获得过维护者的直接帮助。
 

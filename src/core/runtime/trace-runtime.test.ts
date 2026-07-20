@@ -26,6 +26,8 @@ test('traceStageOf: 常见任务事件归入稳定阶段', () => {
   assert.equal(traceStageOf('received'), 'launch');
   assert.equal(traceStageOf('kb_injected'), 'context');
   assert.equal(traceStageOf('llm_request'), 'execution');
+  assert.equal(traceStageOf('llm_stream_completed'), 'execution');
+  assert.equal(traceStageOf('llm_stream_fallback'), 'execution');
   assert.equal(traceStageOf('tool_result'), 'tool');
   assert.equal(traceStageOf('tool_approval_pending'), 'approval');
   assert.equal(traceStageOf('tool_approved'), 'approval');
@@ -34,6 +36,11 @@ test('traceStageOf: 常见任务事件归入稳定阶段', () => {
   assert.equal(traceStageOf('retry_scheduled'), 'recovery');
   assert.equal(traceStageOf('ledger_error', { stage: 'delivery_channel' }), 'delivery');
   assert.equal(traceStageOf('ledger_error', { stage: 'assemble' }), 'context');
+});
+
+test('trace severity: 流式完成是信息，明确降级是警告', () => {
+  assert.equal(traceSeverityOf('llm_stream_completed'), 'info');
+  assert.equal(traceSeverityOf('llm_stream_fallback'), 'warning');
 });
 
 test('traceSeverityOf: 错误、降级、跳过和正常事件分级', () => {

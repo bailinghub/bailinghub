@@ -107,7 +107,8 @@ export function traceStageOf(event: string, detail: Record<string, unknown> = {}
   if (event.startsWith('channel_') || event.startsWith('wecom_') || event === 'chat_upload' || event === 'chat_upload_error' || event === 'chat_rated') return 'channel';
   if (
     event === 'started' || event === 'dispatched' || event === 'finished' ||
-    event === 'llm_request' || event === 'llm_empty_response_retry' || event === 'llm_empty_response_fallback' ||
+    event === 'llm_request' || event === 'llm_stream_completed' || event === 'llm_stream_fallback' ||
+    event === 'llm_empty_response_retry' || event === 'llm_empty_response_fallback' ||
     event === 'perception' || event === 'tools_unavailable' || event === 'tools_locked'
   ) return 'execution';
   if (event === 'config_change' || event.endsWith('_revealed') || event.startsWith('kb_doc_') || event.startsWith('kb_ds_') || event.startsWith('tool_index_') || event === 'authorize_probe') return 'config';
@@ -126,7 +127,7 @@ export function traceSeverityOf(event: string, detail: Record<string, unknown> =
   if (event.includes('error') || event.includes('failed') || event.endsWith('_failure')) return 'error';
   if (detail['ok'] === false || detail['final'] === true && detail['ok'] === false) return 'error';
   if (event === 'rejected' || event.includes('degraded') || event.includes('unavailable') || event.includes('locked') || event.includes('blocked')) return 'warning';
-  if (event.includes('skipped') || event === 'retry_scheduled' || event === 'llm_empty_response_retry' || event === 'llm_empty_response_fallback' || event === 'memory_summary_raced' || event === 'tool_approval_pending' || event === 'tool_args_drift') return 'warning';
+  if (event.includes('skipped') || event === 'retry_scheduled' || event === 'llm_stream_fallback' || event === 'llm_empty_response_retry' || event === 'llm_empty_response_fallback' || event === 'memory_summary_raced' || event === 'tool_approval_pending' || event === 'tool_args_drift') return 'warning';
   return 'info';
 }
 
@@ -145,6 +146,8 @@ export function traceTitleOf(event: string): string {
     kb_error: '知识检索失败',
     ledger_error: '总账降级',
     llm_request: '模型请求',
+    llm_stream_completed: '模型流式输出完成',
+    llm_stream_fallback: '模型流式输出降级',
     llm_empty_response_retry: '模型空响应修复',
     llm_empty_response_fallback: '模型空响应兜底',
     perception: '视觉感知',
@@ -192,6 +195,15 @@ export function traceSummaryOf(event: string, detail: Record<string, unknown> = 
   if (event === 'finished') return compact([detail['status'], detail['cost_usd'] != null ? `$${detail['cost_usd']}` : '']);
   if (event === 'kb_injected') return compact([detail['mode'], `${detail['hits'] ?? detail['docs'] ?? 0} refs`, detail['top_score'] != null ? `score=${detail['top_score']}` : '']);
   if (event === 'llm_request') return compact([detail['model'], detail['tool_mode'], Array.isArray(detail['tools_offered']) ? `${detail['tools_offered'].length}/${detail['tools_total'] ?? '?'} tools` : '']);
+  if (event === 'llm_stream_completed') return compact([
+    detail['model'],
+    detail['round'] != null ? `round ${detail['round']}` : '',
+    detail['chunks'] != null ? `${detail['chunks']} chunks` : '',
+    detail['content_chars'] != null ? `${detail['content_chars']} chars` : '',
+    detail['first_token_ms'] != null ? `first token ${detail['first_token_ms']}ms` : '',
+    detail['finish_reason'],
+  ]);
+  if (event === 'llm_stream_fallback') return compact([detail['model'], detail['round'] != null ? `round ${detail['round']}` : '', detail['status'] != null ? `HTTP ${detail['status']}` : '', detail['reason']]);
   if (event === 'llm_empty_response_retry') return compact([detail['model'], detail['tool_calls'] != null ? `${detail['tool_calls']} tool calls` : '', detail['last_tool']]);
   if (event === 'llm_empty_response_fallback') return compact([detail['model'], detail['last_tool'], detail['fallback']]);
   if (event === 'perception') return compact([

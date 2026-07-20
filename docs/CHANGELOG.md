@@ -13,6 +13,22 @@
 - **验证方式**：部署方如何确认该版本运行正常；
 - **相关文档**：对应的契约、指南或示例。
 
+## Unreleased
+
+当前暂无已承诺但未发布的公开变更。
+
+## v0.1.4 - 网页聊天真实流式输出与可重连 SSE
+
+发布日期：2026-07-20。
+
+- **网页聊天真实增量输出**：`llm` 目标可通过 OpenAI-compatible `stream:true` 持续输出文本增量，网页组件在任务完成前就能展示回答。
+- **可重连 SSE 协议**：新增 `bailing.chat.stream.v1` 的 `phase/reset/delta` 事件、单任务单调序号、`Last-Event-ID` 回放和有界短期缓冲。
+- **权威结果边界**：增量文本只是临时传输数据，不逐片写入会话、回调或审计正文；`done` 始终从任务库最终结果生成。
+- **提供商降级与观测**：仅当提供商明确表示不支持 streaming 时重试一次非流式请求；trace 只记录分片数、字符数和首段延迟等元数据，不记录逐片正文。
+- **对接影响**：旧客户端可忽略新事件并继续仅消费 `done`；路由可在 `target_config` 设置 `streaming:false` 关闭模型流式请求。不需要数据库迁移。
+- **验证方式**：`npm run typecheck`、`npm test`、`npm --prefix web-admin run build`、`npm run docs:check`。
+- **相关文档**：[RELEASE_NOTES_v0.1.4.md](RELEASE_NOTES_v0.1.4.md)、[STREAMING.md](STREAMING.md)、[CONTRACT.md](CONTRACT.md)、[OPERATIONS.md](OPERATIONS.md)。
+
 ## v0.1.3 - 便携式执行器接入与 OpenClaw 适配
 
 发布日期：2026-07-17。

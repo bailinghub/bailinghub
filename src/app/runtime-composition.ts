@@ -11,6 +11,7 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import { KbService } from '../services/kb';
 import { KbSyncService } from '../services/kbsync';
 import { ToolIndexService } from '../services/tools-index';
+import { InMemoryJobStreamBroker, type JobStreamBroker } from '../core/runtime/job-stream';
 
 export interface RuntimeCompositionEdition {
   systemContext: RuntimeContext;
@@ -28,6 +29,7 @@ export interface RuntimeComposition<EditionT extends RuntimeCompositionEdition =
   kbService: KbService | null;
   kbSync: KbSyncService | null;
   toolIndex: ToolIndexService | null;
+  jobStream: JobStreamBroker;
 }
 
 let builtinAdaptersRegistered = false;
@@ -43,6 +45,7 @@ export function createRuntimeComposition<EditionT extends RuntimeCompositionEdit
   cfg: AppConfig;
   edition: EditionT;
   registerAdapters?: boolean;
+  jobStream?: JobStreamBroker;
 }): RuntimeComposition<EditionT> {
   if (input.registerAdapters !== false) registerBuiltinTargetAdapters();
   const runtimeContext = input.edition.systemContext;
@@ -61,5 +64,6 @@ export function createRuntimeComposition<EditionT extends RuntimeCompositionEdit
     kbService,
     kbSync: cfgStore && kbService ? new KbSyncService(cfgStore.kbDatasources, kbService) : null,
     toolIndex: cfgStore ? new ToolIndexService(cfgStore, input.cfg, cfgStore.toolEmbeddings) : null,
+    jobStream: input.jobStream ?? new InMemoryJobStreamBroker(),
   };
 }

@@ -1,6 +1,6 @@
 # 百灵中枢 · 边界契约
 
-> 当前契约：`bailing.contract.v2.12`。这是业务系统与中枢之间唯一的网络边界。
+> 当前契约：`bailing.contract.v2.13`。这是业务系统与中枢之间唯一的网络边界。
 
 **冻结它，两边就能各自独立开发。** 任何字段变更都按兼容方式演进（只增不改语义、不删字段）。
 
@@ -117,7 +117,7 @@ POST /admin/api/routes/auto-preview
 | 端点 | 说明 |
 |---|---|
 | `POST /chat/:entry_key` | 体 `{message, visitor_id?, ticket?, thread_id?}`。`thread_id`（字母数字_-，≤32 字符）：同一身份下的平行会话切分键——开新会话=换新值，延续已有会话=复用，不带=单线程续聊；会话与对话总账同键切分，且写入 metadata.thread_id 供任务详情对账。返回 `{done:false, job_id, visitor_id}` 后，组件通过 SSE 结果流接收状态和最终回答 |
-| `GET /chat/:entry_key/events/:job_id` | **SSE 结果流**：只能订阅本入口发起的任务，事件包括 `open/status/ping/done/failed/timeout`；`done` 事件携带 `{done:true, reply, job_id, visitor_id, references?, attachments?}` |
+| `GET /chat/:entry_key/events/:job_id` | **SSE 结果流**：只能订阅本入口发起的任务。基础事件为 `open/status/ping/done/failed/timeout`；支持增量输出时还会发送 `phase/reset/delta`。`done` 携带任务库中的权威最终结果 `{done:true, reply, job_id, visitor_id, references?, attachments?}`。完整语义见 [STREAMING.md](STREAMING.md) |
 | `GET /chat/:entry_key/thread?visitor_id=&thread_id=&ticket=` | **拉服务端会话总账**：组件重开、或异步迟到结果（如审批批准后重跑的回复落在另一条任务里）回灌用——按与提问一致的身份重建线索、只读返回正序消息。身份纪律同 `POST /chat`（带票按 uid、无票按 visitor，票坏=401） |
 | `GET /chat/:entry_key/config` | 组件状态与配置：停用入口返回 `{enabled:false}`，组件静默不挂载；启用时返回标题/开场白/主色/品牌，**外观**（窗口尺寸/标题对齐/气泡位置与偏移/头像/自定义气泡图标/底部品牌标识）、`upload`。控制台改完后，业务页面无需改嵌入代码 |
 | `POST /chat/:entry_key/rate/:job_id` | **评价回答**：体 `{rating:"up"\|"down"\|"note", visitor_id, comment?}`；`note` 表示只提交文字反馈，此时 `comment` 必填。只能评自己问出来的那条（visitor_id 须与提问时一致）；一答一评，重评覆盖。运营在控制台「聊天入口 → 评价」看汇总 |

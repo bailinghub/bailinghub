@@ -1,7 +1,7 @@
 // OSS 默认聊天入口包装：这里才绑定 app/runtime 单组织单例。
 // 自定义部署应使用 chat.ts 的 *For(deps) 入口。
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { cfg, isPaused } from '../app/runtime';
+import { cfg, isPaused, jobStream } from '../app/runtime';
 import { resolveProjectPathFor, runtimeContextFor, runtimeStoresFor } from '../app/runtime-context-default';
 import { now } from '../app/http';
 import type { EngineRuntime } from '../app/engine';
@@ -26,6 +26,7 @@ export function defaultChatApiDeps(): ChatApiDeps {
     runtimeStoresFor,
     resolveProjectPathFor,
     now,
+    jobStream,
     engineForContext: (_ctx: RuntimeContext): Pick<EngineRuntime, 'launchJob'> => ({ launchJob }),
   };
 }

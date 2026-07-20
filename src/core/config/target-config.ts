@@ -35,6 +35,8 @@ export interface LlmInputConfig {
 export interface LlmTargetConfig {
   credential: string;
   model?: string;
+  /** 网页聊天存在实时事件通道时是否请求模型流式输出；默认 true。 */
+  streaming?: boolean;
   system_prompt?: string;
   temperature?: number;
   timeout_ms?: number;
@@ -99,6 +101,7 @@ export function validateTargetConfig(target: string, v: unknown): string | null 
   if (!cleanString(tc.credential)) return 'target=llm 时 target_config.credential 必填';
   const tempErr = numInRange(tc.temperature, 'target_config.temperature', 0, 2);
   if (tempErr) return tempErr;
+  if (tc.streaming !== undefined && typeof tc.streaming !== 'boolean') return 'target_config.streaming 必须是 boolean';
 
   const inputProvided = tc.input !== undefined;
   const input = record(tc.input) ?? {};
@@ -184,6 +187,7 @@ export function normalizeTargetConfig(target: string, v: unknown): TargetConfig 
   normalizeKnownString(tc, 'model');
   normalizeKnownString(tc, 'system_prompt');
   normalizeKnownNumber(tc, 'temperature');
+  if (tc.streaming !== undefined && typeof tc.streaming !== 'boolean') delete tc.streaming;
 
   const input = { ...(record(tc.input) ?? {}) };
 

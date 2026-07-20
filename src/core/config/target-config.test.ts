@@ -40,6 +40,7 @@ test('validateTargetConfig: llm temperature / input image/audio/file 有明确�
     validateTargetConfig('llm', { credential: 'main', input: { file: { mode: 'extract', max_chars: 999 } } }),
     'target_config.input.file.max_chars 必须是 1000..200000 的整数',
   );
+  assert.equal(validateTargetConfig('llm', { credential: 'main', streaming: 'true' }), 'target_config.streaming 必须是 boolean');
 });
 
 test('normalizeTargetConfig: llm 清洗已知字段，保留扩展字段', () => {
@@ -48,6 +49,7 @@ test('normalizeTargetConfig: llm 清洗已知字段，保留扩展字段', () =>
     model: ' qwen-plus ',
     system_prompt: '  hello  ',
     temperature: '0.3',
+    streaming: false,
     timeout_ms: '120000',
     vision: { mode: 'prepass' },
     audio: { mode: 'transcribe' },
@@ -82,6 +84,7 @@ test('normalizeTargetConfig: llm 清洗已知字段，保留扩展字段', () =>
     model: 'qwen-plus',
     system_prompt: 'hello',
     temperature: 0.3,
+    streaming: false,
     timeout_ms: 120000,
     extra: true,
     input: {

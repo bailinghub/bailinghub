@@ -20,6 +20,22 @@ Each public version should describe:
 - validation commands;
 - related docs.
 
+## Unreleased
+
+There are currently no committed public changes awaiting release.
+
+## v0.1.4 - Real Web Chat Streaming and Reconnectable SSE
+
+Released on 2026-07-20.
+
+- Added real incremental output for embedded chat when an `llm` target uses an OpenAI-compatible streaming endpoint.
+- Added `bailing.chat.stream.v1` events (`phase`, `reset`, and `delta`), monotonic per-job event IDs, `Last-Event-ID` replay, and a bounded short-lived replay window.
+- Incremental text is transport-only. Conversation history, callbacks, delivery, and audit do not persist every fragment; the canonical `done` event is always rebuilt from the final job record.
+- A provider is retried once without streaming only when it explicitly rejects streaming. Trace records chunk counts, character counts, finish reason, and first-fragment latency without recording fragment text.
+- Existing clients may ignore the new events and continue consuming `done`. Set `target_config.streaming` to `false` to disable provider streaming. No database migration is required.
+- Validation: `npm run typecheck`, `npm test`, `npm --prefix web-admin run build`, and `npm run docs:check`.
+- Related docs: [RELEASE_NOTES_v0.1.4.en.md](RELEASE_NOTES_v0.1.4.en.md), [STREAMING.en.md](STREAMING.en.md), [CONTRACT.en.md](CONTRACT.en.md), and [OPERATIONS.en.md](OPERATIONS.en.md).
+
 ## v0.1.3 - Portable Executor Onboarding and OpenClaw Adapter
 
 Released on 2026-07-17.

@@ -68,6 +68,8 @@ export type { RuntimeContextHelperDeps, RuntimeContextHelpers } from './app/runt
 export { createEngineRuntime } from './app/engine';
 export type { EngineRuntime, EngineRuntimeDeps, LaunchGuardDecision } from './app/engine';
 export type { LaunchSpec } from './core/runtime/launch-runtime';
+export { CHAT_STREAM_PROTOCOL, InMemoryJobStreamBroker } from './core/runtime/job-stream';
+export type { InMemoryJobStreamOptions, JobStreamBroker, JobStreamEvent, JobStreamEventInput, JobStreamReadResult } from './core/runtime/job-stream';
 
 export { initializeRuntimeLifecycleFor, scheduleBootRecoveryFor, startRuntimeSchedulersFor } from './app/runtime-lifecycle';
 export type { RuntimeLifecycleDeps, RuntimeSchedulers } from './app/runtime-lifecycle';

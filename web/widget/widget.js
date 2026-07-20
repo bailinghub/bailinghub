@@ -749,7 +749,65 @@
     }
     return false;
   }
-  function waitForEventStream(jobId, deadline) {
+  function createLiveAssistant() {
+    let bubble = null;
+    let text = '';
+    let renderTimer = null;
+
+    function flush() {
+      if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+      if (!bubble) return;
+      bubble.replaceChildren();
+      renderReply(bubble, text);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+    function scheduleRender() {
+      if (!renderTimer) renderTimer = setTimeout(flush, 24);
+    }
+    function removeProvisional() {
+      if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+      if (bubble) bubble.remove();
+      bubble = null;
+      text = '';
+    }
+    return {
+      delta(chunk) {
+        if (!chunk) return;
+        if (!bubble) {
+          setTyping(false);
+          bubble = document.createElement('div');
+          bubble.className = 'm a md';
+          msgsEl.appendChild(bubble);
+        }
+        text += String(chunk);
+        scheduleRender();
+      },
+      reset() {
+        removeProvisional();
+        setTyping(true);
+      },
+      phase(name) {
+        if (name === 'tool' && !bubble) setTyping(true);
+      },
+      finalize(resp) {
+        if (!bubble || !resp || !resp.done || resp.error) return false;
+        text = String(resp.reply || '（无内容）');
+        flush();
+        const refs = Array.isArray(resp.references) ? resp.references : undefined;
+        const atts = Array.isArray(resp.attachments) ? resp.attachments : undefined;
+        appendExtras('a', false, { refs, jobId: resp.job_id, atts, copyText: text }, bubble);
+        history.push({ r: 'a', t: text, j: resp.job_id, refs, atts }); saveHistory();
+        bubble = null;
+        text = '';
+        return true;
+      },
+      discard() {
+        removeProvisional();
+      },
+    };
+  }
+
+  function waitForEventStream(jobId, deadline, live) {
     if (!jobId || typeof window.EventSource !== 'function') {
       return Promise.reject(new Error('当前浏览器不支持实时消息流。'));
     }
@@ -757,11 +815,14 @@
       const remain = Math.max(1000, Math.min(5 * 60 * 1000, deadline - Date.now()));
       const es = new EventSource(`${HUB}/chat/${ENTRY}/events/${jobId}?max_wait=${remain}`);
       let settled = false;
+      let lastSeq = 0;
+      let reconnectTimer = null;
       const timer = setTimeout(() => finish(null), remain + 1500);
       function finish(value, error) {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         try { es.close(); } catch { /* 忽略 */ }
         if (error) reject(error); else resolve(value);
       }
@@ -769,18 +830,37 @@
         try { return JSON.parse((ev && ev.data) || '{}'); }
         catch { return null; }
       }
+      function parseSequenced(ev) {
+        const data = parse(ev);
+        if (!data) return null;
+        const seq = Number(data.seq || (ev && ev.lastEventId) || 0);
+        if (seq > 0 && seq <= lastSeq) return null;
+        if (seq > 0) lastSeq = seq;
+        return data;
+      }
+      es.addEventListener('delta', (ev) => { const data = parseSequenced(ev); if (data) live.delta(data.text); });
+      es.addEventListener('reset', (ev) => { const data = parseSequenced(ev); if (data) live.reset(data.reason); });
+      es.addEventListener('phase', (ev) => { const data = parseSequenced(ev); if (data) live.phase(data.name); });
       es.addEventListener('done', (ev) => finish(parse(ev)));
       es.addEventListener('failed', (ev) => finish(parse(ev)));
       es.addEventListener('timeout', () => finish(null));
+      es.onopen = () => {
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      };
       es.onerror = (e) => {
-        const err = new Error('网络连接中断，正在尝试恢复。');
-        err.network = true;
-        err.cause = e;
-        finish(null, err);
+        // EventSource 会携带 Last-Event-ID 自动重连；给短暂网络抖动留出恢复窗口。
+        if (reconnectTimer || settled) return;
+        reconnectTimer = setTimeout(() => {
+          const err = new Error('网络连接中断，实时消息流恢复失败。');
+          err.network = true;
+          err.cause = e;
+          finish(null, err);
+        }, 15_000);
       };
     });
   }
-  function appendAssistantResponse(resp) {
+  function appendAssistantResponse(resp, live) {
+    if (live && live.finalize(resp)) return;
     const reply = resp.done ? (resp.reply || '（无内容）') : '处理时间较长，请稍后回来查看。';
     const refs = Array.isArray(resp.references) ? resp.references : undefined;
     const atts = Array.isArray(resp.attachments) ? resp.attachments : undefined;
@@ -948,6 +1028,7 @@
     addMsg('u', text, false, { atts: dispAtts });
     history.push({ r: 'u', t: text, atts: dispAtts }); saveHistory();
     setTyping(true);
+    const live = createLiveAssistant();
     let jobId = '';
     const beforeAssistantCount = history.filter((m) => m.r === 'a').length;
     try {
@@ -963,13 +1044,15 @@
       // 回答流：任务创建后统一走 SSE。thread 只在断线时做服务端总账恢复。
       const deadline = Date.now() + 5 * 60 * 1000;
       if (!resp.done && resp.job_id) {
-        const streamed = await waitForEventStream(resp.job_id, deadline);
+        const streamed = await waitForEventStream(resp.job_id, deadline, live);
         if (streamed) resp = streamed;
       }
       setTyping(false);
-      appendAssistantResponse(resp);
+      if (!resp.done) live.discard();
+      appendAssistantResponse(resp, live);
     } catch (e) {
       setTyping(false);
+      live.discard();
       if (isNetworkError(e)) {
         if (await recoverFromServerHistory(beforeAssistantCount)) return;
       }

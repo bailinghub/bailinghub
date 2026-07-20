@@ -7,6 +7,7 @@ import { normalizeTargetConfig } from '../config/target-config';
 import type { AdapterContext, AdapterResult, BuiltinToolDef } from '../targets/adapter';
 import type { Job, Route, SessionTarget } from '../contracts/types';
 import type { ToolRuntime } from '../contracts/tools';
+import type { JobStreamEventInput } from './job-stream';
 
 export type ExecutionAudit = (event: string, detail: Record<string, unknown>) => Promise<void> | void;
 
@@ -29,6 +30,7 @@ export interface PrepareAdapterContextInput {
     audit?: (event: string, detail: Record<string, unknown>) => void,
   ) => Promise<{ ok: boolean; text: string }>;
   audit?: ExecutionAudit;
+  stream?: (event: JobStreamEventInput) => void;
 }
 
 export interface RetryDecision {
@@ -95,6 +97,7 @@ export async function prepareAdapterContext(input: PrepareAdapterContextInput): 
     tools,
     send,
     audit: (event, detail) => { void input.audit?.(event, detail); },
+    stream: input.stream,
   };
 }
 

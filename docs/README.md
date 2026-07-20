@@ -47,6 +47,8 @@
 | [CHANNELS.en.md](CHANNELS.en.md) | English inbound channel model. |
 | [OPERATIONS.md](OPERATIONS.md) | 生产部署、多副本、健康检查、容量、备份与恢复。 |
 | [OPERATIONS.en.md](OPERATIONS.en.md) | English production operations guide. |
+| [STREAMING.md](STREAMING.md) | 网页聊天的真实增量输出协议：SSE 事件、断线重放、权威结果和多副本边界。 |
+| [STREAMING.en.md](STREAMING.en.md) | English chat streaming protocol and operations boundary. |
 
 ## 发布与维护
 
@@ -60,6 +62,8 @@
 | [RELEASE_NOTES_v0.1.2.en.md](RELEASE_NOTES_v0.1.2.en.md) | English `v0.1.2` security hardening release notes. |
 | [RELEASE_NOTES_v0.1.3.md](RELEASE_NOTES_v0.1.3.md) | `v0.1.3` 便携式执行器接入与 OpenClaw 适配说明。 |
 | [RELEASE_NOTES_v0.1.3.en.md](RELEASE_NOTES_v0.1.3.en.md) | English `v0.1.3` portable executor onboarding and OpenClaw adapter release notes. |
+| [RELEASE_NOTES_v0.1.4.md](RELEASE_NOTES_v0.1.4.md) | `v0.1.4` 网页聊天真实流式输出与可重连 SSE 说明。 |
+| [RELEASE_NOTES_v0.1.4.en.md](RELEASE_NOTES_v0.1.4.en.md) | English `v0.1.4` real web chat streaming and reconnectable SSE release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

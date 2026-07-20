@@ -8,6 +8,8 @@ For development and small pilots, run one BailingHub instance behind an HTTPS re
 
 For rolling upgrades and instance failover, run multiple identical BailingHub replicas behind a load balancer. Every replica must share the same MySQL database, security configuration, build version, and migration level. Use shared object storage for chat media in multi-replica deployments; local media storage is intended for a single instance.
 
+Incremental chat events use a short process-local replay window by default. In a multi-replica deployment, route job creation and the SSE connection for the same `job_id` to one replica, or inject a shared `JobStreamBroker`. Without either, the canonical `done` result remains available from MySQL, but the client may not see incremental text.
+
 ```text
 Business systems / channels
             |
@@ -48,6 +50,7 @@ readinessProbe:
 - `BAILING_MYSQL_CONNECTION_LIMIT` controls the pool size per replica; the default is 15.
 - Approximate total connection budget as `replicas × pool size + migration and operator connections`.
 - Do not size the system by HTTP QPS alone. Model latency, tool calls, job duration, and SSE connections materially change capacity.
+- Disable reverse-proxy buffering for SSE and set the upstream read timeout above the maximum chat wait. BailingHub sends `X-Accel-Buffering: no`, but CDN and Ingress behavior must still be verified independently.
 
 Measure queue depth, oldest queued age, success rate, P95/P99 duration, tool latency, MySQL connections and lock waits, CPU, memory, and event-loop delay. BailingHub does not publish an unverified universal QPS number; load-test with your actual task mix before making capacity commitments.
 

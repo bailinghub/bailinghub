@@ -34,6 +34,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [SDK.en.md](SDK.en.md) | SDK guide for PHP, Node, Python, Java, Go, .NET, and any-language OpenAPI/HMAC integration. |
 | [CHANNELS.en.md](CHANNELS.en.md) | Inbound channel model and adapter expectations. |
 | [OPERATIONS.en.md](OPERATIONS.en.md) | Production topology, readiness, capacity, upgrades, backups, and recovery. |
+| [STREAMING.en.md](STREAMING.en.md) | Chat streaming protocol, reconnect behavior, canonical final result, and multi-replica boundary. |
+| [STREAMING.md](STREAMING.md) | Chinese chat streaming protocol. |
 
 ## Release And Maintenance
 
@@ -47,6 +49,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.2.md](RELEASE_NOTES_v0.1.2.md) | Chinese `v0.1.2` release notes. |
 | [RELEASE_NOTES_v0.1.3.en.md](RELEASE_NOTES_v0.1.3.en.md) | `v0.1.3` portable executor onboarding and OpenClaw adapter release notes. |
 | [RELEASE_NOTES_v0.1.3.md](RELEASE_NOTES_v0.1.3.md) | Chinese `v0.1.3` release notes. |
+| [RELEASE_NOTES_v0.1.4.en.md](RELEASE_NOTES_v0.1.4.en.md) | `v0.1.4` real web chat streaming and reconnectable SSE release notes. |
+| [RELEASE_NOTES_v0.1.4.md](RELEASE_NOTES_v0.1.4.md) | Chinese `v0.1.4` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |
