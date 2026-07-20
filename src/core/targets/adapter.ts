@@ -2,6 +2,7 @@ import type { AppConfig } from '../config/config';
 import type { Route, SessionTarget } from '../contracts/types';
 import type { ToolRuntime } from '../contracts/tools';
 import type { FileRef } from '../platform/content';
+import type { JobStreamEventInput } from '../runtime/job-stream';
 
 export const SEND_TOOL_NAME = 'send_message';
 /** 单个任务内主动发送的次数上限（防大脑失控群发/刷屏）；与业务工具 max_calls 各自独立计数。 */
@@ -48,6 +49,8 @@ export interface AdapterContext {
   toolsPrompt?: string;
   /** 审计钩子：适配器内部的可观测事件（如感知层 see_image 调用）写进任务总账（bz_audit）。由中枢派发时注入，失败不阻塞。 */
   audit?: (event: string, detail: Record<string, unknown>) => void;
+  /** 临时输出事件：只用于实时传输，不进入任务结果、会话总账或审计库。回调失败不得中断模型执行。 */
+  stream?: (event: JobStreamEventInput) => void;
 }
 
 /** 各 target 统一的返回。output 是写进 bz_jobs.result 的结构化结果。 */

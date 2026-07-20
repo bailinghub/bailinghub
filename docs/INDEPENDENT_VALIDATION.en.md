@@ -7,7 +7,7 @@ It is not certification, a benchmark, or evidence of production adoption. Passin
 ## Scope
 
 - Target: the open-source BailingHub Docker demo;
-- Stable baseline: `v0.1.3`;
+- Stable baseline: `v0.1.4`;
 - Data: the bundled demo orders, tickets, refunds, and failure probe;
 - Expected time: about 20 minutes after images and dependencies are available;
 - Not required: a real model key, production API, production credential, or real business data.
@@ -24,7 +24,7 @@ The Dify and executor tracks are optional extensions. Complete the core Docker d
 ## 1. Get the stable version
 
 ```bash
-git clone --depth 1 --branch v0.1.3 https://github.com/bailinghub/bailinghub.git
+git clone --depth 1 --branch v0.1.4 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 git rev-parse HEAD
 ```
@@ -104,6 +104,7 @@ After the core task passes, you may continue with:
 
 - [Dify integration recipe](integrations/dify/README.en.md);
 - [Executor onboarding and OpenClaw adapter](RELEASE_NOTES_v0.1.3.en.md).
+- [Real web chat streaming and reconnectable SSE](RELEASE_NOTES_v0.1.4.en.md).
 
 Select the relevant track in the same Issue form and disclose whether you received direct maintainer assistance.
 

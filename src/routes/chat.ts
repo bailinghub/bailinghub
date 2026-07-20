@@ -14,6 +14,7 @@ import type { AppConfig } from '../core/config/config';
 import type { RuntimeActor, RuntimeContext, RuntimeSource } from '../core/edition';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import { CHAT_STREAM_PROTOCOL, type JobStreamBroker } from '../core/runtime/job-stream';
 
 // ---- 聊天入口（公开面）：网页组件 → POST /chat/:entry → 同一条路由/总账/知识/工具链路 ----
 // entry_key 设计为可公开（页面源码可见）；防滥用 = Origin 白名单 + 按 IP 限速 + 可停用/删除。
@@ -25,7 +26,7 @@ export function chatCors(res: ServerResponse): void {
   // 公开面不用 Cookie，CORS 直接放开；"哪些站点能嵌"由服务端 Origin 白名单裁决（不匹配 403，浏览器 Origin 不可伪造）
   res.setHeader('access-control-allow-origin', '*');
   res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
-  res.setHeader('access-control-allow-headers', 'content-type');
+  res.setHeader('access-control-allow-headers', 'content-type, last-event-id');
 }
 
 function publicBaseUrl(req: IncomingMessage): string {
@@ -59,6 +60,7 @@ export interface ChatApiDeps {
   runtimeStoresFor: (ctx: RuntimeContext) => { state: RuntimeStateStore; config: ConfigStoreContract | null };
   resolveProjectPathFor: (config: ConfigStoreContract | null, name: string) => Promise<string | null>;
   now: () => string;
+  jobStream?: JobStreamBroker;
   engineForContext: (ctx: RuntimeContext) => Pick<EngineRuntime, 'launchJob'>;
 }
 
@@ -186,14 +188,15 @@ export async function handleChatFor(deps: ChatApiDeps, req: IncomingMessage, res
   send(res, 200, chatShape(job, visitor));
 }
 
-function writeSse(res: ServerResponse, event: string, data: Record<string, unknown>): void {
+function writeSse(res: ServerResponse, event: string, data: Record<string, unknown>, id?: number): void {
+  if (id !== undefined) res.write(`id: ${id}\n`);
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
 /**
  * 聊天入口 SSE 结果流：widget 主链路。
- * 当前阶段输出 job 状态与最终 answer；后续 token 级模型流、工具调用阶段、审批状态都挂同一条 wire 面继续加事件。
+ * 增量事件只负责临时展示；done 始终携带任务库里的权威最终结果。
  */
 export async function handleChatEventsFor(deps: ChatApiDeps, req: IncomingMessage, res: ServerResponse, entryKey: string, jobId: string, url: URL): Promise<void> {
   const { ctx, state: store, config: cfgStore } = await chatRuntime(deps, `chat_events:${entryKey}`);
@@ -213,6 +216,9 @@ export async function handleChatEventsFor(deps: ChatApiDeps, req: IncomingMessag
   let closed = false;
   let lastStatus = '';
   let lastPing = 0;
+  const headerCursor = Array.isArray(req.headers['last-event-id']) ? req.headers['last-event-id'][0] : req.headers['last-event-id'];
+  const rawCursor = url.searchParams.get('cursor') ?? headerCursor ?? '0';
+  let streamCursor = Math.max(0, Number.parseInt(String(rawCursor), 10) || 0);
   req.on('close', () => { closed = true; });
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
@@ -221,9 +227,22 @@ export async function handleChatEventsFor(deps: ChatApiDeps, req: IncomingMessag
     'x-accel-buffering': 'no',
   });
   res.flushHeaders?.();
-  writeSse(res, 'open', { ok: true, job_id: jobId, status: first.status });
+  writeSse(res, 'open', { ok: true, job_id: jobId, status: first.status, protocol: CHAT_STREAM_PROTOCOL, streaming: !!deps.jobStream });
+
+  const drainStream = () => {
+    if (!deps.jobStream) return;
+    const replay = deps.jobStream.read(jobId, streamCursor);
+    if (replay.truncated) {
+      writeSse(res, 'reset', { job_id: jobId, reason: 'replay_gap', latest_seq: replay.latestSeq });
+    }
+    for (const event of replay.events) {
+      writeSse(res, event.type, { job_id: jobId, seq: event.seq, ts: event.ts, ...event.data }, event.seq);
+      streamCursor = event.seq;
+    }
+  };
 
   while (!closed && Date.now() < deadline) {
+    drainStream();
     const job = await store.getJob(jobId);
     if (!job || (job.metadata ?? {})['chat_entry'] !== entryKey) {
       writeSse(res, 'failed', { done: true, error: true, job_id: jobId, reply: '任务不存在或已过期。' });
@@ -235,6 +254,7 @@ export async function handleChatEventsFor(deps: ChatApiDeps, req: IncomingMessag
       writeSse(res, 'status', { job_id: jobId, status: job.status });
     }
     if (job.status !== 'queued' && job.status !== 'running' && job.status !== 'dispatched') {
+      drainStream();
       writeSse(res, 'done', chatShape(job, String((job.metadata ?? {})['visitor_id'] ?? '')));
       res.end();
       return;
@@ -243,7 +263,8 @@ export async function handleChatEventsFor(deps: ChatApiDeps, req: IncomingMessag
       lastPing = Date.now();
       writeSse(res, 'ping', { ts: deps.now(), job_id: jobId });
     }
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    if (deps.jobStream) await deps.jobStream.waitFor(jobId, streamCursor, 400);
+    else await new Promise((resolve) => setTimeout(resolve, 400));
   }
   if (!closed) {
     writeSse(res, 'timeout', { done: false, job_id: jobId });

@@ -16,6 +16,7 @@ const extraRepoFiles = [
   '.github/workflows/gitee-mirror.yml',
   '.github/ISSUE_TEMPLATE/bug_report.yml',
   '.github/ISSUE_TEMPLATE/feature_request.yml',
+  '.github/ISSUE_TEMPLATE/independent_validation.yml',
   '.github/pull_request_template.md',
   '.dockerignore',
   '.gitignore',

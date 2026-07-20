@@ -14,6 +14,7 @@ import {
 } from '../llm/file';
 import { fmtDisplayTimeFull } from '../../core/platform/time';
 import { SEND_MAX_CALLS, SEND_TOOL_NAME } from '../../core/targets/adapter';
+import { readOpenAiChatCompletion, type OpenAiChatStreamResult } from '../llm/openai-chat-stream';
 
 function perceptionAudit(mode: string, model: string, images: number, ok: boolean, text: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -55,6 +56,10 @@ export const llmAdapter: TargetAdapter = {
     const model = String(tc['model'] ?? dbCred?.default_model ?? '');
     if (!model) return { ok: false, output: {}, error: `路由未指定 model 且凭证 ${credName} 无默认模型` };
     const t0 = Date.now();
+    const streamingEnabled = !!ctx.stream && tc['streaming'] !== false;
+    const emitStream = (event: Parameters<NonNullable<AdapterContext['stream']>>[0]) => {
+      try { ctx.stream?.(event); } catch { /* 临时输出不能影响模型与任务权威链 */ }
+    };
 
     // ---- 感知层：解析视觉模型 + 确定图片接入方式 ----
     const imgs = ctx.userImages ?? [];
@@ -283,25 +288,80 @@ export const llmAdapter: TargetAdapter = {
       return arr.length ? arr : undefined;
     }
 
-    async function chatOnce(toolsArr: Array<Record<string, unknown>> | undefined): Promise<{ resp: Response } | { err: AdapterResult }> {
-      const body: Record<string, unknown> = { model, messages, stream: false };
-      if (typeof tc['temperature'] === 'number') body['temperature'] = tc['temperature'];
-      if (toolsArr) body['tools'] = toolsArr;
-      try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${cred!.api_key}` },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        if (!resp.ok) {
-          const t = await resp.text();
-          return { err: { ok: false, output: {}, usage: { duration_ms: Date.now() - t0 }, transient: resp.status >= 500 || resp.status === 429, error: `LLM ${resp.status}: ${t.slice(0, 300)}` } };
+    function adapterHttpError(status: number, text: string): AdapterResult {
+      return {
+        ok: false,
+        output: {},
+        usage: { duration_ms: Date.now() - t0 },
+        transient: status >= 500 || status === 429,
+        error: `LLM ${status}: ${text.slice(0, 300)}`,
+      };
+    }
+
+    function streamingUnsupported(status: number, text: string): boolean {
+      if (![400, 404, 415, 422, 501].includes(status)) return false;
+      return /(?:stream(?:ing)?[^\n]{0,80}(?:unsupported|not supported|does not support|disabled|invalid|unknown)|(?:unsupported|not supported|does not support|unknown)[^\n]{0,80}stream)/i.test(text);
+    }
+
+    async function chatOnce(toolsArr: Array<Record<string, unknown>> | undefined, round: number): Promise<{ completion: OpenAiChatStreamResult } | { err: AdapterResult }> {
+      const request = async (stream: boolean): Promise<{ resp: Response } | { err: AdapterResult; status?: number; text?: string }> => {
+        const body: Record<string, unknown> = { model, messages, stream };
+        if (typeof tc['temperature'] === 'number') body['temperature'] = tc['temperature'];
+        if (toolsArr) body['tools'] = toolsArr;
+        try {
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${cred!.api_key}` },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+          if (!resp.ok) {
+            const text = await resp.text();
+            return { err: adapterHttpError(resp.status, text), status: resp.status, text };
+          }
+          return { resp };
+        } catch (e) {
+          const isTimeout = (e as Error)?.name === 'TimeoutError';
+          return { err: { ok: false, output: {}, usage: { duration_ms: Date.now() - t0 }, transient: true, error: isTimeout ? `LLM 调用超时（${timeoutMs}ms）` : `LLM 调用失败: ${String(e)}` } };
         }
-        return { resp };
+      };
+
+      const startedAt = Date.now();
+      let streamed = streamingEnabled;
+      let response = await request(streamed);
+      if ('err' in response && streamed && response.status !== undefined && streamingUnsupported(response.status, response.text ?? '')) {
+        streamed = false;
+        emitStream({ type: 'reset', data: { reason: 'fallback', round } });
+        ctx.audit?.('llm_stream_fallback', { model, round, status: response.status, reason: 'provider_streaming_unsupported' });
+        response = await request(false);
+      }
+      if ('err' in response) return { err: response.err };
+      try {
+        const completion = await readOpenAiChatCompletion(response.resp, {
+          startedAt,
+          onDelta: streamed ? (text) => emitStream({ type: 'delta', data: { text, round } }) : undefined,
+        });
+        if (completion.streamed) {
+          ctx.audit?.('llm_stream_completed', {
+            model,
+            round,
+            chunks: completion.chunkCount,
+            content_chars: completion.contentChars,
+            finish_reason: completion.finishReason,
+            ...(completion.firstTokenMs === undefined ? {} : { first_token_ms: completion.firstTokenMs }),
+          });
+        }
+        return { completion };
       } catch (e) {
-        const isTimeout = (e as Error)?.name === 'TimeoutError';
-        return { err: { ok: false, output: {}, usage: { duration_ms: Date.now() - t0 }, transient: true, error: isTimeout ? `LLM 调用超时（${timeoutMs}ms）` : `LLM 调用失败: ${String(e)}` } };
+        return {
+          err: {
+            ok: false,
+            output: {},
+            usage: { duration_ms: Date.now() - t0 },
+            transient: true,
+            error: `LLM 响应解析失败: ${String(e)}`,
+          },
+        };
       }
     }
 
@@ -318,7 +378,12 @@ export const llmAdapter: TargetAdapter = {
 
     // function-calling 循环：模型要工具就执行回填，直到出终稿 / 用完调用预算
     for (let round = 0; round < 12; round++) {
-      const r = await chatOnce(toolsForRequest());
+      const publicRound = round + 1;
+      if (streamingEnabled) {
+        emitStream({ type: 'reset', data: { reason: 'model_round', round: publicRound } });
+        emitStream({ type: 'phase', data: { name: 'model', round: publicRound } });
+      }
+      const r = await chatOnce(toolsForRequest(), publicRound);
       if ('err' in r) {
         // 多模态优雅降级：仅 inline 模式（图真进了 brain 消息）才在 4xx 时撤图退纯文本重试一次；
         // tool/prepass 模式图不在 brain 消息里，4xx 是真错误，不做撤图。
@@ -331,9 +396,8 @@ export const llmAdapter: TargetAdapter = {
         }
         return r.err;
       }
-      const data = (await r.resp.json()) as any;
-      totalTokens += Number(data?.usage?.total_tokens ?? 0);
-      const msg = data?.choices?.[0]?.message ?? {};
+      totalTokens += r.completion.totalTokens;
+      const msg = r.completion.message;
       const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
 
       if (!toolCalls.length) {
@@ -385,6 +449,10 @@ export const llmAdapter: TargetAdapter = {
         };
       }
 
+      if (streamingEnabled) {
+        emitStream({ type: 'reset', data: { reason: 'tool_call', round: publicRound } });
+        emitStream({ type: 'phase', data: { name: 'tool', round: publicRound } });
+      }
       messages.push({ role: 'assistant', content: msg.content ?? null, tool_calls: toolCalls });
       for (const call of toolCalls) {
         const name = String(call?.function?.name ?? '');
