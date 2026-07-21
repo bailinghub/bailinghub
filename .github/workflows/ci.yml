@@ -123,6 +123,10 @@ jobs:
     name: Docker demo e2e
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # GitHub-hosted runners use the upstream image directly. Public installs
+      # keep the China-friendly registry default from docker-compose.yml.
+      BAILING_MYSQL_IMAGE: mysql:8.4
     steps:
       - uses: actions/checkout@v6
       - name: generate ephemeral demo admin token
