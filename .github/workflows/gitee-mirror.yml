@@ -42,6 +42,10 @@ jobs:
             echo '  IdentityFile ~/.ssh/bailinghub_gitee_mirror'
             echo '  IdentitiesOnly yes'
             echo '  StrictHostKeyChecking yes'
+            echo '  ConnectTimeout 15'
+            echo '  ConnectionAttempts 1'
+            echo '  ServerAliveInterval 15'
+            echo '  ServerAliveCountMax 2'
           } > "$HOME/.ssh/config"
           chmod 600 "$HOME/.ssh/config"
 
@@ -49,7 +53,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          push_with_retry() {
+            local label="$1"
+            shift
+            local max_attempts=3
+            local attempt=1
+
+            while true; do
+              echo "Pushing ${label} to Gitee (attempt ${attempt}/${max_attempts})..."
+              if timeout --signal=TERM --kill-after=15s 180s git push "$@"; then
+                return 0
+              fi
+
+              if (( attempt >= max_attempts )); then
+                echo "Failed to push ${label} to Gitee after ${max_attempts} attempts." >&2
+                return 1
+              fi
+
+              sleep $((attempt * 10))
+              attempt=$((attempt + 1))
+            done
+          }
+
           git fetch origin --prune --force --tags
           git remote add gitee git@gitee.com:bailinghub/bailinghub.git
-          git push --force gitee refs/remotes/origin/main:refs/heads/main
-          git push --force gitee --tags
+          push_with_retry main --force gitee refs/remotes/origin/main:refs/heads/main
+          push_with_retry 'release tags' --force gitee --tags
