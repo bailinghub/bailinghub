@@ -233,6 +233,8 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 
 BailingHub 当前公开版本仍处于早期验证阶段。我们希望它经得起更多真实业务系统、技术栈和行业场景的检验。如果你发现契约表达不清、接入过程繁琐、安全边界存在疑问，或有当前模型尚未覆盖的场景，欢迎提交 [Bug report](https://github.com/bailinghub/bailinghub/issues/new?template=bug_report.yml)、[Feature request](https://github.com/bailinghub/bailinghub/issues/new?template=feature_request.yml) 或 Pull Request。
 
+如果你正在评估一个真实业务接口，但还没有准备好公开完整系统或开始部署，可以使用 [真实 API 接入评估](https://github.com/bailinghub/bailinghub/issues/new?template=integration_evaluation.yml) 模板：只提交一个脱敏后的 operation，以及行动主体、权限、审批或审计问题。它是公开的接入前技术评估，不是云托管、认证或代接生产系统；不要提交密钥、私有域名、客户数据或完整内部接口文档。
+
 提出问题时，建议附上业务场景、预期行为、最小复现步骤和脱敏后的 trace；贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ### 衍生项目与生态
