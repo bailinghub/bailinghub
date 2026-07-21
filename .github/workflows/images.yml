@@ -132,7 +132,7 @@ jobs:
 
           retry() {
             local attempt=1
-            local max_attempts=5
+            local max_attempts=4
             local delay=15
             until "$@"; do
               if [ "$attempt" -ge "$max_attempts" ]; then
@@ -146,17 +146,22 @@ jobs:
           }
 
           login_acr() {
-            printf '%s' "$ACR_PASSWORD" | docker login \
+            printf '%s' "$ACR_PASSWORD" | timeout 45s docker login \
               --username "$ACR_USERNAME" \
               --password-stdin \
               "$ACR_REGISTRY"
           }
 
-          copy_image() {
+          pull_image() {
+            timeout 90s docker pull "$1"
+          }
+
+          push_image() {
             local source="$1"
             local target="$2"
-            docker buildx imagetools create --tag "$target" "$source" &&
-              docker buildx imagetools inspect "$target" >/dev/null
+            docker tag "$source" "$target"
+            timeout 90s docker push "$target" &&
+              timeout 30s docker manifest inspect "$target" >/dev/null
           }
 
           retry login_acr
@@ -165,12 +170,15 @@ jobs:
           ai_source="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:${tag}"
           demo_source="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
 
-          retry copy_image "$ai_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:${tag}"
-          retry copy_image "$demo_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:${tag}"
+          retry pull_image "$ai_source"
+          retry pull_image "$demo_source"
+
+          retry push_image "$ai_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:${tag}"
+          retry push_image "$demo_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:${tag}"
 
           if [ "${{ steps.meta.outputs.push_latest }}" = "true" ]; then
-            retry copy_image "$ai_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:latest"
-            retry copy_image "$demo_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:latest"
+            retry push_image "$ai_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:latest"
+            retry push_image "$demo_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:latest"
           fi
 
   publish-mysql:
@@ -195,7 +203,7 @@ jobs:
 
           retry() {
             local attempt=1
-            local max_attempts=5
+            local max_attempts=4
             local delay=15
             until "$@"; do
               if [ "$attempt" -ge "$max_attempts" ]; then
@@ -209,13 +217,14 @@ jobs:
           }
 
           login_acr() {
-            printf '%s' "$ACR_PASSWORD" | docker login \
+            printf '%s' "$ACR_PASSWORD" | timeout 45s docker login \
               --username "$ACR_USERNAME" \
               --password-stdin \
               "$ACR_REGISTRY"
           }
 
           publish_mysql() {
+            timeout 120s env \
             BAILING_PUSH_IMAGES=1 \
             BAILING_MYSQL_SOURCE_IMAGE=mysql:${MYSQL_TAG} \
             BAILING_MYSQL_IMAGE_TAG=${MYSQL_TAG} \
@@ -267,10 +276,10 @@ jobs:
             local source="$1"
             local target="$2"
             local attempt=1
-            local max_attempts=5
+            local max_attempts=4
             local delay=15
-            until docker buildx imagetools create --tag "$target" "$source" && \
-              docker buildx imagetools inspect "$target" >/dev/null; do
+            until timeout 90s docker buildx imagetools create --tag "$target" "$source" && \
+              timeout 30s docker buildx imagetools inspect "$target" >/dev/null; do
               if [ "$attempt" -ge "$max_attempts" ]; then
                 return 1
               fi
