@@ -24,6 +24,18 @@ Each public version should describe:
 
 There are currently no committed public changes awaiting release.
 
+## v0.1.6 - Independent Validation Paths and Post-Install Privilege Hints
+
+Released on 2026-07-21.
+
+- Made the fresh Ubuntu/Debian one-line installer the recommended core independent-validation path while retaining a complete local source-reproduction path.
+- Made the installer print either `docker compose` or `sudo docker compose` according to the current session's actual Docker access, avoiding immediate socket-permission failures before new group membership takes effect.
+- Clarified that validation must not run on a production host, production network, or Docker environment with important data, and that reports must exclude passwords, tokens, complete `.env` files, and production data.
+- Split the independent-validation Issue tracks into one-line installer, source Docker, Dify, and executor paths. A commit SHA is required only for source reproduction.
+- Existing deployments require no migration. Public HTTP contracts, SDKs, signature formats, ACC semantics, database schemas, and business-image runtime behavior are unchanged.
+- Validation: `sh -n scripts/install.sh`, `npm run docs:check`, `npm run release:check`, plus an isolated Ubuntu 24.04 installation covering privilege hints, health, the 10-check smoke suite, the complete demo E2E flow, and cleanup boundaries.
+- Related docs: [RELEASE_NOTES_v0.1.6.en.md](RELEASE_NOTES_v0.1.6.en.md) and [INDEPENDENT_VALIDATION.en.md](INDEPENDENT_VALIDATION.en.md).
+
 ## v0.1.5 - Reliable One-Line Installer Arguments and Clean-Server Compatibility
 
 Released on 2026-07-21.
