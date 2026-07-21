@@ -1,0 +1,101 @@
+name: Real API integration evaluation / 真实 API 接入评估
+description: Review one sanitized business operation before connecting a real system.
+title: "[Integration evaluation]: "
+labels: ["needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form when you are considering BailingHub for one real business operation but are not yet ready to publish a complete integration or deployment.
+
+        只需提交一个经过脱敏的接口或业务动作。维护者会帮助梳理最小接入路径，以及 reach、acting subject、business authority、approval 和 audit 的责任边界。
+
+        This is a public, pre-integration technical review. It is not hosted integration work, security certification, or authorization to connect a production system. Never include credentials, private hostnames, customer data, personal information, or a complete internal API specification.
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Evaluation stage / 当前阶段
+      options:
+        - Architecture exploration / 架构调研
+        - Preparing a self-hosted evaluation / 准备自部署评估
+        - Blocked during integration / 接入中遇到阻塞
+        - Demo completed, evaluating a real API / 已跑通 Demo，准备评估真实接口
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Agent or runtime / Agent 或运行时
+      description: Dify, OpenClaw, LangChain, a custom agent, or another runtime. "Undecided" is valid.
+      placeholder: "Dify / OpenClaw / custom agent / undecided"
+    validations:
+      required: true
+  - type: textarea
+    id: operation
+    attributes:
+      label: One business operation / 一个业务动作
+      description: Describe one operation and the business consequence it creates. Keep the scope narrow.
+      placeholder: |
+        Example: An authenticated support agent needs to query an order and may request a refund after human approval.
+        示例：客服 Agent 需要查询订单，并在人工审批后申请退款。
+    validations:
+      required: true
+  - type: dropdown
+    id: effect
+    attributes:
+      label: Observable effect / 可观察后果
+      options:
+        - Read-only / 只读
+        - Creates or updates business data / 新增或修改业务数据
+        - Deletes, disables, or revokes / 删除、停用或撤销
+        - Money, permissions, HR, legal, or other high-consequence action / 资金、权限、人事、法律或其他高后果动作
+        - Unsure / 尚不确定
+    validations:
+      required: true
+  - type: textarea
+    id: api_shape
+    attributes:
+      label: Sanitized API shape / 脱敏后的接口形态
+      description: Paste one OpenAPI operation, route signature, request example, or pseudocode. Replace private names and values.
+      placeholder: |
+        POST /refund-requests
+        body: { order_id, amount, reason }
+        response: { request_id, status }
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: subject_authority
+    attributes:
+      label: Acting subject and authority / 行动主体与业务权限
+      description: Who is the Agent acting for, and where does the business system currently decide whether that subject may perform the operation? "Not designed yet" is a useful answer.
+      placeholder: "Acts for support_user_id; the existing permission service checks refund.request."
+    validations:
+      required: true
+  - type: textarea
+    id: governance_question
+    attributes:
+      label: Main governance question / 主要治理问题
+      description: What do you need to decide about exposure, subject binding, approval, audit, retries, or failure handling?
+      placeholder: "Should approval happen before the Agent creates the refund request, and what exact arguments must be bound to that approval?"
+    validations:
+      required: true
+  - type: textarea
+    id: desired_outcome
+    attributes:
+      label: Desired review outcome / 希望获得的评估结果
+      description: What decision or smallest reproducible path would make this review useful?
+      placeholder: "A minimal non-production topology and a list of responsibilities that must remain in the business system."
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Public-review boundaries / 公开评估边界
+      options:
+        - label: I removed credentials, private hostnames, personal information, customer data, and other production-sensitive material.
+          required: true
+        - label: I understand that BailingHub controls Agent reach, while my business system must remain the final authority and enforce its own permissions.
+          required: true
+        - label: I understand that this public review is not hosted integration work, security certification, or a production-readiness guarantee.
+          required: true

@@ -237,6 +237,8 @@ export default buildOpenApiSpec({
 
 BailingHub is an early public release. We want its contracts and operational model to be tested against more real business systems, technology stacks, and industries. If a contract is unclear, integration is unnecessarily difficult, a security boundary needs scrutiny, or an important scenario is missing, please open a [bug report](https://github.com/bailinghub/bailinghub/issues/new?template=bug_report.yml), a [feature request](https://github.com/bailinghub/bailinghub/issues/new?template=feature_request.yml), or a pull request.
 
+If you are evaluating one real business API but are not ready to publish a complete system or begin deployment, use the [real API integration evaluation](https://github.com/bailinghub/bailinghub/issues/new?template=integration_evaluation.yml) form. Share one sanitized operation and the acting-subject, authority, approval, or audit question you need to resolve. This is a public pre-integration technical review, not hosted integration work, certification, or permission to connect production. Do not include secrets, private hostnames, customer data, or a complete internal API specification.
+
 Useful reports include the business context, expected behavior, a minimal reproduction, and a sanitized trace. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
 
 ### Derivatives And Ecosystem
