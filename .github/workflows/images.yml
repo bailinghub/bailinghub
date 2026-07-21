@@ -7,6 +7,10 @@ on:
         description: Image tag to publish. Defaults to package.json version.
         required: false
         type: string
+      source_ref:
+        description: Git ref to build. Defaults to the ref that started the workflow.
+        required: false
+        type: string
       push_latest:
         description: Also update latest tags.
         required: false
@@ -39,6 +43,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -58,14 +64,16 @@ jobs:
           fi
           latest="$requested_latest"
           if [ -z "$latest" ]; then latest="true"; fi
-          ai_tags="${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:${tag}"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:${tag}"
-          demo_tags="${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:${tag}"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
+          source_sha="$(git rev-parse HEAD)"
+          ai_tags="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:${tag}"
+          demo_tags="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
           if [ "$latest" = "true" ]; then
-            ai_tags="${ai_tags}"$'\n'"${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:latest"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:latest"
-            demo_tags="${demo_tags}"$'\n'"${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:latest"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:latest"
+            ai_tags="${ai_tags}"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:latest"
+            demo_tags="${demo_tags}"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:latest"
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "push_latest=$latest" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           {
             echo 'ai_tags<<EOF'
             printf '%s\n' "$ai_tags"
@@ -74,13 +82,6 @@ jobs:
             printf '%s\n' "$demo_tags"
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
-
-      - name: Login to Aliyun ACR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -100,7 +101,7 @@ jobs:
           tags: ${{ steps.meta.outputs.ai_tags }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.source_sha }}
             org.opencontainers.image.version=${{ steps.meta.outputs.tag }}
             org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.description=BailingHub Agent control plane
@@ -116,10 +117,61 @@ jobs:
           tags: ${{ steps.meta.outputs.demo_tags }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ steps.meta.outputs.source_sha }}
             org.opencontainers.image.version=${{ steps.meta.outputs.tag }}
             org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.description=BailingHub demo business system
+
+      - name: Copy released application images to Aliyun ACR
+        shell: bash
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          retry() {
+            local attempt=1
+            local max_attempts=5
+            local delay=15
+            until "$@"; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                return 1
+              fi
+              echo "attempt ${attempt}/${max_attempts} failed; retrying in ${delay}s"
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
+
+          login_acr() {
+            printf '%s' "$ACR_PASSWORD" | docker login \
+              --username "$ACR_USERNAME" \
+              --password-stdin \
+              "$ACR_REGISTRY"
+          }
+
+          copy_image() {
+            local source="$1"
+            local target="$2"
+            docker buildx imagetools create --tag "$target" "$source" &&
+              docker buildx imagetools inspect "$target" >/dev/null
+          }
+
+          retry login_acr
+
+          tag="${{ steps.meta.outputs.tag }}"
+          ai_source="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:${tag}"
+          demo_source="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
+
+          retry copy_image "$ai_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:${tag}"
+          retry copy_image "$demo_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:${tag}"
+
+          if [ "${{ steps.meta.outputs.push_latest }}" = "true" ]; then
+            retry copy_image "$ai_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:latest"
+            retry copy_image "$demo_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:latest"
+          fi
 
   publish-mysql:
     name: sync mysql base image
@@ -130,21 +182,49 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
-
-      - name: Login to Aliyun ACR
-        uses: docker/login-action@v3
         with:
-          registry: ${{ env.ACR_REGISTRY }}
-          username: ${{ secrets.ACR_USERNAME }}
-          password: ${{ secrets.ACR_PASSWORD }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
 
       - name: Mirror MySQL
+        shell: bash
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
         run: |
-          BAILING_PUSH_IMAGES=1 \
-          BAILING_MYSQL_SOURCE_IMAGE=mysql:${MYSQL_TAG} \
-          BAILING_MYSQL_IMAGE_TAG=${MYSQL_TAG} \
-          BAILING_MYSQL_IMAGE_NAME=${MYSQL_IMAGE_NAME} \
-          sh scripts/publish-mysql-image.sh
+          set -euo pipefail
+
+          retry() {
+            local attempt=1
+            local max_attempts=5
+            local delay=15
+            until "$@"; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                return 1
+              fi
+              echo "attempt ${attempt}/${max_attempts} failed; retrying in ${delay}s"
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
+
+          login_acr() {
+            printf '%s' "$ACR_PASSWORD" | docker login \
+              --username "$ACR_USERNAME" \
+              --password-stdin \
+              "$ACR_REGISTRY"
+          }
+
+          publish_mysql() {
+            BAILING_PUSH_IMAGES=1 \
+            BAILING_MYSQL_SOURCE_IMAGE=mysql:${MYSQL_TAG} \
+            BAILING_MYSQL_IMAGE_TAG=${MYSQL_TAG} \
+            BAILING_MYSQL_IMAGE_NAME=${MYSQL_IMAGE_NAME} \
+            sh scripts/publish-mysql-image.sh
+          }
+
+          retry login_acr
+          retry publish_mysql
 
   mirror-ghcr:
     name: mirror released images to GHCR
@@ -155,6 +235,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
 
       - uses: docker/setup-buildx-action@v3
 
@@ -184,8 +266,19 @@ jobs:
           copy_image() {
             local source="$1"
             local target="$2"
-            docker buildx imagetools create --tag "$target" "$source"
-            docker buildx imagetools inspect "$target" >/dev/null
+            local attempt=1
+            local max_attempts=5
+            local delay=15
+            until docker buildx imagetools create --tag "$target" "$source" && \
+              docker buildx imagetools inspect "$target" >/dev/null; do
+              if [ "$attempt" -ge "$max_attempts" ]; then
+                return 1
+              fi
+              echo "attempt ${attempt}/${max_attempts} failed; retrying in ${delay}s"
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
           }
 
           copy_image \
