@@ -17,6 +17,18 @@
 
 当前暂无已承诺但未发布的公开变更。
 
+## v0.1.6 - 独立验证路径与安装后权限提示
+
+发布日期：2026-07-21。
+
+- **降低独立验证门槛**：公开任务卡将全新 Ubuntu/Debian 一键安装设为推荐核心路径，同时保留本地源码复现，不再要求所有验证者先理解仓库构建流程。
+- **修正安装后命令权限**：安装器根据当前会话真实 Docker 权限打印 `docker compose` 或 `sudo docker compose`，避免非 root 用户在 Docker 组权限生效前照抄命令得到 socket 权限错误。
+- **收紧验证安全边界**：中英文任务卡明确禁止在生产主机、生产网络或含重要 Docker 数据的环境运行，并要求反馈时排除密码、Token、完整 `.env` 和生产数据。
+- **改善反馈结构**：独立验证 Issue 模板区分一键安装、源码 Docker、Dify 与执行器路径；提交号只在源码复现时需要。
+- **对接影响**：现有部署无需迁移。公开 HTTP 契约、SDK、签名格式、ACC 语义、数据库结构和业务镜像运行行为均无变化。
+- **验证方式**：`sh -n scripts/install.sh`、`npm run docs:check`、`npm run release:check`；并在隔离 Ubuntu 24.04 实例验证权限提示、健康检查、10 项 smoke、完整 demo E2E 和清理边界。
+- **相关文档**：[RELEASE_NOTES_v0.1.6.md](RELEASE_NOTES_v0.1.6.md)、[INDEPENDENT_VALIDATION.md](INDEPENDENT_VALIDATION.md)。
+
 ## v0.1.5 - 一键安装参数可靠性与全新服务器兼容性
 
 发布日期：2026-07-21。

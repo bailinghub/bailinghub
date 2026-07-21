@@ -208,6 +208,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/RELEASE_NOTES_v0.1.3.md` | `v0.1.3` 便携式执行器接入与 OpenClaw 适配说明 |
 | `docs/RELEASE_NOTES_v0.1.4.md` | `v0.1.4` 网页聊天真实流式输出与可重连 SSE 说明 |
 | `docs/RELEASE_NOTES_v0.1.5.md` | `v0.1.5` 一键安装参数可靠性与全新服务器兼容性说明 |
+| `docs/RELEASE_NOTES_v0.1.6.md` | `v0.1.6` 独立验证路径与安装后权限提示说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |

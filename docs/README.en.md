@@ -53,6 +53,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.4.md](RELEASE_NOTES_v0.1.4.md) | Chinese `v0.1.4` release notes. |
 | [RELEASE_NOTES_v0.1.5.en.md](RELEASE_NOTES_v0.1.5.en.md) | `v0.1.5` installer reliability and clean-server compatibility release notes. |
 | [RELEASE_NOTES_v0.1.5.md](RELEASE_NOTES_v0.1.5.md) | Chinese `v0.1.5` release notes. |
+| [RELEASE_NOTES_v0.1.6.en.md](RELEASE_NOTES_v0.1.6.en.md) | `v0.1.6` independent-validation and post-install privilege-hint release notes. |
+| [RELEASE_NOTES_v0.1.6.md](RELEASE_NOTES_v0.1.6.md) | Chinese `v0.1.6` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |
