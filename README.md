@@ -103,13 +103,13 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 一键安装默认使用官方预构建镜像，减少首次构建和 npm 安装耗时：
 
 ```bash
-BAILING_INSTALL_MODE=image curl -fsSL https://www.bailinghub.com/install.sh | sh
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=image sh
 ```
 
 如需审计源码构建或做二次开发，可切到源码模式：
 
 ```bash
-BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
 ```
 
 面向中国网络的默认镜像位于阿里云 ACR：
@@ -128,11 +128,12 @@ ghcr.io/bailinghub/bailing-demo-business:<version>
 ```
 
 ```bash
+curl -fsSL https://www.bailinghub.com/install.sh | env \
 BAILING_INSTALL_MODE=image \
 BAILING_IMAGE_REGISTRY=ghcr.io \
 BAILING_IMAGE_NAMESPACE=bailinghub \
 BAILING_MYSQL_IMAGE=mysql:8.4 \
-curl -fsSL https://www.bailinghub.com/install.sh | sh
+sh
 ```
 
 国内默认安装使用官方同步的 MySQL 8.4 镜像，不依赖 Docker Hub；GHCR 安装使用上游 `mysql:8.4`。企业环境可通过 `BAILINGHUB_IMAGE`、`BAILING_DEMO_BUSINESS_IMAGE` 和 `BAILING_MYSQL_IMAGE` 覆盖为内部镜像源。
@@ -206,6 +207,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/RELEASE_NOTES_v0.1.2.md` | `v0.1.2` 服务端根 token 与派生凭证安全加固说明 |
 | `docs/RELEASE_NOTES_v0.1.3.md` | `v0.1.3` 便携式执行器接入与 OpenClaw 适配说明 |
 | `docs/RELEASE_NOTES_v0.1.4.md` | `v0.1.4` 网页聊天真实流式输出与可重连 SSE 说明 |
+| `docs/RELEASE_NOTES_v0.1.5.md` | `v0.1.5` 一键安装参数可靠性与全新服务器兼容性说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |

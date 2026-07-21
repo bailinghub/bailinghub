@@ -64,6 +64,8 @@
 | [RELEASE_NOTES_v0.1.3.en.md](RELEASE_NOTES_v0.1.3.en.md) | English `v0.1.3` portable executor onboarding and OpenClaw adapter release notes. |
 | [RELEASE_NOTES_v0.1.4.md](RELEASE_NOTES_v0.1.4.md) | `v0.1.4` 网页聊天真实流式输出与可重连 SSE 说明。 |
 | [RELEASE_NOTES_v0.1.4.en.md](RELEASE_NOTES_v0.1.4.en.md) | English `v0.1.4` real web chat streaming and reconnectable SSE release notes. |
+| [RELEASE_NOTES_v0.1.5.md](RELEASE_NOTES_v0.1.5.md) | `v0.1.5` 一键安装参数可靠性与全新服务器兼容性说明。 |
+| [RELEASE_NOTES_v0.1.5.en.md](RELEASE_NOTES_v0.1.5.en.md) | English `v0.1.5` installer reliability and clean-server compatibility release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

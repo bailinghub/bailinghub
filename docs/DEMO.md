@@ -28,7 +28,7 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 一键安装默认使用官方预构建镜像，减少首次构建和依赖安装耗时。镜像拉取受网络影响时，可以显式切到源码构建：
 
 ```bash
-BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
 ```
 
 镜像模式会使用：
@@ -41,16 +41,17 @@ crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-de
 如果你使用自己的镜像仓库：
 
 ```bash
+curl -fsSL https://www.bailinghub.com/install.sh | env \
 BAILING_INSTALL_MODE=image \
 BAILINGHUB_IMAGE=<registry>/<namespace>/bailinghub:<tag> \
 BAILING_DEMO_BUSINESS_IMAGE=<registry>/<namespace>/bailing-demo-business:<tag> \
-curl -fsSL https://www.bailinghub.com/install.sh | sh
+sh
 ```
 
 如果已经发布到 GitHub，或你想从自己的 fork 安装，可以显式指定仓库地址、分支或安装目录：
 
 ```bash
-curl -fsSL https://www.bailinghub.com/install.sh | \
+curl -fsSL https://www.bailinghub.com/install.sh | env \
   BAILING_REPO=https://github.com/bailinghub/bailinghub.git \
   BAILING_REF=main \
   BAILING_INSTALL_DIR=$HOME/bailinghub \
@@ -215,9 +216,10 @@ docker compose up -d --build
 如需源码构建，可显式指定可访问的 Node 基础镜像：
 
 ```bash
+curl -fsSL https://www.bailinghub.com/install.sh | env \
 BAILING_INSTALL_MODE=source \
 BAILING_NODE_IMAGE=<registry>/library/node:22-bookworm-slim \
-curl -fsSL https://www.bailinghub.com/install.sh | sh
+sh
 ```
 
 如企业环境需要使用内部 MySQL 镜像源，可额外设置 `BAILING_MYSQL_IMAGE=<registry>/library/mysql:8.4` 覆盖。
