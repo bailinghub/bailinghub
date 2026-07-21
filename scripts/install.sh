@@ -58,7 +58,18 @@ install_docker() {
   fi
   log "安装 Docker 与 Docker Compose plugin"
   as_root apt-get update
-  as_root apt-get install -y docker.io docker-compose-plugin || as_root apt-get install -y docker.io docker-compose-v2
+  if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+    COMPOSE_PACKAGE="docker-compose-plugin"
+  elif apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+    COMPOSE_PACKAGE="docker-compose-v2"
+  else
+    die "当前 apt 软件源未提供 Docker Compose plugin。请配置可用软件源后重试。"
+  fi
+  if have docker; then
+    as_root apt-get install -y "$COMPOSE_PACKAGE"
+  else
+    as_root apt-get install -y docker.io "$COMPOSE_PACKAGE"
+  fi
   if ! docker compose version >/dev/null 2>&1; then
     die "Docker 已安装但 docker compose 不可用，请检查 Docker Compose plugin。"
   fi
@@ -139,7 +150,7 @@ preflight_environment() {
       port="${item%%:*}"
       label="${item#*:}"
       if port_in_use "$port"; then
-        die "$label 端口 $port 已被占用。请换端口，例如：BAILING_PUBLIC_PORT=28900 BAILING_DEMO_PUBLIC_PORT=29080 BAILING_MYSQL_PUBLIC_PORT=13307 curl -fsSL https://www.bailinghub.com/install.sh | sh"
+        die "$label 端口 $port 已被占用。请换端口，例如：curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_PUBLIC_PORT=28900 BAILING_DEMO_PUBLIC_PORT=29080 BAILING_MYSQL_PUBLIC_PORT=13307 sh"
       fi
     done
   fi
@@ -167,13 +178,14 @@ preflight_images() {
 3. 当前机器架构暂未提供对应镜像。
 
 可选处理：
-  BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
+  curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
 
 或显式指定你自己的镜像仓库：
+  curl -fsSL https://www.bailinghub.com/install.sh | env \
   BAILINGHUB_IMAGE=<registry>/bailinghub:<tag> \
   BAILING_DEMO_BUSINESS_IMAGE=<registry>/bailing-demo-business:<tag> \
   BAILING_MYSQL_IMAGE=<registry>/bailing-mysql:8.4 \
-  curl -fsSL https://www.bailinghub.com/install.sh | sh
+  sh
 EOF
       exit 1
     fi
@@ -263,7 +275,7 @@ write_env() {
   TOOL_SECRET="${DEMO_TOOL_SECRET:-$(secret)}"
   CLIENT_TOKEN="${DEMO_CLIENT_TOKEN:-$(secret)}"
   IMAGE_TAG="${BAILING_IMAGE_TAG:-$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$APP_DIR/package.json" | head -1)}"
-  [ -n "$IMAGE_TAG" ] || IMAGE_TAG="0.1.4"
+  [ -n "$IMAGE_TAG" ] || IMAGE_TAG="0.1.5"
   IMAGE_REGISTRY="${BAILING_IMAGE_REGISTRY:-$DEFAULT_IMAGE_REGISTRY}"
   IMAGE_NAMESPACE="${BAILING_IMAGE_NAMESPACE:-$DEFAULT_IMAGE_NAMESPACE}"
   cat > "$ENV_FILE" <<EOF
@@ -312,7 +324,6 @@ host_ip() {
         exit;
       }
     }
-    print $1;
   }'
 }
 
@@ -361,7 +372,7 @@ main() {
 如果使用 BAILING_INSTALL_MODE=image 且日志里包含 bailinghub 或 bailing-demo-business 拉取失败，
 说明当前网络无法访问官方镜像仓库，或官方镜像版本尚未发布。可切到源码构建：
 
-   BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
+   curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
 
 如果日志里包含 docker.io、registry-1.docker.io 或 node:22-bookworm-slim 超时，
 说明当前服务器无法稳定访问 Docker Hub。可选处理方式：
@@ -371,8 +382,9 @@ main() {
    docker compose up -d --build
 
 2. 或在安装前显式指定可访问的等价镜像：
+   curl -fsSL https://www.bailinghub.com/install.sh | env \
    BAILING_NODE_IMAGE=<registry>/library/node:22-bookworm-slim \
-   curl -fsSL https://www.bailinghub.com/install.sh | sh
+   sh
 
 一键安装默认使用官方预构建镜像；如需本机源码构建，可设置 BAILING_INSTALL_MODE=source。
 EOF
@@ -390,7 +402,12 @@ EOF
   fi
 
   IP="$(host_ip)"
-  [ -n "$IP" ] || IP="localhost"
+  if [ -n "$IP" ]; then
+    ADDRESS_NOTE="已自动识别访问地址。"
+  else
+    IP="localhost"
+    ADDRESS_NOTE="未自动识别公网地址。远程访问时请将 localhost 替换为服务器公网 IP 或域名。"
+  fi
   ADMIN_PASSWORD="$(grep '^BAILING_DEMO_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
   CLIENT_TOKEN="$(grep '^DEMO_CLIENT_TOKEN=' .env | cut -d= -f2-)"
   COMPOSE_HINT="docker compose"
@@ -407,6 +424,9 @@ EOF
 
 demo 业务系统:
   http://$IP:$DEMO_PORT/
+
+访问地址:
+  $ADDRESS_NOTE
 
 后台账号:
   username: admin
@@ -426,8 +446,8 @@ demo 接入方:
 安装模式:
   $INSTALL_MODE
 
-如果上面的地址不是公网地址，可重新安装时指定：
-  BAILING_PUBLIC_HOST=<server-public-ip-or-domain> curl -fsSL https://www.bailinghub.com/install.sh | sh
+如需显式指定对外显示的地址，可重新安装时使用：
+  curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_PUBLIC_HOST=<server-public-ip-or-domain> sh
 
 EOF
 }

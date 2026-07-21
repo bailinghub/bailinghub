@@ -32,6 +32,33 @@ function assertNotTracked(files, predicate, message) {
   if (bad.length) throw new Error(`${message}: ${bad.slice(0, 20).join(', ')}`);
 }
 
+function assertNoInstallerEnvPrefix(files) {
+  const installer = 'curl -fsSL https://www.bailinghub.com/install.sh | sh';
+  const findings = [];
+  for (const file of files.filter((name) => /\.(?:md|sh|html)$/.test(name))) {
+    const lines = readFileSync(join(repoDir, file), 'utf8').split(/\r?\n/);
+    let continuedEnv = false;
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index].trim();
+      const startsWithEnv = /^BAILING_[A-Z0-9_]+=/.test(line);
+      if (startsWithEnv && line.includes(installer)) {
+        findings.push(`${file}:${index + 1}`);
+      }
+      if (continuedEnv && line === installer) {
+        findings.push(`${file}:${index + 1}`);
+      }
+      if (startsWithEnv) {
+        continuedEnv = line.endsWith('\\');
+      } else if (continuedEnv && line !== installer) {
+        continuedEnv = false;
+      }
+    }
+  }
+  if (findings.length) {
+    throw new Error(`Installer environment must be attached to sh, not curl: ${findings.slice(0, 20).join(', ')}`);
+  }
+}
+
 run('npm', ['run', 'oss:export']);
 
 const pkg = JSON.parse(readFileSync(join(exportDir, 'package.json'), 'utf8'));
@@ -80,6 +107,7 @@ const requiredFiles = [
   'docs/RELEASE_NOTES_v0.1.2.md',
   'docs/RELEASE_NOTES_v0.1.3.md',
   'docs/RELEASE_NOTES_v0.1.4.md',
+  'docs/RELEASE_NOTES_v0.1.5.md',
   'docs/CHANGELOG.md',
 ];
 for (const file of requiredFiles) requireFile(file);
@@ -126,6 +154,7 @@ try {
   assertNotTracked(files, (file) => file.startsWith('.oss-dist/'), 'GitHub rehearsal must not track release output');
   assertNotTracked(files, (file) => file === 'config.json' || file === '.env', 'GitHub rehearsal must not track local secrets');
   assertNotTracked(files, (file) => file.includes('.bak.'), 'GitHub rehearsal must not track backup files');
+  assertNoInstallerEnvPrefix(files);
 
   const bannedParts = [
     String.raw`/Users/` + 'macmini',

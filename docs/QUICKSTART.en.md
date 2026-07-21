@@ -80,23 +80,24 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 Use official prebuilt images:
 
 ```bash
-BAILING_INSTALL_MODE=image curl -fsSL https://www.bailinghub.com/install.sh | sh
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=image sh
 ```
 
 Use source mode for audit or development:
 
 ```bash
-BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
 ```
 
 Use the public GHCR images outside China:
 
 ```bash
+curl -fsSL https://www.bailinghub.com/install.sh | env \
 BAILING_INSTALL_MODE=image \
 BAILING_IMAGE_REGISTRY=ghcr.io \
 BAILING_IMAGE_NAMESPACE=bailinghub \
 BAILING_MYSQL_IMAGE=mysql:8.4 \
-curl -fsSL https://www.bailinghub.com/install.sh | sh
+sh
 ```
 
 The default image registry is the Aliyun ACR mirror for networks in China. Both registries publish the same versioned BailingHub and demo application images.

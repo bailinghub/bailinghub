@@ -83,6 +83,7 @@ const englishCompanions = {
   'docs/RELEASE_NOTES_v0.1.2.md': 'docs/RELEASE_NOTES_v0.1.2.en.md',
   'docs/RELEASE_NOTES_v0.1.3.md': 'docs/RELEASE_NOTES_v0.1.3.en.md',
   'docs/RELEASE_NOTES_v0.1.4.md': 'docs/RELEASE_NOTES_v0.1.4.en.md',
+  'docs/RELEASE_NOTES_v0.1.5.md': 'docs/RELEASE_NOTES_v0.1.5.en.md',
   'docs/TOOLS_DESIGN.md': 'docs/TOOLS_DESIGN.en.md',
   'docs/TOOLS_MODEL.md': 'docs/TOOLS_MODEL.en.md',
   'docs/AI友好工具设计指南.md': 'docs/AI_FRIENDLY_TOOLS.en.md',

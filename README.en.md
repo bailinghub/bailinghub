@@ -101,13 +101,13 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 Use official prebuilt images:
 
 ```bash
-BAILING_INSTALL_MODE=image curl -fsSL https://www.bailinghub.com/install.sh | sh
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=image sh
 ```
 
 Use source mode for auditing or development:
 
 ```bash
-BAILING_INSTALL_MODE=source curl -fsSL https://www.bailinghub.com/install.sh | sh
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
 ```
 
 Global prebuilt images are published on GHCR:
@@ -118,11 +118,12 @@ ghcr.io/bailinghub/bailing-demo-business:<version>
 ```
 
 ```bash
+curl -fsSL https://www.bailinghub.com/install.sh | env \
 BAILING_INSTALL_MODE=image \
 BAILING_IMAGE_REGISTRY=ghcr.io \
 BAILING_IMAGE_NAMESPACE=bailinghub \
 BAILING_MYSQL_IMAGE=mysql:8.4 \
-curl -fsSL https://www.bailinghub.com/install.sh | sh
+sh
 ```
 
 An Aliyun ACR mirror remains the default for networks in China. Enterprise environments can override `BAILINGHUB_IMAGE`, `BAILING_DEMO_BUSINESS_IMAGE`, and `BAILING_MYSQL_IMAGE` with internal registries.
@@ -224,7 +225,8 @@ export default buildOpenApiSpec({
 - [Tool Governance](docs/TOOLS_DESIGN.en.md)
 - [AI-Friendly Tool Design](docs/AI_FRIENDLY_TOOLS.en.md)
 - [Third-Party Integration](docs/INTEGRATION.en.md)
-- [Latest Release Notes](docs/RELEASE_NOTES_v0.1.4.en.md)
+- [Latest Release Notes](docs/RELEASE_NOTES_v0.1.5.en.md)
+- [v0.1.4 Release Notes](docs/RELEASE_NOTES_v0.1.4.en.md)
 - [v0.1.3 Release Notes](docs/RELEASE_NOTES_v0.1.3.en.md)
 - [v0.1.2 Release Notes](docs/RELEASE_NOTES_v0.1.2.en.md)
 - [First Public Release Notes](docs/RELEASE_NOTES_v0.1.0.en.md)

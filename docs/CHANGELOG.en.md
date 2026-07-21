@@ -24,6 +24,18 @@ Each public version should describe:
 
 There are currently no committed public changes awaiting release.
 
+## v0.1.5 - Reliable One-Line Installer Arguments and Clean-Server Compatibility
+
+Released on 2026-07-21.
+
+- Fixed custom installer arguments so install mode, ports, public host, registry overrides, install directory, and repository reference are attached to the `sh` process that executes the installer rather than only to `curl`.
+- Improved clean-server dependency setup by detecting whether the configured apt repository provides `docker-compose-plugin` or `docker-compose-v2` before installing Docker Compose.
+- Stopped presenting a private address as a remote access URL when public-address discovery fails. The installer now explains when `localhost` must be replaced and continues to support an explicit `BAILING_PUBLIC_HOST`.
+- Added a release regression guard that scans public scripts and docs for installer commands that attach `BAILING_*` variables to the downloader instead of the installer process.
+- The default one-line install command is unchanged. Custom commands should use `curl ... | env BAILING_*=... sh`. Public HTTP contracts, SDKs, signature formats, and database schemas are unchanged.
+- Validation: `sh -n scripts/install.sh`, `npm run docs:check`, and `npm run release:check`, plus default and custom-argument installs on a clean Ubuntu 24.04 server, the 10-check smoke suite, the complete demo E2E flow, and restart persistence.
+- Related docs: [RELEASE_NOTES_v0.1.5.en.md](RELEASE_NOTES_v0.1.5.en.md), [QUICKSTART.en.md](QUICKSTART.en.md), and [DEMO.en.md](DEMO.en.md).
+
 ## v0.1.4 - Real Web Chat Streaming and Reconnectable SSE
 
 Released on 2026-07-20.

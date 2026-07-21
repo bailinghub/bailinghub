@@ -34,17 +34,18 @@ docker compose up --build
 全新 Ubuntu/Debian 服务器默认从国内 ACR 镜像安装：
 
 ```bash
-BAILING_INSTALL_MODE=image curl -fsSL https://www.bailinghub.com/install.sh | sh
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=image sh
 ```
 
 需要使用全球 GHCR 镜像时：
 
 ```bash
+curl -fsSL https://www.bailinghub.com/install.sh | env \
 BAILING_INSTALL_MODE=image \
 BAILING_IMAGE_REGISTRY=ghcr.io \
 BAILING_IMAGE_NAMESPACE=bailinghub \
 BAILING_MYSQL_IMAGE=mysql:8.4 \
-curl -fsSL https://www.bailinghub.com/install.sh | sh
+sh
 ```
 
 它会启动中枢、MySQL 和 demo 业务系统，并自动创建 `demo_support` 路由、`demo-business` 工具源、`demo-app` 接入方和 `admin` 后台账号。完整演示见 [DEMO.md](DEMO.md)。
