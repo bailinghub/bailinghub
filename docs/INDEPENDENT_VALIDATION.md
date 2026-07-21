@@ -16,51 +16,98 @@
 
 ## 前置条件
 
-- macOS 或 Linux；
-- Git、`curl` 和 OpenSSL；
-- Docker Engine 或 Docker Desktop；
-- Docker Compose v2（`docker compose`）。
+请选择下面一种路径：
 
-## 1. 获取稳定版本
+- **全新服务器一键安装（推荐）**：非生产 Ubuntu/Debian、`curl`、可用的 `sudo` 或 root 权限；安装脚本会检查并安装 Docker 与 Compose；
+- **本地源码复现**：macOS 或 Linux、Git、`curl`、OpenSSL、Docker Engine 或 Docker Desktop、Docker Compose v2（`docker compose`）。
+
+两条路径验证的是同一个 demo 治理闭环。请不要在生产主机、生产网络或已有重要数据的 Docker 环境中运行本任务。
+
+## 1. 安装稳定版本
+
+### 路径 A：全新 Ubuntu/Debian 服务器（推荐）
+
+```bash
+curl -fsSL https://www.bailinghub.com/install.sh | sh
+cd "$HOME/bailinghub"
+```
+
+脚本默认拉取 `v0.1.5` 官方镜像，生成随机 Token 与后台密码，启动服务并自动运行基础体检。请保留终端输出中的版本、安装模式、耗时和“常用命令”，但不要把密码或 Token 写入反馈。新安装 Docker 后，当前非 root 会话通常仍需使用脚本打印的 `sudo docker compose ...` 命令；重新登录后 Docker 组权限才可能生效。
+
+如果默认目录已被占用，请使用一个新的空目录，不要覆盖现有部署：
+
+```bash
+curl -fsSL https://www.bailinghub.com/install.sh | env \
+  BAILING_INSTALL_DIR="$HOME/bailinghub-validation" \
+  sh
+cd "$HOME/bailinghub-validation"
+```
+
+### 路径 B：本地源码复现
 
 ```bash
 git clone --depth 1 --branch v0.1.5 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 git rev-parse HEAD
-```
-
-请保留最后一条命令输出的提交号，反馈时填写。
-
-## 2. 启动本地 demo
-
-```bash
 export BAILING_TOKEN="$(openssl rand -hex 32)"
 docker compose up -d --build
+```
+
+请保留提交号，并在后续命令中沿用同一终端和同一个 `BAILING_TOKEN`。所有写操作只会作用于本地 demo 数据。
+
+## 2. 检查服务与控制台
+
+路径 A 请使用安装器“常用命令”中打印的完整 Compose 前缀；在刚安装 Docker 的非 root 会话中通常是：
+
+```bash
+sudo docker compose -f docker-compose.images.yml ps
+```
+
+路径 B 使用：
+
+```bash
 docker compose ps
 ```
 
-请在后续命令中沿用同一终端和同一个 `BAILING_TOKEN`。所有写操作只会作用于本地 demo 数据。
-
-等待容器就绪后检查：
+两条路径都检查：
 
 ```bash
 curl -fsS http://localhost:18900/health
 ```
 
-控制台地址为 <http://localhost:18900/console/>，默认账号为 `admin / bailing-demo-admin`。
+控制台地址为 <http://localhost:18900/console/>：
+
+- 路径 A 使用安装完成时打印的随机后台密码；密码也保存在安装目录的 `.env`，不得提交到 Issue；
+- 路径 B 使用默认 demo 账号 `admin / bailing-demo-admin`。
 
 ## 3. 运行基础体检
 
+路径 A 使用安装器打印的命令，通常是：
+
 ```bash
-docker compose exec bailinghub npm run smoke
+sudo docker compose -f docker-compose.images.yml exec -T bailinghub npm run smoke
+```
+
+路径 B 使用：
+
+```bash
+docker compose exec -T bailinghub npm run smoke
 ```
 
 通过标准：命令退出码为 `0`，最终汇总中的失败数为 `0`。
 
 ## 4. 运行完整业务闭环
 
+路径 A 使用安装器打印的命令，通常是：
+
 ```bash
-docker compose exec bailinghub npm run demo:e2e
+sudo docker compose -f docker-compose.images.yml exec -T bailinghub npm run demo:e2e
+```
+
+路径 B 使用：
+
+```bash
+docker compose exec -T bailinghub npm run demo:e2e
 ```
 
 该命令会真实经过本地 demo 的以下路径：
@@ -89,7 +136,7 @@ docker compose exec bailinghub npm run demo:e2e
 
 无论 PASS、部分通过还是失败，都欢迎使用 [独立验证报告模板](https://github.com/bailinghub/bailinghub/issues/new?template=independent_validation.yml) 反馈。报告建议包含：
 
-- BailingHub 版本和提交号；
+- BailingHub 版本、安装路径，以及源码复现时的提交号；
 - 操作系统、CPU 架构、Docker 与 Compose 版本；
 - 四个检查点的结果；
 - 镜像下载之外的实际耗时；
@@ -114,7 +161,13 @@ docker compose exec bailinghub npm run demo:e2e
 确认不再需要本地测试数据后，可在本仓目录执行：
 
 ```bash
+# 路径 A：沿用安装器打印的 Compose 前缀
+sudo docker compose -f docker-compose.images.yml down -v
+
+# 路径 B
 docker compose down -v
 ```
+
+如果路径 A 由 root 用户执行，或当前用户已经拥有 Docker socket 权限，请去掉 `sudo`。只运行与你选择的路径对应的一条清理命令。
 
 该命令会删除本次 demo 创建的容器和本地数据卷。

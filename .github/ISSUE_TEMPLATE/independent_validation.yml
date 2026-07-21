@@ -16,7 +16,8 @@ body:
     attributes:
       label: Validation track / 验证路径
       options:
-        - Docker demo (core) / Docker demo（核心）
+        - One-line installer (core) / 一键安装（核心）
+        - Source Docker demo (core) / 源码 Docker demo（核心）
         - Dify integration / Dify 接入
         - Executor or OpenClaw / 执行器或 OpenClaw
         - Other public recipe / 其他公开配方
@@ -25,8 +26,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: Version and commit / 版本与提交
-      placeholder: "v0.1.3, commit abc1234"
+      label: Version and optional commit / 版本与可选提交号
+      description: A commit SHA is required only for a source checkout.
+      placeholder: "v0.1.5; source checkout commit abc1234 (if applicable)"
     validations:
       required: true
   - type: textarea
@@ -39,7 +41,8 @@ body:
         - Architecture:
         - Docker:
         - Docker Compose:
-        - Installation mode: source / image / other
+        - Installation path: public installer / source checkout / other
+        - Installation mode: image / source / other
     validations:
       required: true
   - type: dropdown

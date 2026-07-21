@@ -410,9 +410,13 @@ EOF
   fi
   ADMIN_PASSWORD="$(grep '^BAILING_DEMO_ADMIN_PASSWORD=' .env | cut -d= -f2-)"
   CLIENT_TOKEN="$(grep '^DEMO_CLIENT_TOKEN=' .env | cut -d= -f2-)"
-  COMPOSE_HINT="docker compose"
+  if docker info >/dev/null 2>&1 || [ "$(id -u)" -eq 0 ]; then
+    COMPOSE_HINT="docker compose"
+  else
+    COMPOSE_HINT="sudo docker compose"
+  fi
   if [ -n "$COMPOSE_FILES" ]; then
-    COMPOSE_HINT="docker compose $COMPOSE_FILES"
+    COMPOSE_HINT="$COMPOSE_HINT $COMPOSE_FILES"
   fi
 
   cat <<EOF
