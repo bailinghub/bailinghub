@@ -24,7 +24,6 @@ async function run(input: string, requestId: string, metadata: Record<string, un
     body: JSON.stringify({
       request_id: requestId,
       route: routeKey,
-      source: 'demo-e2e',
       input,
       metadata: { visitor_uid: runVisitorUid, operator_uid: 'demo-user-001', ...metadata },
     }),
