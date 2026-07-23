@@ -18,7 +18,9 @@ body:
       options:
         - One-line installer (core) / 一键安装（核心）
         - Source Docker demo (core) / 源码 Docker demo（核心）
+        - Direct Client API / 直接 Client API
         - Dify integration / Dify 接入
+        - n8n integration / n8n 接入
         - Executor or OpenClaw / 执行器或 OpenClaw
         - Other public recipe / 其他公开配方
     validations:
