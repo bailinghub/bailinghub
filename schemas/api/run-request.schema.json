@@ -1,42 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://www.bailinghub.com/schemas/api/run-request.schema.json",
-  "title": "Bailing Run Request",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["route", "input"],
-  "properties": {
-    "request_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128,
-      "description": "Business idempotency key scoped by client."
-    },
-    "route": {
-      "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9_-]{1,63}$",
-      "description": "Route key configured in the console."
-    },
-    "input": {
-      "type": "string",
-      "minLength": 1,
-      "description": "User instruction or business task text."
-    },
-    "metadata": {
-      "type": "object",
-      "additionalProperties": true,
-      "description": "Business context consumed as an object. Do not send JSON strings here."
-    },
-    "callback": {
-      "type": "string",
-      "format": "uri",
-      "description": "Optional business callback URL for delivery result."
-    },
-    "wait_ms": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 30000,
-      "description": "Optional synchronous wait window in milliseconds."
-    }
-  }
+  "$ref": "../../contracts/client-api/v1/run-request.schema.json",
+  "description": "Compatibility alias for the versioned BailingHub Client API v1 run request."
 }

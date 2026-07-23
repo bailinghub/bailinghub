@@ -1,0 +1,153 @@
+{
+  "schema_version": "bailing.client-api.vectors.v1",
+  "contract": "bailing.client-api",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "id": "CLIENT-HEALTH-001",
+      "schema": "health-response.schema.json",
+      "valid": true,
+      "value": {
+        "status": "ok",
+        "paused": false
+      }
+    },
+    {
+      "id": "CLIENT-RUN-001",
+      "schema": "run-request.schema.json",
+      "valid": true,
+      "value": {
+        "request_id": "crm:refund:20260723:1",
+        "route": "refund_review",
+        "input": "Review refund request 42."
+      }
+    },
+    {
+      "id": "CLIENT-RUN-002",
+      "schema": "run-request.schema.json",
+      "valid": true,
+      "value": {
+        "request_id": "crm:refund:20260723:2",
+        "route": "refund_review",
+        "input": "Review refund request 43.",
+        "metadata": {
+          "order_id": "43",
+          "principal": {
+            "id": "u-1001",
+            "tenant": "t-1",
+            "roles": ["finance"]
+          }
+        },
+        "callback_url": "https://business.example.com/bailinghub/callback"
+      }
+    },
+    {
+      "id": "CLIENT-RUN-INVALID-001",
+      "schema": "run-request.schema.json",
+      "valid": false,
+      "value": {
+        "route": "refund_review",
+        "input": "Missing the idempotency key."
+      }
+    },
+    {
+      "id": "CLIENT-RUN-INVALID-002",
+      "schema": "run-request.schema.json",
+      "valid": false,
+      "value": {
+        "request_id": "crm:refund:3",
+        "route": "Refund Review",
+        "input": "Invalid route syntax."
+      }
+    },
+    {
+      "id": "CLIENT-RUN-INVALID-003",
+      "schema": "run-request.schema.json",
+      "valid": false,
+      "value": {
+        "request_id": "crm:refund:4",
+        "route": "refund_review",
+        "input": "Client requests cannot override runtime ownership.",
+        "project": "private-project"
+      }
+    },
+    {
+      "id": "CLIENT-RUN-INVALID-004",
+      "schema": "run-request.schema.json",
+      "valid": false,
+      "value": {
+        "request_id": " ",
+        "route": "refund_review",
+        "input": "The idempotency key cannot be blank."
+      }
+    },
+    {
+      "id": "CLIENT-RUN-INVALID-005",
+      "schema": "run-request.schema.json",
+      "valid": false,
+      "value": {
+        "request_id": "crm:refund:5",
+        "route": "route_name_that_is_longer_than_the_public_client_api_sixty_four_character_limit",
+        "input": "The route cannot exceed the public contract limit."
+      }
+    },
+    {
+      "id": "CLIENT-SUBMIT-001",
+      "schema": "submit-response.schema.json",
+      "valid": true,
+      "value": {
+        "job_id": "11111111-1111-4111-8111-111111111111",
+        "request_id": "crm:refund:20260723:1",
+        "status": "queued",
+        "route": "refund_review",
+        "target": "llm",
+        "session_id": "22222222-2222-4222-8222-222222222222",
+        "continue": false
+      }
+    },
+    {
+      "id": "CLIENT-SUBMIT-IDEMPOTENT-001",
+      "schema": "submit-response.schema.json",
+      "valid": true,
+      "value": {
+        "job_id": "11111111-1111-4111-8111-111111111111",
+        "request_id": "crm:refund:20260723:1",
+        "status": "done"
+      }
+    },
+    {
+      "id": "CLIENT-JOB-001",
+      "schema": "job-response.schema.json",
+      "valid": true,
+      "value": {
+        "job_id": "11111111-1111-4111-8111-111111111111",
+        "request_id": "crm:refund:20260723:1",
+        "status": "done",
+        "result": {
+          "text": "Refund review completed."
+        },
+        "created_at": "2026-07-23T00:00:00.000Z",
+        "updated_at": "2026-07-23T00:00:01.000Z",
+        "future_additive_field": true
+      }
+    },
+    {
+      "id": "CLIENT-JOB-INVALID-001",
+      "schema": "job-response.schema.json",
+      "valid": false,
+      "value": {
+        "job_id": "11111111-1111-4111-8111-111111111111",
+        "request_id": "crm:refund:20260723:1",
+        "status": "cancelled"
+      }
+    },
+    {
+      "id": "CLIENT-ERROR-001",
+      "schema": "error-response.schema.json",
+      "valid": true,
+      "value": {
+        "error": "not found"
+      }
+    }
+  ]
+}

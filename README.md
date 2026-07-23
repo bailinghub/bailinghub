@@ -188,6 +188,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/README.md` / `docs/README.en.md` | 文档地图：每类文档的职责边界与维护纪律 |
 | `docs/user-guide/` | 使用者指南：面向业务负责人、产品经理、系统管理员和实施顾问，按业务场景说明为什么需要中枢、后台怎么配、配完交给开发者什么 |
 | `docs/CONTRACT.md` | **边界契约**：`/run`、聊天入口、工具调用/签名、回送、降级、鉴权——业务与中枢唯一的「缝」 |
+| `docs/CLIENT_API.md` | **生态接入稳定面**：版本化 Client API、机器契约、兼容规则与 Dify/n8n 跨仓门禁 |
 | `docs/QUICKSTART.md` | 从零部署到第一条路由跑通的操作手册 |
 | `docs/QUICKSTART.en.md` | English quickstart for Docker demo, first route, and first business tool |
 | `docs/DEMO.md` | Docker Demo：20 分钟跑通 Agent 调业务工具闭环 |
@@ -209,6 +210,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/RELEASE_NOTES_v0.1.4.md` | `v0.1.4` 网页聊天真实流式输出与可重连 SSE 说明 |
 | `docs/RELEASE_NOTES_v0.1.5.md` | `v0.1.5` 一键安装参数可靠性与全新服务器兼容性说明 |
 | `docs/RELEASE_NOTES_v0.1.6.md` | `v0.1.6` 独立验证路径与安装后权限提示说明 |
+| `docs/RELEASE_NOTES_v0.1.7.md` | `v0.1.7` 版本化 Client API 与跨生态兼容门禁说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |

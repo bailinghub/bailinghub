@@ -20,6 +20,23 @@ interface RuntimeContextInput {
   actor?: RuntimeActor;
 }
 
+const CLIENT_ROUTE_PATTERN = /^[a-z0-9][a-z0-9_-]{1,63}$/;
+const CLIENT_RUN_FIELDS = new Set(['request_id', 'route', 'input', 'metadata', 'callback_url']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function validCallbackUrl(value: string): boolean {
+  if (value.length > 2048) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 export interface RunApiDeps {
   cfg: Pick<AppConfig, 'defaultProfile'>;
   isPaused: () => boolean;
@@ -31,9 +48,24 @@ export interface RunApiDeps {
 
 export async function handleRunFor(deps: RunApiDeps, req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<void> {
   if (deps.isPaused()) { send(res, 503, { status: 'paused' }); return; }
-  const body = (await readBody(req)) as Partial<RunRequest>;
-  if (!body.request_id || !body.input) {
+  const rawBody = await readBody(req);
+  if (!isRecord(rawBody)) {
+    send(res, 400, { error: '请求体必须是 JSON 对象' });
+    return;
+  }
+  const body = rawBody as Partial<RunRequest>;
+  if (typeof body.request_id !== 'string' || !body.request_id.trim() || body.request_id.length > 128 ||
+      typeof body.input !== 'string' || !body.input.trim() || body.input.length > 100_000) {
     send(res, 400, { error: 'request_id / input 必填' });
+    return;
+  }
+  if (body.metadata !== undefined && !isRecord(body.metadata)) {
+    send(res, 400, { error: 'metadata 必须是 JSON 对象' });
+    return;
+  }
+  if (body.callback_url !== undefined &&
+      (typeof body.callback_url !== 'string' || !validCallbackUrl(body.callback_url))) {
+    send(res, 400, { error: 'callback_url 必须是长度不超过 2048 的 HTTP(S) URL' });
     return;
   }
   const ctx = await deps.runtimeContextFor({ source: 'run', requestId: body.request_id, principal });
@@ -44,8 +76,16 @@ export async function handleRunFor(deps: RunApiDeps, req: IncomingMessage, res: 
   // 接入方策略闸门：只能走 route（不许自带 project/profile 绕过路由配置）+ 路由白名单 + 限速
   const client = principal.kind === 'client' ? principal.client : null;
   if (client) {
-    if (!body.route) { send(res, 403, { error: '接入方必须通过 route 触发（route 由中枢后台配置）' }); return; }
+    if (typeof body.route !== 'string' || !CLIENT_ROUTE_PATTERN.test(body.route)) {
+      send(res, 400, { error: '接入方 route 必须匹配 ^[a-z0-9][a-z0-9_-]{1,63}$' });
+      return;
+    }
     if (body.project || body.profile) { send(res, 403, { error: '接入方不可覆盖 project/profile（由路由配置决定）' }); return; }
+    const unknownFields = Object.keys(rawBody).filter((key) => !CLIENT_RUN_FIELDS.has(key));
+    if (unknownFields.length > 0) {
+      send(res, 400, { error: `接入方请求包含公开 Client API 未声明字段: ${unknownFields.join(', ')}` });
+      return;
+    }
     if (body.route !== 'auto' && !clientAllowsRoute(client, body.route)) { send(res, 403, { error: `接入方 ${client.app_id} 无权调用路由 ${body.route}` }); return; }
     if (await rateLimitedFor(cfgStore, client)) { send(res, 429, { error: `超出限速（${client.rate_limit_per_min}/分钟），请稍后重试同 request_id` }); return; }
   }
@@ -136,7 +176,7 @@ export async function handleRunFor(deps: RunApiDeps, req: IncomingMessage, res: 
     requestId: body.request_id, fullInput: body.input,
     route, routeKey: resolvedRouteKey,
     target, project: project ?? null, projectPath,
-    profileName, permission: route?.permission, source: body.source ?? (client ? client.app_id : 'unknown'),
+    profileName, permission: route?.permission, source: client ? client.app_id : (body.source ?? 'unknown'),
     clientAppId: client?.app_id, metadata: jobMetadata, callbackUrl,
     session, threadScope, principalId, channel: client?.app_id ?? 'admin',
   });

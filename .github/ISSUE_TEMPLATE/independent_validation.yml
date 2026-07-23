@@ -30,7 +30,7 @@ body:
     attributes:
       label: Version and optional commit / 版本与可选提交号
       description: A commit SHA is required only for a source checkout.
-      placeholder: "v0.1.6; source checkout commit abc1234 (if applicable)"
+      placeholder: "v0.1.7; source checkout commit abc1234 (if applicable)"
     validations:
       required: true
   - type: textarea

@@ -196,6 +196,8 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [@napi-rs/canvas-win32-x64-msvc](https://www.npmjs.com/package/@napi-rs/canvas-win32-x64-msvc) | 0.1.100 | MIT | runtime |
 | Hub | [@types/node](https://www.npmjs.com/package/@types/node) | 22.19.20 | MIT | runtime |
 | Hub | [@xmldom/xmldom](https://www.npmjs.com/package/@xmldom/xmldom) | 0.8.13 | MIT | runtime |
+| Hub | [ajv](https://www.npmjs.com/package/ajv) | 8.20.0 | MIT | build/test |
+| Hub | [ajv-formats](https://www.npmjs.com/package/ajv-formats) | 3.0.1 | MIT | build/test |
 | Hub | [argparse](https://www.npmjs.com/package/argparse) | 1.0.10 | MIT | runtime |
 | Hub | [aws-ssl-profiles](https://www.npmjs.com/package/aws-ssl-profiles) | 1.1.2 | MIT | runtime |
 | Hub | [base64-js](https://www.npmjs.com/package/base64-js) | 1.5.1 | MIT | runtime |
@@ -205,6 +207,8 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [dingbat-to-unicode](https://www.npmjs.com/package/dingbat-to-unicode) | 1.0.1 | BSD-2-Clause | runtime |
 | Hub | [duck](https://www.npmjs.com/package/duck) | 0.1.12 | BSD | runtime |
 | Hub | [esbuild](https://www.npmjs.com/package/esbuild) | 0.28.1 | MIT | build/test |
+| Hub | [fast-deep-equal](https://www.npmjs.com/package/fast-deep-equal) | 3.1.3 | MIT | build/test |
+| Hub | [fast-uri](https://www.npmjs.com/package/fast-uri) | 3.1.4 | BSD-3-Clause | build/test |
 | Hub | [fsevents](https://www.npmjs.com/package/fsevents) | 2.3.2 | MIT | build/test |
 | Hub | [fsevents](https://www.npmjs.com/package/fsevents) | 2.3.3 | MIT | build/test |
 | Hub | [generate-function](https://www.npmjs.com/package/generate-function) | 2.3.1 | MIT | runtime |
@@ -213,6 +217,7 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [inherits](https://www.npmjs.com/package/inherits) | 2.0.4 | ISC | runtime |
 | Hub | [is-property](https://www.npmjs.com/package/is-property) | 1.0.2 | MIT | runtime |
 | Hub | [isarray](https://www.npmjs.com/package/isarray) | 1.0.0 | MIT | runtime |
+| Hub | [json-schema-traverse](https://www.npmjs.com/package/json-schema-traverse) | 1.0.0 | MIT | build/test |
 | Hub | [jszip](https://www.npmjs.com/package/jszip) | 3.10.1 | (MIT OR GPL-3.0-or-later) | runtime |
 | Hub | [lie](https://www.npmjs.com/package/lie) | 3.3.0 | MIT | runtime |
 | Hub | [long](https://www.npmjs.com/package/long) | 5.3.2 | Apache-2.0 | runtime |
@@ -229,6 +234,7 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [playwright-core](https://www.npmjs.com/package/playwright-core) | 1.61.1 | Apache-2.0 | build/test |
 | Hub | [process-nextick-args](https://www.npmjs.com/package/process-nextick-args) | 2.0.1 | MIT | runtime |
 | Hub | [readable-stream](https://www.npmjs.com/package/readable-stream) | 2.3.8 | MIT | runtime |
+| Hub | [require-from-string](https://www.npmjs.com/package/require-from-string) | 2.0.2 | MIT | build/test |
 | Hub | [safe-buffer](https://www.npmjs.com/package/safe-buffer) | 5.1.2 | MIT | runtime |
 | Hub | [safer-buffer](https://www.npmjs.com/package/safer-buffer) | 2.1.2 | MIT | runtime |
 | Hub | [setimmediate](https://www.npmjs.com/package/setimmediate) | 1.0.5 | MIT | runtime |

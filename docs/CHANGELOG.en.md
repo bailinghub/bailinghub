@@ -24,6 +24,18 @@ Each public version should describe:
 
 There are currently no committed public changes awaiting release.
 
+## v0.1.7 - Versioned Client API and Cross-Ecosystem Compatibility Gates
+
+Released on 2026-07-23.
+
+- Added `bailing.client-api.v1`, with a manifest, JSON Schemas, and behavioral vectors for `/health`, `/run`, `/jobs/{job_id}`, authentication, error classes, and job statuses.
+- Added bidirectional compatibility gates: core CI validates the Dify and n8n adapters, while adapter CI validates the target core branch.
+- Made the public Client API strictly validate top-level fields, route, metadata, callback URL, request id, and input length. The authenticated client identity, rather than request data, determines the source.
+- Kept OpenClaw and portable executors outside the Client API. They continue to use the separate claim, heartbeat, lease, and result-submission protocol.
+- No database migration is required. Documented clients remain compatible; informal integrations that use undeclared top-level fields must remove those fields.
+- Validation: `npm run client-api:contract`, `npm run client-api:ecosystem:local`, `npm run client-api:ecosystem:clone`, `npm run typecheck`, `npm test`, and `npm run release:check`.
+- Related docs: [RELEASE_NOTES_v0.1.7.en.md](RELEASE_NOTES_v0.1.7.en.md) and [CLIENT_API.md](CLIENT_API.md).
+
 ## v0.1.6 - Independent Validation Paths and Post-Install Privilege Hints
 
 Released on 2026-07-21.

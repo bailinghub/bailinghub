@@ -17,6 +17,18 @@
 
 当前暂无已承诺但未发布的公开变更。
 
+## v0.1.7 - 版本化 Client API 与跨生态兼容门禁
+
+发布日期：2026-07-23。
+
+- **建立稳定 Client API**：新增 `bailing.client-api.v1`，以 manifest、JSON Schema 和行为向量定义 `/health`、`/run`、`/jobs/{job_id}`、认证、错误分类和任务状态。
+- **增加双向兼容门禁**：核心 CI 验证 Dify 与 n8n 适配器，适配器 CI 反向验证目标核心分支，阻止任一仓库静默破坏另一方。
+- **收紧公开请求边界**：Client API 严格校验顶层字段、route、metadata、callback URL、request id 和输入长度；调用来源由认证 client 身份决定，不能由请求自行覆盖。
+- **保持协议分层**：OpenClaw 与便携执行器不被错误纳入 Client API，继续使用独立的 claim、heartbeat、lease 和结果回报协议。
+- **对接影响**：无数据库迁移；按公开契约接入的客户端无需修改。依赖未声明顶层字段的非正式接入应删除这些字段。
+- **验证方式**：`npm run client-api:contract`、`npm run client-api:ecosystem:local`、`npm run client-api:ecosystem:clone`、`npm run typecheck`、`npm test`、`npm run release:check`。
+- **相关文档**：[RELEASE_NOTES_v0.1.7.md](RELEASE_NOTES_v0.1.7.md)、[CLIENT_API.md](CLIENT_API.md)。
+
 ## v0.1.6 - 独立验证路径与安装后权限提示
 
 发布日期：2026-07-21。

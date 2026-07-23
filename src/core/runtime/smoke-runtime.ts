@@ -170,7 +170,6 @@ export async function runHubSmoke(options: SmokeOptions): Promise<SmokeReport> {
         body: {
           request_id: requestId,
           route: options.runRoute,
-          source: 'smoke',
           input: options.runInput || 'smoke test: 查询订单 SO-1001 并创建售后工单',
           metadata: {
             visitor_uid: `smoke-${requestId}`,

@@ -107,6 +107,50 @@ test('POST /run: 接入方不能覆盖路由决定的 project/profile', async ()
   assert.match(String(res.json()['error']), /不可覆盖 project\/profile/);
 });
 
+test('POST /run: 接入方 route 必须符合公开 Client API 约束', async () => {
+  const res = new FakeResponse();
+  await handleRunFor(
+    runDeps({}, null),
+    jsonRequest({ request_id: 'req-invalid-route', input: 'hello', route: 'Orders' }),
+    res as unknown as ServerResponse,
+    clientPrincipal,
+  );
+
+  assert.equal(res.statusCode, 400);
+  assert.match(String(res.json()['error']), /route 必须匹配/);
+});
+
+test('POST /run: 接入方 route 不能超过公开 Client API 长度上限', async () => {
+  const res = new FakeResponse();
+  await handleRunFor(
+    runDeps({}, null),
+    jsonRequest({
+      request_id: 'req-route-too-long',
+      input: 'hello',
+      route: `a${'b'.repeat(64)}`,
+    }),
+    res as unknown as ServerResponse,
+    clientPrincipal,
+  );
+
+  assert.equal(res.statusCode, 400);
+  assert.match(String(res.json()['error']), /route 必须匹配/);
+});
+
+test('POST /run: 接入方不能提交公开 Client API 未声明的 source 字段', async () => {
+  const res = new FakeResponse();
+
+  await handleRunFor(
+    runDeps({}, null),
+    jsonRequest({ request_id: 'req-source', input: 'hello', route: 'orders', source: 'spoofed-client' }),
+    res as unknown as ServerResponse,
+    clientPrincipal,
+  );
+
+  assert.equal(res.statusCode, 400);
+  assert.match(String(res.json()['error']), /未声明字段: source/);
+});
+
 test('POST /run: request_id 不能跨接入方碰撞', async () => {
   const route: Route = {
     route_key: 'orders',

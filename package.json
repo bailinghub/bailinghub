@@ -1,6 +1,6 @@
 {
   "name": "bailinghub",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": false,
   "type": "module",
   "description": "Open-source ACC runtime and agent control plane for existing business systems.",
@@ -65,6 +65,9 @@
     "assets:check": "node scripts/generate-readme-assets.mjs --check",
     "docs:check": "node scripts/check-doc-links.mjs",
     "examples:check": "node scripts/validate-examples.mjs",
+    "client-api:contract": "tsx scripts/client-api-contract-test.ts",
+    "client-api:ecosystem:local": "node scripts/check-client-api-ecosystem.mjs --mode local",
+    "client-api:ecosystem:clone": "node scripts/check-client-api-ecosystem.mjs --mode clone",
     "audit:deps": "npm audit --audit-level=low && npm --prefix web-admin audit --audit-level=low",
     "web-admin:check": "npm --prefix web-admin run build && npm --prefix web-admin audit --audit-level=low",
     "oss:guard": "node scripts/oss-boundary-check.mjs",
@@ -72,7 +75,7 @@
     "oss:verify": "node scripts/verify-oss-export.mjs",
     "release:audit": "npm run security:scan && npm run oss:guard && node scripts/release-audit.mjs",
     "github:verify": "node scripts/verify-github-repo.mjs",
-    "release:check": "npm run notices:check && npm run assets:check && npm run audit:deps && npm run typecheck && npm test && npm run web-admin:check && npm run docs:check && npm run examples:check && npm run sdk:test && npm run sdk:test7 && npm run sdk:test-node && npm run sdk:test-python && npm run sdk:test-runtime && npm run sdk:test-p1 && npm run release:audit && npm run oss:verify && npm run github:verify",
+    "release:check": "npm run notices:check && npm run assets:check && npm run audit:deps && npm run client-api:contract && npm run client-api:ecosystem:clone && npm run typecheck && npm test && npm run web-admin:check && npm run docs:check && npm run examples:check && npm run sdk:test && npm run sdk:test7 && npm run sdk:test-node && npm run sdk:test-python && npm run sdk:test-runtime && npm run sdk:test-p1 && npm run release:audit && npm run oss:verify && npm run github:verify",
     "images:build": "sh scripts/publish-images.sh",
     "images:publish": "BAILING_PUSH_IMAGES=1 sh scripts/publish-images.sh",
     "images:publish-mysql": "BAILING_PUSH_IMAGES=1 sh scripts/publish-mysql-image.sh",
@@ -95,6 +98,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "playwright": "^1.61.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

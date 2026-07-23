@@ -4,6 +4,11 @@
 
 **冻结它，两边就能各自独立开发。** 任何字段变更都按兼容方式演进（只增不改语义、不删字段）。
 
+其中供 Dify、n8n 和其他外部编排平台使用的最小公共面，已独立提取为版本化
+[`bailing.client-api.v1`](CLIENT_API.md)。它只覆盖 `GET /health`、`POST /run` 和
+`GET /jobs/{job_id}`，拥有独立于中枢应用版本和插件版本的兼容策略、JSON Schema、
+测试向量与跨仓门禁。执行器的认领、租约、心跳和回传不属于 Client API。
+
 中枢自身的配置契约同时提供机器可读版本：`GET /schemas/config/<name>.schema.json`。当前包含 `route`、`target`、`tool-provider`、`channel`、`storage-bucket`、`client`、`executor-token` 和公共定义 `common`，后台表单、部署向导、第三方运维脚本应优先消费这些 schema。
 
 ## 0. 鉴权：三种凭证
@@ -35,7 +40,7 @@
 | `input` | 是 | 业务事件正文（工单/审查请求/任意任务）。**被当作不可信数据**，不作为指令执行 |
 | `project` | 仅管理身份 | 显式指定项目（与 route 二选一；接入方禁用） |
 | `profile` | 仅管理身份 | 能力档名（接入方禁用，由路由决定） |
-| `source` | 否 | 来源标识；接入方缺省自动记为其 app_id |
+| `source` | 仅管理身份 | 来源标识；接入方的来源由服务端固定为其 app_id，客户端传值不会覆盖 |
 | `metadata` | 否 | 透传对象（如 `{ticket_id, tenant_id}`），原样回带；推荐带 `principal` 标准主体；`per_key` 会话策略从这里取键；`passthrough` 会话策略从这里取 `session_id`（业务自管的执行器会话 id，给了续它、不给新建） |
 | `callback_url` | 否 | 调查完成后把完整 job POST 到此地址；不填则靠轮询 |
 

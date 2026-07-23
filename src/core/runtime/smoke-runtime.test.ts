@@ -4,13 +4,14 @@ import { runHubSmoke, type SmokeRequestResult } from './smoke-runtime';
 
 test('runHubSmoke: demo route 跑通 /run、终态、trace 与脱敏排障包', async () => {
   const calls: string[] = [];
+  let runBody: unknown;
   const got = await runHubSmoke({
     hub: 'http://hub.local',
     adminToken: 'admin-token',
     runRoute: 'demo_support',
     runToken: 'demo-token',
     pollMs: 1,
-    request: async (method, path): Promise<SmokeRequestResult> => {
+    request: async (method, path, opts): Promise<SmokeRequestResult> => {
       calls.push(`${method} ${path}`);
       if (path === '/health') return { status: 200, json: { status: 'ok' }, text: '{"status":"ok"}' };
       if (path === '/console/') return { status: 200, json: null, text: '<div id="app"></div>' };
@@ -18,7 +19,10 @@ test('runHubSmoke: demo route 跑通 /run、终态、trace 与脱敏排障包', 
       if (path === '/admin/api/version') return { status: 200, json: { app: { name: 'bailinghub' } }, text: '{}' };
       if (path === '/admin/api/config-diagnostics') return { status: 200, json: { errors: 0, diagnostics: [] }, text: '{}' };
       if (path === '/admin/api/routes/auto-preview') return { status: 200, json: { rows: [] }, text: '{}' };
-      if (path === '/run') return { status: 202, json: { job_id: 'job-1' }, text: '{}' };
+      if (path === '/run') {
+        runBody = opts?.body;
+        return { status: 202, json: { job_id: 'job-1' }, text: '{}' };
+      }
       if (path === '/jobs/job-1') return { status: 200, json: { status: 'done' }, text: '{}' };
       if (path.startsWith('/admin/api/runs/trace?')) {
         return { status: 200, json: { debug_bundle: { redaction: { applied: true }, diagnosis: [{ code: 'ok' }] } }, text: '{}' };
@@ -31,6 +35,7 @@ test('runHubSmoke: demo route 跑通 /run、终态、trace 与脱敏排障包', 
   assert.equal(got.run?.route, 'demo_support');
   assert.equal(got.run?.status, 'done');
   assert.ok(calls.includes('POST /run'));
+  assert.equal((runBody as Record<string, unknown>)['source'], undefined);
   assert.ok(calls.some((x) => x.startsWith('GET /admin/api/runs/trace?request_id=')));
   assert.ok(got.checks.some((c) => c.name === 'debug_bundle 默认脱敏' && c.status === 'pass'));
 });
