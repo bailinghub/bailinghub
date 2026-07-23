@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 export const CONTRACT_VERSIONS = {
   boundary: 'bailing.contract.v2.13',
+  clientApi: 'bailing.client-api.v1',
   toolDefinition: 'bailing.tool-definition.v1',
   approvalIntent: 'bailing.approval-intent.v1',
   approvalDecision: 'bailing.approval-decision.v1',

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/contracts/client-api/v1/error-response.schema.json",
+  "title": "BailingHub Client API v1 Error Response",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string"
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

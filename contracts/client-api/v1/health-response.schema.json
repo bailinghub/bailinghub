@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/contracts/client-api/v1/health-response.schema.json",
+  "title": "BailingHub Client API v1 Health Response",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["status"],
+  "properties": {
+    "status": {
+      "const": "ok"
+    }
+  }
+}

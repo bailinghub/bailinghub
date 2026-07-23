@@ -21,6 +21,22 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  client-api-contract:
+    name: Client API contract + ecosystem consumers
+    runs-on: ubuntu-latest
+    env:
+      BAILING_CLIENT_API_CONSUMER_REF: ${{ github.head_ref || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run client-api:contract
+      - run: npm run client-api:ecosystem:clone
+
   web-admin:
     name: console build
     runs-on: ubuntu-latest

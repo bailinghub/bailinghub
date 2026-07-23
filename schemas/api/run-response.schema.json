@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/schemas/api/run-response.schema.json",
+  "$ref": "../../contracts/client-api/v1/submit-response.schema.json",
+  "description": "Compatibility alias for the versioned BailingHub Client API v1 submit response."
+}

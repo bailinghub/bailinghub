@@ -1,0 +1,63 @@
+{
+  "schema_version": "bailing.client-api.manifest.v1",
+  "contract": "bailing.client-api",
+  "version": "1.0.0",
+  "major": 1,
+  "description": "Stable public API used by external workflow and agent-platform adapters to submit and inspect governed BailingHub jobs.",
+  "authentication": {
+    "scheme": "bearer",
+    "credential": "per-client token",
+    "header": "Authorization: Bearer <client_token>"
+  },
+  "endpoints": [
+    {
+      "id": "health",
+      "method": "GET",
+      "path": "/health",
+      "authentication": "none",
+      "success_statuses": [200],
+      "response_schema": "health-response.schema.json"
+    },
+    {
+      "id": "run.submit",
+      "method": "POST",
+      "path": "/run",
+      "authentication": "bearer",
+      "success_statuses": [202],
+      "request_schema": "run-request.schema.json",
+      "response_schema": "submit-response.schema.json"
+    },
+    {
+      "id": "jobs.get",
+      "method": "GET",
+      "path": "/jobs/{job_id}",
+      "authentication": "bearer",
+      "success_statuses": [200],
+      "response_schema": "job-response.schema.json"
+    }
+  ],
+  "error_schema": "error-response.schema.json",
+  "job_statuses": {
+    "known": ["queued", "running", "dispatched", "done", "error", "rejected"],
+    "non_terminal": ["queued", "running", "dispatched"],
+    "terminal": ["done", "error", "rejected"]
+  },
+  "http_errors": {
+    "400": "Invalid request or route configuration.",
+    "401": "Missing or invalid credential.",
+    "403": "Client is not allowed to use the route or resource.",
+    "404": "Job is absent or is not owned by the authenticated client.",
+    "409": "Idempotency or routing conflict.",
+    "413": "JSON request body exceeds the configured limit.",
+    "429": "Per-client rate limit exceeded; retry with the same request_id.",
+    "503": "BailingHub is paused or temporarily unavailable."
+  },
+  "compatibility": {
+    "additive_response_fields": "allowed_and_must_be_ignored_by_consumers",
+    "unknown_job_status": "fail_closed",
+    "new_required_request_field": "breaking_major_change",
+    "authentication_change": "breaking_major_change",
+    "status_semantic_change": "breaking_major_change"
+  },
+  "vectors": "vectors.json"
+}

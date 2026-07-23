@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/contracts/client-api/v1/job-response.schema.json",
+  "title": "BailingHub Client API v1 Job Response",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["job_id", "request_id", "status"],
+  "properties": {
+    "job_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "running", "dispatched", "done", "error", "rejected"]
+    },
+    "result": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "report": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "usage": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "raw_result": {
+      "type": ["string", "null"]
+    },
+    "error": {
+      "type": ["string", "null"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

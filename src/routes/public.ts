@@ -57,6 +57,12 @@ function publicSchemaFile(root: string, rel: string): string {
   return join(dirname(root), 'bailinghub', 'schemas', rel);
 }
 
+function publicContractFile(root: string, rel: string): string {
+  const primary = join(root, 'contracts', rel);
+  if (existsSync(primary)) return primary;
+  return join(dirname(root), 'bailinghub', 'contracts', rel);
+}
+
 function serveSourcePackage(deps: PublicHttpDeps, res: ServerResponse, head: boolean): void {
   const dir = mkdtempSync(join(tmpdir(), 'bailinghub-pack-'));
   try {
@@ -126,6 +132,19 @@ export async function handlePublicHttpFor(deps: PublicHttpDeps, req: IncomingMes
     if (!existsSync(f)) { send(res, 404, { error: 'schema not found' }); return true; }
     res.writeHead(200, { 'content-type': 'application/schema+json; charset=utf-8', 'cache-control': 'no-cache' });
     res.end(head ? undefined : readFileSync(f));
+    return true;
+  }
+
+  const mContract = read ? path.match(/^\/contracts\/(client-api\/v[0-9]+\/[A-Za-z0-9_.-]+\.json)$/) : null;
+  if (mContract) {
+    const file = publicContractFile(deps.cfg.root, mContract[1]!);
+    if (!existsSync(file)) { send(res, 404, { error: 'contract artifact not found' }); return true; }
+    const isSchema = file.endsWith('.schema.json');
+    res.writeHead(200, {
+      'content-type': isSchema ? 'application/schema+json; charset=utf-8' : 'application/json; charset=utf-8',
+      'cache-control': 'no-cache',
+    });
+    res.end(head ? undefined : readFileSync(file));
     return true;
   }
 

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://www.bailinghub.com/contracts/client-api/v1/run-request.schema.json",
+  "title": "BailingHub Client API v1 Run Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["request_id", "route", "input"],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "\\S",
+      "description": "Client-scoped idempotency key. Retries must reuse the same value."
+    },
+    "route": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[a-z0-9][a-z0-9_-]{1,63}$",
+      "description": "Allowlisted route key configured in BailingHub."
+    },
+    "input": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100000,
+      "pattern": "\\S",
+      "description": "Untrusted business task text."
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Optional business context. Authorization remains the business system's responsibility."
+    },
+    "callback_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://",
+      "maxLength": 2048,
+      "description": "Optional signed completion callback URL."
+    }
+  }
+}

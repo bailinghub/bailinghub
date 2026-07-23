@@ -17,7 +17,9 @@ const requiredRepoFiles = [
   'docs/RELEASE_NOTES_v0.1.4.md',
   'docs/RELEASE_NOTES_v0.1.5.md',
   'docs/RELEASE_NOTES_v0.1.6.md',
+  'docs/RELEASE_NOTES_v0.1.7.md',
   'docs/CHANGELOG.md',
+  'docs/CLIENT_API.md',
   'config.example.json',
   '.env.example',
   'package-lock.json',
@@ -35,7 +37,17 @@ const requiredRepoFiles = [
   'scripts/generate-readme-assets.mjs',
   'scripts/validate-examples.mjs',
   'scripts/check-image-tags.sh',
+  'scripts/client-api-contract-test.ts',
+  'scripts/check-client-api-ecosystem.mjs',
   'scripts/write-build-info.mjs',
+  'contracts/client-api/consumers.json',
+  'contracts/client-api/v1/manifest.json',
+  'contracts/client-api/v1/vectors.json',
+  'contracts/client-api/v1/run-request.schema.json',
+  'contracts/client-api/v1/submit-response.schema.json',
+  'contracts/client-api/v1/job-response.schema.json',
+  'contracts/client-api/v1/health-response.schema.json',
+  'contracts/client-api/v1/error-response.schema.json',
 ];
 
 function readText(path) {
@@ -92,7 +104,7 @@ function assertRepoEntrance() {
   const releaseCheck = String(pkg.scripts?.['release:check'] ?? '');
   if (pkg.scripts?.['oss:export'] !== 'node scripts/export-oss.mjs') findings.push('package.json: oss:export must run scripts/export-oss.mjs');
   if (pkg.scripts?.['oss:verify'] !== 'node scripts/verify-oss-export.mjs') findings.push('package.json: oss:verify must run scripts/verify-oss-export.mjs');
-  for (const required of ['npm run notices:check', 'npm run assets:check', 'npm run audit:deps', 'npm run typecheck', 'npm test', 'npm run web-admin:check', 'npm run docs:check', 'npm run examples:check', 'npm run sdk:test', 'npm run sdk:test7', 'npm run sdk:test-node', 'npm run sdk:test-python', 'npm run sdk:test-runtime', 'npm run sdk:test-p1', 'npm run release:audit', 'npm run oss:verify']) {
+  for (const required of ['npm run notices:check', 'npm run assets:check', 'npm run audit:deps', 'npm run client-api:contract', 'npm run client-api:ecosystem:clone', 'npm run typecheck', 'npm test', 'npm run web-admin:check', 'npm run docs:check', 'npm run examples:check', 'npm run sdk:test', 'npm run sdk:test7', 'npm run sdk:test-node', 'npm run sdk:test-python', 'npm run sdk:test-runtime', 'npm run sdk:test-p1', 'npm run release:audit', 'npm run oss:verify']) {
     if (!releaseCheck.includes(required)) findings.push(`package.json: release:check must include ${required}`);
   }
 }

@@ -68,6 +68,8 @@
 | [RELEASE_NOTES_v0.1.5.en.md](RELEASE_NOTES_v0.1.5.en.md) | English `v0.1.5` installer reliability and clean-server compatibility release notes. |
 | [RELEASE_NOTES_v0.1.6.md](RELEASE_NOTES_v0.1.6.md) | `v0.1.6` 独立验证路径与安装后权限提示说明。 |
 | [RELEASE_NOTES_v0.1.6.en.md](RELEASE_NOTES_v0.1.6.en.md) | English `v0.1.6` independent-validation and post-install privilege-hint release notes. |
+| [RELEASE_NOTES_v0.1.7.md](RELEASE_NOTES_v0.1.7.md) | `v0.1.7` 版本化 Client API 与跨生态兼容门禁说明。 |
+| [RELEASE_NOTES_v0.1.7.en.md](RELEASE_NOTES_v0.1.7.en.md) | English `v0.1.7` versioned Client API and cross-ecosystem compatibility-gate release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

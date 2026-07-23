@@ -1,0 +1,21 @@
+{
+  "schema_version": "bailing.client-api.consumers.v1",
+  "contract": "bailing.client-api",
+  "contract_dir": "contracts/client-api/v1",
+  "consumers": [
+    {
+      "id": "dify",
+      "repository": "https://github.com/bailinghub/bailinghub-dify-plugin.git",
+      "ref": "main",
+      "local_path": "../bailinghub-dify-plugin",
+      "checker": ["python3", "scripts/check_client_api_contract.py"]
+    },
+    {
+      "id": "n8n",
+      "repository": "https://github.com/bailinghub/bailinghub-n8n-node.git",
+      "ref": "main",
+      "local_path": "../bailinghub-n8n-node",
+      "checker": ["node", "scripts/check-client-api-contract.mjs"]
+    }
+  ]
+}

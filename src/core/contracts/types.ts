@@ -6,7 +6,9 @@ export interface SessionTarget {
   isContinue: boolean;
 }
 
-export type JobStatus = 'queued' | 'running' | 'dispatched' | 'done' | 'error' | 'rejected';
+export const JOB_STATUSES = ['queued', 'running', 'dispatched', 'done', 'error', 'rejected'] as const;
+export const TERMINAL_JOB_STATUSES = ['done', 'error', 'rejected'] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
 
 /** 调查任务（单一真值源） */
 export interface Job {
