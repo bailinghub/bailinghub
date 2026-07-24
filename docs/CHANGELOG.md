@@ -15,7 +15,19 @@
 
 ## Unreleased
 
-暂无已确认变更。
+当前无待发布变更。
+
+## v0.1.9 - 可选 OpenMetrics 运维指标
+
+发布日期：2026-07-24。
+
+- **新增可选 OpenMetrics 端点**：`GET /metrics` 默认关闭，启用后必须使用独立 Bearer Token；不接受 query Token，不与管理根密钥复用。
+- **提供稳定低基数运维指标**：覆盖任务状态、最近终态、最老排队时间、延迟任务、过期租约、阻塞线程、待审批数、执行器在线状态、审计写失败、运行时暂停与采集器健康；不输出任务、租户、主体、参数或业务载荷标签。
+- **故障隔离与扩展兼容**：状态库与控制面采集器分别限时、独立降级；单个采集失败不阻断其余指标。第三方状态/配置实现可继续忽略新增可选聚合方法。
+- **数据库结构**：新增 `050_operational_metrics_indexes.sql`，只为任务终态时间窗口和执行器心跳聚合增加索引。
+- **对接影响**：默认行为不变；不修改 Client API、执行器协议、工具签名或 ACC 语义。仅启用 `/metrics` 的部署需要配置三个 `BAILING_METRICS_*` 环境变量。
+- **验证方式**：`npm run typecheck`、`npm test`、`npm run docs:check`、`npm run security:scan`、`npm run release:check`。
+- **相关文档**：[RELEASE_NOTES_v0.1.9.md](RELEASE_NOTES_v0.1.9.md)、[OPERATIONS.md](OPERATIONS.md)、[兼容性与升级.md](兼容性与升级.md)。
 
 ## v0.1.8 - 首次管理员只创建一次
 

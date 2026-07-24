@@ -3,8 +3,8 @@ import { existsSync } from 'node:fs';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { completeTraceEntry } from '../../core/runtime/trace-runtime';
-import type { AuditEntry, Job } from '../../core/contracts/types';
-import type { RuntimeStateStore } from '../../core/state/state-contracts';
+import { JOB_STATUSES, TERMINAL_JOB_STATUSES, type AuditEntry, type Job } from '../../core/contracts/types';
+import type { JobOperationalMetricsSnapshot, RuntimeStateStore } from '../../core/state/state-contracts';
 
 /** jsonl 后端：本地烟测与最小私有部署。状态仍是中枢自己的，不进业务库。 */
 export class JsonlStore implements RuntimeStateStore {
@@ -185,6 +185,60 @@ export class JsonlStore implements RuntimeStateStore {
       if (job.thread_id === threadId && (job.status === 'queued' || job.status === 'running' || job.status === 'dispatched')) n++;
     }
     return n;
+  }
+
+  async operationalMetricsSnapshot(nowMs = Date.now()): Promise<JobOperationalMetricsSnapshot> {
+    const byStatus = Object.fromEntries(JOB_STATUSES.map((status) => [status, 0])) as JobOperationalMetricsSnapshot['byStatus'];
+    const terminalLast15m: JobOperationalMetricsSnapshot['terminalLast15m'] = { done: 0, error: 0, rejected: 0 };
+    const terminalCutoffMs = nowMs - 15 * 60_000;
+    const queuedThreads = new Set<number>();
+    const inflightThreads = new Set<number>();
+    let oldestQueuedMs: number | null = null;
+    let delayedQueuedJobs = 0;
+    let expiredLeases = 0;
+
+    for (const job of this.jobs.values()) {
+      byStatus[job.status] += 1;
+
+      const updatedMs = Date.parse(job.updated_at);
+      if (TERMINAL_JOB_STATUSES.includes(job.status as (typeof TERMINAL_JOB_STATUSES)[number])
+        && Number.isFinite(updatedMs) && updatedMs >= terminalCutoffMs) {
+        terminalLast15m[job.status as keyof typeof terminalLast15m] += 1;
+      }
+
+      if (job.status === 'queued') {
+        if (job.thread_id !== undefined) queuedThreads.add(job.thread_id);
+        const runAfterMs = job.run_after ? Date.parse(job.run_after) : Number.NaN;
+        if (Number.isFinite(runAfterMs) && runAfterMs > nowMs) delayedQueuedJobs += 1;
+        if (job.source !== 'monitor') {
+          const createdMs = Date.parse(job.created_at);
+          if (Number.isFinite(createdMs) && (oldestQueuedMs === null || createdMs < oldestQueuedMs)) {
+            oldestQueuedMs = createdMs;
+          }
+        }
+      }
+
+      if ((job.status === 'running' || job.status === 'dispatched') && job.thread_id !== undefined) {
+        inflightThreads.add(job.thread_id);
+      }
+      if ((job.status === 'running' || job.status === 'dispatched') && job.lease_until) {
+        const leaseUntilMs = Date.parse(job.lease_until);
+        if (Number.isFinite(leaseUntilMs) && leaseUntilMs < nowMs) expiredLeases += 1;
+      }
+    }
+
+    let blockedThreads = 0;
+    for (const threadId of queuedThreads) {
+      if (inflightThreads.has(threadId)) blockedThreads += 1;
+    }
+    return {
+      byStatus,
+      terminalLast15m,
+      oldestQueuedAgeSeconds: oldestQueuedMs === null ? 0 : Math.max((nowMs - oldestQueuedMs) / 1000, 0),
+      delayedQueuedJobs,
+      expiredLeases,
+      blockedThreads,
+    };
   }
 
   async acquireRuntimeLock(lockKey: string, owner: string, ttlMs: number): Promise<boolean> {

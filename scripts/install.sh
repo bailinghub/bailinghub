@@ -275,7 +275,7 @@ write_env() {
   TOOL_SECRET="${DEMO_TOOL_SECRET:-$(secret)}"
   CLIENT_TOKEN="${DEMO_CLIENT_TOKEN:-$(secret)}"
   IMAGE_TAG="${BAILING_IMAGE_TAG:-$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$APP_DIR/package.json" | head -1)}"
-  [ -n "$IMAGE_TAG" ] || IMAGE_TAG="0.1.8"
+  [ -n "$IMAGE_TAG" ] || IMAGE_TAG="0.1.9"
   IMAGE_REGISTRY="${BAILING_IMAGE_REGISTRY:-$DEFAULT_IMAGE_REGISTRY}"
   IMAGE_NAMESPACE="${BAILING_IMAGE_NAMESPACE:-$DEFAULT_IMAGE_NAMESPACE}"
   cat > "$ENV_FILE" <<EOF

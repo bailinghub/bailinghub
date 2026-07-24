@@ -3,7 +3,7 @@ import type { Pool } from 'mysql2/promise';
 import type { AppConfig } from '../../core/config/config';
 import { completeTraceEntry } from '../../core/runtime/trace-runtime';
 import type { AuditEntry, Job } from '../../core/contracts/types';
-import type { RuntimeStateStore } from '../../core/state/state-contracts';
+import type { JobOperationalMetricsSnapshot, RuntimeStateStore } from '../../core/state/state-contracts';
 import { dt, json, rowToJob } from '../../core/state/state-codec';
 import { mysqlJobUpdatePlan } from './state-mysql-update-plan';
 
@@ -270,6 +270,56 @@ export class MysqlStore implements RuntimeStateStore {
   async countInflightByThread(threadId: number): Promise<number> {
     const [rows] = await this.pool.query("SELECT COUNT(*) AS n FROM bz_jobs WHERE thread_id=? AND status IN ('queued','running','dispatched')", [threadId]);
     return Number((rows as any[])[0]?.n ?? 0);
+  }
+
+  async operationalMetricsSnapshot(nowMs = Date.now()): Promise<JobOperationalMetricsSnapshot> {
+    const nowS = dt(new Date(nowMs).toISOString());
+    const terminalCutoffS = dt(new Date(nowMs - 15 * 60_000).toISOString());
+    const [rows] = await this.pool.query(
+      `SELECT
+        COALESCE(SUM(j.status='queued'),0) AS queued,
+        COALESCE(SUM(j.status='running'),0) AS running,
+        COALESCE(SUM(j.status='dispatched'),0) AS dispatched,
+        COALESCE(SUM(j.status='done'),0) AS done,
+        COALESCE(SUM(j.status='error'),0) AS error,
+        COALESCE(SUM(j.status='rejected'),0) AS rejected,
+        COALESCE(SUM(j.status='done' AND j.updated_at>=?),0) AS done_15m,
+        COALESCE(SUM(j.status='error' AND j.updated_at>=?),0) AS error_15m,
+        COALESCE(SUM(j.status='rejected' AND j.updated_at>=?),0) AS rejected_15m,
+        MIN(CASE WHEN j.status='queued' AND COALESCE(j.source,'')<>'monitor' THEN j.created_at END) AS oldest_queued_at,
+        COALESCE(SUM(j.status='queued' AND j.run_after IS NOT NULL AND j.run_after>?),0) AS delayed_queued,
+        COALESCE(SUM(j.status IN ('running','dispatched') AND j.lease_until IS NOT NULL AND j.lease_until<?),0) AS expired_leases,
+        (
+          SELECT COUNT(DISTINCT q.thread_id)
+          FROM bz_jobs q
+          JOIN bz_jobs i ON i.thread_id=q.thread_id AND i.status IN ('running','dispatched')
+          WHERE q.status='queued' AND q.thread_id IS NOT NULL
+        ) AS blocked_threads
+      FROM bz_jobs j`,
+      [terminalCutoffS, terminalCutoffS, terminalCutoffS, nowS, nowS],
+    );
+    const row = (rows as any[])[0] ?? {};
+    const count = (value: unknown): number => Math.max(Number(value) || 0, 0);
+    const oldestQueuedMs = row.oldest_queued_at ? new Date(row.oldest_queued_at).getTime() : Number.NaN;
+    return {
+      byStatus: {
+        queued: count(row.queued),
+        running: count(row.running),
+        dispatched: count(row.dispatched),
+        done: count(row.done),
+        error: count(row.error),
+        rejected: count(row.rejected),
+      },
+      terminalLast15m: {
+        done: count(row.done_15m),
+        error: count(row.error_15m),
+        rejected: count(row.rejected_15m),
+      },
+      oldestQueuedAgeSeconds: Number.isFinite(oldestQueuedMs) ? Math.max((nowMs - oldestQueuedMs) / 1000, 0) : 0,
+      delayedQueuedJobs: count(row.delayed_queued),
+      expiredLeases: count(row.expired_leases),
+      blockedThreads: count(row.blocked_threads),
+    };
   }
 
   async acquireRuntimeLock(lockKey: string, owner: string, ttlMs: number): Promise<boolean> {

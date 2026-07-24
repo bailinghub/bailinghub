@@ -10,6 +10,7 @@ import { LOCAL_UPLOAD_URL_PREFIX, localObjectFile } from '../adapters/storage/ob
 import { buildVersionInfo } from '../core/platform/version';
 import type { AppConfig } from '../core/config/config';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import type { OperationalMetricsEndpoint } from '../app/operational-metrics';
 
 const SITE_PATHS = new Set(['/product', '/features', '/governance', '/docs', '/opensource', '/partners', '/pricing']);
 const EXECUTOR_SKILL_FILES = new Map<string, string>([
@@ -29,6 +30,7 @@ export interface PublicHttpDeps {
   configStore: ConfigStoreContract | null;
   queue: { stats(): Record<string, number> };
   isPaused: () => boolean;
+  metrics?: OperationalMetricsEndpoint;
   readiness?: () => Promise<{ ready: boolean; checks: Record<string, unknown> }>;
   operationalStatus?: () => Record<string, unknown>;
   serveConsole: (urlPath: string, res: ServerResponse, head?: boolean) => void;
@@ -90,6 +92,37 @@ export async function handlePublicHttpFor(deps: PublicHttpDeps, req: IncomingMes
   const method = req.method ?? 'GET';
   const head = method === 'HEAD';
   const read = method === 'GET' || head;
+
+  if (path === '/metrics') {
+    if (!deps.metrics?.enabled) {
+      send(res, 404, { error: 'not found' });
+      return true;
+    }
+    res.setHeader('cache-control', 'no-store');
+    res.setHeader('x-content-type-options', 'nosniff');
+    if (!deps.metrics.authorize(req.headers.authorization)) {
+      res.setHeader('www-authenticate', 'Bearer realm="bailinghub-metrics"');
+      send(res, 401, { error: 'unauthorized' });
+      return true;
+    }
+    if (!read) {
+      res.setHeader('allow', 'GET, HEAD');
+      send(res, 405, { error: 'method not allowed' });
+      return true;
+    }
+    try {
+      const body = await deps.metrics.scrape();
+      res.writeHead(200, {
+        'content-type': 'application/openmetrics-text; version=1.0.0; charset=utf-8',
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      });
+      res.end(head ? undefined : body);
+    } catch {
+      send(res, 503, { error: 'metrics temporarily unavailable' });
+    }
+    return true;
+  }
 
   if (read && path === '/health') {
     if (head) { res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(); return true; }

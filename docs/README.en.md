@@ -59,6 +59,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.7.md](RELEASE_NOTES_v0.1.7.md) | Chinese `v0.1.7` release notes. |
 | [RELEASE_NOTES_v0.1.8.en.md](RELEASE_NOTES_v0.1.8.en.md) | `v0.1.8` create-once initial-admin bootstrap release notes. |
 | [RELEASE_NOTES_v0.1.8.md](RELEASE_NOTES_v0.1.8.md) | Chinese `v0.1.8` release notes. |
+| [RELEASE_NOTES_v0.1.9.en.md](RELEASE_NOTES_v0.1.9.en.md) | `v0.1.9` optional OpenMetrics operational metrics release notes. |
+| [RELEASE_NOTES_v0.1.9.md](RELEASE_NOTES_v0.1.9.md) | Chinese `v0.1.9` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

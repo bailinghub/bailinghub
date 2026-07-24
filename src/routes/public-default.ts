@@ -1,11 +1,21 @@
 // OSS 默认公开 HTTP 分发：这里才绑定 app/runtime 单组织单例和默认聊天入口。
 // 自定义部署应 import public.ts 的 handlePublicHttpFor(deps) 并传入自己的 deps。
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { cfg, cfgStore, edition, isPaused, queue } from '../app/runtime';
+import { cfg, cfgStore, edition, isPaused, queue, store } from '../app/runtime';
 import { serveConsoleFromRoot } from '../app/http';
 import { handleChat, handleChatConfig, handleChatEvents, handleChatRate, handleChatThread, handleChatUpload, serveChatDemo } from './chat-default';
 import { handlePublicHttpFor, type PublicHttpDeps } from './public';
 import { checkReadinessFor } from '../app/readiness';
+import { createOperationalMetricsEndpointFor } from '../app/operational-metrics';
+
+const metrics = createOperationalMetricsEndpointFor({
+  cfg,
+  store,
+  configStore: cfgStore,
+  queue,
+  isPaused,
+  auditFailures: edition.auditFailures,
+});
 
 export function defaultPublicHttpDeps(): PublicHttpDeps {
   return {
@@ -13,6 +23,7 @@ export function defaultPublicHttpDeps(): PublicHttpDeps {
     configStore: cfgStore,
     queue,
     isPaused,
+    metrics,
     readiness: () => checkReadinessFor(cfg, cfgStore),
     operationalStatus: () => {
       const audit = edition.auditFailures.snapshot();
