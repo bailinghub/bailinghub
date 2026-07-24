@@ -45,7 +45,7 @@ BailingHub is not:
 - A replacement for your business backend.
 - A replacement for MCP.
 
-MCP solves tool discovery and invocation. BailingHub focuses on the business-side control plane around tools: routing, identity, risk, approval, audit, signatures, and traceability.
+MCP solves tool discovery and invocation. BailingHub focuses on the business-side control plane around tools: routing, identity, risk, approval, audit, signatures, and traceability. The independent [BailingHub MCP Server](https://github.com/bailinghub/bailinghub-mcp-server) connects compatible clients to the public Client API without becoming part of the BailingHub core distribution.
 
 ## Deployment Scope
 

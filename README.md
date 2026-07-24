@@ -67,7 +67,7 @@ npm run doctor
 
 - **不是普通 chatbot**：它不只回答问题，而是把业务触发、上下文装配、工具调用、审批、审计、送达和追溯收敛成一个可治理运行面。
 - **不是传统 workflow**：它不要求业务把流程画死在编排器里；路由决定大脑、知识、记忆、工具白名单和送达策略，AI 在治理边界内动态执行。
-- **不替代 MCP**：MCP 是工具协议生态；百灵中枢是业务侧 AI 控制面。未来可以接 MCP，但仍由中枢负责身份、权限、风险、限流和审计。
+- **不替代 MCP**：MCP 是工具协议生态；百灵中枢是业务侧 AI 控制面。独立的 [BailingHub MCP Server](https://github.com/bailinghub/bailinghub-mcp-server) 可把兼容客户端接入公共 Client API，仍由中枢负责身份、权限、风险、限流和审计。该适配器不进入 BailingHub 核心发行包。
 
 ## 能力面
 

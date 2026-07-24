@@ -16,6 +16,13 @@
       "ref": "main",
       "local_path": "../bailinghub-n8n-node",
       "checker": ["node", "scripts/check-client-api-contract.mjs"]
+    },
+    {
+      "id": "mcp",
+      "repository": "https://github.com/bailinghub/bailinghub-mcp-server.git",
+      "ref": "main",
+      "local_path": "../bailinghub-mcp-server",
+      "checker": ["node", "scripts/check-client-api-contract.mjs"]
     }
   ]
 }
