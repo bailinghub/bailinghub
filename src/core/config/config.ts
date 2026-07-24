@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { hostname } from 'node:os';
 import { assertServerTokenPolicy } from '../platform/server-token';
+import { assertMetricsTokenPolicy } from '../platform/metrics-token';
 
 export interface MysqlConfig {
   host: string;
@@ -21,6 +22,12 @@ export interface StateConfig {
 export interface BootstrapAdminConfig {
   username: string;
   password: string;
+}
+
+export interface MetricsConfig {
+  enabled: boolean;
+  token: string;
+  scrapeTimeoutMs: number;
 }
 
 export interface LlmCredential {
@@ -56,6 +63,7 @@ export interface AppConfig {
   displayTzLabel: string;   // 展示时区友好名（如「北京时间」），仅用于标注文案；偏移 UTC±N 由 time.ts 动态算
   auditRetentionDays: number; // bz_audit 保留天数；0=不自动删除
   alerts: AlertsConfig | null;
+  metrics: MetricsConfig;
   bootstrapAdmin: BootstrapAdminConfig | null;
   concurrency: number;
   killSwitchFile: string;
@@ -105,6 +113,25 @@ function requiredEnv(name: string): string {
   const v = String(process.env[name] ?? '').trim();
   if (!v) throw new Error(`生产模式缺少环境变量 ${name}`);
   return v;
+}
+
+function booleanEnv(name: string, fallback = false): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = raw.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+  if (['0', 'false', 'no', 'off'].includes(value)) return false;
+  throw new Error(`${name} 必须是 true/false、1/0、yes/no 或 on/off`);
+}
+
+function boundedIntegerEnv(name: string, fallback: number, min: number, max: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new Error(`${name} 必须是 ${min}~${max} 的整数`);
+  }
+  return value;
 }
 
 function bootstrapAdminFromEnv(env: NodeJS.ProcessEnv): BootstrapAdminConfig | null {
@@ -171,6 +198,11 @@ export function loadConfig(): AppConfig {
           cooldown_min: Number(env['BAILING_ALERTS_COOLDOWN_MIN'] ?? rawAlerts.cooldown_min ?? 60) || 60,
         }
       : null,
+    metrics: {
+      enabled: booleanEnv('BAILING_METRICS_ENABLED'),
+      token: String(env['BAILING_METRICS_TOKEN'] ?? '').trim(),
+      scrapeTimeoutMs: boundedIntegerEnv('BAILING_METRICS_SCRAPE_TIMEOUT_MS', 5000, 250, 30_000),
+    },
     bootstrapAdmin: bootstrapAdminFromEnv(env),
     concurrency: Number(raw['concurrency'] ?? 2),
     killSwitchFile: resolve(root, raw['killSwitchFile'] ?? '.paused'),
@@ -217,6 +249,11 @@ export function loadConfig(): AppConfig {
     };
   }
   assertServerTokenPolicy({ env: cfg.env, host: cfg.server.host, token: cfg.server.token });
+  assertMetricsTokenPolicy({
+    enabled: cfg.metrics.enabled,
+    token: cfg.metrics.token,
+    serverToken: cfg.server.token,
+  });
   if (cfg.bootstrapAdmin && cfg.state.backend !== 'mysql') {
     throw new Error('首次管理员初始化需要 mysql 状态后端');
   }

@@ -69,7 +69,75 @@ readinessProbe:
   httpGet: { path: /health/ready, port: 18900 }
 ```
 
-## 3. 并发与连接池
+## 3. OpenMetrics 运维指标
+
+`GET /metrics` 提供适合 Prometheus 等监控系统抓取的低基数 OpenMetrics 文本。该端点默认关闭；关闭时返回 404，避免未配置的部署意外暴露运行状态。
+
+启用方式：
+
+```bash
+BAILING_METRICS_ENABLED=true
+BAILING_METRICS_TOKEN="$(openssl rand -hex 32)"
+BAILING_METRICS_SCRAPE_TIMEOUT_MS=5000
+```
+
+`BAILING_METRICS_TOKEN` 必须是至少 24 个字符的独立强随机 Token，不能与 `BAILING_TOKEN` 相同。Token 只通过 `Authorization: Bearer ...` 请求头传递，不支持 query 参数。建议只允许监控网络访问 `/metrics`，并继续使用 HTTPS 或集群内受控网络。
+
+验证抓取：
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ${BAILING_METRICS_TOKEN}" \
+  https://hub.example.com/metrics
+```
+
+Prometheus 示例：
+
+```yaml
+scrape_configs:
+  - job_name: bailinghub
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/secrets/bailinghub_metrics_token
+    static_configs:
+      - targets: ["bailinghub:18900"]
+```
+
+主要指标：
+
+| 指标 | 含义 |
+|---|---|
+| `bailinghub_info` | 当前版本与构建提交 |
+| `bailinghub_up` | 指标端点本次是否正常响应 |
+| `bailinghub_runtime_paused` | 全局暂停开关是否生效 |
+| `bailinghub_runtime_queue` | 当前进程内 running / waiting 数 |
+| `bailinghub_job_records` | 按固定生命周期状态统计的任务存量 |
+| `bailinghub_jobs_terminal_15m` | 最近 15 分钟进入终态的任务数 |
+| `bailinghub_queue_oldest_queued_age_seconds` | 最老非 monitor 排队任务的等待秒数 |
+| `bailinghub_queue_delayed_jobs` | `run_after` 尚未到期的延迟任务数 |
+| `bailinghub_jobs_expired_leases` | 已明确过期的运行/派发租约数 |
+| `bailinghub_threads_blocked` | 被同线程在途任务阻塞的会话线程数 |
+| `bailinghub_approvals_pending` | 待决策的工具审批数 |
+| `bailinghub_executors` | 按 online / offline 统计的执行器数 |
+| `bailinghub_audit_write_failures_total` | 当前进程累计审计写入失败数 |
+| `bailinghub_metrics_collector_available` | 状态库/控制面采集器是否实现 |
+| `bailinghub_metrics_collector_success` | 对应采集器在本次抓取中是否成功 |
+| `bailinghub_metrics_scrape_duration_seconds` | 本次聚合和渲染耗时 |
+
+指标标签是固定、低基数集合，不包含 `job_id`、租户、主体、路由参数或业务载荷。单个可选采集器超时或失败时，端点仍返回其余指标，并把对应 `bailinghub_metrics_collector_success` 置为 0；日志只记录采集器类别和失败类型，不记录异常正文或业务数据。JSONL 状态后端可提供任务指标，但没有 MySQL 控制面聚合时，`control_plane` 会标记为不可用。
+
+建议至少告警：
+
+- 任一已启用采集器的 `bailinghub_metrics_collector_success == 0`。
+- `bailinghub_jobs_expired_leases > 0`。
+- `bailinghub_queue_oldest_queued_age_seconds` 持续超过本业务的最大等待目标。
+- `bailinghub_audit_write_failures_total` 增长。
+- 预期在线的执行器进入 `offline`，或近期错误/拒绝终态占比异常升高。
+
+指标是外部监控输入，不替代 `/health/ready`、业务系统最终授权、审计账本或控制台诊断。
+
+## 4. 并发与连接池
 
 - `concurrency` 控制单实例同时执行的任务数。
 - `BAILING_MYSQL_CONNECTION_LIMIT` 控制每个实例的 MySQL 连接池上限，默认 15。
@@ -89,7 +157,7 @@ readinessProbe:
 
 项目不会宣称未经目标机器、模型和业务接口实测的固定 QPS。发布容量承诺前，应使用自己的任务分布进行压测。
 
-## 4. 发布与升级
+## 5. 发布与升级
 
 1. 备份数据库。
 2. 在一个非生产环境运行 `npm run release:check`。
@@ -100,7 +168,7 @@ readinessProbe:
 
 不要在多副本上同时并发运行迁移。数据库迁移应由一个部署步骤负责，应用副本只负责启动和 readiness 检查。
 
-## 5. 备份与恢复
+## 6. 备份与恢复
 
 至少备份：
 
@@ -118,7 +186,7 @@ readinessProbe:
 4. 检查 `/health/ready`、系统体检和关键任务 trace。
 5. 再逐步恢复其余副本和流量。
 
-## 6. 故障语义
+## 7. 故障语义
 
 - 实例在任务执行中崩溃：数据库 lease 到期后由 reaper 恢复，任务不会依赖进程内队列保存。
 - executor 回报暂时失败：执行器重试；最终未回报的任务由 lease 恢复。
@@ -126,20 +194,22 @@ readinessProbe:
 - 外部工具或模型失败：任务记录错误与 trace，是否重试由路由和错误类型决定。
 - 审计写入失败：安全关键工具调用按 fail-closed 处理；非关键运行事件不阻塞业务，但应进入运维告警与指标。
 
-## 7. 安全基线
+## 8. 安全基线
 
 - 仅通过 HTTPS 暴露公网入口。
 - 管理端、接入方、执行器和工具源使用不同凭证，不复用密钥。
+- 指标端点使用独立 `BAILING_METRICS_TOKEN`，不得与管理根密钥复用。
 - MySQL 不直接暴露公网。
 - 无人值守部署应成对设置 `BAILING_BOOTSTRAP_ADMIN_USERNAME` 与 `BAILING_BOOTSTRAP_ADMIN_PASSWORD`。它们只负责空管理员表的首次创建，不是持续同步配置；修改或轮换密码应走控制台或显式 `admin:create`，不要依赖重启。
 - 定期轮换管理员、接入方、执行器和工具签名密钥。
 - 生产关闭 demo 默认凭证，限制控制台来源和数据库账号权限。
 - 日志、错误响应和监控标签不得包含 API key、数据库密码或完整业务敏感载荷。
 
-## 8. 上线检查单
+## 9. 上线检查单
 
 - `/health` 返回 200。
 - `/health/ready` 返回 200，迁移 pending 为 0。
+- 如启用运维指标，使用监控专用 Token 抓取 `/metrics` 成功，两个采集器状态符合部署后端预期。
 - 控制台系统体检没有配置错误或过期租约。
 - 至少跑通一次真实 `/run`、工具调用、trace 和结果回传。
 - 已验证备份可恢复。

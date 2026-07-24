@@ -22,7 +22,19 @@ Each public version should describe:
 
 ## Unreleased
 
-No committed changes.
+There are no unreleased changes.
+
+## v0.1.9 - Optional OpenMetrics Operational Metrics
+
+Released on 2026-07-24.
+
+- Added an optional `GET /metrics` OpenMetrics endpoint. It is disabled by default and requires a dedicated Bearer token when enabled; query-string tokens and reuse of the administrative root token are rejected.
+- Added stable, low-cardinality operational metrics for job states, recent terminal outcomes, oldest queue age, delayed jobs, expired leases, blocked threads, pending approvals, executor heartbeat state, audit-write failures, runtime pause state, and collector health. Job, tenant, principal, argument, and business-payload labels are never emitted.
+- Isolated and bounded state and control-plane collectors independently. A failed collector does not suppress remaining metrics, and external state/config implementations may continue omitting the new optional aggregation methods.
+- Added `050_operational_metrics_indexes.sql`, containing only indexes for terminal-window and executor-heartbeat aggregation.
+- Default behavior is unchanged. Client API, executor protocol, tool signatures, and ACC semantics are unchanged. Only deployments enabling `/metrics` need the three `BAILING_METRICS_*` variables.
+- Validation: `npm run typecheck`, `npm test`, `npm run docs:check`, `npm run security:scan`, and `npm run release:check`.
+- Related docs: [RELEASE_NOTES_v0.1.9.en.md](RELEASE_NOTES_v0.1.9.en.md), [OPERATIONS.en.md](OPERATIONS.en.md), and [COMPATIBILITY.en.md](COMPATIBILITY.en.md).
 
 ## v0.1.8 - Create-Once Initial Administrator Bootstrap
 

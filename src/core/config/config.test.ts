@@ -22,6 +22,9 @@ const ENV_KEYS = [
   'BAILING_ALERTS_TO',
   'BAILING_ALERTS_URL',
   'BAILING_ALERTS_COOLDOWN_MIN',
+  'BAILING_METRICS_ENABLED',
+  'BAILING_METRICS_TOKEN',
+  'BAILING_METRICS_SCRAPE_TIMEOUT_MS',
   'BAILING_BOOTSTRAP_ADMIN_USERNAME',
   'BAILING_BOOTSTRAP_ADMIN_PASSWORD',
 ];
@@ -153,6 +156,50 @@ test('loadConfig: 首次管理员变量缺失时保持禁用', () => {
   }, { BAILING_ENV: 'development' }, () => {
     const cfg = loadConfig();
     assert.equal(cfg.bootstrapAdmin, null);
+  });
+});
+
+test('loadConfig: metrics 默认关闭且启用时要求独立强令牌', () => {
+  const config = {
+    server: { host: '127.0.0.1', token: 'server-only-token-with-enough-entropy-2026' },
+    state: { backend: 'jsonl' },
+  };
+  withTempConfig(config, {}, () => {
+    assert.deepEqual(loadConfig().metrics, {
+      enabled: false,
+      token: '',
+      scrapeTimeoutMs: 5000,
+    });
+  });
+  withTempConfig(config, { BAILING_METRICS_ENABLED: 'true' }, () => {
+    assert.throws(() => loadConfig(), /BAILING_METRICS_TOKEN 不安全/);
+  });
+  withTempConfig(config, {
+    BAILING_METRICS_ENABLED: 'true',
+    BAILING_METRICS_TOKEN: 'server-only-token-with-enough-entropy-2026',
+  }, () => {
+    assert.throws(() => loadConfig(), /必须与 BAILING_TOKEN 分离/);
+  });
+  withTempConfig(config, {
+    BAILING_METRICS_ENABLED: 'true',
+    BAILING_METRICS_TOKEN: 'metrics-only-token-with-enough-entropy-2026',
+    BAILING_METRICS_SCRAPE_TIMEOUT_MS: '750',
+  }, () => {
+    assert.deepEqual(loadConfig().metrics, {
+      enabled: true,
+      token: 'metrics-only-token-with-enough-entropy-2026',
+      scrapeTimeoutMs: 750,
+    });
+  });
+});
+
+test('loadConfig: metrics 配置拒绝模糊布尔值和越界超时', () => {
+  const config = { server: { host: '127.0.0.1', token: '' }, state: { backend: 'jsonl' } };
+  withTempConfig(config, { BAILING_METRICS_ENABLED: 'sometimes' }, () => {
+    assert.throws(() => loadConfig(), /BAILING_METRICS_ENABLED 必须是/);
+  });
+  withTempConfig(config, { BAILING_METRICS_SCRAPE_TIMEOUT_MS: '100' }, () => {
+    assert.throws(() => loadConfig(), /必须是 250~30000 的整数/);
   });
 });
 

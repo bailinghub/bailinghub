@@ -43,7 +43,9 @@ export type ToolEmbeddingRepositoryContract = Pick<MysqlToolEmbeddingRepository,
 export type KnowledgeRepositoryContract = Pick<MysqlKnowledgeRepository, keyof MysqlKnowledgeRepository>;
 export type KbDatasourceRepositoryContract = Pick<MysqlKbDatasourceRepository, keyof MysqlKbDatasourceRepository>;
 export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, keyof DeliveryDlqLedger>;
-export type ObservabilityLedgerContract = Pick<ObservabilityLedger, keyof ObservabilityLedger>;
+export type ObservabilityLedgerContract =
+  Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot'>
+  & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot'>>;
 
 export interface ConfigStoreContract {
   readonly routes: RouteRepositoryContract;

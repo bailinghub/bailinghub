@@ -1,5 +1,6 @@
 import { dtAt, traceSeverityValue, traceStageValue } from '../../core/config/config-codec';
 import type { TraceSeverity, TraceStage } from '../../core/contracts/types';
+import type { ControlPlaneOperationalMetricsSnapshot } from '../../core/observability/openmetrics';
 
 export class ObservabilityLedger {
   constructor(private readonly poolOf: () => any) {}
@@ -25,6 +26,24 @@ export class ObservabilityLedger {
     return {
       errors_15m: Number((e as any[])[0]?.n ?? 0),
       oldest_queued_min: oldestMs ? Math.max(Math.floor((Date.now() - oldestMs) / 60_000), 0) : 0,
+    };
+  }
+
+  async operationalMetricsSnapshot(nowMs = Date.now()): Promise<ControlPlaneOperationalMetricsSnapshot> {
+    const onlineCutoff = dtAt(nowMs - 2 * 60_000);
+    const [rows] = await this.pool.query(
+      `SELECT
+        (SELECT COUNT(*) FROM bz_tool_approvals WHERE status='pending') AS pending_approvals,
+        (SELECT COUNT(*) FROM bz_executors WHERE last_seen_at>=?) AS executors_online,
+        (SELECT COUNT(*) FROM bz_executors WHERE last_seen_at<? OR last_seen_at IS NULL) AS executors_offline`,
+      [onlineCutoff, onlineCutoff],
+    );
+    const row = (rows as any[])[0] ?? {};
+    const count = (value: unknown): number => Math.max(Number(value) || 0, 0);
+    return {
+      pendingApprovals: count(row.pending_approvals),
+      executorsOnline: count(row.executors_online),
+      executorsOffline: count(row.executors_offline),
     };
   }
 

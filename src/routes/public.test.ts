@@ -27,8 +27,8 @@ class FakeResponse {
   }
 }
 
-function req(method: string): IncomingMessage {
-  return { method } as IncomingMessage;
+function req(method: string, headers: IncomingMessage['headers'] = {}): IncomingMessage {
+  return { method, headers } as IncomingMessage;
 }
 
 test('public route: For 入口使用注入的运行期状态生成 health', async () => {
@@ -86,6 +86,74 @@ test('public route: readiness 根据共享依赖状态返回 200/503 且不泄�
   const ready = new FakeResponse();
   await handlePublicHttpFor({ ...base, readiness: async () => ({ ready: true, checks: { database: 'ok', migrations: { status: 'ok', pending: 0 } } }) }, req('GET'), ready as unknown as ServerResponse, new URL('http://local/health/ready'));
   assert.equal(ready.statusCode, 200);
+});
+
+test('public route: metrics 默认隐藏，启用后只接受 Bearer 且支持 GET/HEAD', async () => {
+  const base: PublicHttpDeps = {
+    cfg: { root: process.cwd(), state: { backend: 'mysql' } } as unknown as AppConfig,
+    configStore: null,
+    queue: { stats: () => ({}) },
+    isPaused: () => false,
+    serveConsole: (_path, res) => { res.writeHead(204); res.end(); },
+    handleChat: async () => undefined,
+    handleChatConfig: async () => undefined,
+    handleChatEvents: async () => undefined,
+    handleChatThread: async () => undefined,
+    handleChatUpload: async () => undefined,
+    handleChatRate: async () => undefined,
+    serveChatDemo: (res) => { res.writeHead(204); res.end(); },
+  };
+  const hidden = new FakeResponse();
+  await handlePublicHttpFor(base, req('GET'), hidden as unknown as ServerResponse, new URL('http://local/metrics'));
+  assert.equal(hidden.statusCode, 404);
+
+  const metrics = {
+    enabled: true,
+    authorize: (authorization: string | string[] | undefined) => authorization === 'Bearer metrics-secret',
+    scrape: async () => 'bailinghub_up 1\n# EOF\n',
+  };
+  const queryToken = new FakeResponse();
+  await handlePublicHttpFor(
+    { ...base, metrics },
+    req('GET'),
+    queryToken as unknown as ServerResponse,
+    new URL('http://local/metrics?token=metrics-secret'),
+  );
+  assert.equal(queryToken.statusCode, 401);
+  assert.equal(queryToken.headers['www-authenticate'], 'Bearer realm="bailinghub-metrics"');
+
+  const get = new FakeResponse();
+  await handlePublicHttpFor(
+    { ...base, metrics },
+    req('GET', { authorization: 'Bearer metrics-secret' }),
+    get as unknown as ServerResponse,
+    new URL('http://local/metrics'),
+  );
+  assert.equal(get.statusCode, 200);
+  assert.equal(get.headers['content-type'], 'application/openmetrics-text; version=1.0.0; charset=utf-8');
+  assert.equal(get.headers['cache-control'], 'no-store');
+  assert.equal(get.headers['x-content-type-options'], 'nosniff');
+  assert.equal(Buffer.from(get.body).toString('utf8'), 'bailinghub_up 1\n# EOF\n');
+
+  const head = new FakeResponse();
+  await handlePublicHttpFor(
+    { ...base, metrics },
+    req('HEAD', { authorization: 'Bearer metrics-secret' }),
+    head as unknown as ServerResponse,
+    new URL('http://local/metrics'),
+  );
+  assert.equal(head.statusCode, 200);
+  assert.equal(head.body.length, 0);
+
+  const post = new FakeResponse();
+  await handlePublicHttpFor(
+    { ...base, metrics },
+    req('POST', { authorization: 'Bearer metrics-secret' }),
+    post as unknown as ServerResponse,
+    new URL('http://local/metrics'),
+  );
+  assert.equal(post.statusCode, 405);
+  assert.equal(post.headers.allow, 'GET, HEAD');
 });
 
 test('public route: 聊天 SSE 事件端点走公开分发并带 CORS', async () => {

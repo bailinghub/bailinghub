@@ -1,4 +1,13 @@
-import type { AuditEntry, Job } from '../contracts/types';
+import type { AuditEntry, Job, JobStatus } from '../contracts/types';
+
+export interface JobOperationalMetricsSnapshot {
+  byStatus: Record<JobStatus, number>;
+  terminalLast15m: Record<'done' | 'error' | 'rejected', number>;
+  oldestQueuedAgeSeconds: number;
+  delayedQueuedJobs: number;
+  expiredLeases: number;
+  blockedThreads: number;
+}
 
 export interface JobRepository {
   findByRequestId(requestId: string): Promise<Job | null>;
@@ -40,4 +49,9 @@ export interface RuntimeLockRepository {
 
 export interface RuntimeStateStore extends JobRepository, AuditLedger, RuntimeLockRepository {
   init(): Promise<void>;
+  /**
+   * Optional optimized aggregate for monitoring. Keeping this optional preserves
+   * compatibility with external state-store implementations.
+   */
+  operationalMetricsSnapshot?(nowMs?: number): Promise<JobOperationalMetricsSnapshot>;
 }

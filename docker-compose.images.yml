@@ -18,7 +18,7 @@ services:
       retries: 30
 
   demo-business:
-    image: ${BAILING_DEMO_BUSINESS_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:0.1.8}
+    image: ${BAILING_DEMO_BUSINESS_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:0.1.9}
     environment:
       DEMO_HOST: 0.0.0.0
       DEMO_PORT: 19080
@@ -29,7 +29,7 @@ services:
       - "${BAILING_DEMO_PUBLIC_PORT:-19080}:19080"
 
   bailinghub:
-    image: ${BAILINGHUB_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:0.1.8}
+    image: ${BAILINGHUB_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:0.1.9}
     depends_on:
       mysql:
         condition: service_healthy
@@ -48,6 +48,9 @@ services:
       BAILING_MYSQL_PASSWORD: ${BAILING_DEMO_MYSQL_PASSWORD:-bailing-pass}
       BAILING_BOOTSTRAP_ADMIN_USERNAME: ${BAILING_BOOTSTRAP_ADMIN_USERNAME:-}
       BAILING_BOOTSTRAP_ADMIN_PASSWORD: ${BAILING_BOOTSTRAP_ADMIN_PASSWORD:-}
+      BAILING_METRICS_ENABLED: ${BAILING_METRICS_ENABLED:-false}
+      BAILING_METRICS_TOKEN: ${BAILING_METRICS_TOKEN:-}
+      BAILING_METRICS_SCRAPE_TIMEOUT_MS: ${BAILING_METRICS_SCRAPE_TIMEOUT_MS:-5000}
       BAILING_ALERTS_TYPE: ""
       BAILING_SEED_DEMO: "1"
       BAILING_DEMO_ADMIN_PASSWORD: ${BAILING_DEMO_ADMIN_PASSWORD:-bailing-demo-admin}

@@ -5,7 +5,12 @@ export { loadConfig } from './core/config/config';
 export type { AppConfig, MysqlConfig } from './core/config/config';
 export type { AlertRule, AuditEntry, AudiencePolicy, Channel, ChatEntry, Client, Credential, ExecutorToken, Job, JobRating, JobStatus, NormalizedPrincipal, ProjectReg, Route, RunRequest, StorageBucket, TargetDef, ToolApproval, ToolProvider } from './core/contracts/types';
 export type { PageRule } from './core/platform/pagecontext';
-export type { RuntimeStateStore } from './core/state/state-contracts';
+export type { JobOperationalMetricsSnapshot, RuntimeStateStore } from './core/state/state-contracts';
+export type {
+  CollectorResult,
+  ControlPlaneOperationalMetricsSnapshot,
+  OperationalMetricsDocument,
+} from './core/observability/openmetrics';
 export type {
   AdminRepositoryContract,
   AlertRuleRepositoryContract,
@@ -58,6 +63,9 @@ export type {
 
 export { createRuntimeComposition, registerBuiltinTargetAdapters } from './app/runtime-composition';
 export type { RuntimeComposition, RuntimeCompositionEdition } from './app/runtime-composition';
+
+export { createOperationalMetricsEndpointFor } from './app/operational-metrics';
+export type { OperationalMetricsDeps, OperationalMetricsEndpoint } from './app/operational-metrics';
 
 export { createBailingHttpServer } from './app/http-server';
 export type { BailingHttpServer, BailingHttpServerDeps } from './app/http-server';
