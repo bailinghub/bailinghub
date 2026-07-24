@@ -13,6 +13,7 @@ BailingHub 0.x
             |
             +-- Dify adapter 0.x
             +-- n8n adapter 0.x
+            +-- MCP adapter 0.x
             +-- future ecosystem adapters
 ```
 
@@ -61,7 +62,7 @@ The contract is not maintained as prose alone.
 # Validate schemas, status semantics, aliases, and conformance vectors.
 npm run client-api:contract
 
-# Validate the current local Dify and n8n sibling repositories.
+# Validate the current local Dify, n8n, and MCP sibling repositories.
 npm run client-api:ecosystem:local
 
 # Clone the registered public adapter branches and validate them.
