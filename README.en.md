@@ -11,6 +11,8 @@
 
 It lets you connect selected business actions to agents through OpenAPI/SDK tools and `x-agent-capability` metadata, while keeping routing, permissions, signatures, approvals, audit trails, traceability, and state ownership under your control.
 
+For Direct Client API, Dify, n8n, MCP, and OpenClaw entry points, see [Integrations](https://www.bailinghub.com/en/integrations).
+
 ACC is the capability declaration contract for A2B: agents safely doing business work through existing systems. Its independent specification repository is [agent-capability/agent-capability-contract](https://github.com/agent-capability/agent-capability-contract). BailingHub adopts the ACC contract model, compiles capability declarations into unified `ToolDefinition` records, and enforces allowlists, risk levels, approvals, rate limits, signatures, and audit trails.
 
 > Chinese documentation remains the most detailed reference. The first-release English path covers overview, quickstart, Docker demo, API contract, tools, and SDK integration.
