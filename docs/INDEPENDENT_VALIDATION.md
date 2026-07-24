@@ -12,7 +12,7 @@
 - 预计用时：镜像和依赖下载完成后约 20 分钟；
 - 不需要：真实大模型 Key、生产 API、生产凭据或真实业务数据。
 
-可选的 Dify 和执行器验证不属于本任务的通过条件。请先完成核心 Docker demo，再按需继续扩展验证。
+Dify、n8n、MCP 和执行器/OpenClaw 验证都属于可选扩展，不属于本任务的通过条件。请先完成核心 Docker demo，再按需继续扩展验证。
 
 ## 前置条件
 
@@ -149,8 +149,11 @@ docker compose exec -T bailinghub npm run demo:e2e
 
 核心任务通过后，可以继续验证：
 
+- [生态接入总览与首次成功标准](https://www.bailinghub.com/integrations)；
 - [Dify 最小接入配方](integrations/dify/README.md)；
-- [执行器接入与 OpenClaw 适配](RELEASE_NOTES_v0.1.3.md)。
+- [n8n 社区节点](https://github.com/bailinghub/bailinghub-n8n-node)；
+- [MCP Server](https://github.com/bailinghub/bailinghub-mcp-server)；
+- [执行器接入与 OpenClaw 适配](https://github.com/bailinghub/bailinghub-openclaw-skill)。
 - [网页聊天真实流式输出与可重连 SSE](RELEASE_NOTES_v0.1.4.md)。
 - [一键安装参数可靠性与全新服务器兼容性](RELEASE_NOTES_v0.1.5.md)。
 - [独立验证路径与安装后权限提示](RELEASE_NOTES_v0.1.6.md)。

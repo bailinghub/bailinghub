@@ -12,7 +12,7 @@ It is not certification, a benchmark, or evidence of production adoption. Passin
 - Expected time: about 20 minutes after images and dependencies are available;
 - Not required: a real model key, production API, production credential, or real business data.
 
-The Dify and executor tracks are optional extensions. Complete the core Docker demo before attempting them.
+Dify, n8n, MCP, and executor/OpenClaw tracks are optional extensions. Complete the core Docker demo before attempting them.
 
 ## Prerequisites
 
@@ -149,8 +149,11 @@ Whether the result is PASS, partial, or failed, please use the [independent vali
 
 After the core task passes, you may continue with:
 
+- [Integration overview and first-success criteria](https://www.bailinghub.com/en/integrations);
 - [Dify integration recipe](integrations/dify/README.en.md);
-- [Executor onboarding and OpenClaw adapter](RELEASE_NOTES_v0.1.3.en.md).
+- [n8n community node](https://github.com/bailinghub/bailinghub-n8n-node);
+- [MCP server](https://github.com/bailinghub/bailinghub-mcp-server);
+- [Executor onboarding and OpenClaw adapter](https://github.com/bailinghub/bailinghub-openclaw-skill).
 - [Real web chat streaming and reconnectable SSE](RELEASE_NOTES_v0.1.4.en.md).
 - [Reliable one-line installer arguments and clean-server compatibility](RELEASE_NOTES_v0.1.5.en.md).
 - [Independent validation paths and post-install privilege hints](RELEASE_NOTES_v0.1.6.en.md).
