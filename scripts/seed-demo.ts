@@ -2,7 +2,7 @@
 // 设计目标：docker compose up 后无需真实 LLM key，也能跑通「业务系统暴露工具 → 中枢治理 → AI/agent 调工具 → 审计」闭环。
 import { loadConfig } from '../src/core/config/config';
 import { ConfigStore } from '../src/infrastructure/config/configstore';
-import { hashPassword } from '../src/core/platform/password';
+import { bootstrapInitialAdmin } from '../src/app/admin-bootstrap';
 import type { Route, ToolProvider } from '../src/core/contracts/types';
 import { parseOpenApiSpec } from '../src/core/contracts/openapi-tools';
 
@@ -16,6 +16,7 @@ const demoBusinessUrl = String(process.env.DEMO_BUSINESS_URL ?? 'http://127.0.0.
 const toolSecret = String(process.env.DEMO_TOOL_SECRET ?? 'demo-tool-secret-change-me');
 const clientToken = String(process.env.DEMO_CLIENT_TOKEN ?? 'bailing-demo-client-token');
 const adminPassword = String(process.env.BAILING_DEMO_ADMIN_PASSWORD ?? 'bailing-demo-admin');
+const adminConfig = cfg.bootstrapAdmin ?? { username: 'admin', password: adminPassword };
 
 async function fetchTextWithRetry(url: string, attempts = 30): Promise<string> {
   let last = '';
@@ -40,6 +41,7 @@ const specJson = parsedSpec.canonicalJson;
 
 const store = new ConfigStore(cfg.state.mysql);
 await store.init();
+const adminBootstrap = await bootstrapInitialAdmin(adminConfig, { admins: store.admins });
 
 await store.targets.upsert({
   name: 'demo-agent',
@@ -104,13 +106,10 @@ await store.clients.upsert({
 }, true);
 await store.db.query('UPDATE bz_clients SET token=? WHERE app_id=?', [clientToken, 'demo-app']);
 
-await store.admins.upsert('admin', await hashPassword(adminPassword), 'Admin', 'admin');
-
 console.log('✓ demo 配置已就绪');
 console.log(`  Hub: http://localhost:${cfg.server.port}`);
 console.log('  Console: http://localhost:18900/console/');
-console.log('  Admin: admin');
-console.log(`  Admin password: ${adminPassword}`);
+console.log(`  Admin: ${adminBootstrap === 'created' ? adminConfig.username : 'existing account preserved'}`);
 console.log('  Demo route: demo_support');
 console.log(`  Demo client token: ${clientToken}`);
 console.log(`  Demo business tools: ${specUrl}`);

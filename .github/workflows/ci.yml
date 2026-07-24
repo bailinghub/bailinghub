@@ -145,11 +145,41 @@ jobs:
       BAILING_MYSQL_IMAGE: mysql:8.4
     steps:
       - uses: actions/checkout@v6
-      - name: generate ephemeral demo admin token
-        run: echo "BAILING_TOKEN=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: generate ephemeral demo credentials
+        shell: bash
+        run: |
+          runtime_credential="$(openssl rand -hex 32)"
+          initial_credential="$(openssl rand -hex 24)"
+          changed_credential="$(openssl rand -hex 24)"
+          echo "::add-mask::$runtime_credential"
+          echo "::add-mask::$initial_credential"
+          echo "::add-mask::$changed_credential"
+          {
+            echo "BAILING_TOKEN=$runtime_credential"
+            echo "BAILING_BOOTSTRAP_ADMIN_USERNAME=admin"
+            echo "BAILING_BOOTSTRAP_ADMIN_PASSWORD=$initial_credential"
+            echo "BAILING_DEMO_ADMIN_PASSWORD=$initial_credential"
+            echo "BAILING_BOOTSTRAP_TEST_CHANGED_PASSWORD=$changed_credential"
+          } >> "$GITHUB_ENV"
       - run: docker compose up -d --build --wait
       - run: docker compose exec -T bailinghub npm run smoke
       - run: docker compose exec -T bailinghub npm run demo:e2e
+      - name: simulate an explicit admin password change
+        run: |
+          docker compose exec -T \
+            -e BAILING_BOOTSTRAP_CONTRACT_TEST=disposable-demo-only \
+            -e BAILING_BOOTSTRAP_TEST_CHANGED_PASSWORD="$BAILING_BOOTSTRAP_TEST_CHANGED_PASSWORD" \
+            bailinghub npm run bootstrap-admin:restart-test -- prepare
+      - name: restart BailingHub with the same persistent database
+        run: |
+          docker compose restart bailinghub
+          docker compose up -d --wait bailinghub
+      - name: verify bootstrap did not overwrite the changed password
+        run: |
+          docker compose exec -T \
+            -e BAILING_BOOTSTRAP_CONTRACT_TEST=disposable-demo-only \
+            -e BAILING_BOOTSTRAP_TEST_CHANGED_PASSWORD="$BAILING_BOOTSTRAP_TEST_CHANGED_PASSWORD" \
+            bailinghub npm run bootstrap-admin:restart-test -- verify
       - name: docker logs
         if: always()
         run: docker compose logs --no-color --tail=200

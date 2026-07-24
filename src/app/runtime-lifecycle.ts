@@ -50,11 +50,13 @@ export interface RuntimeLifecycleDeps {
   recoverInhubJobs: (scope: 'boot' | 'stale', staleMs: number) => Promise<number>;
   now: () => string;
   sleep: (ms: number) => Promise<void>;
+  afterStoresInitialized?: () => Promise<void>;
 }
 
 export async function initializeRuntimeLifecycleFor(deps: RuntimeLifecycleDeps): Promise<void> {
   await deps.stateStore.init();
   if (deps.configStore) await deps.configStore.init();
+  if (deps.afterStoresInitialized) await deps.afterStoresInitialized();
   bindTargetRegistryStore(deps.configStore);
 
   // 插座板：启动加载 DB 目标注册表（失败用内置兜底），之后由后台定时器刷新 + 后台改动即时刷新。

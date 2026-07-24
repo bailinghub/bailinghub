@@ -97,7 +97,7 @@ test('architecture boundary: injectable HTTP/auth/tool modules stay free of runt
     ...dependencyViolations(join(srcDir, 'routes'), [/^app\/runtime\.ts$/])
       .filter((violation) => /^(routes\/public|routes\/private|routes\/admin|routes\/admin-runtime|routes\/admin-access|routes\/admin-chat|routes\/admin-dispatch-config|routes\/admin-infra|routes\/admin-kb|routes\/admin-tool-providers|routes\/kb|routes\/run|routes\/send|routes\/executor|routes\/approvals|routes\/chat|routes\/wecom)\.ts -> /.test(violation)),
     ...dependencyViolations(join(srcDir, 'app'), [/^app\/runtime\.ts$/])
-      .filter((violation) => /^(app\/auth|app\/engine|app\/runtime-context|app\/runtime-lifecycle|app\/tools-runtime|app\/tool-proxy|app\/channels|app\/outbound|app\/delivery|app\/monitor|app\/tool-approvals|app\/tool-assembly|app\/tool-specs|app\/builtin-tools|app\/tool-context)\.ts -> /.test(violation)),
+      .filter((violation) => /^(app\/admin-bootstrap|app\/auth|app\/engine|app\/runtime-context|app\/runtime-lifecycle|app\/tools-runtime|app\/tool-proxy|app\/channels|app\/outbound|app\/delivery|app\/monitor|app\/tool-approvals|app\/tool-assembly|app\/tool-specs|app\/builtin-tools|app\/tool-context)\.ts -> /.test(violation)),
   ];
   assert.deepEqual(violations, []);
 });

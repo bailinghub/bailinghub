@@ -7,7 +7,7 @@
 ## 验证范围
 
 - 验证对象：BailingHub 开源版 Docker demo；
-- 稳定基线：`v0.1.7`；
+- 稳定基线：`v0.1.8`；
 - 数据范围：仓库自带的 demo 订单、工单、退款和故障工具；
 - 预计用时：镜像和依赖下载完成后约 20 分钟；
 - 不需要：真实大模型 Key、生产 API、生产凭据或真实业务数据。
@@ -32,7 +32,7 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 cd "$HOME/bailinghub"
 ```
 
-脚本默认拉取 `v0.1.7` 官方镜像，生成随机 Token 与后台密码，启动服务并自动运行基础体检。请保留终端输出中的版本、安装模式、耗时和“常用命令”，但不要把密码或 Token 写入反馈。新安装 Docker 后，当前非 root 会话通常仍需使用脚本打印的 `sudo docker compose ...` 命令；重新登录后 Docker 组权限才可能生效。
+脚本默认拉取 `v0.1.8` 官方镜像，生成随机 Token 与后台密码，启动服务并自动运行基础体检。首次管理员只在数据库管理员表为空时创建；对同一持久化数据库进行重启、升级、容器重建或重新安装，不会覆盖已经修改的管理员密码。请保留终端输出中的版本、安装模式、耗时和“常用命令”，但不要把密码或 Token 写入反馈。新安装 Docker 后，当前非 root 会话通常仍需使用脚本打印的 `sudo docker compose ...` 命令；重新登录后 Docker 组权限才可能生效。
 
 如果默认目录已被占用，请使用一个新的空目录，不要覆盖现有部署：
 
@@ -46,7 +46,7 @@ cd "$HOME/bailinghub-validation"
 ### 路径 B：本地源码复现
 
 ```bash
-git clone --depth 1 --branch v0.1.7 https://github.com/bailinghub/bailinghub.git
+git clone --depth 1 --branch v0.1.8 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 git rev-parse HEAD
 export BAILING_TOKEN="$(openssl rand -hex 32)"
@@ -158,6 +158,7 @@ docker compose exec -T bailinghub npm run demo:e2e
 - [一键安装参数可靠性与全新服务器兼容性](RELEASE_NOTES_v0.1.5.md)。
 - [独立验证路径与安装后权限提示](RELEASE_NOTES_v0.1.6.md)。
 - [版本化 Client API 与跨生态兼容门禁](RELEASE_NOTES_v0.1.7.md)。
+- [首次管理员只创建一次与重启安全](RELEASE_NOTES_v0.1.8.md)。
 
 扩展验证请在同一 Issue 模板中选择对应路径，并说明是否获得过维护者的直接帮助。
 

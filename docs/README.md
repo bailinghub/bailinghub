@@ -70,6 +70,8 @@
 | [RELEASE_NOTES_v0.1.6.en.md](RELEASE_NOTES_v0.1.6.en.md) | English `v0.1.6` independent-validation and post-install privilege-hint release notes. |
 | [RELEASE_NOTES_v0.1.7.md](RELEASE_NOTES_v0.1.7.md) | `v0.1.7` 版本化 Client API 与跨生态兼容门禁说明。 |
 | [RELEASE_NOTES_v0.1.7.en.md](RELEASE_NOTES_v0.1.7.en.md) | English `v0.1.7` versioned Client API and cross-ecosystem compatibility-gate release notes. |
+| [RELEASE_NOTES_v0.1.8.md](RELEASE_NOTES_v0.1.8.md) | `v0.1.8` 首次管理员只创建一次与重启安全说明。 |
+| [RELEASE_NOTES_v0.1.8.en.md](RELEASE_NOTES_v0.1.8.en.md) | English `v0.1.8` create-once initial-admin bootstrap release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

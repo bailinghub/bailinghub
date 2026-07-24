@@ -18,6 +18,11 @@ export interface StateConfig {
   mysql: MysqlConfig;
 }
 
+export interface BootstrapAdminConfig {
+  username: string;
+  password: string;
+}
+
 export interface LlmCredential {
   base_url: string;
   api_key: string;
@@ -51,6 +56,7 @@ export interface AppConfig {
   displayTzLabel: string;   // 展示时区友好名（如「北京时间」），仅用于标注文案；偏移 UTC±N 由 time.ts 动态算
   auditRetentionDays: number; // bz_audit 保留天数；0=不自动删除
   alerts: AlertsConfig | null;
+  bootstrapAdmin: BootstrapAdminConfig | null;
   concurrency: number;
   killSwitchFile: string;
   claudeBin: string;
@@ -101,6 +107,24 @@ function requiredEnv(name: string): string {
   return v;
 }
 
+function bootstrapAdminFromEnv(env: NodeJS.ProcessEnv): BootstrapAdminConfig | null {
+  const username = String(env['BAILING_BOOTSTRAP_ADMIN_USERNAME'] ?? '').trim();
+  const password = String(env['BAILING_BOOTSTRAP_ADMIN_PASSWORD'] ?? '');
+  const hasUsername = username.length > 0;
+  const hasPassword = password.length > 0;
+  if (!hasUsername && !hasPassword) return null;
+  if (!hasUsername || !hasPassword) {
+    throw new Error('BAILING_BOOTSTRAP_ADMIN_USERNAME 与 BAILING_BOOTSTRAP_ADMIN_PASSWORD 必须同时配置');
+  }
+  if (!/^[a-z0-9][a-z0-9_-]{1,63}$/i.test(username)) {
+    throw new Error('BAILING_BOOTSTRAP_ADMIN_USERNAME 仅允许 2~64 位字母、数字、中划线或下划线，且必须以字母或数字开头');
+  }
+  if (password.length < 8) {
+    throw new Error('BAILING_BOOTSTRAP_ADMIN_PASSWORD 至少 8 位');
+  }
+  return { username, password };
+}
+
 /** 加载配置：config.json 优先，缺省回退 config.example.json；环境变量再覆盖。路径相对仓库根目录解析。 */
 export function loadConfig(): AppConfig {
   const root = process.cwd();
@@ -147,6 +171,7 @@ export function loadConfig(): AppConfig {
           cooldown_min: Number(env['BAILING_ALERTS_COOLDOWN_MIN'] ?? rawAlerts.cooldown_min ?? 60) || 60,
         }
       : null,
+    bootstrapAdmin: bootstrapAdminFromEnv(env),
     concurrency: Number(raw['concurrency'] ?? 2),
     killSwitchFile: resolve(root, raw['killSwitchFile'] ?? '.paused'),
     claudeBin: raw['claudeBin'] ?? 'claude',
@@ -192,6 +217,9 @@ export function loadConfig(): AppConfig {
     };
   }
   assertServerTokenPolicy({ env: cfg.env, host: cfg.server.host, token: cfg.server.token });
+  if (cfg.bootstrapAdmin && cfg.state.backend !== 'mysql') {
+    throw new Error('首次管理员初始化需要 mysql 状态后端');
+  }
   if (cfg.env === 'production') {
     if (cfg.state.backend === 'mysql') {
       requiredEnv('BAILING_MYSQL_HOST');

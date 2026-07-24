@@ -22,6 +22,8 @@ const ENV_KEYS = [
   'BAILING_ALERTS_TO',
   'BAILING_ALERTS_URL',
   'BAILING_ALERTS_COOLDOWN_MIN',
+  'BAILING_BOOTSTRAP_ADMIN_USERNAME',
+  'BAILING_BOOTSTRAP_ADMIN_PASSWORD',
 ];
 
 function withTempConfig(config: Record<string, unknown>, env: Record<string, string | undefined>, fn: () => void): void {
@@ -141,5 +143,77 @@ test('loadConfig: 生产模式拒绝公开示例 token', () => {
     BAILING_TOKEN: 'bailing-dev-admin-token-change-me',
   }, () => {
     assert.throws(() => loadConfig(), /BAILING_TOKEN 不安全/);
+  });
+});
+
+test('loadConfig: 首次管理员变量缺失时保持禁用', () => {
+  withTempConfig({
+    server: { host: '127.0.0.1', token: '' },
+    state: { backend: 'jsonl' },
+  }, { BAILING_ENV: 'development' }, () => {
+    const cfg = loadConfig();
+    assert.equal(cfg.bootstrapAdmin, null);
+  });
+});
+
+test('loadConfig: 首次管理员变量必须成对配置且不回显密码', () => {
+  const password = 'bootstrap-secret-123';
+  withTempConfig({
+    server: { host: '127.0.0.1', token: '' },
+    state: { backend: 'mysql', mysql: {} },
+  }, {
+    BAILING_ENV: 'development',
+    BAILING_BOOTSTRAP_ADMIN_USERNAME: 'initial_admin',
+  }, () => {
+    assert.throws(
+      () => loadConfig(),
+      (error: unknown) => {
+        assert.match(String(error), /必须同时配置/);
+        assert.doesNotMatch(String(error), new RegExp(password));
+        return true;
+      },
+    );
+  });
+
+  withTempConfig({
+    server: { host: '127.0.0.1', token: '' },
+    state: { backend: 'mysql', mysql: {} },
+  }, {
+    BAILING_ENV: 'development',
+    BAILING_BOOTSTRAP_ADMIN_USERNAME: 'initial_admin',
+    BAILING_BOOTSTRAP_ADMIN_PASSWORD: password,
+  }, () => {
+    assert.deepEqual(loadConfig().bootstrapAdmin, {
+      username: 'initial_admin',
+      password,
+    });
+  });
+});
+
+test('loadConfig: 首次管理员拒绝非法用户名、短密码和非 mysql 后端', () => {
+  const base = {
+    server: { host: '127.0.0.1', token: '' },
+    state: { backend: 'mysql', mysql: {} },
+  };
+  withTempConfig(base, {
+    BAILING_BOOTSTRAP_ADMIN_USERNAME: 'invalid username',
+    BAILING_BOOTSTRAP_ADMIN_PASSWORD: 'long-enough-password',
+  }, () => {
+    assert.throws(() => loadConfig(), /仅允许 2~64 位/);
+  });
+  withTempConfig(base, {
+    BAILING_BOOTSTRAP_ADMIN_USERNAME: 'admin',
+    BAILING_BOOTSTRAP_ADMIN_PASSWORD: 'short',
+  }, () => {
+    assert.throws(() => loadConfig(), /至少 8 位/);
+  });
+  withTempConfig({
+    server: { host: '127.0.0.1', token: '' },
+    state: { backend: 'jsonl' },
+  }, {
+    BAILING_BOOTSTRAP_ADMIN_USERNAME: 'admin',
+    BAILING_BOOTSTRAP_ADMIN_PASSWORD: 'long-enough-password',
+  }, () => {
+    assert.throws(() => loadConfig(), /需要 mysql 状态后端/);
   });
 });
