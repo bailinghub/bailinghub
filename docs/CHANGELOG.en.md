@@ -22,7 +22,20 @@ Each public version should describe:
 
 ## Unreleased
 
-There are currently no committed public changes awaiting release.
+No committed changes.
+
+## v0.1.8 - Create-Once Initial Administrator Bootstrap
+
+Released on 2026-07-24.
+
+- Added paired `BAILING_BOOTSTRAP_ADMIN_USERNAME` and `BAILING_BOOTSTRAP_ADMIN_PASSWORD` settings. The account is created only when the admin table is empty. Restarts, upgrades, and container recreation against the same database never update an existing username, password, role, or enabled state.
+- Serialized concurrent multi-replica bootstrap with a MySQL named lock and transaction. Startup fails if the initialization lock cannot be acquired instead of continuing from an uncertain state.
+- Kept `npm run admin:create` as the explicit account-creation and password-reset command. The automatic startup path never invokes it. Demo seeding now uses the same create-once contract, no longer resets an admin password during restart, and does not print passwords in service logs.
+- No database migration or public API, executor, tool-signature, or ACC semantic change is required. The two bootstrap variables must be configured together. Reinstallation with the same database preserves the account; a destructive fresh database installation creates a new initial account.
+- Validation: `npm run typecheck`, `npm test`, `npm run security:scan`, plus real-MySQL checks for first creation, restart persistence after a password change, concurrent cold starts, and log redaction.
+- Continuous regression: Docker demo CI changes the administrator password explicitly in real MySQL, restarts the container, and verifies bootstrap configuration did not overwrite the stored credential.
+- Password-update compatibility: when no role is supplied, the administrator repository uses `admin` only as the insert default while preserving the role of an existing account, avoiding a MySQL non-null rejection before duplicate-key update.
+- Related docs: [RELEASE_NOTES_v0.1.8.en.md](RELEASE_NOTES_v0.1.8.en.md), [QUICKSTART.en.md](QUICKSTART.en.md), and [OPERATIONS.en.md](OPERATIONS.en.md).
 
 ## v0.1.7 - Versioned Client API and Cross-Ecosystem Compatibility Gates
 

@@ -15,7 +15,20 @@
 
 ## Unreleased
 
-当前暂无已承诺但未发布的公开变更。
+暂无已确认变更。
+
+## v0.1.8 - 首次管理员只创建一次
+
+发布日期：2026-07-24。
+
+- **首次管理员只创建一次**：新增成对环境变量 `BAILING_BOOTSTRAP_ADMIN_USERNAME` 与 `BAILING_BOOTSTRAP_ADMIN_PASSWORD`。仅当管理员表为空时创建首个账号；使用同一数据库的重启、升级和容器重建不会更新已有账号、密码、角色或启用状态。
+- **并发冷启动安全**：MySQL 仓储以命名锁和事务收敛多副本并发初始化，只有一个副本能够创建首个管理员；无法取得初始化锁时启动失败，不以不确定状态继续运行。
+- **保留显式管理入口**：`npm run admin:create` 继续承担人工创建和密码重置，不被自动启动流程调用。demo seed 改用同一 create-once 契约，不再在服务重启时重置管理员密码，也不在服务日志中打印密码。
+- **对接影响**：没有数据库迁移，不改变 Client API、执行器协议、工具签名或 ACC 语义。两个 bootstrap 变量必须同时配置；只配置一个会拒绝启动。保留数据库的重装不会重置密码，删除数据库后的全新安装会重新创建首个账号。
+- **验证方式**：`npm run typecheck`、`npm test`、`npm run security:scan`，并在真实 MySQL 上验证首次创建、密码修改后的重启保持、并发冷启动和日志脱敏。
+- **持续回归**：Docker demo CI 会在真实 MySQL 中模拟管理员主动改密，重启容器后确认 bootstrap 配置没有覆盖已存密码。
+- **改密兼容修复**：管理员仓储在仅更新密码、未传角色时，新账号使用 `admin` 缺省角色，已有账号保留原角色，避免 MySQL 在重复键更新前因非空角色列拒绝请求。
+- **相关文档**：[RELEASE_NOTES_v0.1.8.md](RELEASE_NOTES_v0.1.8.md)、[QUICKSTART.md](QUICKSTART.md)、[OPERATIONS.md](OPERATIONS.md)。
 
 ## v0.1.7 - 版本化 Client API 与跨生态兼容门禁
 

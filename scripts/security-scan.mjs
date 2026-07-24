@@ -85,6 +85,22 @@ for (const file of trackedAndUntrackedFiles()) {
   scanSecretAssignments(file, text, findings);
 }
 
+const demoSeed = readFileSync(join(root, 'scripts/seed-demo.ts'), 'utf8');
+if (/store\.admins\.upsert\s*\(/.test(demoSeed)) {
+  findings.push({
+    file: 'scripts/seed-demo.ts',
+    name: 'demo seed may reset an existing administrator',
+    sample: 'store.admins.upsert(...)',
+  });
+}
+if (/Admin password|管理员密码|Admin password:|密码：\$\{adminPassword\}/i.test(demoSeed)) {
+  findings.push({
+    file: 'scripts/seed-demo.ts',
+    name: 'demo seed may log an administrator password',
+    sample: 'administrator password output',
+  });
+}
+
 if (findings.length) {
   console.error('Security scan failed:');
   for (const f of findings) console.error(`  - ${f.file}: ${f.name} (${f.sample})`);

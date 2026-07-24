@@ -1,6 +1,6 @@
 {
   "name": "bailinghub",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": false,
   "type": "module",
   "description": "Open-source ACC runtime and agent control plane for existing business systems.",
@@ -57,6 +57,7 @@
     "smoke": "tsx scripts/smoke.ts",
     "build:info": "node scripts/write-build-info.mjs",
     "demo:e2e": "tsx scripts/demo-e2e.ts",
+    "bootstrap-admin:restart-test": "tsx scripts/verify-bootstrap-admin-restart.ts",
     "e2e:console": "node scripts/e2e-console.mjs",
     "security:scan": "node scripts/security-scan.mjs",
     "notices:generate": "node scripts/generate-third-party-notices.mjs",

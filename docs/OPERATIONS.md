@@ -131,6 +131,7 @@ readinessProbe:
 - 仅通过 HTTPS 暴露公网入口。
 - 管理端、接入方、执行器和工具源使用不同凭证，不复用密钥。
 - MySQL 不直接暴露公网。
+- 无人值守部署应成对设置 `BAILING_BOOTSTRAP_ADMIN_USERNAME` 与 `BAILING_BOOTSTRAP_ADMIN_PASSWORD`。它们只负责空管理员表的首次创建，不是持续同步配置；修改或轮换密码应走控制台或显式 `admin:create`，不要依赖重启。
 - 定期轮换管理员、接入方、执行器和工具签名密钥。
 - 生产关闭 demo 默认凭证，限制控制台来源和数据库账号权限。
 - 日志、错误响应和监控标签不得包含 API key、数据库密码或完整业务敏感载荷。

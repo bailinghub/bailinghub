@@ -114,9 +114,16 @@ npm install
 npm run doctor
 npm run typecheck
 npm run db:init
-npm run admin:create
 npm start
 ```
+
+For unattended deployments, set both `BAILING_BOOTSTRAP_ADMIN_USERNAME` and
+`BAILING_BOOTSTRAP_ADMIN_PASSWORD` before starting the service. BailingHub
+creates that account only when the admin table is empty. Restarts, upgrades,
+and container recreation with the same database never update an existing
+account or password. For an explicit create or password reset, use
+`npm run admin:create -- <username> [password] [role]`; the startup path never
+invokes that command automatically.
 
 Health check:
 

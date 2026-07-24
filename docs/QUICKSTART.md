@@ -50,7 +50,7 @@ sh
 
 它会启动中枢、MySQL 和 demo 业务系统，并自动创建 `demo_support` 路由、`demo-business` 工具源、`demo-app` 接入方和 `admin` 后台账号。完整演示见 [DEMO.md](DEMO.md)。
 
-手动部署：Node ≥ 22 + MySQL。复制 `.env.example` 到部署环境并设置 `BAILING_ENV=production`、`BAILING_TOKEN`、MySQL 连接、模型凭证等变量；按合规要求可设置 `BAILING_AUDIT_RETENTION_DAYS`（默认 0，不自动删除审计）。执行 `npm run db:init` 初始化数据库结构，`npm run admin:create` 建管理员，启动 `src/server.ts`，登录 `/console/`。本地烟测可直接用 `config.example.json` + jsonl 状态，完整能力请使用 MySQL。
+手动部署：Node ≥ 22 + MySQL。复制 `.env.example` 到部署环境并设置 `BAILING_ENV=production`、`BAILING_TOKEN`、MySQL 连接、模型凭证等变量；按合规要求可设置 `BAILING_AUDIT_RETENTION_DAYS`（默认 0，不自动删除审计）。推荐同时设置 `BAILING_BOOTSTRAP_ADMIN_USERNAME` 与 `BAILING_BOOTSTRAP_ADMIN_PASSWORD`：服务只在管理员表为空时创建首个账号，后续重启、升级和保留数据库的容器重建不会更新已有账号或密码。执行 `npm run db:init` 初始化数据库结构，再启动 `src/server.ts` 并登录 `/console/`。也可用 `npm run admin:create -- <username> [password] [role]` 显式创建或重置账号；该命令不会被启动流程自动调用。本地烟测可直接用 `config.example.json` + jsonl 状态，完整能力请使用 MySQL。
 
 **第 1 步 · 模型凭证**（控制台「模型凭证」）：填任意 OpenAI 兼容端点 + key（OpenAI / DashScope / OpenRouter / 自建均可）。**到这里 llm 已可用——不需要任何执行器就有完整价值。**
 

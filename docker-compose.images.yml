@@ -18,7 +18,7 @@ services:
       retries: 30
 
   demo-business:
-    image: ${BAILING_DEMO_BUSINESS_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:0.1.7}
+    image: ${BAILING_DEMO_BUSINESS_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:0.1.8}
     environment:
       DEMO_HOST: 0.0.0.0
       DEMO_PORT: 19080
@@ -29,7 +29,7 @@ services:
       - "${BAILING_DEMO_PUBLIC_PORT:-19080}:19080"
 
   bailinghub:
-    image: ${BAILINGHUB_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:0.1.7}
+    image: ${BAILINGHUB_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:0.1.8}
     depends_on:
       mysql:
         condition: service_healthy
@@ -46,6 +46,8 @@ services:
       BAILING_MYSQL_DATABASE: ${BAILING_DEMO_MYSQL_DATABASE:-bailinghub}
       BAILING_MYSQL_USER: ${BAILING_DEMO_MYSQL_USER:-bailing}
       BAILING_MYSQL_PASSWORD: ${BAILING_DEMO_MYSQL_PASSWORD:-bailing-pass}
+      BAILING_BOOTSTRAP_ADMIN_USERNAME: ${BAILING_BOOTSTRAP_ADMIN_USERNAME:-}
+      BAILING_BOOTSTRAP_ADMIN_PASSWORD: ${BAILING_BOOTSTRAP_ADMIN_PASSWORD:-}
       BAILING_ALERTS_TYPE: ""
       BAILING_SEED_DEMO: "1"
       BAILING_DEMO_ADMIN_PASSWORD: ${BAILING_DEMO_ADMIN_PASSWORD:-bailing-demo-admin}

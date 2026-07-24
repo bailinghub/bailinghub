@@ -11,6 +11,7 @@ import {
   type RuntimeLifecycleDeps,
   type RuntimeSchedulers,
 } from './runtime-lifecycle';
+import { bootstrapInitialAdmin } from './admin-bootstrap';
 
 export function defaultRuntimeLifecycleDeps(): RuntimeLifecycleDeps {
   return {
@@ -27,6 +28,9 @@ export function defaultRuntimeLifecycleDeps(): RuntimeLifecycleDeps {
     recoverInhubJobs,
     now,
     sleep,
+    afterStoresInitialized: async () => {
+      await bootstrapInitialAdmin(cfg.bootstrapAdmin, { admins: cfgStore?.admins ?? null });
+    },
   };
 }
 

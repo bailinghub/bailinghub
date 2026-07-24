@@ -89,6 +89,7 @@ Recovery order:
 - Expose public traffic only through HTTPS.
 - Use separate credentials for admins, callers, executors, and tool providers.
 - Do not expose MySQL directly to the Internet.
+- Unattended deployments should set `BAILING_BOOTSTRAP_ADMIN_USERNAME` and `BAILING_BOOTSTRAP_ADMIN_PASSWORD` together. They only create the first account when the admin table is empty; they are not continuously reconciled configuration. Rotate passwords through the console or explicit `admin:create`, not by restarting the service.
 - Rotate credentials and remove demo defaults in production.
 - Keep API keys, database passwords, and sensitive payloads out of public errors, logs, and metric labels.
 

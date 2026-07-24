@@ -21,6 +21,62 @@ export class AdminRepository {
 
   private get pool(): any { return this.poolOf(); }
 
+  async hasAny(): Promise<boolean> {
+    const [rows] = await this.pool.query('SELECT 1 AS present FROM bz_admins LIMIT 1');
+    return rows.length > 0;
+  }
+
+  /**
+   * 只在整个管理员表为空时创建首个账号。
+   *
+   * MySQL named lock 把多副本同时冷启动收敛为单个临界区；已有任意管理员时
+   * 直接返回，不更新任何账号字段。显式 upsert 仍保留给后台管理和 admin:create。
+   */
+  async createInitial(
+    username: string,
+    passwordHash: string,
+    displayName: string,
+    role: 'admin',
+  ): Promise<'created' | 'existing'> {
+    const connection = await this.pool.getConnection();
+    const lockName = 'bailinghub.bootstrap-admin.v1';
+    let lockAcquired = false;
+    let transactionOpen = false;
+    try {
+      const [lockRows] = await connection.query('SELECT GET_LOCK(?, 10) AS acquired', [lockName]);
+      if (Number(lockRows?.[0]?.acquired) !== 1) {
+        throw new Error('无法获取首次管理员初始化锁');
+      }
+      lockAcquired = true;
+
+      await connection.beginTransaction();
+      transactionOpen = true;
+      const [existingRows] = await connection.query('SELECT 1 AS present FROM bz_admins LIMIT 1');
+      if (existingRows.length > 0) {
+        await connection.commit();
+        transactionOpen = false;
+        return 'existing';
+      }
+
+      const timestamp = dt();
+      await connection.query(
+        'INSERT INTO bz_admins (username,password_hash,display_name,role,enabled,created_at,updated_at) VALUES (?,?,?,?,1,?,?)',
+        [username, passwordHash, displayName, role, timestamp, timestamp],
+      );
+      await connection.commit();
+      transactionOpen = false;
+      return 'created';
+    } catch (error) {
+      if (transactionOpen) await connection.rollback().catch(() => undefined);
+      throw error;
+    } finally {
+      if (lockAcquired) {
+        await connection.query('SELECT RELEASE_LOCK(?) AS released', [lockName]).catch(() => undefined);
+      }
+      connection.release();
+    }
+  }
+
   async get(username: string): Promise<(AdminUser & { password_hash: string }) | null> {
     const [rows] = await this.pool.query('SELECT * FROM bz_admins WHERE username=? LIMIT 1', [username]);
     if (!rows[0]) return null;
@@ -49,8 +105,8 @@ export class AdminRepository {
   async upsert(username: string, passwordHash: string, displayName?: string, role?: string): Promise<void> {
     await this.pool.query(
       'INSERT INTO bz_admins (username,password_hash,display_name,role,enabled,created_at,updated_at) VALUES (?,?,?,?,1,?,?) ' +
-        'ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash),display_name=COALESCE(VALUES(display_name),display_name),role=COALESCE(VALUES(role),role),updated_at=VALUES(updated_at)',
-      [username, passwordHash, displayName ?? null, role ?? null, dt(), dt()],
+        'ON DUPLICATE KEY UPDATE password_hash=VALUES(password_hash),display_name=COALESCE(VALUES(display_name),display_name),role=COALESCE(?,role),updated_at=VALUES(updated_at)',
+      [username, passwordHash, displayName ?? null, role ?? 'admin', dt(), dt(), role ?? null],
     );
   }
 
