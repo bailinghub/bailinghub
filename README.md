@@ -10,6 +10,8 @@
 > **BailingHub** is an open-source A2B (Agent-to-Business) control plane built around [ACC (Agent Capability Contract)](https://www.agentcapability.org): connect OpenAPI/SDK tools to agents with routing, tool governance, approvals, audit trails, traceability, and self-hosted control.
 >
 > 中文文档是当前主文档；English documentation is available for the first-release path: [README.en.md](README.en.md), [docs/QUICKSTART.en.md](docs/QUICKSTART.en.md), [docs/DEMO.en.md](docs/DEMO.en.md), [docs/CONTRACT.en.md](docs/CONTRACT.en.md), [docs/TOOLS.en.md](docs/TOOLS.en.md), and [docs/SDK.en.md](docs/SDK.en.md). The public API, SDKs, schemas, Docker demo, and code identifiers are designed to be language-neutral.
+>
+> 生态接入：Direct Client API、Dify、n8n、MCP 与 OpenClaw 的统一入口见 [生态集成](https://www.bailinghub.com/integrations)。
 
 业务系统的 **A2B 控制面**：一个独立部署、独立生命周期的服务，把「业务事件」与「Agent 大脑」用一条稳定的网络契约解耦开。业务侧只管**触发**（发任务 / 嵌聊天组件 / 接入站渠道），中枢负责**选大脑、装上下文、过安全闸、调业务工具、把结果送回**——大脑是 llm 还是远端执行器、用哪个知识库、带不带记忆，全在后台配置，业务无感。
 
