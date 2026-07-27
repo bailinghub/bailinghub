@@ -21,6 +21,7 @@ export function defaultPublicHttpDeps(): PublicHttpDeps {
   return {
     cfg,
     configStore: cfgStore,
+    brandingProvider: edition.brandingProvider,
     queue,
     isPaused,
     metrics,

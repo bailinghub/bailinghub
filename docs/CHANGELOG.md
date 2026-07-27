@@ -17,6 +17,20 @@
 
 当前无待发布变更。
 
+## v0.1.10 - 实例品牌设置与生态接入完善
+
+发布日期：2026-07-27。
+
+- **新增实例品牌设置**：具有 `admins:manage` 权限的管理员可在控制台维护网站名称、浏览器标题、描述、关键词、登录页文案、Logo 与 favicon；设置持久化到 `bz_instance_branding`，升级与重启不会覆盖。
+- **建立可替换管理边界**：控制台与公开展示只依赖 `InstanceBrandingProvider`。开源版使用本地 Provider；未来平台可单一接管并将实例内设置转为只读，不采用双写。
+- **增加安全公开展示面**：新增 `GET /branding` 及 Logo/favicon 资源端点，仅返回展示数据；图片按实际文件头识别并限制格式和大小。
+- **改善模型标识诊断**：模型验证失败且 ID 含空白时提示检查展示名称；新增腾讯云 TokenHub 预设与 `kimi-k3` 精确 ID，同时保留合法自定义别名。
+- **补齐生态配方**：新增 DeepSeek V4 工具调用 E2E 与阿里云百炼远程 MCP 的中英文配置和验证脚本。
+- **数据库结构**：新增 `051_instance_branding.sql`，只创建单例品牌设置表。
+- **对接影响**：不修改 Client API、执行器协议、工具签名、审批语义或 ACC。既有部署升级后继续显示默认品牌。
+- **验证方式**：`npm run typecheck`、`npm test`、`npm run web-admin:check`、`npm run docs:check`、`npm run security:scan`、`npm run release:check`。
+- **相关文档**：[RELEASE_NOTES_v0.1.10.md](RELEASE_NOTES_v0.1.10.md)、[兼容性与升级.md](兼容性与升级.md)、[DeepSeek 接入配方](integrations/deepseek/README.md)、[阿里云百炼 MCP 配方](integrations/bailian/README.md)。
+
 ## v0.1.9 - 可选 OpenMetrics 运维指标
 
 发布日期：2026-07-24。

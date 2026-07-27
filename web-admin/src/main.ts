@@ -38,6 +38,7 @@ import 'element-plus/theme-chalk/dark/css-vars.css';
 import App from './App.vue';
 import { router } from './router';
 import { installTableWidthPersistence } from './table-widths';
+import { loadInstanceBranding } from './branding';
 import './styles/base.css';
 
 sessionStorage.removeItem('bailing:console:asset-reload:v1');
@@ -52,7 +53,9 @@ sessionStorage.removeItem('bailing:console:asset-reload:v1');
 (ElTable.props as Record<string, unknown>)['allowDragLastColumn'] = { type: Boolean, default: false };
 (ElTableColumn.props as Record<string, unknown>)['resizable'] = { type: Boolean, default: true };
 
-const app = createApp(App);
+async function bootstrap(): Promise<void> {
+  await loadInstanceBranding();
+  const app = createApp(App);
 [
   ElAlert,
   ElAside,
@@ -103,8 +106,11 @@ const app = createApp(App);
   ElTimeline,
   ElTimelineItem,
   ElTooltip,
-].forEach((component) => app.component(component.name, component));
-app.directive('loading', ElLoading.directive);
-installTableWidthPersistence(app, router);
+  ].forEach((component) => app.component(component.name, component));
+  app.directive('loading', ElLoading.directive);
+  installTableWidthPersistence(app, router);
 
-app.use(createPinia()).use(router).mount('#app');
+  app.use(createPinia()).use(router).mount('#app');
+}
+
+void bootstrap();

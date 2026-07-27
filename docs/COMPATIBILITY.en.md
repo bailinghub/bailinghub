@@ -41,3 +41,27 @@ When public contracts change, update together:
 ## Upgrade Goal
 
 Operators should be able to upgrade the open-source core without losing local secrets, runtime state, or deployment-specific customization.
+
+## Instance Branding And Platform-Managed Upgrades
+
+The instance name, browser title, metadata, logo, favicon, and login copy use the
+stable `InstanceBrandingProvider` contract. The console and public
+`GET /branding` endpoint depend only on that contract, not on a particular
+database or hosting platform.
+
+- The open-source edition uses the local provider and persists settings in
+  `bz_instance_branding`.
+- A platform-managed deployment replaces that provider at its composition root while
+  keeping the same API and console.
+- The upgrade process may import the local record into the platform once, then
+  switch ownership to the platform provider.
+- After takeover, the local page is read-only and may link to the platform
+  management page. The local row remains migration evidence, not a second
+  source of truth.
+- Platform and local storage must never be dual-written.
+- A temporary platform read failure may fall back to the built-in display
+  defaults, but must not restore local write access.
+
+Branding is instance presentation only. It does not extend the ACC core and
+must not carry business authorization, secrets, custom HTML/CSS/JavaScript,
+redirects, or other executable configuration.

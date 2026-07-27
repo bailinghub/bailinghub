@@ -26,6 +26,7 @@ export type {
   ExecutorLedgerContract,
   ExecutorTokenRepositoryContract,
   KbDatasourceRepositoryContract,
+  InstanceBrandingRepositoryContract,
   KnowledgeRepositoryContract,
   ObservabilityLedgerContract,
   ProjectRepositoryContract,
@@ -37,6 +38,28 @@ export type {
   ToolEmbeddingRepositoryContract,
   ToolProviderRepositoryContract,
 } from './infrastructure/config/configstore';
+
+export {
+  DEFAULT_INSTANCE_BRANDING,
+  InstanceBrandingReadonlyError,
+  InstanceBrandingValidationError,
+  defaultInstanceBrandingSnapshot,
+  normalizeInstanceBrandingUpdate,
+  parseBrandingAssetDataUrl,
+  publicInstanceBranding,
+} from './core/platform/instance-branding';
+export type {
+  BrandingAsset,
+  BrandingAssetKind,
+  InstanceBrandingManagement,
+  InstanceBrandingProvider,
+  InstanceBrandingPublicView,
+  InstanceBrandingSnapshot,
+  InstanceBrandingText,
+  InstanceBrandingUpdate,
+  NormalizedInstanceBrandingUpdate,
+} from './core/platform/instance-branding';
+export { LocalInstanceBrandingProvider } from './infrastructure/config/local-instance-branding-provider';
 
 export {
   OSS_EDITION,

@@ -63,6 +63,14 @@ export const LLM_PROVIDERS: LlmProvider[] = [
     keyUrl: 'console.cloud.tencent.com/hunyuan',
   },
   {
+    id: 'tencent-tokenhub', label: '腾讯云 TokenHub（多模型）',
+    base_url: 'https://tokenhub.tencentmaas.com/v1',
+    chat: ['kimi-k3'],
+    freeModel: true,
+    keyUrl: 'console.cloud.tencent.com/tokenhub',
+    note: '请填写 API 服务 ID，不要填写控制台展示名称；例如 Kimi K3 的服务 ID 是 kimi-k3。其它可用 ID 以平台文档或 /models 返回为准',
+  },
+  {
     id: 'qianfan', label: '百度千帆（文心 ERNIE）',
     base_url: 'https://qianfan.baidubce.com/v2',
     chat: ['ernie-4.0-8k', 'ernie-4.0-turbo-8k', 'ernie-3.5-8k', 'ernie-speed-8k'],

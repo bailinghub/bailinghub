@@ -11,6 +11,12 @@ import { buildVersionInfo } from '../core/platform/version';
 import type { AppConfig } from '../core/config/config';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { OperationalMetricsEndpoint } from '../app/operational-metrics';
+import {
+  defaultInstanceBrandingSnapshot,
+  publicInstanceBranding,
+  type BrandingAsset,
+  type InstanceBrandingProvider,
+} from '../core/platform/instance-branding';
 
 const SITE_PATHS = new Set(['/product', '/features', '/governance', '/docs', '/opensource', '/partners', '/pricing']);
 const EXECUTOR_SKILL_FILES = new Map<string, string>([
@@ -28,6 +34,7 @@ function chatCors(res: ServerResponse): void {
 export interface PublicHttpDeps {
   cfg: AppConfig;
   configStore: ConfigStoreContract | null;
+  brandingProvider: InstanceBrandingProvider;
   queue: { stats(): Record<string, number> };
   isPaused: () => boolean;
   metrics?: OperationalMetricsEndpoint;
@@ -51,6 +58,15 @@ function serveStaticFile(res: ServerResponse, file: string, contentType: string,
     ...(disposition ? { 'content-disposition': disposition } : {}),
   });
   res.end(head ? undefined : readFileSync(file));
+}
+
+function serveBrandingAsset(res: ServerResponse, asset: BrandingAsset, head: boolean): void {
+  res.writeHead(200, {
+    'content-type': asset.contentType,
+    'cache-control': 'no-cache',
+    'x-content-type-options': 'nosniff',
+  });
+  res.end(head ? undefined : asset.data);
 }
 
 function publicSchemaFile(root: string, rel: string): string {
@@ -156,6 +172,28 @@ export async function handlePublicHttpFor(deps: PublicHttpDeps, req: IncomingMes
     send(res, 200, buildVersionInfo(deps.cfg.root));
     return true;
   }
+  if (read && path === '/branding') {
+    let snapshot = defaultInstanceBrandingSnapshot();
+    try {
+      snapshot = await deps.brandingProvider.read();
+    } catch {
+      // 品牌配置不可用不能阻断控制台登录；公开面回退到内置默认值。
+    }
+    if (head) {
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      res.end();
+    } else {
+      res.setHeader('cache-control', 'no-store');
+      send(res, 200, publicInstanceBranding(snapshot));
+    }
+    return true;
+  }
+  if (read && path === '/branding/logo') {
+    const asset = await deps.brandingProvider.readAsset('logo').catch(() => null);
+    if (!asset) { send(res, 404, { error: 'not found' }); return true; }
+    serveBrandingAsset(res, asset, head);
+    return true;
+  }
 
   const mSchema = read ? path.match(/^\/schemas\/([A-Za-z0-9_.\/-]+\.schema\.json)$/) : null;
   if (mSchema) {
@@ -182,7 +220,12 @@ export async function handlePublicHttpFor(deps: PublicHttpDeps, req: IncomingMes
   }
 
   // favicon：公开页（演示页/控制台壳）会被浏览器自动请求，落到鉴权闸会冒 401 噪音。
-  if (read && path === '/favicon.ico') { res.writeHead(204); res.end(); return true; }
+  if (read && path === '/favicon.ico') {
+    const asset = await deps.brandingProvider.readAsset('favicon').catch(() => null);
+    if (asset) serveBrandingAsset(res, asset, head);
+    else { res.writeHead(204); res.end(); }
+    return true;
+  }
   if (read && path.startsWith(LOCAL_UPLOAD_URL_PREFIX + '/')) {
     let key = '';
     try { key = decodeURIComponent(path.slice(LOCAL_UPLOAD_URL_PREFIX.length + 1)); }

@@ -30,6 +30,7 @@ export const PAGES = [
   { path: 'cost', perm: 'runs:read', title: '成本观测', group: '运行' },
   { path: 'approvals', perm: 'runs:read', title: '审批意图', group: '运行' },
   // ⑦ 系统 —— 平台管理（低频）
+  { path: 'settings', perm: 'admins:manage', title: '实例外观', group: '系统管理' },
   { path: 'system', perm: 'audit:read', title: '系统状态', group: '系统管理' },
   { path: 'diagnostics', perm: 'audit:read', title: '系统体检', group: '系统管理' },
   { path: 'accounts', perm: 'admins:manage', title: '后台账号', group: '系统管理' },
@@ -59,6 +60,7 @@ export const router = createRouter({
         { path: 'clients', component: () => import('./pages/Clients.vue'), meta: { perm: 'clients:read', title: '接入方' } },
         { path: 'credentials', component: () => import('./pages/Credentials.vue'), meta: { perm: 'credentials:read', title: '模型凭证' } },
         { path: 'storage', component: () => import('./pages/StorageBuckets.vue'), meta: { perm: 'storage:read', title: '媒体存储' } },
+        { path: 'settings', component: () => import('./pages/SystemSettings.vue'), meta: { perm: 'admins:manage', title: '实例外观' } },
         { path: 'system', component: () => import('./pages/SystemStatus.vue'), meta: { perm: 'audit:read', title: '系统状态' } },
         { path: 'diagnostics', component: () => import('./pages/Diagnostics.vue'), meta: { perm: 'audit:read', title: '系统体检' } },
         { path: 'accounts', component: () => import('./pages/Accounts.vue'), meta: { perm: 'admins:manage', title: '后台账号' } },

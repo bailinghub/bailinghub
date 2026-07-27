@@ -111,6 +111,8 @@
           </el-option-group>
         </el-select>
         <div v-if="curProvider?.freeModel" class="muted hint">该平台模型很多/可能需接入点 ID，列表只是常用建议，可直接手填</div>
+        <el-alert v-if="modelIdHasWhitespace(form.default_model)" type="warning" :closable="false" show-icon class="model-id-alert"
+          title="模型 ID 含空白字符，可能填入了展示名称；请优先从平台文档或 /models 复制精确 ID。" />
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="发布" name="publish">
@@ -151,6 +153,8 @@
             <el-option v-for="mname in g.models" :key="mname" :value="mname" :label="g.tag ? mname + '  · ' + g.tag : mname" />
           </el-option-group>
         </el-select>
+        <el-alert v-if="modelIdHasWhitespace(verifyForm.model)" type="warning" :closable="false" show-icon class="model-id-alert"
+          title="当前值含空白字符。少数自建服务可能允许，但公共模型通常要求精确的机器 ID。" />
       </el-form-item>
       <el-alert v-if="verifyResult" :type="verifyResult.ok ? 'success' : 'error'" :closable="false" show-icon>
         <template #title>{{ verifyResult.ok ? '验证通过' : '验证失败' }}</template>
@@ -172,6 +176,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
+import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
 import { fmtTime } from '../util';
 import { LLM_PROVIDERS, CUSTOM_PROVIDER, detectProvider } from '../llm-catalog';
@@ -265,6 +270,9 @@ function looksEmbeddingModel(model: string): boolean {
   const v = model.toLowerCase();
   return v.includes('embedding') || v.includes('embed') || v.includes('bge');
 }
+function modelIdHasWhitespace(model: unknown): boolean {
+  return /\s/u.test(String(model ?? '').trim());
+}
 // 选平台：带出 base_url + 按平台能力给一个合理默认用途。若两类都支持，默认生成/理解；向量化可另建凭证。
 function applyPlatformCaps(): void {
   const p = curProvider.value;
@@ -332,6 +340,17 @@ async function runVerify(): Promise<void> {
 }
 async function save(): Promise<void> {
   const kind = credKind.value;
+  if (modelIdHasWhitespace(form.default_model)) {
+    try {
+      await ElMessageBox.confirm(
+        '默认模型含空白字符，可能填入了平台展示名称而不是 API 模型 ID。少数自建兼容服务允许空白字符；如果这是你确认过的精确 ID，可以继续保存。',
+        '请检查模型 ID',
+        { type: 'warning', confirmButtonText: '仍然保存', cancelButtonText: '返回修改' },
+      );
+    } catch {
+      return;
+    }
+  }
   saving.value = true;
   try {
     // platform 仅 UI 辅助，不入库；存的还是 name/kind/base_url/api_key/default_model/description
@@ -392,5 +411,8 @@ onMounted(async () => {
   display: grid;
   gap: 4px;
   min-width: 0;
+}
+.model-id-alert {
+  margin-top: 8px;
 }
 </style>

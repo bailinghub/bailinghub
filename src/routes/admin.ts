@@ -18,6 +18,7 @@ import { handleAdminInfraApiFor } from './admin-infra';
 import { handleAdminKbApiFor } from './admin-kb';
 import { handleAdminRuntimeApiFor } from './admin-runtime';
 import { handleAdminToolProviderApiFor } from './admin-tool-providers';
+import { handleAdminBrandingApiFor } from './admin-branding';
 import { refreshTargets } from '../core/targets/registry';
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
@@ -26,12 +27,14 @@ import type { KbService } from '../services/kb';
 import type { KbSyncService } from '../services/kbsync';
 import type { ToolIndexService } from '../services/tools-index';
 import type { ChannelMessage, ChannelSendResult } from '../app/channels';
+import type { InstanceBrandingProvider } from '../core/platform/instance-branding';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
 
 export interface AdminApiDeps {
   cfg: AppConfig;
   configStore: ConfigStoreContract | null;
+  brandingProvider: InstanceBrandingProvider;
   stateStore: RuntimeStateStore;
   capabilities: unknown;
   kbService: KbService | null;
@@ -81,6 +84,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     [/^\/admin\/api\/storage-buckets/, 'storage:read', 'storage:write'], // 含桶凭证，默认仅 admin（*）可管
     [/^\/admin\/api\/kb/, 'kb:read', 'kb:write'],
     [/^\/admin\/api\/admins/, 'admins:manage', 'admins:manage'],
+    [/^\/admin\/api\/instance-branding/, 'admins:manage', 'admins:manage'],
     [/^\/admin\/api\/targets/, 'targets:read', 'targets:write'],
     [/^\/admin\/api\/config-audit/, 'audit:read', 'audit:read'],
     [/^\/admin\/api\/config-diagnostics/, 'audit:read', 'audit:read'],
@@ -161,6 +165,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     channelSend: deps.channelSend,
     engineRuntime: deps.engineRuntime,
   }, method, path, req, res, principal)) return true;
+  if (await handleAdminBrandingApiFor({ brandingProvider: deps.brandingProvider }, method, path, req, res)) return true;
   if (await handleAdminAccessApiFor({ configStore, stateStore: deps.stateStore, now: deps.now }, method, path, req, res, principal)) return true;
   if (await handleAdminToolProviderApiFor({ cfg: deps.cfg, configStore, stateStore: deps.stateStore, toolIndex: deps.toolIndex, now: deps.now, sleep: deps.sleep }, method, path, req, res, principal)) return true;
   if (await handleAdminChatApiFor({ configStore }, method, path, req, res)) return true;

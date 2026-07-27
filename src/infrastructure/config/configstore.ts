@@ -21,6 +21,8 @@ import { DeliveryDlqLedger } from './config-delivery-dlq-ledger';
 import { ObservabilityLedger } from './config-observability-ledger';
 import { MysqlToolEmbeddingRepository } from './config-tool-embedding-repository';
 import { MysqlKbDatasourceRepository, MysqlKnowledgeRepository } from './config-knowledge-repository';
+import { InstanceBrandingRepository } from './config-instance-branding-repository';
+import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
 
 export type RouteRepositoryContract = Pick<RouteRepository, keyof RouteRepository>;
 export type ClientRepositoryContract = Pick<ClientRepository, keyof ClientRepository>;
@@ -42,6 +44,7 @@ export type ToolCallLedgerContract = Pick<ToolCallLedger, keyof ToolCallLedger>;
 export type ToolEmbeddingRepositoryContract = Pick<MysqlToolEmbeddingRepository, keyof MysqlToolEmbeddingRepository>;
 export type KnowledgeRepositoryContract = Pick<MysqlKnowledgeRepository, keyof MysqlKnowledgeRepository>;
 export type KbDatasourceRepositoryContract = Pick<MysqlKbDatasourceRepository, keyof MysqlKbDatasourceRepository>;
+export type { InstanceBrandingRepositoryContract };
 export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, keyof DeliveryDlqLedger>;
 export type ObservabilityLedgerContract =
   Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot'>
@@ -68,6 +71,7 @@ export interface ConfigStoreContract {
   readonly toolEmbeddings: ToolEmbeddingRepositoryContract;
   readonly knowledge: KnowledgeRepositoryContract;
   readonly kbDatasources: KbDatasourceRepositoryContract;
+  readonly instanceBranding: InstanceBrandingRepositoryContract;
   readonly deliveryDlq: DeliveryDlqLedgerContract;
   readonly observability: ObservabilityLedgerContract;
   init(): Promise<void>;
@@ -97,6 +101,7 @@ export class ConfigStore implements ConfigStoreContract {
   readonly toolEmbeddings = new MysqlToolEmbeddingRepository(() => this.pool);
   readonly knowledge = new MysqlKnowledgeRepository(() => this.pool);
   readonly kbDatasources = new MysqlKbDatasourceRepository(() => this.pool);
+  readonly instanceBranding = new InstanceBrandingRepository(() => this.pool);
   readonly deliveryDlq = new DeliveryDlqLedger(() => this.pool);
   readonly observability = new ObservabilityLedger(() => this.pool);
 
