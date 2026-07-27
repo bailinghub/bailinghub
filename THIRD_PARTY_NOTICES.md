@@ -128,7 +128,7 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [magic-string](https://www.npmjs.com/package/magic-string) | 0.30.21 | MIT | runtime |
 | Console | [mammoth](https://www.npmjs.com/package/mammoth) | 1.12.0 | BSD-2-Clause | runtime |
 | Console | [memoize-one](https://www.npmjs.com/package/memoize-one) | 6.0.0 | MIT | runtime |
-| Console | [nanoid](https://www.npmjs.com/package/nanoid) | 3.3.12 | MIT | runtime |
+| Console | [nanoid](https://www.npmjs.com/package/nanoid) | 3.3.16 | MIT | runtime |
 | Console | [normalize-wheel-es](https://www.npmjs.com/package/normalize-wheel-es) | 1.2.0 | BSD-3-Clause | runtime |
 | Console | [option](https://www.npmjs.com/package/option) | 0.2.4 | BSD-2-Clause | runtime |
 | Console | [pako](https://www.npmjs.com/package/pako) | 1.0.11 | (MIT AND Zlib) | runtime |
@@ -136,7 +136,7 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [picocolors](https://www.npmjs.com/package/picocolors) | 1.1.1 | ISC | runtime |
 | Console | [picomatch](https://www.npmjs.com/package/picomatch) | 4.0.4 | MIT | build/test |
 | Console | [pinia](https://www.npmjs.com/package/pinia) | 2.3.1 | MIT | runtime |
-| Console | [postcss](https://www.npmjs.com/package/postcss) | 8.5.15 | MIT | runtime |
+| Console | [postcss](https://www.npmjs.com/package/postcss) | 8.5.23 | MIT | runtime |
 | Console | [process-nextick-args](https://www.npmjs.com/package/process-nextick-args) | 2.0.1 | MIT | runtime |
 | Console | [readable-stream](https://www.npmjs.com/package/readable-stream) | 2.3.8 | MIT | runtime |
 | Console | [rollup](https://www.npmjs.com/package/rollup) | 4.61.1 | MIT | build/test |

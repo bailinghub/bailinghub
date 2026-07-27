@@ -78,6 +78,8 @@
 | [RELEASE_NOTES_v0.1.8.en.md](RELEASE_NOTES_v0.1.8.en.md) | English `v0.1.8` create-once initial-admin bootstrap release notes. |
 | [RELEASE_NOTES_v0.1.9.md](RELEASE_NOTES_v0.1.9.md) | `v0.1.9` 可选 OpenMetrics 运维指标与安全抓取说明。 |
 | [RELEASE_NOTES_v0.1.9.en.md](RELEASE_NOTES_v0.1.9.en.md) | English `v0.1.9` optional OpenMetrics operational metrics release notes. |
+| [RELEASE_NOTES_v0.1.10.md](RELEASE_NOTES_v0.1.10.md) | `v0.1.10` 实例品牌设置、模型标识诊断与生态接入配方说明。 |
+| [RELEASE_NOTES_v0.1.10.en.md](RELEASE_NOTES_v0.1.10.en.md) | English `v0.1.10` instance branding, model identifier diagnostics, and ecosystem recipe release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

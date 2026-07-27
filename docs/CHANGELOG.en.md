@@ -24,6 +24,20 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.1.10 - Instance Branding and Ecosystem Integration Improvements
+
+Released on 2026-07-27.
+
+- Added console-managed site name, browser title, description, keywords, login copy, logo, and favicon for administrators with `admins:manage`. Values persist in `bz_instance_branding` across upgrades and restarts.
+- Added a replaceable `InstanceBrandingProvider` boundary. The open-source edition uses local storage; a future platform may become the single owner and make instance-local settings read-only without dual writes.
+- Added public `GET /branding` and logo/favicon asset endpoints that expose display data only. Image formats are detected from bytes and bounded by type and size.
+- Improved model-ID diagnostics when a failed identifier contains whitespace. Added a Tencent Cloud TokenHub preset and the exact `kimi-k3` ID while preserving valid custom aliases.
+- Added bilingual DeepSeek V4 tool-calling E2E and Alibaba Cloud Bailian remote-MCP recipes with verification scripts.
+- Added `051_instance_branding.sql`, which creates only the singleton instance-branding table.
+- Client API, executor protocol, tool signatures, approval semantics, and ACC are unchanged. Existing deployments retain default branding after upgrade.
+- Validation: `npm run typecheck`, `npm test`, `npm run web-admin:check`, `npm run docs:check`, `npm run security:scan`, and `npm run release:check`.
+- Related docs: [RELEASE_NOTES_v0.1.10.en.md](RELEASE_NOTES_v0.1.10.en.md), [COMPATIBILITY.en.md](COMPATIBILITY.en.md), [DeepSeek integration](integrations/deepseek/README.en.md), and [Alibaba Cloud Bailian MCP integration](integrations/bailian/README.en.md).
+
 ## v0.1.9 - Optional OpenMetrics Operational Metrics
 
 Released on 2026-07-24.
