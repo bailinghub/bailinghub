@@ -40,6 +40,23 @@ test('openai stream: aggregates fragmented tool calls by index', async () => {
   assert.deepEqual(calls[0]?.['function'], { name: 'order_get', arguments: '{"id":"42"}' });
 });
 
+test('openai stream: preserves reasoning_content for a later tool-call round without exposing it as answer text', async () => {
+  const source = [
+    'data: {"choices":[{"delta":{"role":"assistant","reasoning_content":"need "}}]}\n\n',
+    'data: {"choices":[{"delta":{"reasoning_content":"lookup","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup_order","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}\n\n',
+    'data: [DONE]\n\n',
+  ].join('');
+  const deltas: string[] = [];
+  const result = await readOpenAiChatCompletion(
+    sseResponse([new TextEncoder().encode(source)]),
+    { onDelta: (text) => deltas.push(text) },
+  );
+
+  assert.equal(result.message['reasoning_content'], 'need lookup');
+  assert.equal(result.message['content'], null);
+  assert.deepEqual(deltas, []);
+});
+
 test('openai stream: accepts a JSON fallback response', async () => {
   const response = new Response(JSON.stringify({
     choices: [{ message: { role: 'assistant', content: 'fallback' }, finish_reason: 'stop' }],
