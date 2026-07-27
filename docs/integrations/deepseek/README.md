@@ -1,6 +1,6 @@
 # DeepSeek + BailingHub 双语 E2E 接入配方
 
-> 状态：BailingHub 已完成 DeepSeek V4 模型目录更新、流式响应解析和思考模式工具调用的自动化兼容测试。DeepSeek 官方 API 的真实无副作用 E2E 仍待使用临时 API Key 完成。本文不代表 DeepSeek 官方合作、认证或推荐。
+> 状态：2026-07-27，BailingHub 已完成 DeepSeek 官方 API 直连、思考模式工具调用回路、中英文任务，以及受治理只读工具调用的真实 E2E。本文不代表 DeepSeek 官方合作、认证、推荐或收录。
 
 [English](README.en.md)
 
@@ -162,19 +162,41 @@ python3 verify_e2e.py \
 
 不要为了验证模型会不会选工具，直接把生产写操作接到测试路由。
 
+## 真实验证记录
+
+2026-07-27 使用可轮换临时 Key 完成了以下无生产副作用验证：
+
+| 检查 | 模型 | 结果 |
+| --- | --- | --- |
+| 官方模型目录 | `/models` | 返回 `deepseek-v4-flash` 与 `deepseek-v4-pro` |
+| 官方 API 文本请求 | `deepseek-v4-flash` | 预期标记返回成功 |
+| 官方 API 思考模式工具回路 | `deepseek-v4-pro` | 首轮产生工具调用并返回 `reasoning_content`，第二轮带回该字段后成功生成最终回答 |
+| BailingHub 中文任务 | `deepseek-v4-flash` | `bc9c9801-ebf5-42c0-ae4d-4314843eca0a`，状态 `done` |
+| BailingHub 英文任务 | `deepseek-v4-flash` | `fcb8cf70-e341-4ffe-ba33-ba325540ed43`，状态 `done` |
+| BailingHub 受治理工具任务 | `deepseek-v4-pro` | `57d4f8fd-baf9-4a7a-a27f-1d306d6909ae`，状态 `done` |
+
+受治理工具任务只开放一个白名单只读工具，并绑定可信主体。审计记录显示：
+
+- 模型只提出一次 `list_demo_orders` 工具调用；
+- BailingHub 通过签名请求执行一次 `GET /orders`；
+- 工具返回 HTTP 200，随后模型完成最终回答；
+- `reasoning_content` 只用于模型轮次兼容，没有进入用户正文，也没有持久化到任务记录；
+- 验证完成后，临时路由、接入方、模型凭证、工具来源及本地临时文件均已清理。
+
 ## 已验证与未声称
 
-已由代码与自动化测试验证：
+已由真实 E2E、代码和自动化测试共同验证：
 
 - DeepSeek 官方 Base URL 与当前 V4 模型建议已进入控制台目录；
 - JSON 与 SSE 两类 OpenAI-compatible 响应均可解析；
 - 流式 `reasoning_content` 会被聚合，但不会泄露成用户正文；
 - 思考模式下的工具调用可以把 `reasoning_content` 带入下一轮请求；
+- 中英文任务可以通过 BailingHub 收口为权威 `done` 结果；
+- 受治理只读工具调用仍经过白名单、可信主体、签名执行和审计链路；
 - 上述兼容实现不修改 ACC Core，也不让模型取得业务系统权威。
 
-完成真实 API E2E 前不声称：
+这些验证不代表：
 
-- 已在 DeepSeek 官方 API 上完成中文和英文实测；
 - 任意模型、任意提示词都能稳定选择正确工具；
 - DeepSeek 与 BailingHub 存在官方合作、认证或生态背书；
 - BailingHub 会展示、保存或审计模型的完整思考过程；
@@ -188,6 +210,8 @@ python3 verify_e2e.py \
 2. 禁用测试 Client，或轮换其 Token；
 3. 保留脱敏后的状态序列、BailingHub 版本、模型 ID 和测试时间；
 4. 不保留思考内容、业务凭据或真实客户数据作为公开证据。
+
+本次验证使用的 BailingHub 临时配置已删除；临时 DeepSeek API Key 仍应由其所有者在供应商控制台撤销。
 
 ## 一手依据
 

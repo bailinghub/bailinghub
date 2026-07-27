@@ -1,6 +1,6 @@
 # DeepSeek + BailingHub Bilingual E2E Recipe
 
-> Status: BailingHub has updated its DeepSeek V4 model catalog and added automated compatibility coverage for streaming responses and thinking-mode tool-call rounds. A real, harmless E2E against the official DeepSeek API is still pending a temporary API key. This document does not imply a DeepSeek partnership, certification, or endorsement.
+> Status: On 2026-07-27, BailingHub completed real E2E validation against the official DeepSeek API, including a direct thinking-mode tool round trip, Chinese and English jobs, and a governed read-only tool call. This does not imply a DeepSeek partnership, certification, endorsement, or listing.
 
 [中文](README.md)
 
@@ -162,19 +162,41 @@ A model tool call is a proposal, not an authorization. BailingHub still checks:
 
 Do not attach production write tools to the harmless validation route merely to test model tool selection.
 
+## Live Validation Record
+
+The following non-production validation was completed on 2026-07-27 with a temporary, rotatable key:
+
+| Check | Model | Result |
+| --- | --- | --- |
+| Official model catalog | `/models` | Returned `deepseek-v4-flash` and `deepseek-v4-pro` |
+| Official API text request | `deepseek-v4-flash` | Returned the expected marker |
+| Official API thinking-mode tool round | `deepseek-v4-pro` | Produced a tool call with `reasoning_content`, then completed after that field was returned in the next assistant message |
+| BailingHub Chinese job | `deepseek-v4-flash` | `bc9c9801-ebf5-42c0-ae4d-4314843eca0a`, status `done` |
+| BailingHub English job | `deepseek-v4-flash` | `fcb8cf70-e341-4ffe-ba33-ba325540ed43`, status `done` |
+| BailingHub governed tool job | `deepseek-v4-pro` | `57d4f8fd-baf9-4a7a-a27f-1d306d6909ae`, status `done` |
+
+The governed tool route exposed one allowlisted read-only tool and required a trusted subject. Its audit record shows:
+
+- one `list_demo_orders` tool call proposed by the model;
+- one signed `GET /orders` request executed by BailingHub;
+- an HTTP 200 tool result followed by the final model answer;
+- `reasoning_content` used only for provider-compatible round-tripping, not emitted as answer text or persisted in the job record;
+- temporary routes, clients, model credentials, tool sources, and local test files removed after validation.
+
 ## Verified And Not Claimed
 
-Verified by implementation and automated tests:
+Verified by live E2E, implementation, and automated tests:
 
 - the official DeepSeek base URL and current V4 suggestions are in the console catalog;
 - JSON and SSE OpenAI-compatible responses are parsed;
 - streaming `reasoning_content` is aggregated without becoming visible answer text;
 - thinking-mode tool calls preserve `reasoning_content` in the next request;
+- Chinese and English requests converge to authoritative BailingHub `done` results;
+- a governed read-only tool call still passes through allowlisting, trusted-subject binding, signed execution, and audit;
 - the compatibility work does not modify ACC Core or transfer business authority to the model.
 
-Until the real API E2E is complete, this project does not claim:
+This validation does not establish:
 
-- a completed Chinese and English test against the official DeepSeek API;
 - reliable tool selection for every model and prompt;
 - an official DeepSeek partnership, certification, or endorsement;
 - display, storage, or audit of a model's full chain of thought;
@@ -188,6 +210,8 @@ After live validation:
 2. disable the test client or rotate its token;
 3. retain only the sanitized status sequence, BailingHub version, model ID, and test time;
 4. do not retain reasoning content, credentials, or real customer data as public evidence.
+
+The temporary BailingHub configuration used for this validation has been removed. The temporary DeepSeek API key must still be revoked by its owner in the provider console.
 
 ## Primary References
 
