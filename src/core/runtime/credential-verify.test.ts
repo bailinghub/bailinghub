@@ -64,3 +64,13 @@ test('verifyCredentialConnection: HTTP 错误提取平台 error code/message', a
   assert.equal(got.status, 403);
   assert.equal(got.message, 'HTTP 403: access_denied: Access denied');
 });
+
+test('verifyCredentialConnection: 含空白的模型名失败时提示检查 API 模型 ID', async () => {
+  const got = await verifyCredentialConnection({ credential, capability: 'chat', model: 'Kimi K3' }, mockFetch(() => new Response(JSON.stringify({
+    error: { message: 'model not found' },
+  }), { status: 404 })));
+
+  assert.equal(got.ok, false);
+  assert.match(got.message, /模型 ID 含空白字符/);
+  assert.match(got.message, /\/models/);
+});

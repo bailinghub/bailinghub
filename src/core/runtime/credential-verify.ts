@@ -43,6 +43,12 @@ function parseErrorText(raw: string): string {
   }
 }
 
+function modelIdDiagnostic(model: string): string {
+  return /\s/u.test(model)
+    ? '；模型 ID 含空白字符，可能填入了展示名称。请从平台文档或 /models 复制精确 ID'
+    : '';
+}
+
 function result(input: {
   ok: boolean;
   capability: CredentialVerifyCapability;
@@ -111,7 +117,7 @@ export async function verifyCredentialConnection(
         endpoint: path,
         status: resp.status,
         started,
-        message: `HTTP ${resp.status}: ${parseErrorText(raw).slice(0, 500)}`,
+        message: `HTTP ${resp.status}: ${parseErrorText(raw).slice(0, 500)}${modelIdDiagnostic(model)}`,
       });
     }
 

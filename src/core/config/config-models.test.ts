@@ -81,6 +81,15 @@ test('prepareCredentialConfig: 规范化凭证用途并保留 api_key 编辑语�
   const bad = prepareCredentialConfig({ name: 'main-chat' });
   assert.equal(bad.ok, false);
   assert.match(bad.ok ? '' : bad.error, /base_url/);
+
+  const customAlias = prepareCredentialConfig({
+    name: 'private-gateway',
+    base_url: 'https://gateway.example.com/v1',
+    api_key: 'key',
+    default_model: 'private model alias',
+  });
+  assert.equal(customAlias.ok, true);
+  if (customAlias.ok) assert.equal(customAlias.value.default_model, 'private model alias');
 });
 
 test('prepareTargetConfig: inhub 目标必须有内置适配器，自定义目标走 executor', () => {
