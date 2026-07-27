@@ -21,6 +21,8 @@
 | [INTEGRATION.en.md](INTEGRATION.en.md) | English third-party integration guide. |
 | [integrations/dify/README.md](integrations/dify/README.md) | Dify 通过 BailingHub `/run` 与 `/jobs/{job_id}` 发起受治理任务的最小接入配方。 |
 | [integrations/dify/README.en.md](integrations/dify/README.en.md) | English Dify + BailingHub minimal integration recipe. |
+| [integrations/deepseek/README.md](integrations/deepseek/README.md) | DeepSeek V4 通过 BailingHub 参与受治理业务动作的双语 E2E 配方。 |
+| [integrations/deepseek/README.en.md](integrations/deepseek/README.en.md) | English DeepSeek V4 + BailingHub bilingual E2E recipe. |
 
 ## 架构与模型
 

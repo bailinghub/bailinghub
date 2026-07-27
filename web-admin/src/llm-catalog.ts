@@ -34,9 +34,9 @@ export const LLM_PROVIDERS: LlmProvider[] = [
   },
   {
     id: 'deepseek', label: 'DeepSeek（深度求索）',
-    base_url: 'https://api.deepseek.com/v1',
-    chat: ['deepseek-chat', 'deepseek-reasoner'],
-    keyUrl: 'platform.deepseek.com', note: '主要用于文本对话/推理；视觉、语音、向量通常需另配其它平台',
+    base_url: 'https://api.deepseek.com',
+    chat: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+    keyUrl: 'platform.deepseek.com', note: '官方 OpenAI 兼容接口；V4 支持文本、流式输出与工具调用。视觉、语音、向量通常需另配其它平台',
   },
   {
     id: 'zhipu', label: '智谱 GLM（BigModel）',

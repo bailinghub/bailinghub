@@ -209,13 +209,15 @@ test('llmAdapter: 流式工具参数分片可重组，工具阶段后继续输�
     },
   };
   let call = 0;
+  const requests: Array<Record<string, unknown>> = [];
 
-  const got = await withFetchImplementation((async () => {
+  const got = await withFetchImplementation((async (_input, init) => {
+    requests.push(JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>);
     call++;
     if (call === 1) {
       return sseResponse([
-        { choices: [{ delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_', type: 'function', function: { name: 'lookup_', arguments: '{"id":' } }] } }] },
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: '1', function: { name: 'order', arguments: '7}' } }] }, finish_reason: 'tool_calls' }] },
+        { choices: [{ delta: { role: 'assistant', reasoning_content: '需要查询订单。', tool_calls: [{ index: 0, id: 'call_', type: 'function', function: { name: 'lookup_', arguments: '{"id":' } }] } }] },
+        { choices: [{ delta: { reasoning_content: '查询后回答。', tool_calls: [{ index: 0, id: '1', function: { name: 'order', arguments: '7}' } }] }, finish_reason: 'tool_calls' }] },
         '[DONE]',
       ]);
     }
@@ -228,6 +230,9 @@ test('llmAdapter: 流式工具参数分片可重组，工具阶段后继续输�
 
   assert.equal(call, 2);
   assert.deepEqual(invoked, [{ name: 'lookup_order', args: { id: 7 } }]);
+  const secondMessages = requests[1]?.['messages'] as Array<Record<string, unknown>>;
+  const assistantToolMessage = secondMessages.find((message) => message['role'] === 'assistant' && Array.isArray(message['tool_calls']));
+  assert.equal(assistantToolMessage?.['reasoning_content'], '需要查询订单。查询后回答。');
   assert.equal(got.output['text'], '订单已支付');
   assert.equal(streamEvents.some((event) => event.type === 'phase' && event.data['name'] === 'tool'), true);
   assert.equal(streamEvents.some((event) => event.type === 'reset' && event.data['reason'] === 'tool_call'), true);

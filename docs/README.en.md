@@ -15,6 +15,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [INTEGRATION.en.md](INTEGRATION.en.md) | Third-party integration guide for tools, signatures, authorization, and callback handling. |
 | [integrations/dify/README.en.md](integrations/dify/README.en.md) | Minimal Dify integration through the governed BailingHub `/run` and `/jobs/{job_id}` APIs. |
 | [integrations/dify/README.md](integrations/dify/README.md) | Chinese Dify + BailingHub minimal integration recipe. |
+| [integrations/deepseek/README.en.md](integrations/deepseek/README.en.md) | DeepSeek V4 + BailingHub bilingual E2E recipe with thinking-mode tool-call compatibility. |
+| [integrations/deepseek/README.md](integrations/deepseek/README.md) | Chinese DeepSeek V4 + BailingHub E2E recipe. |
 
 ## Architecture And Models
 

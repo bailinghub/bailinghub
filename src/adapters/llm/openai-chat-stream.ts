@@ -87,6 +87,7 @@ export async function readOpenAiChatCompletion(response: Response, options: Open
   const toolCalls = new Map<number, ToolCallAccumulator>();
   let buffer = '';
   let content = '';
+  let reasoningContent = '';
   let role = '';
   let totalTokens = 0;
   let finishReason: string | null = null;
@@ -113,6 +114,7 @@ export async function readOpenAiChatCompletion(response: Response, options: Open
     if (!delta) return;
     if (typeof delta['role'] === 'string') role = delta['role'];
     appendToolCalls(toolCalls, delta['tool_calls']);
+    if (typeof delta['reasoning_content'] === 'string') reasoningContent += delta['reasoning_content'];
     const text = contentText(delta['content']);
     if (!text) return;
     if (firstTokenMs === undefined) firstTokenMs = Math.max(0, Date.now() - (options.startedAt ?? Date.now()));
@@ -139,6 +141,7 @@ export async function readOpenAiChatCompletion(response: Response, options: Open
     message: {
       role: role || 'assistant',
       content: content || null,
+      ...(reasoningContent ? { reasoning_content: reasoningContent } : {}),
       ...(orderedToolCalls.length ? { tool_calls: orderedToolCalls } : {}),
     },
     totalTokens,

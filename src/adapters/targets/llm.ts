@@ -453,7 +453,14 @@ export const llmAdapter: TargetAdapter = {
         emitStream({ type: 'reset', data: { reason: 'tool_call', round: publicRound } });
         emitStream({ type: 'phase', data: { name: 'tool', round: publicRound } });
       }
-      messages.push({ role: 'assistant', content: msg.content ?? null, tool_calls: toolCalls });
+      messages.push({
+        role: 'assistant',
+        content: msg.content ?? null,
+        ...(typeof msg.reasoning_content === 'string' && msg.reasoning_content
+          ? { reasoning_content: msg.reasoning_content }
+          : {}),
+        tool_calls: toolCalls,
+      });
       for (const call of toolCalls) {
         const name = String(call?.function?.name ?? '');
         let result: { text: string; ok: boolean };
