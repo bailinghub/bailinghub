@@ -4,6 +4,8 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import { AuditFailureTracker, observeAuditFailures, type AuditFailureLogger } from '../core/state/audit-observability';
 import { ConfigStore } from '../infrastructure/config/configstore';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import type { InstanceBrandingProvider } from '../core/platform/instance-branding';
+import { LocalInstanceBrandingProvider } from '../infrastructure/config/local-instance-branding-provider';
 import { createStore } from '../infrastructure/state/state';
 
 export type OssConfigStore = ConfigStoreContract | null;
@@ -14,6 +16,7 @@ export interface OssEdition {
   scopeResolver: SingleScopeResolver;
   storeFactory: StoreFactory<OssConfigStore, RuntimeStateStore>;
   auditFailures: AuditFailureTracker;
+  brandingProvider: InstanceBrandingProvider;
   capabilities: ConsoleCapabilities;
 }
 
@@ -38,6 +41,7 @@ export function createOssEdition(cfg: AppConfig, options: { logger?: AuditFailur
   const auditFailures = new AuditFailureTracker(options.now);
   const stateStore = observeAuditFailures(createStore(cfg), auditFailures, options.logger);
   const configStore = cfg.state.backend === 'mysql' ? new ConfigStore(cfg.state.mysql) : null;
+  const brandingProvider = new LocalInstanceBrandingProvider(configStore?.instanceBranding ?? null);
   const systemContext = createRuntimeContext({
     requestId: 'boot',
     source: 'system',
@@ -49,6 +53,7 @@ export function createOssEdition(cfg: AppConfig, options: { logger?: AuditFailur
     scopeResolver: new SingleScopeResolver(),
     storeFactory: new OssStoreFactory(stateStore, configStore),
     auditFailures,
+    brandingProvider,
     capabilities: {
       edition: 'oss',
       console: 'single',
@@ -68,6 +73,7 @@ export function createOssEdition(cfg: AppConfig, options: { logger?: AuditFailur
         'cost',
         'approvals',
         'system',
+        'settings',
         'diagnostics',
         'accounts',
         'audit',

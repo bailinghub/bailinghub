@@ -1,5 +1,6 @@
 <template>
-  <svg class="brand-lockup-svg" viewBox="0 0 144 58" role="img" aria-label="百灵中枢 BailingHub">
+  <img v-if="instanceBranding.logo_url" class="brand-lockup-image" :src="instanceBranding.logo_url" :alt="instanceBranding.site_name" />
+  <svg v-else class="brand-lockup-svg" viewBox="0 0 144 58" role="img" aria-label="百灵中枢 BailingHub">
     <g transform="translate(0 -3) scale(0.2416667)">
       <path class="brand-lockup-svg__mark-main" fill-rule="evenodd" d="M42 44h34v152H54l-12-12zM76 44h58v34H76zM76 103h22v34H76zM76 162h58v34H76zM150 44h22l12 12v8h-34zM150 86h34v110h-34z"/>
       <path class="brand-lockup-svg__mark-accent" fill-rule="evenodd" d="M116 103h68v34h-68zM76 162h58v34H76z"/>
@@ -9,7 +10,16 @@
   </svg>
 </template>
 
+<script setup lang="ts">
+import { instanceBranding } from '../branding';
+</script>
+
 <style scoped>
+.brand-lockup-image {
+  display: block;
+  object-fit: contain;
+  object-position: left center;
+}
 .brand-lockup-svg {
   display: block;
   overflow: visible;

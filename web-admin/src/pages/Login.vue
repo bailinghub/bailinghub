@@ -6,8 +6,8 @@
           <BrandLockup class="brandLockup" />
           <div class="heroText">
             <p class="eyebrow">AI CONTROL PLANE</p>
-            <h1>把业务系统接成可治理的 AI 操作入口</h1>
-            <p>从触发路由、工具声明、审批意图到审计追溯，所有运行痕迹留在自己的控制台里。</p>
+            <h1>{{ instanceBranding.login_heading }}</h1>
+            <p>{{ instanceBranding.login_subheading }}</p>
           </div>
           <div class="heroGrid">
             <div><b>Routes</b><span>场景路由</span></div>
@@ -20,7 +20,7 @@
           <div class="authInner">
             <div class="cardHead">
               <p>控制台登录</p>
-              <h2>登录百灵中枢</h2>
+              <h2>登录{{ instanceBranding.site_name }}</h2>
               <span>{{ signupEnabled ? '使用邮箱注册或登录账号，进入你的独立中枢控制台。' : '请输入管理员账号，进入你的中枢控制台。' }}</span>
             </div>
             <div v-if="signupEnabled" class="tabs" role="tablist">
@@ -61,6 +61,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useMe } from '../store';
 import BrandLockup from '../components/BrandLockup.vue';
+import { instanceBranding } from '../branding';
 
 const username = ref('');
 const password = ref('');

@@ -87,7 +87,7 @@
 import { computed, markRaw, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
-import { Box, ChatDotRound, Coin, Collection, Connection, Cpu, Document, Folder, InfoFilled, Key, Lock, Monitor, Promotion, SetUp, Setting, Stamp, Tickets, User, Warning } from '@element-plus/icons-vue';
+import { Box, Brush, ChatDotRound, Coin, Collection, Connection, Cpu, Document, Folder, InfoFilled, Key, Lock, Monitor, Promotion, SetUp, Setting, Stamp, Tickets, User, Warning } from '@element-plus/icons-vue';
 import { useMe } from '../store';
 import { PAGES } from '../router';
 import { api } from '../request';
@@ -101,11 +101,11 @@ const menuRef = ref<{ open: (index: string) => void } | null>(null);
 const ICONS: Record<string, unknown> = {
   kb: markRaw(Collection), runs: markRaw(Tickets), executors: markRaw(Monitor), cost: markRaw(Coin), routes: markRaw(Connection), targets: markRaw(Cpu),
   tools: markRaw(SetUp), approvals: markRaw(Stamp), chat: markRaw(ChatDotRound), channels: markRaw(Promotion), projects: markRaw(Folder),
-  clients: markRaw(Key), credentials: markRaw(Lock), storage: markRaw(Box), system: markRaw(InfoFilled), diagnostics: markRaw(Warning), accounts: markRaw(User), audit: markRaw(Document),
+  clients: markRaw(Key), credentials: markRaw(Lock), storage: markRaw(Box), settings: markRaw(Brush), system: markRaw(InfoFilled), diagnostics: markRaw(Warning), accounts: markRaw(User), audit: markRaw(Document),
 };
 const GROUP_ORDER = ['场景配置', '接入入口', '能力装配', '运行', '基础资源', '系统管理'] as const;
 const DEFAULT_OPEN_GROUPS = new Set<string>(['场景配置', '接入入口', '能力装配', '运行']);
-const CONFIG_CENTER_PATHS = new Set<string>(['credentials', 'storage', 'projects', 'system', 'diagnostics', 'accounts']);
+const CONFIG_CENTER_PATHS = new Set<string>(['credentials', 'storage', 'projects', 'settings', 'system', 'diagnostics', 'accounts']);
 const MENU_OPEN_STORAGE_KEY = 'bailing:console:menu-open-groups:v1';
 const primaryPages = computed(() => PAGES.filter((p) => p.group === '场景' && s.can(p.perm)));
 

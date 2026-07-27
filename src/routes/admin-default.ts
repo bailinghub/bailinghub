@@ -13,6 +13,7 @@ export function defaultAdminApiDeps(): AdminApiDeps {
   return {
     cfg,
     configStore: cfgStore,
+    brandingProvider: edition.brandingProvider,
     stateStore: store,
     capabilities: edition.capabilities,
     kbService,

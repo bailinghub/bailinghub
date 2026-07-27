@@ -7,6 +7,16 @@ import { join } from 'node:path';
 import type { AppConfig } from '../core/config/config';
 import { handlePublicHttpFor, type PublicHttpDeps } from './public';
 import { handlePublicHttp } from './public-default';
+import type {
+  BrandingAsset,
+  BrandingAssetKind,
+  InstanceBrandingProvider,
+  InstanceBrandingSnapshot,
+  InstanceBrandingUpdate,
+} from '../core/platform/instance-branding';
+import { LocalInstanceBrandingProvider } from '../infrastructure/config/local-instance-branding-provider';
+
+const brandingProvider = new LocalInstanceBrandingProvider(null);
 
 class FakeResponse {
   statusCode = 0;
@@ -35,6 +45,7 @@ test('public route: For 入口使用注入的运行期状态生成 health', asyn
   const deps: PublicHttpDeps = {
     cfg: { root: process.cwd(), state: { backend: 'memory' } } as unknown as AppConfig,
     configStore: null,
+    brandingProvider,
     queue: { stats: () => ({ running: 7, waiting: 3 }) },
     isPaused: () => true,
     operationalStatus: () => ({ audit_write_failures: 2, last_audit_failure_at: '2026-07-10T08:00:00.000Z' }),
@@ -64,6 +75,7 @@ test('public route: readiness 根据共享依赖状态返回 200/503 且不泄�
   const base: PublicHttpDeps = {
     cfg: { root: process.cwd(), state: { backend: 'mysql' } } as unknown as AppConfig,
     configStore: null,
+    brandingProvider,
     queue: { stats: () => ({}) },
     isPaused: () => false,
     readiness: async () => ({ ready: false, checks: { database: 'failed', migrations: { status: 'failed', pending: 0 } } }),
@@ -88,10 +100,79 @@ test('public route: readiness 根据共享依赖状态返回 200/503 且不泄�
   assert.equal(ready.statusCode, 200);
 });
 
+test('public route: branding exposes display data and serves binary assets without management metadata', async () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const provider: InstanceBrandingProvider = {
+    management: {
+      source: 'platform',
+      writable: false,
+      management_url: 'https://platform.example.com/instances/demo/branding',
+    },
+    async read(): Promise<InstanceBrandingSnapshot> {
+      return {
+        site_name: 'Example Hub',
+        browser_title: 'Example Hub Console',
+        site_description: 'Example',
+        site_keywords: ['agent', 'governance'],
+        login_heading: 'Governed actions',
+        login_subheading: 'Keep authority in the business system.',
+        has_logo: true,
+        has_favicon: true,
+        revision: 'rev-1',
+        updated_at: '2026-07-27T08:00:00.000Z',
+      };
+    },
+    async readAsset(kind: BrandingAssetKind): Promise<BrandingAsset | null> {
+      return { contentType: kind === 'logo' ? 'image/png' : 'image/x-icon', data: png, revision: 'rev-1' };
+    },
+    async update(_input: InstanceBrandingUpdate): Promise<InstanceBrandingSnapshot> {
+      throw new Error('not writable');
+    },
+  };
+  const deps: PublicHttpDeps = {
+    cfg: { root: process.cwd(), state: { backend: 'memory' } } as unknown as AppConfig,
+    configStore: null,
+    brandingProvider: provider,
+    queue: { stats: () => ({}) },
+    isPaused: () => false,
+    serveConsole: (_path, res) => { res.writeHead(204); res.end(); },
+    handleChat: async () => undefined,
+    handleChatConfig: async () => undefined,
+    handleChatEvents: async () => undefined,
+    handleChatThread: async () => undefined,
+    handleChatUpload: async () => undefined,
+    handleChatRate: async () => undefined,
+    serveChatDemo: (res) => { res.writeHead(204); res.end(); },
+  };
+
+  const branding = new FakeResponse();
+  await handlePublicHttpFor(deps, req('GET'), branding as unknown as ServerResponse, new URL('http://local/branding'));
+  assert.equal(branding.statusCode, 200);
+  const body = JSON.parse(Buffer.from(branding.body).toString('utf8')) as Record<string, unknown>;
+  assert.equal(body['site_name'], 'Example Hub');
+  assert.equal(body['logo_url'], '/branding/logo?v=rev-1');
+  assert.equal('management' in body, false);
+  assert.equal('management_url' in body, false);
+
+  const logo = new FakeResponse();
+  await handlePublicHttpFor(deps, req('GET'), logo as unknown as ServerResponse, new URL('http://local/branding/logo'));
+  assert.equal(logo.statusCode, 200);
+  assert.equal(logo.headers['content-type'], 'image/png');
+  assert.equal(logo.headers['x-content-type-options'], 'nosniff');
+  assert.deepEqual(Buffer.from(logo.body), png);
+
+  const favicon = new FakeResponse();
+  await handlePublicHttpFor(deps, req('HEAD'), favicon as unknown as ServerResponse, new URL('http://local/favicon.ico'));
+  assert.equal(favicon.statusCode, 200);
+  assert.equal(favicon.headers['content-type'], 'image/x-icon');
+  assert.equal(favicon.body.length, 0);
+});
+
 test('public route: metrics 默认隐藏，启用后只接受 Bearer 且支持 GET/HEAD', async () => {
   const base: PublicHttpDeps = {
     cfg: { root: process.cwd(), state: { backend: 'mysql' } } as unknown as AppConfig,
     configStore: null,
+    brandingProvider,
     queue: { stats: () => ({}) },
     isPaused: () => false,
     serveConsole: (_path, res) => { res.writeHead(204); res.end(); },
@@ -161,6 +242,7 @@ test('public route: 聊天 SSE 事件端点走公开分发并带 CORS', async ()
   const deps: PublicHttpDeps = {
     cfg: { root: process.cwd(), state: { backend: 'memory' } } as unknown as AppConfig,
     configStore: null,
+    brandingProvider,
     queue: { stats: () => ({}) },
     isPaused: () => false,
     serveConsole: (_path, res) => { res.writeHead(204); res.end(); },
@@ -217,6 +299,7 @@ test('public route: /uploads/* 公开读取本地媒体且限制在 data/uploads
     const deps: PublicHttpDeps = {
       cfg: { root, state: { backend: 'memory' } } as unknown as AppConfig,
       configStore: null,
+      brandingProvider,
       queue: { stats: () => ({}) },
       isPaused: () => false,
       serveConsole: (_path, res) => { res.writeHead(204); res.end(); },
@@ -254,6 +337,7 @@ test('public route: schema 可从扩展运行时旁边的核心目录回退读�
     const deps: PublicHttpDeps = {
       cfg: { root: extensionRoot, state: { backend: 'memory' } } as unknown as AppConfig,
       configStore: null,
+      brandingProvider,
       queue: { stats: () => ({}) },
       isPaused: () => false,
       serveConsole: (_path, res) => { res.writeHead(204); res.end(); },
