@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "bailinghub": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "bailinghub-mcp-server@0.1.0"
+      ],
+      "env": {
+        "BAILINGHUB_BASE_URL": "https://hub.example.com",
+        "BAILINGHUB_CLIENT_TOKEN": "replace-with-a-route-scoped-client-token",
+        "BAILINGHUB_ROUTE": "bailian_assistant"
+      }
+    }
+  }
+}

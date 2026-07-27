@@ -23,6 +23,8 @@
 | [integrations/dify/README.en.md](integrations/dify/README.en.md) | English Dify + BailingHub minimal integration recipe. |
 | [integrations/deepseek/README.md](integrations/deepseek/README.md) | DeepSeek V4 通过 BailingHub 参与受治理业务动作的双语 E2E 配方。 |
 | [integrations/deepseek/README.en.md](integrations/deepseek/README.en.md) | English DeepSeek V4 + BailingHub bilingual E2E recipe. |
+| [integrations/bailian/README.md](integrations/bailian/README.md) | 阿里云百炼通过自定义 MCP 调用 BailingHub 受治理任务的最小接入配方。 |
+| [integrations/bailian/README.en.md](integrations/bailian/README.en.md) | English Alibaba Cloud Model Studio + BailingHub custom MCP recipe. |
 
 ## 架构与模型
 

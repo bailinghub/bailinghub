@@ -17,6 +17,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [integrations/dify/README.md](integrations/dify/README.md) | Chinese Dify + BailingHub minimal integration recipe. |
 | [integrations/deepseek/README.en.md](integrations/deepseek/README.en.md) | DeepSeek V4 + BailingHub bilingual E2E recipe with thinking-mode tool-call compatibility. |
 | [integrations/deepseek/README.md](integrations/deepseek/README.md) | Chinese DeepSeek V4 + BailingHub E2E recipe. |
+| [integrations/bailian/README.en.md](integrations/bailian/README.en.md) | Alibaba Cloud Model Studio custom MCP recipe for governed BailingHub jobs. |
+| [integrations/bailian/README.md](integrations/bailian/README.md) | Chinese Alibaba Cloud Model Studio + BailingHub custom MCP recipe. |
 
 ## Architecture And Models
 
