@@ -336,6 +336,7 @@ X-Bailing-Job-Id:       任务溯源
 X-Bailing-Client:       触发方 app_id（admin 触发为空）
 X-Bailing-On-Behalf-Of: 操作主体，票据/触发方声明的 uid 原样透传。取数链：metadata[subject_field] → 取不到回落 metadata.visitor_uid（聊天票据身份由中枢验签后写入的标准字段——聊天场景零配置即得身份，且不会被 API 场景的 subject_field 配置饿死）；可能为空
 X-Bailing-Tool-Scope:   该工具的 x-agent-capability.scope（信息性，业务侧应自行重算）
+X-Bailing-Idempotency-Key: 非只读、非声明幂等工具的稳定副作用幂等键
 ```
 
 - secret = 控制台「工具源」注册时设置的签名密钥（与接入 token、server.token 全部解耦，单独轮换）；
@@ -345,7 +346,9 @@ X-Bailing-Tool-Scope:   该工具的 x-agent-capability.scope（信息性，业�
   - base_url **带路径前缀**（如 `https://shop.com/openapi`，spec path `/goods/create` → 实际请求 `/openapi/goods/create`）时，`REQUEST_URI` 含 `/openapi` 前缀而签名串不含 → 必 401。两种解法：把该前缀从 `REQUEST_URI` 剥掉再验，或直接用 SDK 的 `Verify::currentRequest($secret, '/goods/create')`（传该端点的 spec path，SDK 只借用 `REQUEST_URI` 的 query 段、路径段用你给的 spec path，**与 base_url 前缀、框架 pathinfo 重写都解耦**，推荐）；
   - `<query>` = **本次 Agent 调用的 query 位参数**（GET 的全部参数 / 非 GET 标了 `in:query` 的参数），经 `URLSearchParams` 序列化（参数按传入顺序、值百分号编码）。**不含**你框架的路由参数——所以**端点要挂在干净固定路径上，别走 `?i=&c=&a=&r=` 这类带路由 query 的入口**（那些 query 不在中枢签名里，必对不上）。无 query 参数时签名串就是纯 `<path>`；
 - **编码形态**：中枢"签所发即所发"——签名串里的 `<path?query>` 与实际发出的请求行逐字节一致（query 值经 URLSearchParams 百分号编码）。业务侧**必须用原始 `REQUEST_URI` 验签（或 SDK 传 spec path 的形式），不要从 `$_GET` decode 后重组**（会改编码/顺序）；URI 会被重写/重编码的 CDN 或网关后面验签必挂——**工具源 base_url 必须指向源站直连地址**；
-- **重放与幂等**：签名校验不要求业务侧维护 nonce（业务侧无需 Redis 也能接）。时间窗内同一请求可被重放，TLS 下风险有限；对高敏写接口建议任选其一加固：①业务侧把收到的 `X-Bailing-Signature` 缓存 300 秒拒绝重复出现（**签名串含时间戳，本身就是唯一性指纹——缓存它等价 nonce 去重**，合法的 AI 重试时间戳不同、签名不同，不受影响）；②按业务键做幂等（如删除二次自然 404）。`X-Bailing-Job-Id` 可辅助溯源对账；
+- **重放与幂等**：签名校验不要求业务侧维护 nonce（业务侧无需 Redis 也能接）。缓存 `X-Bailing-Signature` 只能阻止时间窗内的逐字节重放，不能承担业务幂等，因为一次合法重发会使用新的时间戳与签名。对于非只读、非声明幂等工具，中枢会额外发送稳定的 `X-Bailing-Idempotency-Key`：它绑定 job、主体、工具和规范化参数，在超时/断连/重启等不确定结果下保持不变。业务侧应优先按该键或自己的业务键去重，并用 `X-Bailing-Job-Id` 辅助追溯；该键不替代验签与业务授权；
+- **不确定执行不重放**：中枢在副作用外发前写持久化执行日志；账本缺失或占位失败时请求不会发出。无法确认业务后果时返回 `governance_state=reconciliation_required`、`auto_retry_allowed=false`；恢复任务会在模型运行前扫描未决日志，重启后也不会再次外发同一调用。它是保守冻结，不是 exactly-once 保证：调用可能根本没有到达业务系统，因此仍需业务日志与幂等键完成对账；
+- **内置消息发送同样属于副作用**：`send_message` 使用同一持久化执行日志。分片文本或“正文已送达、附件/卡片随后失败”等部分成功，会按“可能已送达”冻结，禁止整条消息自动重发；渠道本身不支持业务幂等时，只能凭任务、收件人、消息参数哈希与渠道侧记录人工对账；
 - **签名方案 `sha256=`（唯一）**。标签是**算法名不是版本号**（GitHub webhook `X-Hub-Signature-256: sha256=` 同款约定）——开源接入方一眼知道"HMAC-SHA256、hex"，没有"v 几、前面的版本去哪了"的理解成本。签名材料把 `On-Behalf-Of` + `Job-Id` 也钉进 HMAC：
   ```
   sha256= + HMAC_SHA256(secret, "<ts>.<METHOD>.<path?query>.<sha256hex(body)>.<On-Behalf-Of>.<Job-Id>")

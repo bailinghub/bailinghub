@@ -1,6 +1,6 @@
 import type { AppConfig } from '../config/config';
 import type { Route, SessionTarget } from '../contracts/types';
-import type { ToolRuntime } from '../contracts/tools';
+import type { ToolExecutionUncertainty, ToolRuntime } from '../contracts/tools';
 import type { FileRef } from '../platform/content';
 import type { JobStreamEventInput } from '../runtime/job-stream';
 
@@ -18,7 +18,8 @@ export interface BuiltinToolDef {
  * 适配器只管把 def 暴露给大脑、把大脑的调用转给 run——不碰 cfgStore/收件人映射（中枢不持有谁是谁）。 */
 export interface SendCapability {
   def: BuiltinToolDef;
-  run(args: Record<string, unknown>): Promise<{ ok: boolean; text: string }>;
+  run(args: Record<string, unknown>): Promise<{ ok: boolean; text: string; uncertainty?: ToolExecutionUncertainty }>;
+  executionUncertainty(): ToolExecutionUncertainty | null;
 }
 
 /** 一次调度的上下文，交给具体 target 适配器执行 */

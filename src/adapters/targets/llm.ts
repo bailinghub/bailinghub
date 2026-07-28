@@ -15,6 +15,25 @@ import {
 import { fmtDisplayTimeFull } from '../../core/platform/time';
 import { SEND_MAX_CALLS, SEND_TOOL_NAME } from '../../core/targets/adapter';
 import { readOpenAiChatCompletion, type OpenAiChatStreamResult } from '../llm/openai-chat-stream';
+import type { ToolExecutionUncertainty } from '../../core/contracts/tools';
+
+function reconciliationRequiredResult(
+  uncertainty: ToolExecutionUncertainty,
+  startedAt: number,
+): AdapterResult {
+  return {
+    ok: false,
+    transient: false,
+    output: {
+      text: uncertainty.message,
+      governance_state: 'reconciliation_required',
+      auto_retry_allowed: false,
+      tool_execution: uncertainty,
+    },
+    usage: { duration_ms: Date.now() - startedAt },
+    error: 'tool_execution_reconciliation_required',
+  };
+}
 
 function perceptionAudit(mode: string, model: string, images: number, ok: boolean, text: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -480,6 +499,8 @@ export const llmAdapter: TargetAdapter = {
             result = { ok: vr.ok, text: vr.text };
           }
           messages.push({ role: 'tool', tool_call_id: call.id, content: result.text });
+          const sendUncertainty = SEND?.executionUncertainty() ?? null;
+          if (sendUncertainty) return reconciliationRequiredResult(sendUncertainty, t0);
           continue;
         }
 
@@ -547,6 +568,8 @@ export const llmAdapter: TargetAdapter = {
         }
         if (!result.ok) lastToolFailure = { name, text: result.text };
         messages.push({ role: 'tool', tool_call_id: call.id, content: result.text });
+        const toolUncertainty = ctx.tools?.executionUncertainty() ?? null;
+        if (toolUncertainty) return reconciliationRequiredResult(toolUncertainty, t0);
       }
     }
     return { ok: false, output: {}, usage: { duration_ms: Date.now() - t0, tokens: totalTokens || undefined }, error: '工具循环超过 12 轮未收敛，已终止' };

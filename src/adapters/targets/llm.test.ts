@@ -73,6 +73,7 @@ test('llmAdapter: 工具失败后模型空响应时给用户可读兜底', async
       invokes++;
       return { ok: false, status: 404, text: '业务接口返回 404' };
     },
+    executionUncertainty() { return null; },
   };
 
   const got = await withMockFetch([
@@ -207,6 +208,7 @@ test('llmAdapter: 流式工具参数分片可重组，工具阶段后继续输�
       invoked.push({ name, args });
       return { ok: true, status: 200, text: '{"status":"paid"}' };
     },
+    executionUncertainty() { return null; },
   };
   let call = 0;
   const requests: Array<Record<string, unknown>> = [];

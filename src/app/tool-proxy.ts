@@ -14,6 +14,7 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { ToolIndexService } from '../services/tools-index';
 import { requireServerToken } from '../core/platform/server-token';
+import { persistedToolExecutionUncertainty } from '../core/runtime/execution-runtime';
 
 export interface ToolProxyDeps {
   cfg: AppConfig;
@@ -107,6 +108,30 @@ export async function handleToolInvokeFor(deps: ToolProxyDeps, req: IncomingMess
   if (!job) { send(res, 404, { error: 'job 不存在' }); return; }
   if (job.status !== 'dispatched' || !job.claim_token) { send(res, 401, { error: 'tool_token 已失效（任务非执行中）' }); return; }
   if (!assertToolToken(deps, job, presented)) { send(res, 401, { error: 'tool_token 无效' }); return; }
+  if (deps.configStore) {
+    try {
+      const unresolved = await deps.configStore.toolCalls.findUnresolved(job.job_id);
+      if (unresolved) {
+        const uncertainty = persistedToolExecutionUncertainty(unresolved);
+        send(res, 200, {
+          ok: false,
+          text: uncertainty.message,
+          governance_state: 'reconciliation_required',
+          auto_retry_allowed: false,
+          tool_execution: uncertainty,
+        });
+        return;
+      }
+    } catch (error) {
+      send(res, 503, {
+        ok: false,
+        error: 'execution_journal_unavailable',
+        text: `执行日志当前不可用，工具请求未发出：${String(error).slice(0, 160)}`,
+        auto_retry_allowed: false,
+      });
+      return;
+    }
+  }
   const body = await readBody(req).catch(() => ({} as Record<string, unknown>));
   const tool = String(body['tool'] ?? '');
   if (!tool) { send(res, 400, { error: 'tool 必填' }); return; }
@@ -117,8 +142,19 @@ export async function handleToolInvokeFor(deps: ToolProxyDeps, req: IncomingMess
     if (deps.configStore && (await deps.configStore.observability.countAuditEvents(job.job_id, 'builtin_send').catch(() => 0)) >= SEND_MAX_CALLS) {
       send(res, 200, { ok: false, text: `本任务主动发消息次数已达上限（${SEND_MAX_CALLS}）。` }); return;
     }
-    const out = await runSendMessageFor(deps.configStore, job, sendChannels, args,
-      (event, detail) => { void deps.stateStore.appendAudit({ ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event, detail }).catch(() => undefined); })
+    const out = await runSendMessageFor(
+      deps.configStore,
+      job,
+      sendChannels,
+      args,
+      (event, detail) => deps.stateStore.appendAudit({
+        ts: deps.now(),
+        job_id: job.job_id,
+        request_id: job.request_id,
+        event,
+        detail,
+      }),
+    )
       .catch((e) => ({ ok: false, text: `发送失败：${String(e).slice(0, 200)}` }));
     send(res, 200, out); return;
   }

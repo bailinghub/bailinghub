@@ -50,7 +50,13 @@ export function splitWecomText(text: string, maxBytes = WECOM_TEXT_CHUNK_BYTES):
 }
 
 /** 推文本消息给成员。超字节上限自动分条顺序发（多条加「（i/n）」角标）。errcode=0 即成功；token 失效(40014/42001)自动刷新重试一次。 */
-export async function sendWecomText(corpid: string, secret: string, agentid: string | number, touser: string, content: string): Promise<{ ok: boolean; errcode: number; errmsg: string }> {
+export async function sendWecomText(
+  corpid: string,
+  secret: string,
+  agentid: string | number,
+  touser: string,
+  content: string,
+): Promise<{ ok: boolean; errcode: number; errmsg: string; mayHaveCommitted?: boolean }> {
   const parts = splitWecomText(String(content));
   const multi = parts.length > 1;
   const doSend = async (token: string, body: string): Promise<{ errcode: number; errmsg: string }> => {
@@ -64,6 +70,7 @@ export async function sendWecomText(corpid: string, secret: string, agentid: str
   };
   let token = await getAccessToken(corpid, secret);
   let last = { errcode: 0, errmsg: 'ok' };
+  let deliveredParts = 0;
   for (let i = 0; i < parts.length; i++) {
     const body = multi ? `（${i + 1}/${parts.length}）\n${parts[i]}` : parts[i]!;
     let j = await doSend(token, body);
@@ -73,7 +80,15 @@ export async function sendWecomText(corpid: string, secret: string, agentid: str
       j = await doSend(token, body);
     }
     last = j;
-    if (j.errcode !== 0) return { ok: false, errcode: j.errcode, errmsg: j.errmsg }; // 一条失败即停，不继续发后半段（避免缺头/乱序）
+    if (j.errcode !== 0) {
+      return {
+        ok: false,
+        errcode: j.errcode,
+        errmsg: j.errmsg,
+        mayHaveCommitted: deliveredParts > 0,
+      }; // 一条失败即停，不继续发后半段（避免缺头/乱序）
+    }
+    deliveredParts++;
   }
   return { ok: last.errcode === 0, errcode: last.errcode, errmsg: last.errmsg };
 }

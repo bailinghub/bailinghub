@@ -24,6 +24,19 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.1.11 - Side-Effect Execution Journal and Uncertain-Outcome Freezing
+
+Released on 2026-07-28.
+
+- Persisted `dispatching` before outbound delivery for non-read-only, non-idempotent business tools, `response_recorded` after the HTTP response, and `completed` only after the result audit and terminal task ledger succeed.
+- Made timeout, disconnect, restart recovery, result-audit failure, and terminal-ledger failure converge to `reconciliation_required` with `auto_retry_allowed=false`. Recovery scans unresolved execution entries before the model runs again.
+- Added the stable `X-Bailing-Idempotency-Key`, bound to the task, acting subject, tool, and canonical arguments for business-side deduplication and reconciliation. It does not replace signature verification or final business authorization.
+- Applied the same durable boundary to `send_message`; partial text, card, or attachment delivery is frozen instead of replayed automatically.
+- Added `052_tool_execution_journal.sql`, extending the existing tool-call deduplication ledger into a recoverable execution journal.
+- Read-only and explicitly idempotent tools keep their existing behavior. Deployments must apply the new migration, and business systems should consume the stable idempotency key for side-effect deduplication.
+- Validation: `npm run typecheck`, `npm test`, `npm run web-admin:check`, `npm run docs:check`, `npm run examples:check`, `npm run security:scan`, and `npm run release:check`.
+- Related docs: [RELEASE_NOTES_v0.1.11.en.md](RELEASE_NOTES_v0.1.11.en.md), [TOOLS_DESIGN.en.md](TOOLS_DESIGN.en.md), [CONTRACT.en.md](CONTRACT.en.md), and [COMPATIBILITY.en.md](COMPATIBILITY.en.md).
+
 ## v0.1.10 - Instance Branding and Ecosystem Integration Improvements
 
 Released on 2026-07-27.

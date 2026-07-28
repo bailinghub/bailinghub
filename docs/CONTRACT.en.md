@@ -157,9 +157,10 @@ BailingHub calls business tools with signed headers:
 ```http
 X-Bailing-Signature: sha256=<hmac>
 X-Bailing-Timestamp: 1782912000
-X-Bailing-Tool: order_get
+X-Bailing-Tool-Scope: order.read
 X-Bailing-Job-Id: job_...
 X-Bailing-On-Behalf-Of: u_42
+X-Bailing-Idempotency-Key: <stable side-effect key>
 ```
 
 The signature binds:
@@ -172,6 +173,12 @@ The signature binds:
 - job id
 
 Business systems must verify the signature and then run their own authorization logic.
+
+For non-read-only, non-idempotent tools, the idempotency key is stable for the job, subject, tool, and canonical arguments. The business system should use it, or a stronger domain key, to deduplicate side effects. BailingHub persists an execution journal before dispatch; if that journal is unavailable, the side-effecting request is not sent. It does not automatically replay an uncertain outcome after a timeout, disconnect, audit failure, or restart. Recovery checks unresolved journal entries before invoking the model. Such a call terminates with `governance_state=reconciliation_required` and `auto_retry_allowed=false`.
+
+This is fail-closed behavior, not an exactly-once guarantee. A request that never reached the business system can still be frozen, so operators must reconcile the journal against business-side records. The idempotency key does not replace signature verification or business authorization.
+
+The built-in `send_message` capability is treated as a side effect as well. It uses the same durable journal. Partial delivery, including a successful text chunk followed by a failed attachment or card, is frozen as potentially committed and is not replayed automatically. When a channel has no native idempotency contract, reconciliation must use the job, recipient, canonical message arguments, and channel-side records.
 
 ## Approval Decision
 

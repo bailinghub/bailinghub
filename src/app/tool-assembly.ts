@@ -53,7 +53,11 @@ export async function assembleToolRuntimeFor(
       retrievalMode,
       idempotency: config ? {
         get: (tool, hash) => config.toolCalls.get(job.job_id, tool, hash),
-        put: (tool, hash, res) => config.toolCalls.put(job.job_id, tool, hash, res),
+        reserve: (tool, scope, hash, idempotencyKey) => config.toolCalls.reserve(job.job_id, tool, scope, hash, idempotencyKey),
+        recordResponse: (tool, hash, res) => config.toolCalls.recordResponse(job.job_id, tool, hash, res),
+        complete: (tool, hash) => config.toolCalls.complete(job.job_id, tool, hash),
+        markUncertain: (tool, hash, error) => config.toolCalls.markUncertain(job.job_id, tool, hash, error),
+        markEvidenceDegraded: (tool, hash, error) => config.toolCalls.markEvidenceDegraded(job.job_id, tool, hash, error),
       } : undefined,
       rateLimit: config ? (bucket, limit, windowSec) => config.rateLimits.consume(bucket, limit, windowSec) : undefined,
       audit: async (event, detail) => {

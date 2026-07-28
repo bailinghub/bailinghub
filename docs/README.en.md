@@ -67,6 +67,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.9.md](RELEASE_NOTES_v0.1.9.md) | Chinese `v0.1.9` release notes. |
 | [RELEASE_NOTES_v0.1.10.en.md](RELEASE_NOTES_v0.1.10.en.md) | `v0.1.10` instance branding, model identifier diagnostics, and ecosystem recipe release notes. |
 | [RELEASE_NOTES_v0.1.10.md](RELEASE_NOTES_v0.1.10.md) | Chinese `v0.1.10` release notes. |
+| [RELEASE_NOTES_v0.1.11.en.md](RELEASE_NOTES_v0.1.11.en.md) | `v0.1.11` side-effect execution journal and uncertain-outcome freezing release notes. |
+| [RELEASE_NOTES_v0.1.11.md](RELEASE_NOTES_v0.1.11.md) | Chinese `v0.1.11` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |
