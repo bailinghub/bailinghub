@@ -13,7 +13,13 @@ import { getAdapter, getTargetDef, listTargetDefs } from '../core/targets/regist
 import type { Job, Route, SessionTarget, TargetDef } from '../core/contracts/types';
 import { spawnDeliveryJobFor } from './delivery';
 import { resolveSummaryCredential } from '../core/runtime/credential-resolver';
-import { prepareAdapterContext, retryDecision } from '../core/runtime/execution-runtime';
+import {
+  applyToolExecutionBoundary,
+  applyToolExecutionUncertainty,
+  persistedToolExecutionUncertainty,
+  prepareAdapterContext,
+  retryDecision,
+} from '../core/runtime/execution-runtime';
 import { finishJob } from '../core/runtime/finish-runtime';
 import { createSummaryRuntime } from '../core/runtime/summary-runtime';
 import { launchJobRecord, rejectLaunchJob, type LaunchSpec } from '../core/runtime/launch-runtime';
@@ -271,6 +277,48 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
       job = claimed;
       await deps.stateStore.appendAudit({ ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event: 'started', detail: { target: job.target } });
 
+      if (deps.configStore) {
+        try {
+          const unresolved = await deps.configStore.toolCalls.findUnresolved(job.job_id);
+          if (unresolved) {
+            const uncertainty = persistedToolExecutionUncertainty(unresolved);
+            await deps.stateStore.appendAudit({
+              ts: deps.now(),
+              job_id: job.job_id,
+              request_id: job.request_id,
+              event: 'job_reconciliation_required',
+              detail: { ...uncertainty, recovery_preflight: true },
+            });
+            const boundary = applyToolExecutionUncertainty({ ok: false, output: {} }, uncertainty);
+            await finish(job, {
+              status: 'error',
+              result: boundary.output,
+              error: boundary.error,
+            });
+            return;
+          }
+        } catch (error) {
+          const reason = String(error).slice(0, 500);
+          await deps.stateStore.appendAudit({
+            ts: deps.now(),
+            job_id: job.job_id,
+            request_id: job.request_id,
+            event: 'tool_execution_journal_unavailable',
+            detail: { reason, recovery_preflight: true },
+          }).catch(() => undefined);
+          await finish(job, {
+            status: 'error',
+            result: {
+              governance_state: 'execution_journal_unavailable',
+              auto_retry_allowed: false,
+              reason,
+            },
+            error: 'tool_execution_journal_unavailable',
+          });
+          return;
+        }
+      }
+
       const adapter = job.target ? getAdapter(job.target) : null;
       if (!adapter) { await finish(job, { status: 'error', error: `未实现的 target: ${job.target}` }); return; }
 
@@ -292,7 +340,18 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
           ? (event) => { try { deps.jobStream?.publish(job.job_id, event); } catch { /* 临时输出不能影响权威任务链 */ } }
           : undefined,
       });
-      const result = await adapter.run(ctx);
+      let result = await adapter.run(ctx);
+      const uncertainty = ctx.tools?.executionUncertainty() ?? ctx.send?.executionUncertainty() ?? null;
+      if (uncertainty) {
+        result = applyToolExecutionBoundary(result, ctx.tools, ctx.send);
+        await deps.stateStore.appendAudit({
+          ts: deps.now(),
+          job_id: job.job_id,
+          request_id: job.request_id,
+          event: 'job_reconciliation_required',
+          detail: { ...uncertainty },
+        });
+      }
 
       // 瞬时失败 + 路由配了重试 → 退避后重跑，不进终态（配置类错误 transient=false 不会走到这）
       const retry = retryDecision(job, route, result);

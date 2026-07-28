@@ -1,4 +1,5 @@
 import type { Job } from '../core/contracts/types';
+import type { ToolExecutionUncertainty } from '../core/contracts/tools';
 import { cfgStore } from './runtime';
 import { resolveSendChannelsFor, runSendMessageFor } from './builtin-tools';
 
@@ -10,7 +11,7 @@ export async function runSendMessage(
   job: Job,
   allowedChannels: string[],
   args: Record<string, unknown>,
-  audit?: (event: string, detail: Record<string, unknown>) => void,
-): Promise<{ ok: boolean; text: string }> {
+  audit?: (event: string, detail: Record<string, unknown>) => Promise<void> | void,
+): Promise<{ ok: boolean; text: string; uncertainty?: ToolExecutionUncertainty }> {
   return runSendMessageFor(cfgStore, job, allowedChannels, args, audit);
 }

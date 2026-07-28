@@ -4,12 +4,37 @@
 // 复用 channelSend 出站原语 + /send 的入历史纪律（记 out、scope 共享、逐字投递）。
 import { createHash } from 'node:crypto';
 import type { Job } from '../core/contracts/types';
-import { type ChannelMessage, channelScopeKey, channelSendFor } from './channels';
+import {
+  toolCallIdempotencyKey,
+  toolExecutionUncertaintyFromJournal,
+  type ToolExecutionJournalEntry,
+  type ToolExecutionUncertainty,
+} from '../core/contracts/tools';
+import {
+  type ChannelMessage,
+  type ChannelSendResult,
+  channelScopeKey,
+  channelSendFor,
+} from './channels';
 import { sendMessageConfig } from '../core/config/tools-config';
 import { SEND_TOOL_NAME, type BuiltinToolDef } from '../core/targets/adapter';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 
 export { SEND_MAX_CALLS, SEND_TOOL_NAME } from '../core/targets/adapter';
+
+export interface BuiltinSendResult {
+  ok: boolean;
+  text: string;
+  uncertainty?: ToolExecutionUncertainty;
+}
+
+async function auditBestEffort(
+  audit: ((event: string, detail: Record<string, unknown>) => Promise<void> | void) | undefined,
+  event: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  try { await audit?.(event, detail); } catch { /* 后续对账状态优先，补充审计失败不覆盖原始故障 */ }
+}
 
 /**
  * 路由声明的「大脑可主动发哪些渠道」白名单：`tools.builtin.send_message.channels` = 渠道名数组，`['*']` = 所有启用渠道。
@@ -60,8 +85,14 @@ export async function runSendMessageFor(
   job: Job,
   allowedChannels: string[],
   args: Record<string, unknown>,
-  audit?: (event: string, detail: Record<string, unknown>) => void,
-): Promise<{ ok: boolean; text: string }> {
+  audit?: (event: string, detail: Record<string, unknown>) => Promise<void> | void,
+  sendChannel: (
+    config: ConfigStoreContract | null,
+    channelName: string,
+    recipient: string,
+    message: string | ChannelMessage,
+  ) => Promise<ChannelSendResult> = channelSendFor,
+): Promise<BuiltinSendResult> {
   if (!config) return { ok: false, text: '发送失败：中枢无 mysql 后端。' };
   if (!allowedChannels.length) return { ok: false, text: '本路由未开放任何可主动发送的渠道，无法发送。' };
   // 渠道：显式 channel 必须在白名单内；不给且只有一个允许渠道 → 默认它
@@ -94,24 +125,211 @@ export async function runSendMessageFor(
   const fileAudit = files.map((f) => f.content !== undefined
     ? { name: f.name, bytes: Buffer.byteLength(f.content, 'utf8'), sha256: createHash('sha256').update(f.content, 'utf8').digest('hex'), content: f.content.length > 16000 ? f.content.slice(0, 16000) + '…（已截断，完整内容以 sha256 为准）' : f.content }
     : { name: f.name, url: f.url });
-  // 幂等：同 job 内"相同发送(渠道+收件人+正文+附件)"已发过 → 不重发（防 job 重试/崩溃恢复整单重跑导致重复发消息）。
-  // 与业务工具共用 bz_tool_calls 账本（tool=send_message）。放在投递前查、成功后登记。
+  // 幂等与不确定性边界：同 job 内相同发送共用业务工具的持久化执行日志。
+  // 必须在投递前 reserve；成功送达、明确失败、部分送达和网络异常都先落状态，再决定能否重试。
   const idemHash = createHash('sha256').update(JSON.stringify({
     c: channelName, to: [...recipients].sort(), text,
     files: fileAudit.map((f) => ('sha256' in f ? { n: f.name, h: (f as { sha256: string }).sha256 } : { n: f.name, u: (f as { url?: string }).url })),
   })).digest('hex');
-  const prior = await config.toolCalls.get(job.job_id, SEND_TOOL_NAME, idemHash).catch(() => null);
-  if (prior) {
-    audit?.('builtin_send_deduped', { channel: channelName, to: label, reason: '同 job 已发过相同消息，跳过重发（防重试/恢复重复发送）' });
-    return { ok: prior.ok, text: prior.text || `已发送（未重复发送）。` };
+  const scope = 'builtin.send_message';
+  const idemKey = toolCallIdempotencyKey(job.job_id, SEND_TOOL_NAME, idemHash);
+  let prior: ToolExecutionJournalEntry | null;
+  try {
+    prior = await config.toolCalls.get(job.job_id, SEND_TOOL_NAME, idemHash);
+  } catch (error) {
+    await auditBestEffort(audit, 'builtin_send_blocked', {
+      channel: channelName,
+      to: label,
+      reason: '执行日志不可用，消息未发送',
+      error: String(error).slice(0, 500),
+    });
+    return { ok: false, text: '发送失败：持久化执行日志当前不可用，消息未发送。' };
   }
+  if (prior?.state === 'completed') {
+    await auditBestEffort(audit, 'builtin_send_deduped', {
+      channel: channelName,
+      to: label,
+      idempotency_key: prior.idempotencyKey,
+      reason: '同 job 已完成相同发送，返回已确认结果',
+    });
+    return { ok: prior.ok, text: prior.text || '已处理（未重复发送）。' };
+  }
+  if (prior) {
+    const uncertainty = toolExecutionUncertaintyFromJournal(SEND_TOOL_NAME, scope, prior);
+    await auditBestEffort(audit, 'builtin_send_reconciliation_required', {
+      channel: channelName,
+      to: label,
+      state: prior.state,
+      idempotency_key: prior.idempotencyKey,
+      reason: prior.error ?? '检测到未完成的发送执行日志，禁止自动重放',
+    });
+    return { ok: false, text: uncertainty.message, uncertainty };
+  }
+
+  try {
+    await audit?.('builtin_send_call', {
+      channel: channelName,
+      to: label,
+      recipients: recipients.length,
+      chars: text.length,
+      files: fileAudit,
+      idempotency_key: idemKey,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      text: `发送失败：调用审计无法持久化，消息未发送（${String(error).slice(0, 160)}）。`,
+    };
+  }
+
+  try {
+    const reserved = await config.toolCalls.reserve(job.job_id, SEND_TOOL_NAME, scope, idemHash, idemKey);
+    if (!reserved.inserted) {
+      if (reserved.entry.state === 'completed') {
+        return { ok: reserved.entry.ok, text: reserved.entry.text || '已处理（未重复发送）。' };
+      }
+      const uncertainty = toolExecutionUncertaintyFromJournal(SEND_TOOL_NAME, scope, reserved.entry);
+      return { ok: false, text: uncertainty.message, uncertainty };
+    }
+  } catch (error) {
+    await auditBestEffort(audit, 'builtin_send_blocked', {
+      channel: channelName,
+      to: label,
+      reason: '执行日志预留失败，消息未发送',
+      error: String(error).slice(0, 500),
+    });
+    return { ok: false, text: '发送失败：无法预留持久化执行日志，消息未发送。' };
+  }
+
   // 投递：多收件人渠道原生合并一次发（企微 touser 支持 "A|B|C"）；带文件则发对象
   const msg: ChannelMessage = { ...(text ? { text } : {}), ...(files.length ? { files } : {}) };
-  const sent = await channelSendFor(config, channelName, recipients.join('|'), msg);
-  if (!sent.ok) {
-    audit?.('builtin_send_error', { channel: channelName, to: label, files: fileAudit, error: sent.error });
-    return { ok: false, text: `发送失败：${sent.error}` };
+  let sent: ChannelSendResult;
+  try {
+    sent = await sendChannel(config, channelName, recipients.join('|'), msg);
+  } catch (error) {
+    const reason = `发送请求可能已到达渠道，但未取得可信响应：${String(error).slice(0, 300)}`;
+    await config.toolCalls.markUncertain(job.job_id, SEND_TOOL_NAME, idemHash, reason).catch(() => undefined);
+    const uncertainty: ToolExecutionUncertainty = {
+      state: 'uncertain',
+      tool: SEND_TOOL_NAME,
+      scope,
+      idempotency_key: idemKey,
+      reason,
+      message: `消息发送结果无法确认。为避免重复送达，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+    };
+    await auditBestEffort(audit, 'builtin_send_reconciliation_required', {
+      channel: channelName,
+      to: label,
+      state: uncertainty.state,
+      idempotency_key: idemKey,
+      reason,
+    });
+    return { ok: false, text: uncertainty.message, uncertainty };
   }
+
+  if (!sent.ok) {
+    if (sent.mayHaveCommitted) {
+      const reason = `渠道报告部分内容可能已送达：${sent.error ?? 'unknown_channel_error'}`;
+      await config.toolCalls.markUncertain(job.job_id, SEND_TOOL_NAME, idemHash, reason).catch(() => undefined);
+      const uncertainty: ToolExecutionUncertainty = {
+        state: 'uncertain',
+        tool: SEND_TOOL_NAME,
+        scope,
+        idempotency_key: idemKey,
+        reason,
+        message: `消息可能只完成了部分送达。为避免重复发送，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+      };
+      await auditBestEffort(audit, 'builtin_send_reconciliation_required', {
+        channel: channelName,
+        to: label,
+        state: uncertainty.state,
+        idempotency_key: idemKey,
+        reason,
+      });
+      return { ok: false, text: uncertainty.message, uncertainty };
+    }
+
+    const resultText = `发送失败：${sent.error}`;
+    try {
+      await config.toolCalls.recordResponse(
+        job.job_id,
+        SEND_TOOL_NAME,
+        idemHash,
+        { ok: false, status: 502, text: resultText },
+      );
+    } catch (error) {
+      const reason = `渠道明确返回失败，但执行日志写入失败：${String(error).slice(0, 300)}`;
+      await config.toolCalls.markUncertain(job.job_id, SEND_TOOL_NAME, idemHash, reason).catch(() => undefined);
+      const uncertainty: ToolExecutionUncertainty = {
+        state: 'uncertain',
+        tool: SEND_TOOL_NAME,
+        scope,
+        idempotency_key: idemKey,
+        reason,
+        message: `消息发送结果未能可靠入账。为避免重复发送，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+      };
+      return { ok: false, text: uncertainty.message, uncertainty };
+    }
+    try {
+      await audit?.('builtin_send_error', {
+        channel: channelName,
+        to: label,
+        files: fileAudit,
+        error: sent.error,
+        idempotency_key: idemKey,
+      });
+    } catch (error) {
+      const reason = `渠道失败响应已记录，但结果审计写入失败：${String(error).slice(0, 300)}`;
+      await config.toolCalls.markEvidenceDegraded(job.job_id, SEND_TOOL_NAME, idemHash, reason).catch(() => undefined);
+      const uncertainty: ToolExecutionUncertainty = {
+        state: 'evidence_degraded',
+        tool: SEND_TOOL_NAME,
+        scope,
+        idempotency_key: idemKey,
+        reason,
+        message: `消息发送结果已经返回，但审计证据不完整。为避免错误重放，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+      };
+      return { ok: false, text: uncertainty.message, uncertainty };
+    }
+    try {
+      await config.toolCalls.complete(job.job_id, SEND_TOOL_NAME, idemHash);
+    } catch (error) {
+      const reason = `失败响应与审计已记录，但执行日志未能确认完成：${String(error).slice(0, 300)}`;
+      const uncertainty: ToolExecutionUncertainty = {
+        state: 'response_recorded',
+        tool: SEND_TOOL_NAME,
+        scope,
+        idempotency_key: idemKey,
+        reason,
+        message: `消息发送失败已被确认，但执行日志未完成最终确认。为避免错误重放，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+      };
+      return { ok: false, text: uncertainty.message, uncertainty };
+    }
+    return { ok: false, text: resultText };
+  }
+
+  const resultText = `已发送给 ${label}（渠道 ${channelName}）${files.length ? `，含 ${files.length} 个附件` : ''}。`;
+  try {
+    await config.toolCalls.recordResponse(
+      job.job_id,
+      SEND_TOOL_NAME,
+      idemHash,
+      { ok: true, status: 200, text: resultText },
+    );
+  } catch (error) {
+    const reason = `消息已送达，但执行日志写入失败：${String(error).slice(0, 300)}`;
+    await config.toolCalls.markUncertain(job.job_id, SEND_TOOL_NAME, idemHash, reason).catch(() => undefined);
+    const uncertainty: ToolExecutionUncertainty = {
+      state: 'uncertain',
+      tool: SEND_TOOL_NAME,
+      scope,
+      idempotency_key: idemKey,
+      reason,
+      message: `消息可能已经送达，但发送结果未能可靠入账。为避免重复发送，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+    };
+    return { ok: false, text: uncertainty.message, uncertainty };
+  }
+
   // 入历史：给每个收件人各自 thread 记一条 out（channel='brain-send' ≠ 'hub' → 记忆层渲染为「系统通知→用户」）。附件以 [附件：名] 记录。
   const histContent = [text, ...files.map((f) => `[附件：${f.name}]`)].filter(Boolean).join('\n') || '（空）';
   try {
@@ -122,9 +340,41 @@ export async function runSendMessageFor(
       await config.conversations.appendMessage({ thread_id: tid, direction: 'out', channel: 'brain-send', principal_id: pid, job_id: job.job_id, content: histContent });
     }));
   } catch { /* 历史可降级，不影响已送达 */ }
-  audit?.('builtin_send', { channel: channelName, to: label, recipients: recipients.length, chars: text.length, files: fileAudit });
-  const resultText = `已发送给 ${label}（渠道 ${channelName}）${files.length ? `，含 ${files.length} 个附件` : ''}。`;
-  // 登记幂等：本次成功发送入账，重跑相同发送直接复用、不重发
-  await config.toolCalls.put(job.job_id, SEND_TOOL_NAME, idemHash, { ok: true, status: 200, text: resultText }).catch(() => undefined);
+  try {
+    await audit?.('builtin_send', {
+      channel: channelName,
+      to: label,
+      recipients: recipients.length,
+      chars: text.length,
+      files: fileAudit,
+      idempotency_key: idemKey,
+    });
+  } catch (error) {
+    const reason = `消息已送达，但结果审计写入失败：${String(error).slice(0, 300)}`;
+    await config.toolCalls.markEvidenceDegraded(job.job_id, SEND_TOOL_NAME, idemHash, reason).catch(() => undefined);
+    const uncertainty: ToolExecutionUncertainty = {
+      state: 'evidence_degraded',
+      tool: SEND_TOOL_NAME,
+      scope,
+      idempotency_key: idemKey,
+      reason,
+      message: `消息已经送达，但审计证据不完整。为避免重复发送，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+    };
+    return { ok: false, text: uncertainty.message, uncertainty };
+  }
+  try {
+    await config.toolCalls.complete(job.job_id, SEND_TOOL_NAME, idemHash);
+  } catch (error) {
+    const reason = `发送响应与审计已记录，但执行日志未能确认完成：${String(error).slice(0, 300)}`;
+    const uncertainty: ToolExecutionUncertainty = {
+      state: 'response_recorded',
+      tool: SEND_TOOL_NAME,
+      scope,
+      idempotency_key: idemKey,
+      reason,
+      message: `消息已经送达，但执行日志未完成最终确认。为避免重复发送，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+    };
+    return { ok: false, text: uncertainty.message, uncertainty };
+  }
   return { ok: true, text: resultText };
 }

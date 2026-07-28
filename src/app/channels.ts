@@ -5,7 +5,12 @@
 import { sendWecomText, sendWecomMedia, sendWecomCard, uploadWecomMedia } from '../adapters/channels/wecom-api';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 
-export interface ChannelSendResult { ok: boolean; error?: string }
+export interface ChannelSendResult {
+  ok: boolean;
+  error?: string;
+  /** true 表示失败前已有一部分消息成功送达，调用方不得自动重发。 */
+  mayHaveCommitted?: boolean;
+}
 
 /** 卡片（企微 textcard：标题+描述+跳转+按钮）。仅对支持卡片的渠道（企微）生效；其它渠道回退发 text。 */
 export interface ChannelCard { type?: string; title: string; description?: string; url: string; btntxt?: string }
@@ -97,16 +102,32 @@ export async function channelSendFor(config: ConfigStoreContract | null, channel
       media.push({ kind: 'file', mediaId: up.mediaId });
     }
     // 发送：卡片优先（card 是 text 的富形态，企微支持时发卡片、text 仅作降级/入历史，不重复发）→ 否则文字 → 各图片 → 各文件（企微每条只能一个类型）。
+    let delivered = false;
     if (card) {
       const r = await sendWecomCard(corpid, secret, agentid, recipient, card);
       if (!r.ok) return { ok: false, error: `企微 textcard errcode=${r.errcode} ${r.errmsg}` };
+      delivered = true;
     } else if (text) {
       const r = await sendWecomText(corpid, secret, agentid, recipient, text);
-      if (!r.ok) return { ok: false, error: `企微 errcode=${r.errcode} ${r.errmsg}` };
+      if (!r.ok) {
+        return {
+          ok: false,
+          error: `企微 errcode=${r.errcode} ${r.errmsg}`,
+          mayHaveCommitted: r.mayHaveCommitted,
+        };
+      }
+      delivered = true;
     }
     for (const m of media) {
       const r = await sendWecomMedia(corpid, secret, agentid, recipient, m.kind, m.mediaId);
-      if (!r.ok) return { ok: false, error: `企微${m.kind} errcode=${r.errcode} ${r.errmsg}（部分内容可能已送达）` };
+      if (!r.ok) {
+        return {
+          ok: false,
+          error: `企微${m.kind} errcode=${r.errcode} ${r.errmsg}${delivered ? '（部分内容可能已送达）' : ''}`,
+          mayHaveCommitted: delivered,
+        };
+      }
+      delivered = true;
     }
     return { ok: true };
   }

@@ -1,7 +1,13 @@
 // 覆盖：执行运行时。engine 只负责状态流转，本模块负责准备 adapter 上下文与 retry 决策。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareAdapterContext, retryDecision } from './execution-runtime';
+import {
+  applyToolExecutionBoundary,
+  applyToolExecutionUncertainty,
+  persistedToolExecutionUncertainty,
+  prepareAdapterContext,
+  retryDecision,
+} from './execution-runtime';
 import type { AppConfig } from '../config/config';
 import type { Credential, Job, Route, SessionTarget } from '../contracts/types';
 import type { ToolRuntime } from '../contracts/tools';
@@ -187,4 +193,121 @@ test('retryDecision: 只对 transient 且未超过上限的失败生成重试计
   assert.equal(retryDecision(job({ attempts: 2 }), route(), { ok: false, output: {}, transient: true }), null);
   assert.equal(retryDecision(job(), route(), { ok: false, output: {}, transient: false }), null);
   assert.equal(retryDecision(job(), route(), { ok: true, output: {} }), null);
+});
+
+test('applyToolExecutionBoundary: 不确定的业务执行强制进入不可重试对账终态', () => {
+  const tools = {
+    llmTools: [],
+    maxCalls: 1,
+    progressive: false,
+    retrievalMode: false,
+    catalog: [],
+    async lookup() { return []; },
+    async invoke() { return { ok: false, text: 'uncertain', status: 0 }; },
+    executionUncertainty() {
+      return {
+        state: 'uncertain' as const,
+        tool: 'refund_create',
+        scope: 'refund.create',
+        idempotency_key: 'idem-1',
+        reason: 'timeout',
+        message: '需要人工对账',
+      };
+    },
+  } satisfies ToolRuntime;
+  const result = applyToolExecutionBoundary(
+    { ok: true, output: { text: '模型仍返回了普通文本' }, transient: true },
+    tools,
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.transient, false);
+  assert.equal(result.error, 'tool_execution_reconciliation_required');
+  assert.equal(result.output['governance_state'], 'reconciliation_required');
+  assert.equal(result.output['auto_retry_allowed'], false);
+  assert.equal(retryDecision(job(), route(), result), null);
+});
+
+test('prepareAdapterContext: send_message 不确定结果冻结后续发送并进入对账终态', async () => {
+  let sends = 0;
+  const ctx = await prepareAdapterContext({
+    job: job(),
+    route: route(),
+    fullInput: '最终输入',
+    session,
+    projectPath: null,
+    cfg,
+    credentialStore: {
+      async get() {
+        return dbMain;
+      },
+      async touch() {},
+    },
+    targetTimeoutMs: () => 3000,
+    async assembleToolRuntime() {
+      return undefined;
+    },
+    async resolveSendChannels() {
+      return ['ops'];
+    },
+    makeSendToolDef,
+    async runSendMessage() {
+      sends++;
+      return {
+        ok: false,
+        text: '发送结果未知',
+        uncertainty: {
+          state: 'uncertain',
+          tool: 'send_message',
+          scope: 'builtin.send_message',
+          idempotency_key: 'idem-send-1',
+          reason: 'connection reset',
+          message: '消息可能已经送达，需要人工对账',
+        },
+      };
+    },
+  });
+
+  const first = await ctx.send?.run({ to: 'u1', text: 'hello' });
+  const second = await ctx.send?.run({ to: 'u1', text: 'hello' });
+  const result = applyToolExecutionBoundary(
+    { ok: true, output: { text: '模型仍返回了普通文本' }, transient: true },
+    undefined,
+    ctx.send,
+  );
+
+  assert.equal(first?.uncertainty?.state, 'uncertain');
+  assert.equal(second?.uncertainty?.state, 'uncertain');
+  assert.equal(sends, 1);
+  assert.equal(ctx.send?.executionUncertainty()?.idempotency_key, 'idem-send-1');
+  assert.equal(result.ok, false);
+  assert.equal(result.transient, false);
+  assert.equal(result.output['governance_state'], 'reconciliation_required');
+  assert.equal(result.output['auto_retry_allowed'], false);
+  assert.equal(retryDecision(job(), route(), result), null);
+});
+
+test('persistedToolExecutionUncertainty: 恢复预检无需模型再次调用即可生成对账终态', () => {
+  const uncertainty = persistedToolExecutionUncertainty({
+    jobId: 'job-1',
+    tool: 'refund_create',
+    scope: 'refund.create',
+    argsHash: 'hash-1',
+    state: 'dispatching',
+    ok: false,
+    status: 0,
+    text: '',
+    idempotencyKey: 'idem-1',
+  });
+  const result = applyToolExecutionUncertainty(
+    { ok: true, output: { text: '不应继续运行模型' }, transient: true },
+    uncertainty,
+  );
+
+  assert.equal(uncertainty.state, 'dispatching');
+  assert.equal(uncertainty.idempotency_key, 'idem-1');
+  assert.equal(result.ok, false);
+  assert.equal(result.transient, false);
+  assert.equal(result.output['governance_state'], 'reconciliation_required');
+  assert.equal(result.output['auto_retry_allowed'], false);
 });

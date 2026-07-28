@@ -136,7 +136,7 @@ export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSc
       .catch(() => { /* 忽略，下次再扫 */ });
   }, REAPER_INTERVAL_MS);
 
-  // 幂等账本清理：每小时删超 3 天的 bz_tool_calls 行（只在 job 活跃期有用，终态后即死重量，防无界增长）。
+  // 执行日志清理：只删除超龄且已确认 completed 的行；未决状态必须保留给人工对账。
   every(() => {
     if (!deps.configStore) return;
     void deps.configStore.toolCalls.cleanup(TOOL_CALL_RETENTION_MS)

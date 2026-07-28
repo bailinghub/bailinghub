@@ -70,6 +70,7 @@ function fakeRuntime(name: string, output: string, retrievalMode = false): ToolR
     async lookup(names) { return names.includes(name) ? [definition] : []; },
     ...(retrievalMode ? { async retrieve() { return [definition]; } } : {}),
     async invoke(called) { return { ok: true, status: 200, text: `${output}:${called}` }; },
+    executionUncertainty() { return null; },
   };
 }
 

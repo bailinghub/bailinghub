@@ -35,6 +35,46 @@ export function signToolCall(secret: string, ts: number, method: string, pathWit
 export function argsHash(args: Record<string, unknown>): string {
   return createHash('sha256').update(canonicalJson(args ?? {}), 'utf8').digest('hex');
 }
+
+export type ToolExecutionJournalState =
+  | 'dispatching'
+  | 'response_recorded'
+  | 'completed'
+  | 'uncertain'
+  | 'evidence_degraded';
+
+export interface ToolExecutionJournalEntry {
+  state: ToolExecutionJournalState;
+  ok: boolean;
+  status: number;
+  text: string;
+  idempotencyKey: string;
+  error?: string;
+}
+
+export interface ToolExecutionJournalRecord extends ToolExecutionJournalEntry {
+  jobId: string;
+  tool: string;
+  scope: string;
+  argsHash: string;
+}
+
+export interface ToolExecutionUncertainty {
+  state: Exclude<ToolExecutionJournalState, 'completed'>;
+  tool: string;
+  scope: string;
+  idempotency_key: string;
+  reason: string;
+  message: string;
+}
+
+/** 稳定的下游幂等键。业务系统可据此去重，但仍必须独立完成鉴权与业务授权。 */
+export function toolCallIdempotencyKey(jobId: string, tool: string, hash: string, onBehalfOf = ''): string {
+  return createHash('sha256')
+    .update(canonicalJson({ job_id: jobId, tool, args_hash: hash, on_behalf_of: onBehalfOf }), 'utf8')
+    .digest('hex');
+}
+
 function canonicalJson(v: unknown): string {
   if (v === null) return 'null';
   if (Array.isArray(v)) return `[${v.map((item) => canonicalJsonArrayValue(item)).join(',')}]`;
@@ -147,6 +187,8 @@ export interface ToolRuntime {
   retrieve?(query: string): Promise<ToolRuntime['llmTools'] | null>;
   /** 受闸调用：白名单复核→风险闸→限流→审计(fail-closed)→签名外发。返回回流 LLM 的文本（错误也以文本回流）。 */
   invoke(name: string, args: Record<string, unknown>): Promise<{ ok: boolean; text: string; status: number }>;
+  /** 下游是否已经进入“不允许自动重试、必须人工对账”的执行边界。 */
+  executionUncertainty(): ToolExecutionUncertainty | null;
 }
 
 /**
@@ -193,6 +235,13 @@ export function composeToolRuntimes(runtimes: ToolRuntime[], maxCalls: number, a
       const runtime = owner.get(name);
       if (!runtime) return { ok: false, text: `工具 ${name} 不在本路由白名单内，调用被拒。`, status: 0 };
       return runtime.invoke(name, args);
+    },
+    executionUncertainty() {
+      for (const runtime of runtimes) {
+        const uncertainty = runtime.executionUncertainty();
+        if (uncertainty) return uncertainty;
+      }
+      return null;
     },
   };
 }
@@ -242,11 +291,14 @@ export interface ToolRuntimeDeps {
   retrieveNames?: (query: string) => Promise<string[] | null>;
   /** 多工具源聚合后总工具数超过阈值时，装配层可强制小工具源也开启检索句柄。 */
   retrievalMode?: boolean;
-  /** 工具调用幂等账本（装配层注入；不注入=不去重）：同 job 内"副作用工具"(非只读、非声明幂等)已成功执行过的相同调用，
-   * 在 job 重试/崩溃恢复整单重跑时返回上次结果、不重复执行（防写操作重复扣款）。get 命中=已执行过；put 在真发出后登记。 */
+  /** 副作用工具执行日志。请求发出前必须先占位；任何未完成状态都禁止自动重放。 */
   idempotency?: {
-    get(tool: string, argsHash: string): Promise<{ ok: boolean; status: number; text: string } | null>;
-    put(tool: string, argsHash: string, res: { ok: boolean; status: number; text: string }): Promise<void>;
+    get(tool: string, argsHash: string): Promise<ToolExecutionJournalEntry | null>;
+    reserve(tool: string, scope: string, argsHash: string, idempotencyKey: string): Promise<{ inserted: boolean; entry: ToolExecutionJournalEntry }>;
+    recordResponse(tool: string, argsHash: string, res: { ok: boolean; status: number; text: string }): Promise<void>;
+    complete(tool: string, argsHash: string): Promise<void>;
+    markUncertain(tool: string, argsHash: string, error: string): Promise<void>;
+    markEvidenceDegraded(tool: string, argsHash: string, error: string): Promise<void>;
   };
   /** 集中限速器：返回 true = 已触发限流；不注入时退回进程内滑窗。 */
   rateLimit?: (bucket: string, limit: number, windowSec: number) => Promise<boolean>;
@@ -260,6 +312,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
   }));
   // 检索模式：工具数超内联阈值 + 装配层注入了 retrieveNames（工具源配了 embedding 且有索引）才启用。
   const retrievalMode = !!d.retrieveNames && (d.retrievalMode ?? d.allowedTools.length > TOOL_INLINE_MAX);
+  let executionUncertainty: ToolExecutionUncertainty | null = null;
   return {
     llmTools,
     maxCalls: d.maxCalls,
@@ -284,7 +337,17 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         return found;
       },
     } : {}),
+    executionUncertainty() {
+      return executionUncertainty;
+    },
     async invoke(name, args) {
+      if (executionUncertainty) {
+        return {
+          ok: false,
+          status: 0,
+          text: `前序工具 ${executionUncertainty.tool} 的执行结果尚未完成可信确认，本任务已冻结，禁止继续调用业务工具；请按幂等键 ${executionUncertainty.idempotency_key} 人工对账。`,
+        };
+      }
       const t = byName.get(name);
       // 闸1：白名单复核（与清单装配解耦的独立校验——清单多吐了也走不到执行）
       if (!t) return { ok: false, text: `工具 ${name} 不在本路由白名单内，调用被拒。`, status: 0 };
@@ -302,12 +365,51 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       // 闸1.8：幂等账本——同 job 内"副作用工具"(非只读、非声明幂等)已执行过的相同调用，重试/崩溃恢复重跑时直接返回上次结果，
       //   不重复执行（防写操作重复扣款）。放在审批闸之前：否则重跑时已消费的审批单会被当成"无批准"再次触发待审批，把重跑卡死。
       const sideEffecting = !t.readonly && !t.idempotent;
-      const idemHash = sideEffecting && d.idempotency ? argsHash(callArgs) : '';
+      if (sideEffecting && !d.idempotency) {
+        await d.audit('tool_blocked', {
+          tool: name,
+          scope: t.scope,
+          reason: '副作用工具缺少持久化执行日志，请求未发出',
+        }).catch(() => undefined);
+        return {
+          ok: false,
+          status: 0,
+          text: `工具 ${name} 会产生业务副作用，但当前运行时未配置持久化执行日志，请求未发出。`,
+        };
+      }
+      const idemHash = sideEffecting ? argsHash(callArgs) : '';
+      const idemKey = idemHash ? toolCallIdempotencyKey(d.jobId, name, idemHash, d.onBehalfOf) : '';
       if (idemHash) {
-        const cached = await d.idempotency!.get(name, idemHash).catch(() => null);
-        if (cached) {
-          await d.audit('tool_call_deduped', { tool: name, scope: t.scope, status: cached.status, reason: '同 job 已执行过相同调用，返回上次结果（防重试/恢复重复副作用）' }).catch(() => undefined);
-          return { ok: cached.ok, text: cached.text, status: cached.status };
+        let existing: ToolExecutionJournalEntry | null;
+        try {
+          existing = await d.idempotency!.get(name, idemHash);
+        } catch (error) {
+          await d.audit('tool_blocked', {
+            tool: name,
+            scope: t.scope,
+            reason: '执行日志查询不可用，请求未发出',
+            error: String(error).slice(0, 500),
+          }).catch(() => undefined);
+          return {
+            ok: false,
+            status: 0,
+            text: `工具 ${name} 的执行日志当前不可用，请求未发出，也未消费审批。请稍后重新发起。`,
+          };
+        }
+        if (existing?.state === 'completed') {
+          await d.audit('tool_call_deduped', { tool: name, scope: t.scope, status: existing.status, idempotency_key: existing.idempotencyKey, reason: '同 job 已完成相同调用，返回已确认结果（防重试/恢复重复副作用）' }).catch(() => undefined);
+          return { ok: existing.ok, text: existing.text, status: existing.status };
+        }
+        if (existing) {
+          executionUncertainty = toolExecutionUncertaintyFromJournal(name, t.scope, existing);
+          await d.audit('tool_reconciliation_required', {
+            tool: name,
+            scope: t.scope,
+            state: existing.state,
+            idempotency_key: existing.idempotencyKey,
+            reason: existing.error ?? '检测到未完成的执行日志，禁止自动重放',
+          }).catch(() => undefined);
+          return { ok: false, text: executionUncertainty.message, status: 0 };
         }
       }
       // 闸2：风险闸 + 审批车道（B 方案：先撤再来）。high / confirm-required 的调用：
@@ -396,9 +498,45 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         : { args: JSON.stringify(Object.keys(callArgs)) };
       await d.audit('tool_call', {
         provider: d.provider.name, tool: name, scope: t.scope, method: t.method, path: t.path,
-        on_behalf_of: d.onBehalfOf || null, signature_scheme: 'sha256=', ...argsLog,
+        on_behalf_of: d.onBehalfOf || null, signature_scheme: 'sha256=', idempotency_key: idemKey || null, ...argsLog,
         ...(approvalId !== null ? { approval_id: approvalId } : {}),
       });
+
+      if (idemHash) {
+        let reserved: { inserted: boolean; entry: ToolExecutionJournalEntry };
+        try {
+          reserved = await d.idempotency!.reserve(name, t.scope, idemHash, idemKey);
+        } catch (error) {
+          await d.audit('tool_blocked', {
+            tool: name,
+            scope: t.scope,
+            reason: '执行日志不可用，请求未发出',
+            error: String(error).slice(0, 500),
+          }).catch(() => undefined);
+          return { ok: false, text: `工具 ${name} 的执行日志当前不可用，请求未发出。请稍后重新发起并重新完成必要审批。`, status: 0 };
+        }
+        if (!reserved.inserted) {
+          if (reserved.entry.state === 'completed') {
+            await d.audit('tool_call_deduped', {
+              tool: name,
+              scope: t.scope,
+              status: reserved.entry.status,
+              idempotency_key: reserved.entry.idempotencyKey,
+              reason: '并发调用已完成，返回已确认结果',
+            }).catch(() => undefined);
+            return { ok: reserved.entry.ok, text: reserved.entry.text, status: reserved.entry.status };
+          }
+          executionUncertainty = toolExecutionUncertaintyFromJournal(name, t.scope, reserved.entry);
+          await d.audit('tool_reconciliation_required', {
+            tool: name,
+            scope: t.scope,
+            state: reserved.entry.state,
+            idempotency_key: reserved.entry.idempotencyKey,
+            reason: reserved.entry.error ?? '并发或恢复路径检测到未完成执行日志',
+          }).catch(() => undefined);
+          return { ok: false, text: executionUncertainty.message, status: 0 };
+        }
+      }
 
       const started = Date.now();
       const timeoutMs = t.timeoutMs || d.provider.timeout_ms || 10000; // ACC execution.timeout_ms 单工具覆盖（慢接口放宽），缺省工具源超时
@@ -412,6 +550,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             'x-bailing-signature': sigHeader,
             'x-bailing-job-id': d.jobId,
             'x-bailing-client': d.clientAppId,
+            ...(idemKey ? { 'x-bailing-idempotency-key': idemKey } : {}),
             ...(subjectHeader ? { 'x-bailing-on-behalf-of': subjectHeader } : {}),
             // 来源会话坐标（非签名材料）：业务侧自审批批准后据此 /send 回流到原会话；收件人权威仍以已验签的 on-behalf-of 为准
             ...(d.conversation ? { 'x-bailing-conversation': d.conversation } : {}),
@@ -424,22 +563,124 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         status = r.status;
         fullText = await r.text();
       } catch (e) {
-        fullText = `调用失败：${e instanceof Error && e.name === 'TimeoutError' ? `超时（${timeoutMs}ms）` : String(e)}`;
+        const error = e instanceof Error && e.name === 'TimeoutError' ? `超时（${timeoutMs}ms）` : String(e);
+        fullText = `调用结果不确定：${error}`;
+        if (idemHash) {
+          await d.idempotency!.markUncertain(name, idemHash, error).catch(() => undefined);
+          executionUncertainty = {
+            state: 'uncertain',
+            tool: name,
+            scope: t.scope,
+            idempotency_key: idemKey,
+            reason: error,
+            message: `工具 ${name} 的请求可能已经到达业务系统，但未取得可信响应。为避免重复业务后果，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+          };
+          await d.audit('tool_reconciliation_required', {
+            tool: name,
+            scope: t.scope,
+            state: 'uncertain',
+            idempotency_key: idemKey,
+            reason: error,
+          }).catch(() => undefined);
+          return { ok: false, text: executionUncertainty.message, status: 0 };
+        }
       }
       // 回流给模型的：受上下文预算 truncateBytes 截断（与审计留存解耦）
       const text = fullText.slice(0, d.truncateBytes);
       const ok = status >= 200 && status < 300;
+      const retText = text || `（HTTP ${status} 空响应）`;
+      if (idemHash) {
+        try {
+          await d.idempotency!.recordResponse(name, idemHash, { ok, status, text: retText });
+        } catch (error) {
+          executionUncertainty = {
+            state: 'uncertain',
+            tool: name,
+            scope: t.scope,
+            idempotency_key: idemKey,
+            reason: `响应已收到但执行日志写入失败：${String(error).slice(0, 300)}`,
+            message: `工具 ${name} 已收到业务响应，但未能持久化执行结果。为避免重复业务后果，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+          };
+          await d.audit('tool_reconciliation_required', {
+            tool: name,
+            scope: t.scope,
+            state: 'uncertain',
+            idempotency_key: idemKey,
+            reason: executionUncertainty.reason,
+          }).catch(() => undefined);
+          return { ok: false, text: executionUncertainty.message, status: 0 };
+        }
+      }
       // 审计留存：logFull 记全量响应（封顶 AUDIT_MAX_BYTES，超出记 resp_truncated）；resp_bytes 始终记真实字节数。
       const respLog = logFull
         ? { resp: fullText.slice(0, AUDIT_MAX_BYTES), resp_bytes: fullText.length, ...(fullText.length > AUDIT_MAX_BYTES ? { resp_truncated: true } : {}) }
         : { resp: `<${fullText.length} bytes>`, resp_bytes: fullText.length };
-      await d.audit('tool_result', { tool: name, status, ok, duration_ms: Date.now() - started, ...respLog }).catch(() => undefined);
-      const retText = text || `（HTTP ${status} 空响应）`;
-      // 幂等登记：真发出去了（拿到 HTTP 响应，status≠0，副作用可能已发生）才登记，重跑直接复用此结果；
-      // 网络失败(status=0)不登记——请求很可能没到达业务，留给重试，避免"没执行却被永久跳过"。
-      if (idemHash && status !== 0) await d.idempotency!.put(name, idemHash, { ok, status, text: retText }).catch(() => undefined);
+      try {
+        await d.audit('tool_result', {
+          tool: name,
+          status,
+          ok,
+          duration_ms: Date.now() - started,
+          idempotency_key: idemKey || null,
+          ...respLog,
+        });
+      } catch (error) {
+        if (idemHash) {
+          const reason = `业务响应已收到，但结果审计写入失败：${String(error).slice(0, 300)}`;
+          await d.idempotency!.markEvidenceDegraded(name, idemHash, reason).catch(() => undefined);
+          executionUncertainty = {
+            state: 'evidence_degraded',
+            tool: name,
+            scope: t.scope,
+            idempotency_key: idemKey,
+            reason,
+            message: `工具 ${name} 已产生业务响应，但审计证据不完整。为避免重复业务后果，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+          };
+          return { ok: false, text: executionUncertainty.message, status: 0 };
+        }
+        throw error;
+      }
+      if (idemHash) {
+        try {
+          await d.idempotency!.complete(name, idemHash);
+        } catch (error) {
+          executionUncertainty = {
+            state: 'response_recorded',
+            tool: name,
+            scope: t.scope,
+            idempotency_key: idemKey,
+            reason: `响应与审计已记录，但执行日志未能确认完成：${String(error).slice(0, 300)}`,
+            message: `工具 ${name} 已产生业务响应，但执行日志未完成最终确认。为避免重复业务后果，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
+          };
+          await d.audit('tool_reconciliation_required', {
+            tool: name,
+            scope: t.scope,
+            state: 'response_recorded',
+            idempotency_key: idemKey,
+            reason: executionUncertainty.reason,
+          }).catch(() => undefined);
+          return { ok: false, text: executionUncertainty.message, status: 0 };
+        }
+      }
       return { ok, text: retText, status };
     },
+  };
+}
+
+export function toolExecutionUncertaintyFromJournal(
+  tool: string,
+  scope: string,
+  entry: ToolExecutionJournalEntry,
+): ToolExecutionUncertainty {
+  const state = entry.state === 'completed' ? 'response_recorded' : entry.state;
+  const reason = entry.error ?? `检测到执行日志状态 ${state}`;
+  return {
+    state,
+    tool,
+    scope,
+    idempotency_key: entry.idempotencyKey,
+    reason,
+    message: `工具 ${tool} 已存在未完成的执行记录（${state}）。系统不能确认是否已经产生业务后果，因此禁止自动重放；请使用幂等键 ${entry.idempotencyKey} 人工对账。`,
   };
 }
 

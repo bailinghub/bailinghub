@@ -249,10 +249,17 @@ X-Bailing-Job-Id:      任务溯源
 X-Bailing-Client:      触发方 app_id
 X-Bailing-On-Behalf-Of: metadata[subject_field]（可空；匿名时签空串）
 X-Bailing-Tool-Scope:  该工具 x-agent-capability.scope（信息性，业务侧应自行重算）
+X-Bailing-Idempotency-Key: 副作用调用的稳定幂等键（只读/声明幂等工具缺省）
 ```
 
 - **签名只有一套：`sha256=`（算法名，非版本号）**。构造 = `sha256=` + `HMAC_SHA256(secret, "<ts>.<METHOD>.<path?query>.<sha256(body)>.<On-Behalf-Of>.<Job-Id>")`，把"谁、为哪个任务"也钉进 HMAC，杜绝窗口内重放篡头换租户/绕幂等。**spec 拉取共用同一套构造**（无操作主体/任务，三者签空串、GET body 也空），300s 时间窗。中枢只发 `sha256=`，`Verify` 与三份单文件参考（`docs/examples/bailing-tool-verify.{php,mjs,py}`）也只验 `sha256=`；
-- 超时默认 10s（provider 的 `timeout_ms` 可配），**不重试写操作**（非幂等），GET 可重试 1 次；
+- 超时默认 10s（provider 的 `timeout_ms` 可配）。只读或显式声明幂等的调用可按路由重试策略重新执行；副作用调用不得把超时、断连或审计降级伪装成可安全重试；
+- **副作用执行日志**：对于非只读、非声明幂等的业务工具，中枢在外发前持久化 `dispatching`，收到 HTTP 响应后写 `response_recorded`，结果审计与终态账本都成功后才写 `completed`；
+- **账本缺失即拒绝**：运行时没有持久化执行日志，或无法在外发前写入占位时，副作用工具直接拒绝且请求不会发出；不能退回“先调用、成功后再记”的旧模式；
+- **不确定结果冻结**：超时、网络断连、进程重启后遗留的 `dispatching`、结果审计失败形成的 `evidence_degraded`，以及响应已记录但终态提交失败形成的 `response_recorded`，都会返回结构化 `reconciliation_required`，并明确 `auto_retry_allowed=false`。恢复任务会在调用模型前扫描未决执行日志；同一任务再次执行时不依赖模型重新选中该工具，也不会向业务系统外发第二次请求；
+- **内置发送不是例外**：`send_message` 走同一执行日志与恢复闸门。文本分片、卡片和附件只要已有任一部分成功，后续失败就视为“可能已产生外部后果”，整次发送进入人工对账且不得自动重放；
+- 这不是 exactly-once 承诺：中枢选择的是保守冻结，因此也可能冻结一笔实际上没有到达业务系统的调用。运维人员应凭 `job_id`、工具、参数哈希和 `X-Bailing-Idempotency-Key` 到业务日志对账后再决定后续动作；
+- 业务侧应按 `X-Bailing-Idempotency-Key` 做最终副作用去重。该键稳定绑定任务、主体、工具和规范化参数，是纵深防御与对账标识，不替代验签、业务授权或业务自身的幂等规则；
 - 业务侧验签后：以 On-Behalf-Of 为主体自行 resolvePrincipal → scope/资源逐次校验 → 走自己原有鉴权。**业务侧把中枢当成"一个经过认证的代理调用方"，而不是权限真值源。**
 
 ### 4.3 executor 大脑共用工具面（统一工具面）
@@ -319,7 +326,7 @@ Content-Type: application/json
 
 | 项 | 设计 |
 |---|---|
-| 审计 | 每次调用记 `tool_call` 事件：tool/scope/method/path/状态码/耗时/**参数全量值**（≤4KB 截断；工具源可配 `log_payload=false` 降为只记键名）。审计写失败 → **该次调用不放行**（fail-closed）|
+| 审计 | 每次调用记 `tool_call` 事件：tool/scope/method/path/状态码/耗时/**参数全量值**（≤4KB 截断；工具源可配 `log_payload=false` 降为只记键名）。出站前 `tool_call` 审计失败 → **请求不外发**；业务响应后的 `tool_result` 审计失败 → 记 `evidence_degraded`、禁止自动重试并要求人工对账，不能把已经可能发生的业务后果伪装成普通失败 |
 | 限流 | 三层：路由 max_calls（每任务）→ `x-agent-capability.execution.rate_limit`（每工具每分钟，中枢侧执行）→ provider 级总闸（可配，默认 120/min）|
 | 控制台 | 「工具源」页支持注册、手动刷新 spec、工具清单预览、真实签名调试调用、授权探针状态展示与手动重新探针；路由抽屉配置 tools；任务详情和「任务 → 追溯」按 job_id 展示 tool_call / approval / delivery 等完整 trace，并可导出脱敏排障包与 Markdown 排障报告 |
 | selftest | 契约新增 3 闸：未注册 provider 路由被拒 / allow 白名单外工具不进清单 / 签名 v2 可被参考实现验通过 |
@@ -342,6 +349,7 @@ Content-Type: application/json
 - 治理闸：scope 白名单、风险等级、参数级确认、限流、调用次数上限、敏感审计；
 - 审批车道：中枢冻结调用快照，业务侧承接审批，回传标准 `ApprovalDecision`；
 - 签名出口：工具调用与 spec 拉取统一 `sha256=`；
+- 副作用执行日志：外发前占位、响应落账、审计确认后完成；不确定结果跨进程冻结并返回对账要求；
 - 参考实现：PHP / PHP7 / Node / Python SDK，Node / Python / PHP 单文件验签样例与冻结测试向量。
 
 ## 8. 明确不做（YAGNI，守住单依赖审计性）
@@ -358,6 +366,7 @@ Content-Type: application/json
 3. **risk=medium 放行留痕**；只拦 `high` 与 `confirm-required`。
 4. **工具结果回流截断默认 8KB**，provider 可配。
 5. **风险缺省安全下限**：未显式标 `x-agent-capability.risk.level` 时，GET / 显式 `x-agent-capability.execution.readonly` 缺省 `low`，**未标的写操作（非 GET 且非只读）缺省 `medium`**（漏标偏向留痕而非静默放行）；作者显式标的 `low/medium/high` 永远优先。这不替代业务侧参数自校验与 `high` 显式声明（见 §11.1/§11.2）。
+6. **副作用不确定结果不自动重放**：中枢不宣称 exactly-once；凡无法证明调用未产生业务后果的失败都进入持久化对账终态，由业务侧稳定幂等键与人工对账共同收口。
 
 ## 10. 渐进式披露与规模化设计笔记
 

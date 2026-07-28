@@ -17,6 +17,19 @@
 
 当前无待发布变更。
 
+## v0.1.11 - 副作用执行日志与不确定结果冻结
+
+发布日期：2026-07-28。
+
+- **副作用执行日志改为外发前占位**：非只读、非声明幂等的业务工具在请求外发前持久化 `dispatching`，收到响应后记录 `response_recorded`，结果审计与终态落账完成后才进入 `completed`。
+- **不确定结果禁止自动重放**：超时、断连、重启遗留、结果审计失败和终态提交失败会收敛到 `reconciliation_required`，并明确 `auto_retry_allowed=false`；任务恢复在模型运行前扫描未决记录。
+- **稳定业务幂等键**：副作用业务请求新增 `X-Bailing-Idempotency-Key`，稳定绑定任务、主体、工具与规范化参数，供业务侧去重和人工对账；该键不替代验签或业务授权。
+- **内置消息发送纳入同一安全边界**：`send_message` 在外发前写执行日志；文本分片、卡片或附件部分送达后失败时冻结整次发送，不自动重发。
+- **数据库结构**：新增 `052_tool_execution_journal.sql`，把原工具调用去重账本扩展为可恢复的执行日志。
+- **对接影响**：只读和显式声明幂等的业务工具行为不变。副作用工具必须使用持久化执行日志；旧部署升级时需执行新增迁移。业务系统建议接收并使用稳定幂等键。
+- **验证方式**：`npm run typecheck`、`npm test`、`npm run web-admin:check`、`npm run docs:check`、`npm run examples:check`、`npm run security:scan`、`npm run release:check`。
+- **相关文档**：[RELEASE_NOTES_v0.1.11.md](RELEASE_NOTES_v0.1.11.md)、[工具治理设计](TOOLS_DESIGN.md)、[公开运行时契约](CONTRACT.md)、[兼容性与升级.md](兼容性与升级.md)。
+
 ## v0.1.10 - 实例品牌设置与生态接入完善
 
 发布日期：2026-07-27。

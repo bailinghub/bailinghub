@@ -54,11 +54,33 @@ Tool calls carry:
 
 - `X-Bailing-Signature`;
 - `X-Bailing-Timestamp`;
-- `X-Bailing-Tool`;
+- `X-Bailing-Tool-Scope`;
 - `X-Bailing-Job-Id`;
-- `X-Bailing-On-Behalf-Of`.
+- `X-Bailing-On-Behalf-Of`;
+- `X-Bailing-Idempotency-Key` for side-effecting calls.
 
 The business system must verify the signature and timestamp before applying its own permission checks.
+
+## Side-Effect Execution Journal
+
+For a non-read-only, non-idempotent business tool, BailingHub persists a `dispatching` journal entry before sending the request. It records `response_recorded` after receiving an HTTP response and moves the entry to `completed` only after the result audit and terminal ledger update succeed.
+
+If the durable execution journal is unavailable, BailingHub rejects a side-effecting tool before dispatch. It never falls back to sending first and recording only after success.
+
+If a timeout, network interruption, process restart, result-audit failure, or terminal-ledger failure leaves the outcome uncertain, the journal remains in `dispatching`, `uncertain`, `response_recorded`, or `evidence_degraded`. Recovery checks unresolved journal entries before invoking the model, so protection does not depend on the model selecting the same tool again. A recovered runtime does not send the business request again. It returns:
+
+```json
+{
+  "governance_state": "reconciliation_required",
+  "auto_retry_allowed": false
+}
+```
+
+This is deliberately not an exactly-once claim. Fail-closed behavior can freeze a request that never reached the business system. Operators must reconcile the durable job, subject, tool, canonical argument hash, and `X-Bailing-Idempotency-Key` against business-side records.
+
+The business system should deduplicate side effects using `X-Bailing-Idempotency-Key` as defense in depth. The key is stable for the job, subject, tool, and canonical arguments. It does not replace signature verification, business authorization, or domain-specific idempotency rules.
+
+The built-in `send_message` capability uses the same journal and recovery boundary. If any text chunk, card, or attachment may already have been delivered, a later failure is treated as an uncertain external effect. The runtime freezes the send for reconciliation instead of replaying the whole message.
 
 ## Parameter-Level Confirmation
 

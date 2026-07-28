@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TOOL_DEFINITION_SCHEMA_VERSION, type ToolDefinition } from './tool-definition';
-import { buildToolRuntime, type ToolRuntimeDeps } from './tools';
+import { argsHash, buildToolRuntime, toolCallIdempotencyKey, type ToolExecutionJournalEntry, type ToolRuntimeDeps } from './tools';
 
 function mkTool(over: Partial<ToolDefinition>): ToolDefinition {
   return {
@@ -17,15 +17,47 @@ function mkTool(over: Partial<ToolDefinition>): ToolDefinition {
   };
 }
 
-function mkRuntime(tool: ToolDefinition) {
-  const ledger = new Map<string, { ok: boolean; status: number; text: string }>();
+function mkRuntime(
+  tool: ToolDefinition,
+  audit: ToolRuntimeDeps['audit'] = async () => { /* noop */ },
+  ledger = new Map<string, ToolExecutionJournalEntry>(),
+) {
   const deps: ToolRuntimeDeps = {
     provider: { name: 'p', base_url: 'http://x.invalid', secret: 's', timeout_ms: 5000, rate_limit_per_min: 0, log_payload: false } as any,
     allowedTools: [tool], maxCalls: 10, onBehalfOf: 'u1', jobId: 'job1', clientAppId: 'c', truncateBytes: 8192,
-    audit: async () => { /* noop */ },
+    audit,
     idempotency: {
       get: async (t, h) => ledger.get(`${t}:${h}`) ?? null,
-      put: async (t, h, r) => { ledger.set(`${t}:${h}`, r); },
+      reserve: async (t, _scope, h, idempotencyKey) => {
+        const key = `${t}:${h}`;
+        const prior = ledger.get(key);
+        if (prior) return { inserted: false, entry: prior };
+        const entry: ToolExecutionJournalEntry = { state: 'dispatching', ok: false, status: 0, text: '', idempotencyKey };
+        ledger.set(key, entry);
+        return { inserted: true, entry };
+      },
+      recordResponse: async (t, h, r) => {
+        const key = `${t}:${h}`;
+        const prior = ledger.get(key);
+        assert.equal(prior?.state, 'dispatching');
+        ledger.set(key, { ...prior!, ...r, state: 'response_recorded' });
+      },
+      complete: async (t, h) => {
+        const key = `${t}:${h}`;
+        const prior = ledger.get(key);
+        assert.equal(prior?.state, 'response_recorded');
+        ledger.set(key, { ...prior!, state: 'completed' });
+      },
+      markUncertain: async (t, h, error) => {
+        const key = `${t}:${h}`;
+        const prior = ledger.get(key)!;
+        ledger.set(key, { ...prior, state: 'uncertain', error });
+      },
+      markEvidenceDegraded: async (t, h, error) => {
+        const key = `${t}:${h}`;
+        const prior = ledger.get(key)!;
+        ledger.set(key, { ...prior, state: 'evidence_degraded', error });
+      },
     },
   };
   return buildToolRuntime(deps);
@@ -34,6 +66,7 @@ function mkRuntime(tool: ToolDefinition) {
 function mkRuntimeWithApprovals(tool: ToolDefinition) {
   let created = 0;
   let notified = 0;
+  const ledger = new Map<string, ToolExecutionJournalEntry>();
   const createdSnaps: any[] = [];
   const notifiedSnaps: any[] = [];
   const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
@@ -47,6 +80,33 @@ function mkRuntimeWithApprovals(tool: ToolDefinition) {
       findApprovedAnyArgs: async () => null,
       create: async (snap) => { createdSnaps.push(snap); return ++created; },
       notify: async (_id, snap) => { notifiedSnaps.push(snap); notified++; },
+    },
+    idempotency: {
+      get: async (t, h) => ledger.get(`${t}:${h}`) ?? null,
+      reserve: async (t, _scope, h, idempotencyKey) => {
+        const key = `${t}:${h}`;
+        const prior = ledger.get(key);
+        if (prior) return { inserted: false, entry: prior };
+        const entry: ToolExecutionJournalEntry = { state: 'dispatching', ok: false, status: 0, text: '', idempotencyKey };
+        ledger.set(key, entry);
+        return { inserted: true, entry };
+      },
+      recordResponse: async (t, h, r) => {
+        const key = `${t}:${h}`;
+        ledger.set(key, { ...ledger.get(key)!, ...r, state: 'response_recorded' });
+      },
+      complete: async (t, h) => {
+        const key = `${t}:${h}`;
+        ledger.set(key, { ...ledger.get(key)!, state: 'completed' });
+      },
+      markUncertain: async (t, h, error) => {
+        const key = `${t}:${h}`;
+        ledger.set(key, { ...ledger.get(key)!, state: 'uncertain', error });
+      },
+      markEvidenceDegraded: async (t, h, error) => {
+        const key = `${t}:${h}`;
+        ledger.set(key, { ...ledger.get(key)!, state: 'evidence_degraded', error });
+      },
     },
   };
   return { runtime: buildToolRuntime(deps), count: () => ({ created, notified, createdSnaps, notifiedSnaps, audits }) };
@@ -71,6 +131,152 @@ test('副作用工具：同 job 同参数第二次调用被去重，只真正执
     await rt.invoke('create_thing', { x: 2 });
     assert.equal(count(), 2, '参数不同是另一次调用，应真正发出');
   });
+});
+
+test('副作用工具：缺少持久化执行日志时 fail-closed，请求不得外发', async () => {
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  const runtime = buildToolRuntime({
+    provider: { name: 'p', base_url: 'http://x.invalid', secret: 's', timeout_ms: 5000, rate_limit_per_min: 0, log_payload: false } as any,
+    allowedTools: [mkTool({})],
+    maxCalls: 10,
+    onBehalfOf: 'u1',
+    jobId: 'job1',
+    clientAppId: 'c',
+    truncateBytes: 8192,
+    audit: async (event, detail) => { audits.push({ event, detail }); },
+  });
+
+  await withFetchCounter(async (count) => {
+    const result = await runtime.invoke('create_thing', { x: 1 });
+    assert.equal(result.ok, false);
+    assert.match(result.text, /持久化执行日志/);
+    assert.equal(count(), 0);
+  });
+  assert.equal(audits.at(-1)?.event, 'tool_blocked');
+});
+
+test('副作用工具：执行日志查询不可用时先于审批 fail-closed，不消费批准也不外发', async () => {
+  let approvalConsumes = 0;
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  const runtime = buildToolRuntime({
+    provider: { name: 'p', base_url: 'http://x.invalid', secret: 's', timeout_ms: 5000, rate_limit_per_min: 0, log_payload: false } as any,
+    allowedTools: [mkTool({ name: 'refund_create', risk: 'high', confirmRequired: true })],
+    maxCalls: 10,
+    onBehalfOf: 'u1',
+    jobId: 'job1',
+    clientAppId: 'c',
+    truncateBytes: 8192,
+    audit: async (event, detail) => { audits.push({ event, detail }); },
+    approvals: {
+      consumeApproved: async () => { approvalConsumes++; return 42; },
+      findPending: async () => null,
+      findApprovedAnyArgs: async () => null,
+      create: async () => 1,
+      notify: async () => undefined,
+    },
+    idempotency: {
+      get: async () => { throw new Error('journal unavailable'); },
+      reserve: async () => { throw new Error('reserve must not run'); },
+      recordResponse: async () => { throw new Error('recordResponse must not run'); },
+      complete: async () => { throw new Error('complete must not run'); },
+      markUncertain: async () => undefined,
+      markEvidenceDegraded: async () => undefined,
+    },
+  });
+
+  await withFetchCounter(async (count) => {
+    const result = await runtime.invoke('refund_create', { x: 1 });
+    assert.equal(result.ok, false);
+    assert.match(result.text, /执行日志当前不可用/);
+    assert.match(result.text, /未消费审批/);
+    assert.equal(approvalConsumes, 0, '账本状态未知时不得提前消费批准');
+    assert.equal(count(), 0, '账本状态未知时不得外发业务请求');
+  });
+  assert.equal(audits.at(-1)?.event, 'tool_blocked');
+  assert.equal(audits.at(-1)?.detail['reason'], '执行日志查询不可用，请求未发出');
+});
+
+test('副作用工具：下游超时后冻结执行，恢复或重跑不得再次发出', async () => {
+  const ledger = new Map<string, ToolExecutionJournalEntry>();
+  const rt = mkRuntime(mkTool({}), undefined, ledger);
+  const orig = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    throw new TypeError('connection reset after request');
+  }) as typeof fetch;
+  try {
+    const first = await rt.invoke('create_thing', { x: 7 });
+    assert.equal(first.ok, false);
+    assert.match(first.text, /人工对账/);
+    assert.equal(rt.executionUncertainty()?.state, 'uncertain');
+
+    const recoveredRuntime = mkRuntime(mkTool({}), undefined, ledger);
+    const second = await recoveredRuntime.invoke('create_thing', { x: 7 });
+    assert.equal(second.ok, false);
+    assert.match(second.text, /人工对账/);
+    assert.equal(recoveredRuntime.executionUncertainty()?.state, 'uncertain');
+    assert.equal(calls, 1, '进程恢复后也不得自动重放结果不确定的业务请求');
+  } finally {
+    globalThis.fetch = orig;
+  }
+});
+
+test('副作用工具：崩溃遗留 dispatching 占位时，新运行时 fail-closed 且不外发', async () => {
+  const callArgs = { x: 10 };
+  const hash = argsHash(callArgs);
+  const idempotencyKey = toolCallIdempotencyKey('job1', 'create_thing', hash, 'u1');
+  const ledger = new Map<string, ToolExecutionJournalEntry>([
+    [`create_thing:${hash}`, {
+      state: 'dispatching',
+      ok: false,
+      status: 0,
+      text: '',
+      idempotencyKey,
+    }],
+  ]);
+  const recoveredRuntime = mkRuntime(mkTool({}), undefined, ledger);
+
+  await withFetchCounter(async (count) => {
+    const result = await recoveredRuntime.invoke('create_thing', callArgs);
+    assert.equal(result.ok, false);
+    assert.match(result.text, /人工对账/);
+    assert.equal(recoveredRuntime.executionUncertainty()?.state, 'dispatching');
+    assert.equal(count(), 0, '已有 dispatching 日志意味着发送结果未知，恢复后不得猜测并重发');
+  });
+});
+
+test('副作用工具：业务响应后审计失败进入 evidence_degraded，不把失败伪装成可重试', async () => {
+  const rt = mkRuntime(mkTool({}), async (event) => {
+    if (event === 'tool_result') throw new Error('audit sink unavailable');
+  });
+  await withFetchCounter(async (count) => {
+    const result = await rt.invoke('create_thing', { x: 8 });
+    assert.equal(result.ok, false);
+    assert.match(result.text, /审计证据不完整/);
+    assert.equal(rt.executionUncertainty()?.state, 'evidence_degraded');
+    assert.equal(count(), 1);
+
+    await rt.invoke('create_thing', { x: 8 });
+    assert.equal(count(), 1, '业务响应后的审计故障不能触发第二次业务调用');
+  });
+});
+
+test('副作用工具：发送稳定的下游幂等键，且该键与任务、主体、工具和规范化参数绑定', async () => {
+  const rt = mkRuntime(mkTool({}));
+  const orig = globalThis.fetch;
+  let seen = '';
+  globalThis.fetch = (async (_url, init) => {
+    seen = String((init?.headers as Record<string, string>)['x-bailing-idempotency-key'] ?? '');
+    return { status: 200, text: async () => '{"ok":true}' } as unknown as Response;
+  }) as typeof fetch;
+  try {
+    await rt.invoke('create_thing', { x: 9 });
+  } finally {
+    globalThis.fetch = orig;
+  }
+  assert.equal(seen, toolCallIdempotencyKey('job1', 'create_thing', argsHash({ x: 9 }), 'u1'));
+  assert.match(seen, /^[0-9a-f]{64}$/);
 });
 
 test('副作用工具：幂等哈希与实际 JSON 外发参数使用同一规范化语义', async () => {
