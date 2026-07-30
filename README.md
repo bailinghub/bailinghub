@@ -217,6 +217,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/RELEASE_NOTES_v0.1.9.md` | `v0.1.9` 可选 OpenMetrics 运维指标与安全抓取说明 |
 | `docs/RELEASE_NOTES_v0.1.10.md` | `v0.1.10` 实例品牌设置、模型标识诊断与生态接入配方说明 |
 | `docs/RELEASE_NOTES_v0.1.11.md` | `v0.1.11` 副作用执行日志与不确定结果冻结说明 |
+| `docs/RELEASE_NOTES_v0.1.12.md` | `v0.1.12` 语音转写策略与失败关闭说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |

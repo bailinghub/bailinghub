@@ -17,6 +17,20 @@
 
 当前无待发布变更。
 
+## v0.1.12 - 语音转写策略与失败关闭
+
+发布日期：2026-07-30。
+
+- **音频处理改为显式策略**：LLM 路由支持 `transcribe`、`inline` 和 `off`；缺少配置时默认关闭，不再猜测主模型是否支持音频。
+- **转写链路失败关闭**：转写凭证、模型或端点缺失、禁用或无法解析时，任务返回确定性提示，不会把音频退回给主模型，也不会猜测音频内容。
+- **双协议转写适配**：支持 `/audio/transcriptions` multipart 请求，以及 `/chat/completions` 的 Data URL `input_audio` 请求。
+- **控制台与 Schema 对齐**：路由页新增语音协议选择，配置 Schema 同步约束协议枚举和默认值。
+- **审计边界**：记录模式、协议、模型、MIME 类型、字节数和结果，不记录音频正文、Data URL 或凭证。
+- **数据库结构**：无迁移。
+- **对接影响**：文本聊天、Client API、执行器协议、工具签名、审批语义和 ACC 不变；依赖隐式音频直传的路由需显式选择 `inline` 或配置 `transcribe`。
+- **验证方式**：`npm run typecheck`、`npm test`、`npm run web-admin:check`、`npm run release:check`，并完成真实 MP3 到专用语音模型、主模型流式回复和任务终态的端到端验证。
+- **相关文档**：[RELEASE_NOTES_v0.1.12.md](RELEASE_NOTES_v0.1.12.md)、[工具治理设计](TOOLS_DESIGN.md)、[兼容性与升级.md](兼容性与升级.md)。
+
 ## v0.1.11 - 副作用执行日志与不确定结果冻结
 
 发布日期：2026-07-28。
