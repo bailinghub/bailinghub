@@ -84,8 +84,8 @@
 | [RELEASE_NOTES_v0.1.11.en.md](RELEASE_NOTES_v0.1.11.en.md) | English `v0.1.11` side-effect execution journal and uncertain-outcome freezing release notes. |
 | [RELEASE_NOTES_v0.1.12.md](RELEASE_NOTES_v0.1.12.md) | `v0.1.12` 语音转写策略与失败关闭说明。 |
 | [RELEASE_NOTES_v0.1.12.en.md](RELEASE_NOTES_v0.1.12.en.md) | English `v0.1.12` voice transcription policy and fail-closed audio handling release notes. |
-| [RELEASE_NOTES_v0.1.13.md](RELEASE_NOTES_v0.1.13.md) | `v0.1.13` 语音转写与分发版本一致性说明。 |
-| [RELEASE_NOTES_v0.1.13.en.md](RELEASE_NOTES_v0.1.13.en.md) | English `v0.1.13` voice transcription and distribution-version alignment release notes. |
+| [RELEASE_NOTES_v0.1.14.md](RELEASE_NOTES_v0.1.14.md) | `v0.1.14` 流式对话阶段性进度提示说明。 |
+| [RELEASE_NOTES_v0.1.14.en.md](RELEASE_NOTES_v0.1.14.en.md) | English `v0.1.14` transient progress feedback for streaming chat release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

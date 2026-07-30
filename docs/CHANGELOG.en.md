@@ -24,6 +24,19 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.1.14 - Transient Progress Feedback for Streaming Chat
+
+Released on 2026-07-30.
+
+- The official web widget promotes a short pre-tool acknowledgement into a transient progress bubble and shows explicit tool, model, retry, and fallback phases.
+- The transient bubble is removed as soon as the formal streamed answer begins. Only the formal answer remains in chat history.
+- The feature presents model-authored acknowledgement text and runtime phases only; it does not expose hidden reasoning. Progress copy is whitespace-normalized and length-bounded.
+- Progress animation respects `prefers-reduced-motion`, and failed or background-processing states use deterministic copy.
+- No database migration is required.
+- Client API, streaming event protocol, executor protocol, tool signatures, approval semantics, and ACC are unchanged. The official widget adopts the behavior automatically; custom chat UIs must consume the existing `delta`, `reset`, `phase`, and `done` events themselves.
+- Validation: `node --check web/widget/widget.js`, targeted public-route widget tests, `npm run typecheck`, and `npm run release:check`.
+- Related docs: [RELEASE_NOTES_v0.1.14.en.md](RELEASE_NOTES_v0.1.14.en.md), [independent validation](INDEPENDENT_VALIDATION.en.md), and [CONTRACT.en.md](CONTRACT.en.md).
+
 ## v0.1.13 - Voice Transcription and Distribution-Version Alignment
 
 Released on 2026-07-30.
