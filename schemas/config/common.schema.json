@@ -112,6 +112,11 @@
               "properties": {
                 "credential": { "$ref": "#/$defs/resourceName" },
                 "model": { "type": "string", "minLength": 1 },
+                "protocol": {
+                  "type": "string",
+                  "enum": ["transcriptions", "chat_input_audio"],
+                  "default": "transcriptions"
+                },
                 "mode": { "type": "string", "enum": ["transcribe", "inline", "off"] },
                 "max_bytes": { "type": "integer", "minimum": 1024, "maximum": 52428800 },
                 "max_seconds": { "type": "integer", "minimum": 1, "maximum": 600 }

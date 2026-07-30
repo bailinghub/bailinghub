@@ -240,3 +240,81 @@ test('llmAdapter: 流式工具参数分片可重组，工具阶段后继续输�
   assert.equal(streamEvents.some((event) => event.type === 'reset' && event.data['reason'] === 'tool_call'), true);
   assert.equal(streamEvents.filter((event) => event.type === 'delta').map((event) => event.data['text']).join(''), '订单已支付');
 });
+
+test('llmAdapter: 未配置语音策略时关闭式提示，绝不把音频盲送给主模型', async () => {
+  const ctx = baseCtx();
+  const requests: Array<Record<string, unknown>> = [];
+  ctx.userAudio = ['https://media.example.com/message.mp3'];
+  ctx.targetConfig = { ...ctx.targetConfig, streaming: false };
+
+  const got = await withFetchImplementation((async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    requests.push(body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: '语音暂时无法解析，请改用文字。' } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch, () => llmAdapter.run(ctx));
+
+  assert.equal(got.ok, true);
+  assert.equal(JSON.stringify(requests).includes('input_audio'), false);
+  assert.match(JSON.stringify(requests[0]?.['messages']), /请其改用文字/);
+});
+
+test('llmAdapter: 只有显式 inline 才把音频作为 input_audio 交给主模型', async () => {
+  const ctx = baseCtx();
+  const requests: Array<Record<string, unknown>> = [];
+  ctx.userAudio = ['https://media.example.com/message.mp3'];
+  ctx.targetConfig = {
+    ...ctx.targetConfig,
+    streaming: false,
+    input: { audio: { mode: 'inline' } },
+  };
+
+  await withFetchImplementation((async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    requests.push(body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: '收到语音' } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch, () => llmAdapter.run(ctx));
+
+  assert.equal(JSON.stringify(requests).includes('input_audio'), true);
+});
+
+test('llmAdapter: 显式转写但 ASR 不可解析时关闭式降级，不回退为 inline', async () => {
+  const ctx = baseCtx();
+  const requests: Array<Record<string, unknown>> = [];
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  ctx.userAudio = ['https://media.example.com/message.mp3'];
+  ctx.audit = (event, detail) => { audits.push({ event, detail }); };
+  ctx.targetConfig = {
+    ...ctx.targetConfig,
+    streaming: false,
+    input: {
+      audio: {
+        mode: 'transcribe',
+        credential: 'missing-asr',
+        model: 'qwen3-asr-flash',
+        protocol: 'chat_input_audio',
+      },
+    },
+  };
+
+  await withFetchImplementation((async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    requests.push(body);
+    return new Response(JSON.stringify({ choices: [{ message: { content: '请改用文字。' } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch, () => llmAdapter.run(ctx));
+
+  assert.equal(JSON.stringify(requests).includes('input_audio'), false);
+  assert.match(JSON.stringify(requests[0]?.['messages']), /未配置可用的语音识别/);
+  assert.equal(
+    audits.some((audit) => audit.event === 'speech_degraded' && audit.detail['reason'] === 'audio_model_unresolved'),
+    true,
+  );
+});

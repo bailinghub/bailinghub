@@ -214,13 +214,15 @@ handleRun → 解析路由 tools → 装配工具清单（双闸过滤）
 
 | mode | 行为 | 适用 |
 |---|---|---|
-| `transcribe`（默认） | 中枢先调 OpenAI-compatible `/audio/transcriptions` 把语音转成文字，再进入路由、记忆、知识、工具和审计链路 | 主模型是强工具模型，但不听语音 |
-| `inline` | 音频 URL 作为媒体 part 直送大脑/执行器 | 开发者自己的模型或执行器已经具备语音理解能力 |
-| `off` | 忽略音频，只保留会话追溯里的附件 URL | 明确不允许语音影响回答 |
+| `transcribe`（启用语音策略后的默认值） | 中枢先调用专用 ASR 把语音转成文字，再进入路由、记忆、知识、工具和审计链路 | 主模型擅长工具编排，但不接受音频 |
+| `inline` | 音频 URL 作为媒体 part 直送大脑/执行器；必须由部署方显式开启 | 主模型或执行器已被验证支持当前音频输入格式 |
+| `off` | 不解析音频，只保留会话追溯里的附件 URL，并明确请用户改用文字 | 明确不允许语音影响回答，或尚未配置 ASR |
 
-- **不强绑 ASR**：开发者有自己的语音模型就选 `inline`；没有就用中枢 `transcribe`。
+- **协议显式化**：`input.audio.protocol=transcriptions` 使用 OpenAI-compatible `/audio/transcriptions`；`chat_input_audio` 使用 `/chat/completions` 的 `input_audio`，适合 Qwen3-ASR 等兼容实现。
+- **不强绑 ASR 提供商**：部署方可以选择任意兼容上述协议的语音模型；也可以显式选择 `inline`，但不得把“主模型可能支持音频”当作默认假设。
 - **语音凭证独立解析注入**：`input.audio.credential` 指向另一把凭证时，派发期解析为运行期内存凭证，只进运行期内存，不落 job 快照。
-- **审计**：转写记 `speech`（mode/model/index/ok/bytes/mime）；转写配置不可用退回 `inline` 并记 `speech_degraded`。
+- **关闭式降级**：未配置语音策略，或请求 `transcribe` 但凭证/模型解析失败时，中枢不会把音频盲送给主模型；它保留附件、记审计，并明确请用户改用文字。
+- **审计**：转写记 `speech`（mode/protocol/model/index/ok/bytes/mime）；配置不可用记 `speech_degraded`，策略未配置或关闭记 `speech_skipped`。
 
 #### 文件输入 `input.file`
 

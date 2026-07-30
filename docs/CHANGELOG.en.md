@@ -24,6 +24,20 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.1.12 - Voice Transcription Policy and Fail-Closed Audio Handling
+
+Released on 2026-07-30.
+
+- Added explicit `transcribe`, `inline`, and `off` audio modes. Missing configuration defaults to `off` instead of guessing whether the main model supports audio.
+- Made missing, disabled, or unresolved transcription configuration fail closed with deterministic guidance. Audio is not forwarded to the main model and content is never guessed.
+- Added both `/audio/transcriptions` multipart and `/chat/completions` Data URL `input_audio` protocol support.
+- Added the speech protocol selector to the route console and aligned the machine-readable configuration schema.
+- Speech audits record mode, protocol, model, MIME type, byte count, and outcome without retaining audio bodies, Data URLs, or credentials.
+- No database migration is required.
+- Text chat, Client API, executor protocol, tool signatures, approval semantics, and ACC are unchanged. Routes that relied on implicit audio forwarding must explicitly select `inline` or configure `transcribe`.
+- Validation: `npm run typecheck`, `npm test`, `npm run web-admin:check`, `npm run release:check`, plus an end-to-end MP3 transcription and streaming-response run.
+- Related docs: [RELEASE_NOTES_v0.1.12.en.md](RELEASE_NOTES_v0.1.12.en.md), [TOOLS_DESIGN.en.md](TOOLS_DESIGN.en.md), and [COMPATIBILITY.en.md](COMPATIBILITY.en.md).
+
 ## v0.1.11 - Side-Effect Execution Journal and Uncertain-Outcome Freezing
 
 Released on 2026-07-28.

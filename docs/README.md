@@ -82,6 +82,8 @@
 | [RELEASE_NOTES_v0.1.10.en.md](RELEASE_NOTES_v0.1.10.en.md) | English `v0.1.10` instance branding, model identifier diagnostics, and ecosystem recipe release notes. |
 | [RELEASE_NOTES_v0.1.11.md](RELEASE_NOTES_v0.1.11.md) | `v0.1.11` 副作用执行日志与不确定结果冻结说明。 |
 | [RELEASE_NOTES_v0.1.11.en.md](RELEASE_NOTES_v0.1.11.en.md) | English `v0.1.11` side-effect execution journal and uncertain-outcome freezing release notes. |
+| [RELEASE_NOTES_v0.1.12.md](RELEASE_NOTES_v0.1.12.md) | `v0.1.12` 语音转写策略与失败关闭说明。 |
+| [RELEASE_NOTES_v0.1.12.en.md](RELEASE_NOTES_v0.1.12.en.md) | English `v0.1.12` voice transcription policy and fail-closed audio handling release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

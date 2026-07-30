@@ -82,6 +82,22 @@ The business system should deduplicate side effects using `X-Bailing-Idempotency
 
 The built-in `send_message` capability uses the same journal and recovery boundary. If any text chunk, card, or attachment may already have been delivered, a later failure is treated as an uncertain external effect. The runtime freezes the send for reconciliation instead of replaying the whole message.
 
+## Multimodal Input Layer
+
+Uploaded images, audio, video, and files are treated as untrusted input. They do not grant tool authority and must not be interpreted as approval evidence.
+
+Audio handling is an explicit route policy:
+
+- `transcribe` uses a dedicated speech model and sends only the resulting text to the main model;
+- `inline` forwards audio only when the operator explicitly configures a main model that supports it;
+- `off` rejects audio with deterministic user guidance.
+
+Missing audio configuration defaults to `off`. If `transcribe` is selected but its credential, model, or endpoint cannot be resolved, the runtime fails closed. It does not forward the audio to the main model, infer content from file metadata, or silently switch protocols.
+
+Dedicated speech models may use either the OpenAI-compatible `/audio/transcriptions` multipart protocol or the `/chat/completions` Data URL `input_audio` protocol. The selected protocol is part of route configuration and audit metadata.
+
+Speech audit events may record the selected mode, protocol, model, MIME type, byte count, and outcome. They must not retain the audio body, Data URL, credential, or complete provider request.
+
 ## Parameter-Level Confirmation
 
 Some tools are safe for small values but risky for large values. Use parameter-level confirmation rules for thresholds such as:

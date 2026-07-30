@@ -32,6 +32,10 @@ test('validateTargetConfig: llm temperature / input image/audio/file 有明确�
     validateTargetConfig('llm', { credential: 'main', input: { audio: { mode: 'listen' } } }) ?? '',
     /target_config\.input\.audio\.mode/,
   );
+  assert.match(
+    validateTargetConfig('llm', { credential: 'main', input: { audio: { protocol: 'responses_audio' } } }) ?? '',
+    /target_config\.input\.audio\.protocol/,
+  );
   assert.equal(
     validateTargetConfig('llm', { credential: 'main', input: { audio: { mode: 'transcribe', max_seconds: 999 } } }),
     'target_config.input.audio.max_seconds 必须是 1..600 的整数',
@@ -65,6 +69,7 @@ test('normalizeTargetConfig: llm 清洗已知字段，保留扩展字段', () =>
       audio: {
         credential: ' asr ',
         model: ' whisper-1 ',
+        protocol: ' chat_input_audio ',
         mode: ' transcribe ',
         max_bytes: '12582912',
         max_seconds: '60',
@@ -98,6 +103,7 @@ test('normalizeTargetConfig: llm 清洗已知字段，保留扩展字段', () =>
       audio: {
         credential: 'asr',
         model: 'whisper-1',
+        protocol: 'chat_input_audio',
         mode: 'transcribe',
         max_bytes: 12582912,
         max_seconds: 60,

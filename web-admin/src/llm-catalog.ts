@@ -11,7 +11,7 @@ export interface LlmProvider {
   base_url: string;
   chat?: string[];        // 文本对话 / 推理模型
   vision?: string[];      // 视觉理解 / 图片输入模型
-  audio?: string[];       // 语音转写 / 音频理解模型（OpenAI-compatible /audio/transcriptions 或等价能力）
+  audio?: string[];       // 语音转写 / 音频理解模型（/audio/transcriptions 或 chat/completions input_audio）
   file?: string[];        // 文件 / 长文档理解建议模型（仍属于生成/理解类）
   embedding?: string[];   // 向量模型（知识库与工具检索用）
   freeModel?: boolean;    // true=模型太多/需接入点ID，建议手填；列表仅作建议
@@ -28,6 +28,7 @@ export const LLM_PROVIDERS: LlmProvider[] = [
     base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     chat: ['qwen-max', 'qwen-plus', 'qwen-turbo', 'qwen-long'],
     vision: ['qwen-vl-max', 'qwen-vl-plus', 'qwen-vl-ocr'],
+    audio: ['qwen3-asr-flash'],
     file: ['qwen-long', 'qwen-max', 'qwen-plus'],
     embedding: ['text-embedding-v4', 'text-embedding-v3'],
     keyUrl: 'bailian.console.aliyun.com', note: '国内网络环境通常较稳定；Qwen2.5-VL 开源模型通常走自托管/聚合平台或专门部署，不作为百炼默认建议',

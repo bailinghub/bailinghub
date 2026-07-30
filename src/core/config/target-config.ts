@@ -9,6 +9,7 @@ export interface LlmVisionConfig {
 export interface LlmAudioConfig {
   credential?: string;
   model?: string;
+  protocol?: 'transcriptions' | 'chat_input_audio';
   mode?: 'transcribe' | 'inline' | 'off';
   max_bytes?: number;
   max_seconds?: number;
@@ -48,6 +49,7 @@ export type TargetConfig = Record<string, unknown>;
 
 const IMAGE_MODES = ['tool', 'prepass', 'inline', 'off'] as const;
 const AUDIO_MODES = ['transcribe', 'inline', 'off'] as const;
+const AUDIO_PROTOCOLS = ['transcriptions', 'chat_input_audio'] as const;
 const FILE_MODES = ['extract', 'summarize', 'inline', 'off'] as const;
 
 function record(v: unknown): Record<string, unknown> | null {
@@ -127,6 +129,10 @@ export function validateTargetConfig(target: string, v: unknown): string | null 
       if (ac.mode !== undefined && (!mode || !AUDIO_MODES.includes(mode as (typeof AUDIO_MODES)[number]))) {
         return `target_config.input.audio.mode 仅支持 ${AUDIO_MODES.join(' / ')}`;
       }
+      const protocol = cleanString(ac.protocol);
+      if (ac.protocol !== undefined && (!protocol || !AUDIO_PROTOCOLS.includes(protocol as (typeof AUDIO_PROTOCOLS)[number]))) {
+        return `target_config.input.audio.protocol 仅支持 ${AUDIO_PROTOCOLS.join(' / ')}`;
+      }
       const maxBytesErr = intInRange(ac.max_bytes, 'target_config.input.audio.max_bytes', 1024, 50 * 1024 * 1024);
       if (maxBytesErr) return maxBytesErr;
       const maxSecondsErr = intInRange(ac.max_seconds, 'target_config.input.audio.max_seconds', 1, 600);
@@ -154,6 +160,7 @@ function normalizeInputPart(
   key: 'image' | 'audio' | 'file',
   modes: readonly string[],
   numberKeys: string[],
+  enumKeys: Record<string, readonly string[]> = {},
 ): void {
   const raw = record(input[key]);
   if (!raw) {
@@ -167,6 +174,12 @@ function normalizeInputPart(
     const mode = cleanString(next.mode);
     if (mode && modes.includes(mode)) next.mode = mode;
     else delete next.mode;
+  }
+  for (const [enumKey, values] of Object.entries(enumKeys)) {
+    if (next[enumKey] === undefined) continue;
+    const value = cleanString(next[enumKey]);
+    if (value && values.includes(value)) next[enumKey] = value;
+    else delete next[enumKey];
   }
   for (const numberKey of numberKeys) normalizeKnownNumber(next, numberKey);
   if (Object.keys(next).length) input[key] = next;
@@ -192,7 +205,7 @@ export function normalizeTargetConfig(target: string, v: unknown): TargetConfig 
   const input = { ...(record(tc.input) ?? {}) };
 
   normalizeInputPart(input, 'image', IMAGE_MODES, ['max_calls']);
-  normalizeInputPart(input, 'audio', AUDIO_MODES, ['max_bytes', 'max_seconds']);
+  normalizeInputPart(input, 'audio', AUDIO_MODES, ['max_bytes', 'max_seconds'], { protocol: AUDIO_PROTOCOLS });
   normalizeInputPart(input, 'file', FILE_MODES, ['max_bytes', 'max_chars']);
   if (Object.keys(input).length) tc.input = input;
   else delete tc.input;
