@@ -7,7 +7,7 @@ It is not certification, a benchmark, or evidence of production adoption. Passin
 ## Scope
 
 - Target: the open-source BailingHub Docker demo;
-- Stable baseline: `v0.1.11`;
+- Stable baseline: `v0.1.13`;
 - Data: the bundled demo orders, tickets, refunds, and failure probe;
 - Expected time: about 20 minutes after images and dependencies are available;
 - Not required: a real model key, production API, production credential, or real business data.
@@ -32,7 +32,7 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 cd "$HOME/bailinghub"
 ```
 
-The installer pulls the official `v0.1.11` images by default, generates random tokens and an admin password, starts the services, and runs the smoke test. The initial administrator is created only when the administrator table is empty; restarting, upgrading, recreating containers, or reinstalling against the same persistent database does not overwrite a changed password. The optional `/metrics` endpoint remains disabled and does not affect core validation. Keep the reported version, install mode, elapsed time, and the commands printed under `常用命令`, but never include passwords or tokens in your report. After Docker is installed, the current non-root login usually still needs the printed `sudo docker compose ...` commands; Docker group membership may not take effect until the next login.
+The installer pulls the official `v0.1.13` images by default, generates random tokens and an admin password, starts the services, and runs the smoke test. The initial administrator is created only when the administrator table is empty; restarting, upgrading, recreating containers, or reinstalling against the same persistent database does not overwrite a changed password. The optional `/metrics` endpoint remains disabled and does not affect core validation. Keep the reported version, install mode, elapsed time, and the commands printed under `常用命令`, but never include passwords or tokens in your report. After Docker is installed, the current non-root login usually still needs the printed `sudo docker compose ...` commands; Docker group membership may not take effect until the next login.
 
 If the default directory is already in use, choose a new empty directory instead of overwriting an existing deployment:
 
@@ -46,7 +46,7 @@ cd "$HOME/bailinghub-validation"
 ### Path B: local source reproduction
 
 ```bash
-git clone --depth 1 --branch v0.1.11 https://github.com/bailinghub/bailinghub.git
+git clone --depth 1 --branch v0.1.13 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 git rev-parse HEAD
 export BAILING_TOKEN="$(openssl rand -hex 32)"
@@ -160,7 +160,7 @@ After the core task passes, you may continue with:
 - [Versioned Client API and cross-ecosystem compatibility gates](RELEASE_NOTES_v0.1.7.en.md).
 - [Create-once initial administrator bootstrap](RELEASE_NOTES_v0.1.8.en.md).
 - [Instance branding, model identifier diagnostics, and ecosystem recipes](RELEASE_NOTES_v0.1.10.en.md).
-- [Side-effect execution journal and uncertain-outcome freezing](RELEASE_NOTES_v0.1.11.en.md).
+- [Voice transcription policy and distribution-version alignment](RELEASE_NOTES_v0.1.13.en.md).
 
 Select the relevant track in the same Issue form and disclose whether you received direct maintainer assistance.
 

@@ -24,6 +24,18 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.1.13 - Voice Transcription and Distribution-Version Alignment
+
+Released on 2026-07-30.
+
+- Carried forward the `v0.1.12` explicit `transcribe`, `inline`, and `off` policies, dedicated speech-model transcription, and fail-closed boundary without changing their semantics.
+- Aligned the one-line installer, image Compose file, image publishing and inspection scripts, independent-validation baseline, and Issue template on `v0.1.13`.
+- Made release distribution checks compare the package version, installer fallback, default Compose images, and public validation docs so a stale entry point cannot silently pull an older image.
+- No database migration is required.
+- Client API, executor protocol, tool signatures, approval semantics, speech policies, and ACC are unchanged. `v0.1.12` users need no configuration migration.
+- Validation: `npm run release:check`, distribution-sync dry-run, official image-tag inspection, and one-line installer entry-point review.
+- Related docs: [RELEASE_NOTES_v0.1.13.en.md](RELEASE_NOTES_v0.1.13.en.md), [independent validation](INDEPENDENT_VALIDATION.en.md), and [COMPATIBILITY.en.md](COMPATIBILITY.en.md).
+
 ## v0.1.12 - Voice Transcription Policy and Fail-Closed Audio Handling
 
 Released on 2026-07-30.

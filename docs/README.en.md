@@ -71,6 +71,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.11.md](RELEASE_NOTES_v0.1.11.md) | Chinese `v0.1.11` release notes. |
 | [RELEASE_NOTES_v0.1.12.en.md](RELEASE_NOTES_v0.1.12.en.md) | `v0.1.12` voice transcription policy and fail-closed audio handling release notes. |
 | [RELEASE_NOTES_v0.1.12.md](RELEASE_NOTES_v0.1.12.md) | Chinese `v0.1.12` release notes. |
+| [RELEASE_NOTES_v0.1.13.en.md](RELEASE_NOTES_v0.1.13.en.md) | `v0.1.13` voice transcription and distribution-version alignment release notes. |
+| [RELEASE_NOTES_v0.1.13.md](RELEASE_NOTES_v0.1.13.md) | Chinese `v0.1.13` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |
