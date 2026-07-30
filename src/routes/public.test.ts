@@ -286,6 +286,11 @@ test('public route: widget.js GET 返回公开组件脚本', async () => {
   assert.match(body, /powered_by_visible/);
   assert.match(body, /addEventListener\('delta'/);
   assert.match(body, /createLiveAssistant/);
+  assert.match(body, /progress-status/);
+  assert.match(body, /正在调用业务能力/);
+  assert.match(body, /function removeProgress/);
+  assert.match(body, /if \(progressEl\) removeProgress\(\)/);
+  assert.match(body, /live\.reset\(data\.reason\)/);
   assert.match(body, /Last-Event-ID/);
   assert.match(body, /catch \{ host\.remove\(\); return; \}/);
   assert.match(body, /host\.style\.visibility = 'visible'/);

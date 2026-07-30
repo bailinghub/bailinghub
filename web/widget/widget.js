@@ -173,6 +173,15 @@
       animation: blink 1.2s infinite; font-style: normal; }
     .typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
     @keyframes blink { 0%,80%,100% { opacity: .25; } 40% { opacity: 1; } }
+    .m.progress { white-space: normal; background: #faf9f7; color: #5f584e; border-color: #e7e2da; }
+    .progress-copy { white-space: pre-wrap; }
+    .progress-status { display: flex; align-items: center; gap: 6px; margin-top: 5px;
+      color: #948b7e; font-size: 11px; line-height: 1.4; }
+    .progress-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%;
+      background: var(--accent); animation: progress-pulse 1.2s ease-in-out infinite; }
+    .m.progress.error .progress-dot { animation: none; background: #c46a5d; }
+    @keyframes progress-pulse { 0%,100% { opacity: .3; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) { .progress-dot { animation: none; } }
     .foot { border-top: 1px solid #ece8e1; background: #fff; padding: 10px; display: flex; gap: 8px; align-items: flex-end; }
     .foot textarea { flex: 1; resize: none; border: none; outline: none; font-size: 14px; line-height: 1.5;
       max-height: 90px; min-height: 22px; background: transparent; color: #3d372f; }
@@ -753,6 +762,9 @@
     let bubble = null;
     let text = '';
     let renderTimer = null;
+    let progressEl = null;
+    let progressCopyEl = null;
+    let progressStatusEl = null;
 
     function flush() {
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
@@ -770,9 +782,65 @@
       bubble = null;
       text = '';
     }
+    function removeProgress() {
+      if (progressEl) progressEl.remove();
+      progressEl = null;
+      progressCopyEl = null;
+      progressStatusEl = null;
+    }
+    function normalizedProgressCopy(value) {
+      const clean = String(value || '').replace(/\s+/g, ' ').trim();
+      if (!clean) return '';
+      return clean.length > 240 ? clean.slice(0, 237) + '…' : clean;
+    }
+    function updateProgressStatus(label, state) {
+      if (!progressEl || !progressStatusEl) return;
+      progressEl.classList.toggle('error', state === 'error');
+      progressStatusEl.textContent = label;
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+    }
+    function ensureProgress(copy, reuseBubble) {
+      const nextCopy = normalizedProgressCopy(copy);
+      if (progressEl) {
+        if (nextCopy && progressCopyEl) progressCopyEl.textContent = nextCopy;
+        return progressEl;
+      }
+      setTyping(false);
+      progressEl = reuseBubble || document.createElement('div');
+      progressEl.className = 'm a progress';
+      progressEl.setAttribute('role', 'status');
+      progressEl.setAttribute('aria-live', 'polite');
+      progressEl.replaceChildren();
+      progressCopyEl = document.createElement('div');
+      progressCopyEl.className = 'progress-copy';
+      progressCopyEl.textContent = nextCopy || '好的，我正在处理您的请求。';
+      const status = document.createElement('div');
+      status.className = 'progress-status';
+      const dot = document.createElement('i');
+      dot.className = 'progress-dot';
+      dot.setAttribute('aria-hidden', 'true');
+      progressStatusEl = document.createElement('span');
+      progressStatusEl.textContent = '正在处理…';
+      status.append(dot, progressStatusEl);
+      progressEl.append(progressCopyEl, status);
+      if (!reuseBubble) msgsEl.appendChild(progressEl);
+      msgsEl.scrollTop = msgsEl.scrollHeight;
+      return progressEl;
+    }
+    function promoteProvisional() {
+      const copy = text;
+      if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
+      const reuseBubble = progressEl ? null : bubble;
+      if (bubble && !reuseBubble) bubble.remove();
+      bubble = null;
+      text = '';
+      ensureProgress(copy, reuseBubble);
+      updateProgressStatus('正在调用业务能力…', 'running');
+    }
     return {
       delta(chunk) {
         if (!chunk) return;
+        if (progressEl) removeProgress();
         if (!bubble) {
           setTyping(false);
           bubble = document.createElement('div');
@@ -782,15 +850,41 @@
         text += String(chunk);
         scheduleRender();
       },
-      reset() {
-        removeProvisional();
-        setTyping(true);
+      reset(reason) {
+        if (reason === 'tool_call') promoteProvisional();
+        else removeProvisional();
+        if (progressEl) {
+          const label = reason === 'tool_call'
+            ? '正在调用业务能力…'
+            : reason === 'retry'
+              ? '正在重试生成结果…'
+              : reason === 'fallback'
+                ? '正在切换处理方式…'
+                : '正在整理结果…';
+          updateProgressStatus(label, 'running');
+          setTyping(false);
+        } else {
+          setTyping(true);
+        }
       },
       phase(name) {
-        if (name === 'tool' && !bubble) setTyping(true);
+        if (name === 'tool') {
+          if (bubble) promoteProvisional();
+          else ensureProgress('');
+          updateProgressStatus('正在调用业务能力…', 'running');
+          setTyping(false);
+        } else if (name === 'model' && progressEl) {
+          updateProgressStatus('正在整理结果…', 'running');
+          setTyping(false);
+        }
       },
       finalize(resp) {
-        if (!bubble || !resp || !resp.done || resp.error) return false;
+        if (!resp || !resp.done || resp.error) {
+          if (progressEl) updateProgressStatus('处理未完成', 'error');
+          return false;
+        }
+        removeProgress();
+        if (!bubble) return false;
         text = String(resp.reply || '（无内容）');
         flush();
         const refs = Array.isArray(resp.references) ? resp.references : undefined;
@@ -801,8 +895,9 @@
         text = '';
         return true;
       },
-      discard() {
+      discard(status, isError) {
         removeProvisional();
+        if (progressEl) updateProgressStatus(status || '处理未完成', isError ? 'error' : 'running');
       },
     };
   }
@@ -1048,11 +1143,11 @@
         if (streamed) resp = streamed;
       }
       setTyping(false);
-      if (!resp.done) live.discard();
+      if (!resp.done) live.discard('任务仍在后台处理中');
       appendAssistantResponse(resp, live);
     } catch (e) {
       setTyping(false);
-      live.discard();
+      live.discard('处理未完成', true);
       if (isNetworkError(e)) {
         if (await recoverFromServerHistory(beforeAssistantCount)) return;
       }
