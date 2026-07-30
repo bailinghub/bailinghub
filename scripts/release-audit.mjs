@@ -39,6 +39,8 @@ const requiredRepoFiles = [
   'scripts/export-oss.mjs',
   'scripts/verify-oss-export.mjs',
   'scripts/check-doc-links.mjs',
+  'scripts/check-release-consistency.mjs',
+  'scripts/check-release-consistency.test.mjs',
   'scripts/generate-third-party-notices.mjs',
   'scripts/generate-readme-assets.mjs',
   'scripts/validate-examples.mjs',
@@ -108,10 +110,18 @@ function assertRepoEntrance() {
   }
   const pkg = JSON.parse(readText('package.json'));
   const releaseCheck = String(pkg.scripts?.['release:check'] ?? '');
+  const releaseAudit = String(pkg.scripts?.['release:audit'] ?? '');
   if (pkg.scripts?.['oss:export'] !== 'node scripts/export-oss.mjs') findings.push('package.json: oss:export must run scripts/export-oss.mjs');
   if (pkg.scripts?.['oss:verify'] !== 'node scripts/verify-oss-export.mjs') findings.push('package.json: oss:verify must run scripts/verify-oss-export.mjs');
+  for (const required of ['npm run release:consistency', 'npm run release:consistency:test']) {
+    if (!releaseAudit.includes(required)) findings.push(`package.json: release:audit must include ${required}`);
+  }
   for (const required of ['npm run notices:check', 'npm run assets:check', 'npm run audit:deps', 'npm run client-api:contract', 'npm run client-api:ecosystem:clone', 'npm run typecheck', 'npm test', 'npm run web-admin:check', 'npm run docs:check', 'npm run examples:check', 'npm run sdk:test', 'npm run sdk:test7', 'npm run sdk:test-node', 'npm run sdk:test-python', 'npm run sdk:test-runtime', 'npm run sdk:test-p1', 'npm run release:audit', 'npm run oss:verify']) {
     if (!releaseCheck.includes(required)) findings.push(`package.json: release:check must include ${required}`);
+  }
+  const imagesWorkflow = readText('.github/workflows/images.yml');
+  if (!imagesWorkflow.includes('npm run release:consistency -- --expected "$expected"')) {
+    findings.push('.github/workflows/images.yml: image publishing must verify release consistency before pushing images');
   }
 }
 

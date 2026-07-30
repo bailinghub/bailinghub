@@ -46,6 +46,19 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
 
+      - name: Verify release consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="${{ github.event.inputs.tag || '' }}"
+          if [ -z "$expected" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            expected="${GITHUB_REF_NAME}"
+          fi
+          if [ -z "$expected" ]; then
+            expected="$(node -p "require('./package.json').version")"
+          fi
+          npm run release:consistency -- --expected "$expected"
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Resolve image tag
