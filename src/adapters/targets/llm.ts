@@ -105,25 +105,62 @@ export const llmAdapter: TargetAdapter = {
     // ---- 语音层：解析 ASR 模型 + 确定音频接入方式 ----
     const acfg = (inputCfg['audio'] && typeof inputCfg['audio'] === 'object' ? inputCfg['audio'] : undefined) as AudioConfig | undefined;
     const asr = audioUrls.length ? resolveAudio(ctx.cfg.llmCredentials as Record<string, ResolvedCredential>, acfg, cred as ResolvedCredential, credName) : null;
-    let audioMode: 'transcribe' | 'inline' | 'off' = 'inline';
+    let audioMode: 'transcribe' | 'inline' | 'off' = 'off';
+    let audioUnavailableReason = '';
     if (audioUrls.length) {
       const requested: 'transcribe' | 'inline' | 'off' =
-        acfg?.mode === 'transcribe' || acfg?.mode === 'inline' || acfg?.mode === 'off' ? acfg.mode : (acfg ? AUDIO_MODE_DEFAULT : 'inline');
+        acfg?.mode === 'transcribe' || acfg?.mode === 'inline' || acfg?.mode === 'off' ? acfg.mode : (acfg ? AUDIO_MODE_DEFAULT : 'off');
       if (requested === 'transcribe' && !asr) {
-        audioMode = 'inline';
+        audioMode = 'off';
+        audioUnavailableReason = 'audio_model_unresolved';
         ctx.audit?.('speech_degraded', { requested, reason: 'audio_model_unresolved', credential: acfg?.credential ?? credName });
-      } else audioMode = requested;
+      } else {
+        audioMode = requested;
+        if (requested === 'off') {
+          audioUnavailableReason = acfg ? 'audio_policy_disabled' : 'audio_policy_unconfigured';
+          ctx.audit?.('speech_skipped', { requested, reason: audioUnavailableReason });
+        }
+      }
     }
     const audioMaxBytes = Math.max(1024, Math.min(Number(acfg?.max_bytes ?? AUDIO_MAX_BYTES_DEFAULT) || AUDIO_MAX_BYTES_DEFAULT, 50 * 1024 * 1024));
     let audioTranscriptBlock = '';
+    let audioTranscriptionFailures = 0;
     if (audioUrls.length && audioMode === 'transcribe' && asr) {
       const lines: string[] = [];
       for (let i = 0; i < audioUrls.length; i++) {
-        const ar = await transcribeAudio({ cred: asr.cred, model: asr.model, audioUrl: audioUrls[i]!, index: i, maxBytes: audioMaxBytes });
-        ctx.audit?.('speech', { mode: 'transcribe', model: asr.model, index: i, ok: ar.ok, bytes: ar.bytes, mime: ar.mime });
-        lines.push(`音频 ${i + 1}：${ar.text}`);
+        const ar = await transcribeAudio({
+          cred: asr.cred,
+          model: asr.model,
+          protocol: asr.protocol,
+          audioUrl: audioUrls[i]!,
+          index: i,
+          maxBytes: audioMaxBytes,
+        });
+        ctx.audit?.('speech', {
+          mode: 'transcribe',
+          protocol: asr.protocol,
+          model: asr.model,
+          index: i,
+          ok: ar.ok,
+          bytes: ar.bytes,
+          mime: ar.mime,
+          ...(!ar.ok ? { error: ar.text.slice(0, 500) } : {}),
+        });
+        if (ar.ok) lines.push(`音频 ${i + 1}：${ar.text}`);
+        else audioTranscriptionFailures += 1;
       }
-      audioTranscriptBlock = `[用户附带了 ${audioUrls.length} 段语音，中枢转写结果如下]\n${lines.join('\n')}`;
+      if (lines.length) {
+        audioTranscriptBlock = `[用户附带了 ${audioUrls.length} 段语音，中枢可靠转写的内容如下]\n${lines.join('\n')}`;
+      }
+      if (audioTranscriptionFailures) {
+        audioTranscriptBlock += `${audioTranscriptBlock ? '\n\n' : ''}[其中 ${audioTranscriptionFailures} 段语音未能可靠转写。请明确告知用户并请其改用文字；禁止猜测未转写的音频内容。]`;
+      }
+    } else if (audioUrls.length && audioMode === 'off') {
+      const reasonText = audioUnavailableReason === 'audio_policy_disabled'
+        ? '当前路由明确关闭了语音解析'
+        : '当前路由未配置可用的语音识别';
+      audioTranscriptBlock =
+        `[用户附带了 ${audioUrls.length} 段语音，但${reasonText}。请明确告知用户语音暂时无法解析，并请其改用文字；禁止猜测音频内容。]`;
     }
 
     // ---- 文件层：文本抽取 / 摘要 / 直送 ----
@@ -191,6 +228,9 @@ export const llmAdapter: TargetAdapter = {
     if (audioUrls.length && audioMode === 'inline') {
       sys += (sys ? '\n\n' : '') +
         `用户本次附带了 ${audioUrls.length} 段语音。音频会作为媒体输入直送给你；如果当前模型不能理解音频，请明确说明需要用户改用文字输入，不要臆测语音内容。`;
+    } else if (audioUrls.length && (audioMode === 'off' || audioTranscriptionFailures > 0)) {
+      sys += (sys ? '\n\n' : '') +
+        '本轮存在未被可靠解析的语音。你必须明确说明语音暂时无法解析，并请用户改用文字；不得猜测、补全或声称理解了未转写的音频内容。';
     }
     if (files.length && fileMode === 'inline') {
       sys += (sys ? '\n\n' : '') +
@@ -246,7 +286,13 @@ export const llmAdapter: TargetAdapter = {
         tools_offered: toolsOffered,
         ...(retrievalOn ? { retrieval_query: (ctx.userQuery || ctx.input).slice(0, 200) } : {}),
         ...(imgs.length ? { vision_mode: visionMode, images: imgs.length } : {}),
-        ...(audioUrls.length ? { audio_mode: audioMode, audio: audioUrls.length } : {}),
+        ...(audioUrls.length ? {
+          audio_mode: audioMode,
+          audio: audioUrls.length,
+          ...(asr ? { audio_protocol: asr.protocol, audio_model: asr.model } : {}),
+          ...(audioUnavailableReason ? { audio_unavailable_reason: audioUnavailableReason } : {}),
+          ...(audioTranscriptionFailures ? { audio_transcription_failures: audioTranscriptionFailures } : {}),
+        } : {}),
         ...(files.length ? { file_mode: fileMode, files: files.length } : {}),
         ...(typeof tc['temperature'] === 'number' ? { temperature: tc['temperature'] } : {}),
         system_prompt: sys,

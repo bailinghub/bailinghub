@@ -88,6 +88,7 @@ test('Config JSON Schemas: 路由、目标和工具治理关键契约对齐', ()
   assert.deepEqual(llm.properties.input.properties.image.properties.mode.enum, ['tool', 'prepass', 'inline', 'off']);
   assert.equal(llm.properties.input.properties.image.properties.max_calls.maximum, 30);
   assert.deepEqual(llm.properties.input.properties.audio.properties.mode.enum, ['transcribe', 'inline', 'off']);
+  assert.deepEqual(llm.properties.input.properties.audio.properties.protocol.enum, ['transcriptions', 'chat_input_audio']);
   assert.equal(llm.properties.input.properties.audio.properties.max_bytes.maximum, 52428800);
   assert.deepEqual(llm.properties.input.properties.file.properties.mode.enum, ['extract', 'summarize', 'inline', 'off']);
   assert.equal(llm.properties.input.properties.file.properties.max_chars.maximum, 200000);

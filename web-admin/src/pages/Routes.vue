@@ -185,14 +185,14 @@
         <el-form-item>
           <template #label>语音策略 <HelpTip title="语音输入策略">
             <p>定义用户发语音时中枢如何处理音频。可以先转写为文字进入知识、工具和审计链路，也可以直送给具备语音理解能力的模型或执行器。</p>
-            <p>不开启语音策略时，语音只作为附件留痕。</p>
+            <p>不开启语音策略时，语音只作为附件留痕，并明确请用户改用文字；中枢不会猜测内容或盲目直送主模型。</p>
           </HelpTip></template>
           <el-switch v-model="voice.on" active-text="启用语音策略" />
         </el-form-item>
         <template v-if="voice.on">
           <el-form-item>
             <template #label>接入方式 <HelpTip title="语音怎么交给大脑">
-              <p><b>中枢先转写</b>：调用 OpenAI-compatible <code>/audio/transcriptions</code>，把语音变成文字后进入路由、知识、工具和审计链路。</p>
+              <p><b>中枢先转写</b>：调用专用语音模型，把语音变成文字后进入路由、知识、工具和审计链路。</p>
               <p><b>直送大脑</b>：音频作为媒体输入直接交给主模型或执行器，适合接入方已有语音理解模型的场景。</p>
             </HelpTip></template>
             <el-radio-group v-model="voice.mode">
@@ -201,6 +201,16 @@
             </el-radio-group>
           </el-form-item>
           <template v-if="voice.mode === 'transcribe'">
+            <el-form-item>
+              <template #label>语音接口 <HelpTip title="语音模型的调用协议">
+                <p><b>传统转写接口</b>：使用 <code>/audio/transcriptions</code> 上传音频文件，适合 Whisper 等兼容实现。</p>
+                <p><b>对话音频接口</b>：使用 <code>/chat/completions</code> 的 <code>input_audio</code>，适合 Qwen3-ASR 等兼容实现。</p>
+              </HelpTip></template>
+              <el-select v-model="voice.protocol" style="width: 100%">
+                <el-option value="transcriptions" label="传统转写接口（/audio/transcriptions）" />
+                <el-option value="chat_input_audio" label="对话音频接口（/chat/completions + input_audio）" />
+              </el-select>
+            </el-form-item>
             <el-form-item label="语音模型凭证">
               <el-select v-model="voice.credential" filterable allow-create clearable style="width: 100%" placeholder="留空 = 复用上面的对话凭证" @change="voice.model = ''">
                 <el-option v-for="c in credOptions" :key="c.name" :value="c.name"
@@ -820,7 +830,7 @@ const llm = reactive({ credential: '', model: '', system_prompt: '' });
 // 多模态输入：落 target_config.input.{image,audio,file}，主模型仍是编排大脑，素材理解按类型解耦。
 const vis = reactive({ on: false, credential: '', model: '', mode: 'tool', max_calls: 6 });
 let visRest: Record<string, unknown> = {};
-const voice = reactive({ on: false, credential: '', model: '', mode: 'transcribe', max_bytes_mb: 12 });
+const voice = reactive({ on: false, credential: '', model: '', protocol: 'transcriptions', mode: 'transcribe', max_bytes_mb: 12 });
 let voiceRest: Record<string, unknown> = {};
 const fileInput = reactive({ on: false, credential: '', model: '', mode: 'extract', max_bytes_mb: 20, max_chars: 24000 });
 let fileRest: Record<string, unknown> = {};
@@ -1028,7 +1038,7 @@ async function load(): Promise<void> { list.value = await api('/admin/api/routes
 function resetSubForms(): void {
   Object.assign(llm, { credential: '', model: '', system_prompt: '' });
   Object.assign(vis, { on: false, credential: '', model: '', mode: 'tool', max_calls: 6 }); visRest = {};
-  Object.assign(voice, { on: false, credential: '', model: '', mode: 'transcribe', max_bytes_mb: 12 }); voiceRest = {};
+  Object.assign(voice, { on: false, credential: '', model: '', protocol: 'transcriptions', mode: 'transcribe', max_bytes_mb: 12 }); voiceRest = {};
   Object.assign(fileInput, { on: false, credential: '', model: '', mode: 'extract', max_bytes_mb: 20, max_chars: 24000 }); fileRest = {};
   Object.assign(kn, { kb_ids: [] as string[], top_k: 5, inject: 'chunk', min_score: 0.35, max_docs: 4, page_boost: false });
   Object.assign(dv, { type: '', url: '', channel: '', to_field: '', to: '' });
@@ -1077,13 +1087,15 @@ function openEdit(row: any): void {
     }
     const araw = inputKnown['audio'];
     if (araw && typeof araw === 'object') {
-      const [aa, ar] = splitKnown(araw, ['credential', 'model', 'mode', 'max_bytes', 'max_seconds']);
+      const [aa, ar] = splitKnown(araw, ['credential', 'model', 'protocol', 'mode', 'max_bytes', 'max_seconds']);
       const mode = String(aa['mode'] ?? 'transcribe');
+      const protocol = String(aa['protocol'] ?? 'transcriptions');
       const maxBytes = Number(aa['max_bytes'] ?? 12 * 1024 * 1024);
       Object.assign(voice, {
         on: true,
         credential: String(aa['credential'] ?? ''),
         model: String(aa['model'] ?? ''),
+        protocol: ['transcriptions', 'chat_input_audio'].includes(protocol) ? protocol : 'transcriptions',
         mode: ['transcribe', 'inline', 'off'].includes(mode) ? mode : 'transcribe',
         max_bytes_mb: Math.max(1, Math.round(maxBytes / 1024 / 1024)),
       });
@@ -1241,6 +1253,7 @@ async function save(): Promise<void> {
             ...(voice.on ? { audio: {
               ...(voice.mode === 'transcribe' && voice.credential.trim() ? { credential: voice.credential.trim() } : {}),
               ...(voice.mode === 'transcribe' && voice.model.trim() ? { model: voice.model.trim() } : {}),
+              ...(voice.mode === 'transcribe' ? { protocol: voice.protocol } : {}),
               mode: voice.mode,
               ...(voice.max_bytes_mb && voice.max_bytes_mb !== 12 ? { max_bytes: Math.round(voice.max_bytes_mb * 1024 * 1024) } : {}),
               ...voiceRest,
