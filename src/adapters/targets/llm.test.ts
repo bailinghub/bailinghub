@@ -50,6 +50,17 @@ function baseCtx(): AdapterContext {
   };
 }
 
+function toolDef(name: string, description = name): NonNullable<AdapterContext['tools']>['llmTools'][number] {
+  return {
+    type: 'function',
+    function: {
+      name,
+      description,
+      parameters: { type: 'object', properties: {} },
+    },
+  };
+}
+
 test('llmAdapter: 工具失败后模型空响应时给用户可读兜底', async () => {
   const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
   let invokes = 0;
@@ -117,6 +128,11 @@ test('llmAdapter: 聊天链路默认请求流式输出，增量事件不进审�
   assert.deepEqual(streamEvents.filter((event) => event.type === 'delta').map((event) => event.data['text']), ['你好', '，世界']);
   const completed = audits.find((audit) => audit.event === 'llm_stream_completed');
   assert.equal(completed?.detail['content_chars'], 5);
+  assert.equal(completed?.detail['reasoning_chars'], 0);
+  assert.equal(typeof completed?.detail['duration_ms'], 'number');
+  assert.equal(completed?.detail['message_count'], 2);
+  assert.equal(completed?.detail['tools_count'], 0);
+  assert.equal(typeof completed?.detail['request_chars'], 'number');
   assert.equal('text' in (completed?.detail ?? {}), false);
   assert.equal(JSON.stringify(audits).includes('你好，世界'), false);
 });
@@ -315,6 +331,130 @@ test('llmAdapter: 显式转写但 ASR 不可解析时关闭式降级，不回退
   assert.match(JSON.stringify(requests[0]?.['messages']), /未配置可用的语音识别/);
   assert.equal(
     audits.some((audit) => audit.event === 'speech_degraded' && audit.detail['reason'] === 'audio_model_unresolved'),
+    true,
+  );
+});
+
+test('llmAdapter: 语义工具追加检索最多两次且只向模型报告真正新增的工具', async () => {
+  const ctx = baseCtx();
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  const requests: Array<Record<string, unknown>> = [];
+  const retrievalQueries: string[] = [];
+  ctx.targetConfig = { ...ctx.targetConfig, streaming: false };
+  ctx.audit = (event, detail) => { audits.push({ event, detail }); };
+  ctx.tools = {
+    llmTools: [toolDef('seed_tool'), toolDef('tool_a'), toolDef('tool_b')],
+    maxCalls: 5,
+    progressive: false,
+    retrievalMode: true,
+    catalog: [],
+    async lookup() { return []; },
+    async retrieve(query) {
+      retrievalQueries.push(query);
+      if (query === ctx.userQuery) return [toolDef('seed_tool')];
+      if (query === '第一次追加') return [toolDef('seed_tool'), toolDef('tool_a')];
+      return [toolDef('tool_a'), toolDef('tool_b')];
+    },
+    async invoke() { return { ok: true, status: 200, text: '{}' }; },
+    executionUncertainty() { return null; },
+  };
+
+  const got = await withFetchImplementation((async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    requests.push(body);
+    if (requests.length === 1) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { tool_calls: [{ id: 'search-1', type: 'function', function: { name: 'search_tools', arguments: '{"query":"第一次追加"}' } }] } }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (requests.length === 2) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { tool_calls: [{ id: 'search-2', type: 'function', function: { name: 'search_tools', arguments: '{"query":"第二次追加"}' } }] } }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: '检索完成' } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch, () => llmAdapter.run(ctx));
+
+  assert.equal(got.ok, true);
+  assert.deepEqual(retrievalQueries, [ctx.userQuery, '第一次追加', '第二次追加']);
+  assert.equal(requests.length, 3);
+  const firstTools = requests[0]?.['tools'] as Array<{ function?: { name?: string } }>;
+  const secondTools = requests[1]?.['tools'] as Array<{ function?: { name?: string } }>;
+  const thirdTools = requests[2]?.['tools'] as Array<{ function?: { name?: string } }>;
+  assert.equal(firstTools.some((tool) => tool.function?.name === 'search_tools'), true);
+  assert.equal(secondTools.some((tool) => tool.function?.name === 'search_tools'), true);
+  assert.equal(thirdTools.some((tool) => tool.function?.name === 'search_tools'), false);
+  assert.deepEqual(
+    thirdTools.map((tool) => tool.function?.name),
+    ['seed_tool', 'tool_a', 'tool_b'],
+  );
+
+  const thirdMessages = requests[2]?.['messages'] as Array<Record<string, unknown>>;
+  const searchResults = thirdMessages
+    .filter((message) => message['role'] === 'tool')
+    .map((message) => String(message['content']));
+  assert.match(searchResults[0] ?? '', /新增 1 个可用工具：tool_a/);
+  assert.doesNotMatch(searchResults[0] ?? '', /seed_tool/);
+  assert.match(searchResults[1] ?? '', /新增 1 个可用工具：tool_b/);
+  assert.match(searchResults[1] ?? '', /追加检索已经结束/);
+
+  const completed = audits.filter((audit) => audit.event === 'tools_search_completed');
+  assert.equal(completed.length, 2);
+  assert.equal(completed[1]?.detail['reason'], 'budget_exhausted');
+  assert.equal(completed[1]?.detail['exhausted'], true);
+});
+
+test('llmAdapter: 语义工具检索没有新增项时立即收口并停止暴露 search_tools', async () => {
+  const ctx = baseCtx();
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  const requests: Array<Record<string, unknown>> = [];
+  let retrievalCalls = 0;
+  ctx.targetConfig = { ...ctx.targetConfig, streaming: false };
+  ctx.audit = (event, detail) => { audits.push({ event, detail }); };
+  ctx.tools = {
+    llmTools: [toolDef('seed_tool')],
+    maxCalls: 5,
+    progressive: false,
+    retrievalMode: true,
+    catalog: [],
+    async lookup() { return []; },
+    async retrieve() {
+      retrievalCalls++;
+      return [toolDef('seed_tool')];
+    },
+    async invoke() { return { ok: true, status: 200, text: '{}' }; },
+    executionUncertainty() { return null; },
+  };
+
+  const got = await withFetchImplementation((async (_input, init) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    requests.push(body);
+    if (requests.length === 1) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { tool_calls: [{ id: 'search-1', type: 'function', function: { name: 'search_tools', arguments: '{"query":"同义查询"}' } }] } }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ choices: [{ message: { content: '没有新增能力' } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch, () => llmAdapter.run(ctx));
+
+  assert.equal(got.ok, true);
+  assert.equal(retrievalCalls, 2);
+  assert.equal(requests.length, 2);
+  const secondTools = requests[1]?.['tools'] as Array<{ function?: { name?: string } }>;
+  assert.equal(secondTools.some((tool) => tool.function?.name === 'search_tools'), false);
+  const secondMessages = requests[1]?.['messages'] as Array<Record<string, unknown>>;
+  assert.match(
+    String(secondMessages.find((message) => message['role'] === 'tool')?.['content']),
+    /本次检索没有新增工具/,
+  );
+  assert.equal(
+    audits.some((audit) => audit.event === 'tools_search_completed' && audit.detail['reason'] === 'no_new_tools'),
     true,
   );
 });

@@ -297,6 +297,39 @@ test('只读/声明幂等工具：不进账本，每次都真正执行（不去�
   });
 });
 
+test('工具失败：HTML 错误页只给模型短摘要，完整正文仍保留在审计', async () => {
+  const html = `<!doctype html><html><body>${'internal framework error '.repeat(400)}</body></html>`;
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  const tool = mkTool({ name: 'list_things', method: 'GET', readonly: true, idempotent: true });
+  const runtime = buildToolRuntime({
+    provider: { name: 'p', base_url: 'http://x.invalid', secret: 's', timeout_ms: 5000, rate_limit_per_min: 0, log_payload: true } as any,
+    allowedTools: [tool],
+    maxCalls: 10,
+    onBehalfOf: 'u1',
+    jobId: 'job1',
+    clientAppId: 'c',
+    truncateBytes: 8192,
+    audit: async (event, detail) => { audits.push({ event, detail }); },
+  });
+  const orig = globalThis.fetch;
+  globalThis.fetch = (async () => new Response(html, {
+    status: 500,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  })) as typeof fetch;
+  try {
+    const result = await runtime.invoke('list_things', {});
+    assert.equal(result.ok, false);
+    assert.match(result.text, /HTTP 500.*HTML 错误页/);
+    assert.equal(result.text.includes('internal framework error'), false);
+  } finally {
+    globalThis.fetch = orig;
+  }
+
+  const audit = audits.find((entry) => entry.event === 'tool_result');
+  assert.equal(audit?.detail['resp'], html);
+  assert.equal(audit?.detail['resp_bytes'], html.length);
+});
+
 test('工具调用：path/header/query/body 参数按 ToolDefinition.paramIn 组装', async () => {
   const rt = mkRuntime(mkTool({
     name: 'update_staff',

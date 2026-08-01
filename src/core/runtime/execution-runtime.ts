@@ -51,11 +51,30 @@ function appendSystemPrompt(targetConfig: Record<string, unknown>, prompt: strin
   };
 }
 
+function supportsPresentationRenderer(metadata: Record<string, unknown> | undefined, renderer: string): boolean {
+  const capabilities = metadata?.['presentation_capabilities'];
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities)) return false;
+  const renderers = (capabilities as Record<string, unknown>)['renderers'];
+  return Array.isArray(renderers) && renderers.includes(renderer);
+}
+
+const BAILING_CHART_PROMPT = [
+  '【可选展示能力】当前聊天客户端支持 bailing-chart 图表。',
+  '仅当回答包含真实、已经获得的数值数据，并且图表明显比纯文本更有助于理解时，才主动在简短结论后输出一个 bailing-chart fenced code block。',
+  '趋势数据使用 line，类别比较使用 bar，少量构成占比使用 pie。无适合数据时保持文本或 Markdown 表格。',
+  '不得为了生成图表而猜测、补造、插值或改写任何数值；图表不能替代审批、授权、审计或业务系统校验。',
+  '代码块内容必须是严格 JSON，且只能包含 kind、title、seriesName、unit、data；data 每项只能包含 label 和 value。',
+  '示例：```bailing-chart\n{"kind":"line","title":"近七日营业额","seriesName":"营业额","unit":"元","data":[{"label":"周一","value":12800}]}\n```',
+].join('\n');
+
 export async function prepareAdapterContext(input: PrepareAdapterContextInput): Promise<AdapterContext> {
   const target = input.job.target ?? '';
   let targetConfig = normalizeTargetConfig(target, input.route?.target_config ?? input.job.dispatch?.target_config ?? {});
   if (target === 'llm') {
     targetConfig = await injectLlmRuntimeCredentials(targetConfig, input.cfg, input.credentialStore);
+    if (supportsPresentationRenderer(input.job.metadata, 'bailing-chart')) {
+      targetConfig = appendSystemPrompt(targetConfig, BAILING_CHART_PROMPT);
+    }
   }
   targetConfig = { ...targetConfig, _timeout_ms: input.targetTimeoutMs(target, targetConfig) };
 

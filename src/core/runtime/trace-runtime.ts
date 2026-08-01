@@ -200,7 +200,10 @@ export function traceSummaryOf(event: string, detail: Record<string, unknown> = 
     detail['round'] != null ? `round ${detail['round']}` : '',
     detail['chunks'] != null ? `${detail['chunks']} chunks` : '',
     detail['content_chars'] != null ? `${detail['content_chars']} chars` : '',
+    detail['reasoning_chars'] != null ? `${detail['reasoning_chars']} reasoning chars` : '',
     detail['first_token_ms'] != null ? `first token ${detail['first_token_ms']}ms` : '',
+    detail['duration_ms'] != null ? `total ${detail['duration_ms']}ms` : '',
+    detail['request_chars'] != null ? `request ${detail['request_chars']} chars` : '',
     detail['finish_reason'],
   ]);
   if (event === 'llm_stream_fallback') return compact([detail['model'], detail['round'] != null ? `round ${detail['round']}` : '', detail['status'] != null ? `HTTP ${detail['status']}` : '', detail['reason']]);

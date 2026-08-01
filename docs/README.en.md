@@ -13,6 +13,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [user-guide/README.en.md](user-guide/README.en.md) | User and product-owner guide: business goals, console concepts, and scenario-based setup. |
 | [CONTRACT.en.md](CONTRACT.en.md) | Stable HTTP and wire contract between business systems and the hub. |
 | [INTEGRATION.en.md](INTEGRATION.en.md) | Third-party integration guide for tools, signatures, authorization, and callback handling. |
+| [WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) | Trusted rich-content renderer extension for charts and interactive reports in the chat widget. |
+| [WIDGET_RENDERERS.md](WIDGET_RENDERERS.md) | Chinese trusted widget renderer guide. |
 | [integrations/dify/README.en.md](integrations/dify/README.en.md) | Minimal Dify integration through the governed BailingHub `/run` and `/jobs/{job_id}` APIs. |
 | [integrations/dify/README.md](integrations/dify/README.md) | Chinese Dify + BailingHub minimal integration recipe. |
 | [integrations/deepseek/README.en.md](integrations/deepseek/README.en.md) | DeepSeek V4 + BailingHub bilingual E2E recipe with thinking-mode tool-call compatibility. |
@@ -73,6 +75,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.12.md](RELEASE_NOTES_v0.1.12.md) | Chinese `v0.1.12` release notes. |
 | [RELEASE_NOTES_v0.1.13.en.md](RELEASE_NOTES_v0.1.13.en.md) | `v0.1.13` voice transcription and distribution-version alignment release notes. |
 | [RELEASE_NOTES_v0.1.13.md](RELEASE_NOTES_v0.1.13.md) | Chinese `v0.1.13` release notes. |
+| [RELEASE_NOTES_v0.1.14.en.md](RELEASE_NOTES_v0.1.14.en.md) | `v0.1.14` trusted rich rendering and chat reliability release notes. |
+| [RELEASE_NOTES_v0.1.14.md](RELEASE_NOTES_v0.1.14.md) | Chinese `v0.1.14` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

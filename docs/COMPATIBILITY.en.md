@@ -65,3 +65,19 @@ database or hosting platform.
 Branding is instance presentation only. It does not extend the ACC core and
 must not carry business authorization, secrets, custom HTML/CSS/JavaScript,
 redirects, or other executable configuration.
+
+## Embedded Widget Contract
+
+The hub-hosted `widget.js` is a public wire surface because an instance upgrade
+updates every embedding page. Stable fields include the `data-entry`,
+`data-open`, and `data-ticket` script attributes, the documented chat endpoint
+family, and the `window.BailingChat` APIs.
+
+The optional rich-content extension evolves under
+`window.BailingChat.rendererApiVersion`. Adding a new renderer type is
+compatible when older widgets and hosts can still show its fenced payload as a
+safe code block. Changing an existing type's payload meaning, lifecycle, or
+trust boundary requires a renderer contract major version or a new type with a
+transition window. The widget core remains dependency-free; see
+[WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) for registration, cleanup, and
+fallback rules.

@@ -79,6 +79,20 @@
 - 旧客户端可以忽略 `phase/reset/delta`，继续只等待 `done`。
 - 新客户端必须把 `done` 视为最终权威值，不得仅凭已收到的 `delta` 宣称任务完成。
 
+### 7.1 展示能力协商
+
+自建客户端如需接收声明式图表等富内容，可在创建任务时附带：
+
+```json
+{
+  "client_capabilities": {
+    "renderers": ["bailing-chart"]
+  }
+}
+```
+
+该字段只影响模型收到的可选展示提示，不进入 SSE 事件，不构成身份、授权、审批或工具权限。富内容仍属于 `done.reply` 的一部分；客户端不得在 `delta` 阶段挂载图表，应在 `done` 后按 [`WIDGET_RENDERERS.md`](WIDGET_RENDERERS.md) 的白名单与失败降级规则处理完整 fenced code block。
+
 ## 8. 验证
 
 ```bash

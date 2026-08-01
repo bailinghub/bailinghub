@@ -91,6 +91,20 @@ async function chatRuntime(deps: ChatApiDeps, requestId: string, actorId = 'visi
   return { ctx, ...deps.runtimeStoresFor(ctx) };
 }
 
+const PRESENTATION_RENDERER_RE = /^[a-z][a-z0-9._+-]{0,63}$/;
+
+export function normalizePresentationCapabilities(value: unknown): { renderers: string[] } | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const renderers = (value as Record<string, unknown>)['renderers'];
+  if (!Array.isArray(renderers)) return undefined;
+  const normalized = Array.from(new Set(renderers
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => PRESENTATION_RENDERER_RE.test(item))))
+    .slice(0, 16);
+  return normalized.length ? { renderers: normalized } : undefined;
+}
+
 
 /** job → 聊天响应形态。错误不暴露内部细节（公开面）。references=知识检索命中（doc_id 留在中枢侧，不外露）。 */
 function chatShape(job: Job, visitorId: string): Record<string, unknown> {
@@ -173,13 +187,15 @@ export async function handleChatFor(deps: ChatApiDeps, req: IncomingMessage, res
     const resolved = resolvePage(rules, { url: c['url'], title: c['title'], page_key: c['page_key'], page_name: c['page_name'] });
     if (resolved.url || resolved.page_key || resolved.page_name) pageContext = resolved as unknown as Record<string, unknown>;
   }
+  // 展示能力由客户端自报，只用于回答呈现提示，绝不能参与身份、权限、审批或工具放行。
+  const presentationCapabilities = normalizePresentationCapabilities(body['client_capabilities']);
   const job = await engine.launchJob({
     requestId: `chat_${randomUUID()}`, fullInput: message,
     route, routeKey: route.route_key,
     target: route.target, project: route.project ?? null, projectPath,
     profileName: route.profile, permission: route.permission, source: `chat:${entry.entry_key}`,
     // 服务端构造：visitor_uid 只可能来自验签通过的票据，组件/访客无法伪造（鉴权总纲）
-    metadata: { chat_entry: entry.entry_key, visitor_id: visitor, no_delivery: true, ...(visitorUid ? { visitor_uid: visitorUid } : {}), ...(thread ? { thread_id: thread } : {}), ...(pageContext ? { page_context: pageContext } : {}) },
+    metadata: { chat_entry: entry.entry_key, visitor_id: visitor, no_delivery: true, ...(visitorUid ? { visitor_uid: visitorUid } : {}), ...(thread ? { thread_id: thread } : {}), ...(pageContext ? { page_context: pageContext } : {}), ...(presentationCapabilities ? { presentation_capabilities: presentationCapabilities } : {}) },
     session: { sessionId: sess.sessionId, isContinue: sess.isContinue },
     threadScope: scopeKey, principalId: (visitorUid ? `uid:${visitorUid}` : `visitor:${visitor}`).slice(0, 64), channel: `chat:${entry.entry_key}`,
   });

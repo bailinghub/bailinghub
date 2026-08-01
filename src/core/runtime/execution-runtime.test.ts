@@ -117,6 +117,43 @@ test('prepareAdapterContext: 解析 llm DB 凭证、注入超时并保留原始�
   assert.deepEqual(touched, ['main']);
 });
 
+test('prepareAdapterContext: 仅为声明 bailing-chart 的 llm 客户端注入受约束图表提示', async () => {
+  const common = {
+    fullInput: '最终输入',
+    session,
+    projectPath: null,
+    cfg,
+    credentialStore: {
+      async get() { return dbMain; },
+      async touch() { /* no-op */ },
+    },
+    targetTimeoutMs: () => 5000,
+    async assembleToolRuntime() { return undefined; },
+    async resolveSendChannels() { return []; },
+    makeSendToolDef,
+    async runSendMessage() { return { ok: true, text: 'sent' }; },
+  };
+  const chartContext = await prepareAdapterContext({
+    ...common,
+    job: job({ metadata: { presentation_capabilities: { renderers: ['bailing-chart'] } } }),
+    route: route(),
+  });
+  const prompt = String(chartContext.targetConfig['system_prompt']);
+  assert.match(prompt, /bailing-chart/);
+  assert.match(prompt, /不得为了生成图表而猜测/);
+  assert.match(prompt, /line/);
+  assert.match(prompt, /bar/);
+  assert.match(prompt, /pie/);
+
+  const nonLlmContext = await prepareAdapterContext({
+    ...common,
+    credentialStore: null,
+    job: job({ target: 'custom-agent', dispatch: { target_config: {} }, metadata: { presentation_capabilities: { renderers: ['bailing-chart'] } } }),
+    route: route({ target: 'custom-agent', target_config: { system_prompt: '基础提示' } }),
+  });
+  assert.equal(String(nonLlmContext.targetConfig['system_prompt'] ?? ''), '基础提示');
+});
+
 test('prepareAdapterContext: subject_locked 时不暴露业务工具并追加登录提示', async () => {
   const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
   const ctx = await prepareAdapterContext({

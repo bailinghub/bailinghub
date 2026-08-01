@@ -17,6 +17,9 @@ import { SEND_MAX_CALLS, SEND_TOOL_NAME } from '../../core/targets/adapter';
 import { readOpenAiChatCompletion, type OpenAiChatStreamResult } from '../llm/openai-chat-stream';
 import type { ToolExecutionUncertainty } from '../../core/contracts/tools';
 
+/** 初始语义预载之外，单任务允许模型追加检索工具的次数。避免同义改写形成无界模型轮次。 */
+const SEARCH_TOOLS_MAX_CALLS = 2;
+
 function reconciliationRequiredResult(
   uncertainty: ToolExecutionUncertainty,
   startedAt: number,
@@ -213,6 +216,7 @@ export const llmAdapter: TargetAdapter = {
       if (retrievalOn) {
         sys += '\n\n【工具获取方式】系统已根据用户当前的问题，为你载入了若干最相关的业务工具，可直接调用。' +
           '若你需要的能力不在已载入的工具里，调用 search_tools、用一句自然语言描述你想做的事（如"查询商品价格""新增员工""核销优惠券"），即可检索到更多工具（search_tools 不计调用次数）。' +
+          `每个任务最多追加检索 ${SEARCH_TOOLS_MAX_CALLS} 次；找到可用工具后应直接调用，不要反复改写同一意图继续搜索。` +
           '凡涉及门店真实数据或操作，先用工具查到/办好再回答，不要凭印象。';
       } else if (progressiveOn) {
         sys += '\n\n【业务工具目录】共 ' + ctx.tools!.catalog.length + ' 个，按需先调 find_tools 取完整定义再使用（find_tools 不计调用次数）：\n' +
@@ -308,6 +312,8 @@ export const llmAdapter: TargetAdapter = {
     let sawImage = false;        // brain 本任务是否调过 see_image
     let visionFallbackDone = false; // tool 模式漏看图兜底只补一次
     let sendCallsUsed = 0;          // 内置 send_message 主动发消息计数（独立于业务 max_calls，独立上限）
+    let searchToolsCallsUsed = 0;   // search_tools 独立预算：不占业务工具次数，但不能无界追加模型轮次
+    let searchToolsExhausted = false;
     const failStreak = new Map<string, number>(); // 同一工具连续失败 2 次 → 本任务内禁用
     let emptyResponseRepairDone = false;
     let lastToolFailure: { name: string; text: string } | null = null;
@@ -333,7 +339,7 @@ export const llmAdapter: TargetAdapter = {
       type: 'function' as const,
       function: {
         name: 'search_tools',
-        description: '按你想做的事，用一句自然语言检索可用的业务工具（如"查询商品价格""新增房间""核销优惠券"）。返回匹配到的工具后即可直接调用它们。不计调用次数。',
+        description: `按你想做的事，用一句自然语言检索可用的业务工具（如"查询商品价格""新增房间""核销优惠券"）。返回新增工具后应直接调用，不要反复搜索。最多追加检索 ${SEARCH_TOOLS_MAX_CALLS} 次，不占业务工具调用次数。`,
         parameters: { type: 'object', properties: { query: { type: 'string', description: '你想完成的操作或要查的信息，一句话描述' } }, required: ['query'] },
       },
     };
@@ -346,7 +352,10 @@ export const llmAdapter: TargetAdapter = {
       if (SEE_IMAGE) arr.push(SEE_IMAGE);
       if (SEND && sendCallsUsed < SEND_MAX_CALLS) arr.push(SEND.def as unknown as Record<string, unknown>);
       if (hasBizTools && toolCallsUsed < ctx.tools!.maxCalls) {
-        if (retrievalOn) arr.push(SEARCH_TOOLS, ...(selectedDefs.values() as Iterable<Record<string, unknown>>));
+        if (retrievalOn) {
+          if (!searchToolsExhausted && searchToolsCallsUsed < SEARCH_TOOLS_MAX_CALLS) arr.push(SEARCH_TOOLS);
+          arr.push(...(selectedDefs.values() as Iterable<Record<string, unknown>>));
+        }
         else if (progressiveOn) arr.push(FIND_TOOLS, ...(selectedDefs.values() as Iterable<Record<string, unknown>>));
         else arr.push(...ctx.tools!.llmTools);
       }
@@ -369,15 +378,18 @@ export const llmAdapter: TargetAdapter = {
     }
 
     async function chatOnce(toolsArr: Array<Record<string, unknown>> | undefined, round: number): Promise<{ completion: OpenAiChatStreamResult } | { err: AdapterResult }> {
+      let lastRequestChars = 0;
       const request = async (stream: boolean): Promise<{ resp: Response } | { err: AdapterResult; status?: number; text?: string }> => {
         const body: Record<string, unknown> = { model, messages, stream };
         if (typeof tc['temperature'] === 'number') body['temperature'] = tc['temperature'];
         if (toolsArr) body['tools'] = toolsArr;
+        const payload = JSON.stringify(body);
+        lastRequestChars = payload.length;
         try {
           const resp = await fetch(url, {
             method: 'POST',
             headers: { 'content-type': 'application/json', authorization: `Bearer ${cred!.api_key}` },
-            body: JSON.stringify(body),
+            body: payload,
             signal: AbortSignal.timeout(timeoutMs),
           });
           if (!resp.ok) {
@@ -412,6 +424,11 @@ export const llmAdapter: TargetAdapter = {
             round,
             chunks: completion.chunkCount,
             content_chars: completion.contentChars,
+            reasoning_chars: typeof completion.message.reasoning_content === 'string' ? completion.message.reasoning_content.length : 0,
+            duration_ms: Date.now() - startedAt,
+            message_count: messages.length,
+            request_chars: lastRequestChars,
+            tools_count: toolsArr?.length ?? 0,
             finish_reason: completion.finishReason,
             ...(completion.firstTokenMs === undefined ? {} : { first_token_ms: completion.firstTokenMs }),
           });
@@ -564,16 +581,82 @@ export const llmAdapter: TargetAdapter = {
           continue;
         }
 
-        // 内置工具 search_tools：按意图语义检索更多工具（检索模式），不计 max_calls/failStreak，结果缓存进后续轮次
+        // 内置工具 search_tools：按意图语义检索更多工具（检索模式），不计业务 max_calls/failStreak，
+        // 但有独立预算并在无新增时提前收口，避免同义改写造成无界模型轮次与工具上下文膨胀。
         if (retrievalOn && name === 'search_tools') {
           let q = '';
           try { q = String(JSON.parse(String(call?.function?.arguments ?? '{}')).query ?? ''); } catch { /* 参数坏了按空处理 */ }
+          if (searchToolsExhausted || searchToolsCallsUsed >= SEARCH_TOOLS_MAX_CALLS) {
+            searchToolsExhausted = true;
+            result = {
+              ok: false,
+              text: '追加工具检索已经结束。请直接使用当前已载入的工具；若仍没有对应能力，请如实告诉用户该操作暂不支持，不要继续搜索。',
+            };
+            ctx.audit?.('tools_search_blocked', {
+              query: q.slice(0, 200),
+              reason: 'budget_exhausted',
+              calls_used: searchToolsCallsUsed,
+              max_calls: SEARCH_TOOLS_MAX_CALLS,
+              selected_total: selectedDefs.size,
+            });
+            messages.push({ role: 'tool', tool_call_id: call.id, content: result.text });
+            continue;
+          }
+
+          searchToolsCallsUsed++;
           const more = q ? await ctx.tools!.retrieve!(q).catch(() => null) : null;
-          let added = 0;
-          if (more) for (const def of more) { const nm = (def as any).function.name; if (!selectedDefs.has(nm)) { selectedDefs.set(nm, def); added++; } }
-          result = more && more.length
-            ? { ok: true, text: `已根据"${q}"找到 ${more.length} 个相关工具，现在可以直接调用：${more.map((x) => (x as any).function.name).join('、')}` }
-            : { ok: false, text: `没找到和"${q}"匹配的工具。换一种说法描述你想做的事再试；若确实没有对应能力，请如实告诉用户该操作暂不支持。` };
+          const addedNames: string[] = [];
+          if (more) {
+            for (const def of more) {
+              const nm = String((def as { function?: { name?: unknown } }).function?.name ?? '');
+              if (nm && !selectedDefs.has(nm)) {
+                selectedDefs.set(nm, def);
+                addedNames.push(nm);
+              }
+            }
+          }
+
+          const reason = !q
+            ? 'empty_query'
+            : more === null
+              ? 'retrieve_unavailable'
+              : addedNames.length === 0
+                ? 'no_new_tools'
+                : searchToolsCallsUsed >= SEARCH_TOOLS_MAX_CALLS
+                  ? 'budget_exhausted'
+                  : 'more_available';
+          searchToolsExhausted = reason !== 'more_available';
+
+          if (addedNames.length) {
+            const suffix = searchToolsExhausted
+              ? '追加检索已经结束，请直接调用这些工具，不要继续搜索。'
+              : '现在可以直接调用；只有确实缺少另一项能力时才再次检索。';
+            result = {
+              ok: true,
+              text: `已根据"${q}"新增 ${addedNames.length} 个可用工具：${addedNames.join('、')}。${suffix}`,
+            };
+          } else if (more === null) {
+            result = {
+              ok: false,
+              text: '工具检索暂时不可用。请直接使用当前已载入的工具；若没有对应能力，请如实告诉用户该操作暂不支持。',
+            };
+          } else {
+            result = {
+              ok: false,
+              text: `本次检索没有新增工具。请直接使用当前已载入的工具；若仍没有对应能力，请如实告诉用户该操作暂不支持，不要继续改写"${q}"重复搜索。`,
+            };
+          }
+
+          ctx.audit?.('tools_search_completed', {
+            query: q.slice(0, 200),
+            calls_used: searchToolsCallsUsed,
+            max_calls: SEARCH_TOOLS_MAX_CALLS,
+            returned: more?.length ?? 0,
+            added: addedNames.length,
+            selected_total: selectedDefs.size,
+            exhausted: searchToolsExhausted,
+            reason,
+          });
           messages.push({ role: 'tool', tool_call_id: call.id, content: result.text });
           continue;
         }

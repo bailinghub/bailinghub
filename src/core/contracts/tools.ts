@@ -115,6 +115,28 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * 工具响应给模型的视图与审计证据分离：
+ * - 成功响应保持原有上下文预算；
+ * - 失败响应不把整页 HTML/代理错误页灌进后续模型轮次；
+ * - 完整响应仍由 tool_result 审计按独立上限留存。
+ */
+function modelFacingToolResponse(fullText: string, status: number, truncateBytes: number, contentType: string): string {
+  const limit = Math.max(0, truncateBytes);
+  if (status >= 200 && status < 300) return fullText.slice(0, limit);
+  if (status === 0) return fullText.slice(0, limit);
+
+  const looksLikeHtml = /text\/html/i.test(contentType)
+    || /^\s*(?:<!doctype\s+html|<html\b)/i.test(fullText);
+  if (looksLikeHtml) {
+    return `HTTP ${status}：业务工具返回 HTML 错误页（${fullText.length} 字符）。完整响应已保留在审计记录中。`
+      .slice(0, limit);
+  }
+
+  const errorText = fullText.trim().slice(0, Math.min(limit, 2048));
+  return (errorText ? `HTTP ${status}：${errorText}` : `HTTP ${status} 空响应`).slice(0, limit);
+}
+
 // ---- 限流（进程内滑窗，三层：每任务 max_calls 由调用方计数 / 每工具 ACC execution.rate_limit / 工具源总闸）----
 export class LocalSlidingWindowRateLimiter {
   private readonly buckets = new Map<string, number[]>();
@@ -541,6 +563,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       const started = Date.now();
       const timeoutMs = t.timeoutMs || d.provider.timeout_ms || 10000; // ACC execution.timeout_ms 单工具覆盖（慢接口放宽），缺省工具源超时
       let status = 0; let fullText = '';
+      let responseContentType = '';
       try {
         const r = await fetch(d.provider.base_url.replace(/\/+$/, '') + pathWithQuery, {
           method: t.method,
@@ -561,6 +584,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
           signal: AbortSignal.timeout(timeoutMs),
         });
         status = r.status;
+        responseContentType = r.headers?.get?.('content-type') ?? '';
         fullText = await r.text();
       } catch (e) {
         const error = e instanceof Error && e.name === 'TimeoutError' ? `超时（${timeoutMs}ms）` : String(e);
@@ -586,7 +610,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         }
       }
       // 回流给模型的：受上下文预算 truncateBytes 截断（与审计留存解耦）
-      const text = fullText.slice(0, d.truncateBytes);
+      const text = modelFacingToolResponse(fullText, status, d.truncateBytes, responseContentType);
       const ok = status >= 200 && status < 300;
       const retText = text || `（HTTP ${status} 空响应）`;
       if (idemHash) {
