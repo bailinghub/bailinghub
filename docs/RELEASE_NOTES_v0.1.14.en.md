@@ -1,50 +1,55 @@
-# BailingHub v0.1.14: Trusted Rich Rendering and Chat Reliability
+# BailingHub v0.1.14: Transient Progress Feedback for Streaming Chat
 
-`v0.1.14` improves perceived latency, structured presentation, and runtime convergence for business-facing chat. The official widget remains dependency-free. Charts and other rich content are registered explicitly by the host as trusted renderers, while model output remains constrained declarative data.
+`v0.1.14` improves the waiting experience in the official web chat widget when a governed action needs a tool call. A short model acknowledgement remains visible as transient progress while the business result is pending. As soon as the formal answer starts streaming, the transient bubble disappears and only the final answer remains in chat history.
 
-## User-visible results
+## User-visible behavior
 
-- Streaming replies may show a provisional progress bubble. The authoritative final reply replaces it instead of leaving duplicate messages in the conversation.
-- A host can register trusted renderers with the official widget. The chat window can expand for wide tables or charts, and users can maximize and restore it.
-- Safe Markdown tables remain built in. Charts use declarative fenced payloads; unknown types, invalid JSON, excessive data, or renderer errors fall back to a normal code block.
-- BailingHub presents an optional rendering capability to the model only when the client explicitly advertises a renderer it actually supports. The model may still choose text or a table when that better matches the real data.
+- A short pre-tool acknowledgement no longer flashes and disappears immediately; it is promoted into a transient progress bubble.
+- Tool execution, model synthesis, retry, and fallback phases show explicit status copy.
+- The progress bubble is removed when the formal streamed answer begins, so the conversation does not retain two assistant messages.
+- Failed and background-processing outcomes use deterministic status copy without implying that a business operation succeeded.
+- Progress animation respects the operating system's reduced-motion preference.
 
-## Custom chat clients
+## Semantic boundary
 
-A frontend that does not load the official `widget.js` owns four responsibilities:
+This feature is not a reasoning trace and does not expose or retain hidden chain-of-thought. The widget presents only:
 
-1. advertise only installed and trusted renderer types through `client_capabilities.renderers` when creating the job;
-2. treat `delta` as provisional text and discard it on `reset`;
-3. replace the provisional bubble with `done.reply`, the only authoritative final text;
-4. parse complete fenced blocks with a mature Markdown parser only after `done`, then dispatch allowlisted types to local trusted renderers.
+- acknowledgement text that the model already emitted;
+- `reset` and `phase` states already exposed by the BailingHub stream;
+- the formal final answer.
 
-`client_capabilities` is presentation-only negotiation. It does not change identity, routing, tool allowlists, approval, or final business authorization. See [`examples/custom-streaming-chat-client.mjs`](examples/custom-streaming-chat-client.mjs) for a minimal transport example.
+Transient copy is whitespace-normalized and length-bounded. Only the formal answer enters chat history; progress remains local UI state for the active stream.
 
-## Runtime reliability
+## Custom chat UIs
 
-- Additional tool discovery has an independent limit and stops early when no new tools are found, preventing unbounded model rounds caused by paraphrased searches.
-- HTTP error pages from tools are reduced to compact model-facing summaries. The full response remains available to the audit path under its independent size limit.
-- LLM traces add low-sensitivity measurements such as request size, tool count, reasoning characters, first-token latency, and total duration without recording secrets or business payloads.
+The official `web/widget/widget.js` adopts the behavior automatically. Integrations that do not use the official widget do not need a BailingHub API change, but must consume the existing stream events to reproduce the experience:
 
-## Compatibility and security boundary
+- `delta`: accumulate the current model text;
+- `reset`: promote prior short text into transient progress and clear the formal-answer buffer;
+- `phase`: update the tool or model phase;
+- `done`: remove transient progress and persist only the final answer.
+
+Custom clients should not retain progress and the final answer as two permanent assistant messages.
+
+## Compatibility
 
 - No database migration is required.
-- ACC, the Client API version, executor protocol, tool signatures, approval semantics, and business authorization are unchanged.
-- Existing clients that omit `client_capabilities` continue receiving ordinary Markdown. Unknown rich-content types degrade safely.
-- The core widget does not bundle ECharts, GPT-Vis, Mermaid, or another chart library, and it never executes model-generated HTML, JavaScript, event handlers, or remote scripts.
+- Client API and streaming event protocol are unchanged.
+- Executor protocol, tool signatures, approval semantics, audit boundaries, and ACC are unchanged.
+- Existing custom chat UIs retain their current behavior; the official widget gains the new experience when upgraded.
 
 ## Validation
 
 ```bash
+node --check web/widget/widget.js
+node --import tsx --test src/routes/public.test.ts
+npm run typecheck
 npm run release:check
 ```
 
-Focused coverage includes renderer registration, failure fallback, cleanup lifecycle, capability negotiation, provisional-message replacement, and syntax validation for the custom-client example.
+## Related docs
 
-## Related documentation
-
-- [Trusted rich-content renderers](WIDGET_RENDERERS.en.md)
-- [Streaming chat contract](STREAMING.md)
-- [Third-party integration](INTEGRATION.en.md)
+- [Public runtime contract](CONTRACT.en.md)
+- [Independent validation task](INDEPENDENT_VALIDATION.en.md)
 - [Compatibility and upgrades](COMPATIBILITY.en.md)
 - [中文发布说明](RELEASE_NOTES_v0.1.14.md)

@@ -75,8 +75,10 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.12.md](RELEASE_NOTES_v0.1.12.md) | Chinese `v0.1.12` release notes. |
 | [RELEASE_NOTES_v0.1.13.en.md](RELEASE_NOTES_v0.1.13.en.md) | `v0.1.13` voice transcription and distribution-version alignment release notes. |
 | [RELEASE_NOTES_v0.1.13.md](RELEASE_NOTES_v0.1.13.md) | Chinese `v0.1.13` release notes. |
-| [RELEASE_NOTES_v0.1.14.en.md](RELEASE_NOTES_v0.1.14.en.md) | `v0.1.14` trusted rich rendering and chat reliability release notes. |
+| [RELEASE_NOTES_v0.1.14.en.md](RELEASE_NOTES_v0.1.14.en.md) | `v0.1.14` transient progress feedback for streaming chat release notes. |
 | [RELEASE_NOTES_v0.1.14.md](RELEASE_NOTES_v0.1.14.md) | Chinese `v0.1.14` release notes. |
+| [RELEASE_NOTES_v0.1.15.en.md](RELEASE_NOTES_v0.1.15.en.md) | `v0.1.15` trusted rich rendering and chat reliability release notes. |
+| [RELEASE_NOTES_v0.1.15.md](RELEASE_NOTES_v0.1.15.md) | Chinese `v0.1.15` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |
