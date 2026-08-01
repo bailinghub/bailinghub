@@ -97,6 +97,16 @@ Incremental text is provisional transport data. It is not a durable conversation
 
 See [STREAMING.en.md](STREAMING.en.md) for event payloads, reconnect rules, provider fallback, audit boundaries, and multi-replica deployment requirements.
 
+### Optional Widget Renderers
+
+Charts and interactive reports do not add a new server-side attachment type or
+change the canonical `reply` payload. A host page may register a trusted
+renderer through `window.BailingChat.registerRenderer(...)` and consume a
+declarative fenced payload. Unknown types, invalid JSON, oversized payloads, or
+renderer failures fall back to a text code block. See
+[WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) for the full trust and lifecycle
+contract.
+
 ## Tool Provider Spec
 
 Recommended location:

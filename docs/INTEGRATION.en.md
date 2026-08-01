@@ -30,6 +30,28 @@ Use `POST /run` with a route key and business idempotency key.
 }
 ```
 
+## Embed The Chat Widget
+
+Create a chat entry in the console, restrict its allowed origins, and embed the
+hub-hosted script:
+
+```html
+<script src="<hub-url>/widget.js" data-entry="pub_xxx" async></script>
+```
+
+The widget renders safe Markdown tables without extra dependencies. A host page
+that needs charts or interactive reports may register a trusted renderer while
+keeping the model output declarative and untrusted. See
+[WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) for the versioned API, fallback
+behavior, cleanup rules, and a library-neutral adapter example.
+
+A custom chat frontend must also advertise only the renderer types it actually
+supports through `client_capabilities.renderers`, treat `delta` as provisional,
+discard it on `reset`, and parse rich blocks only from the authoritative
+`done.reply`. See the custom-client section of
+[WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md#custom-streaming-clients-without-widgetjs)
+and the [minimal transport example](examples/custom-streaming-chat-client.mjs).
+
 ## Publish Tools
 
 Expose a tool spec at a stable endpoint such as:

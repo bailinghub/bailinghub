@@ -9,13 +9,18 @@
  * ── 嵌入契约（WIDGET_API，受 SemVer 约束的 wire 面；详见 docs/兼容性与升级.md「嵌入组件契约」）──
  * 这是业务系统嵌入聊天入口时依赖的稳定面：
  *   · 脚本属性：data-entry（必填，^[a-z0-9_-]{4,32}$）、data-open、data-ticket
- *   · 全局对象：window.BailingChat.setContext({page_key,page_name})、window.BailingChat.apiVersion
+ *   · 全局对象：window.BailingChat.setContext({page_key,page_name})、window.BailingChat.apiVersion、
+ *               window.BailingChat.registerRenderer(definition)、window.BailingChat.rendererApiVersion
  *   · 端点族：  /chat/:entry、/chat/:entry/config、/chat/:entry/events/:jobId、
  *              /chat/:entry/thread、/chat/:entry/rate/:jobId、/chat/:entry/upload
  * 对话主链路：POST 创建任务 → SSE events 接收状态和最终回答；thread 用于断线恢复和会话回灌。
  */
 (() => {
   const WIDGET_API = '1'; // 嵌入契约主版本；仅破坏性变更才 +1（见上方契约说明）
+  const RENDERER_API = '1'; // 富内容渲染扩展契约；与聊天 wire 契约独立演进
+  const RENDERER_TYPE_RE = /^[a-z][a-z0-9._+-]{0,63}$/;
+  const DEFAULT_RENDERER_PAYLOAD_BYTES = 64 * 1024;
+  const MAX_RENDERER_PAYLOAD_BYTES = 256 * 1024;
   const script = document.currentScript;
   if (!script) return;
   const ENTRY = script.dataset.entry;
@@ -33,9 +38,46 @@
   // 页面上下文（理解层）：自动抓 path+hash（去 query 防泄露）+ 标题随每条消息上报；
   // 中枢按「页面登记表」模式匹配出"这是哪个页面、干嘛的"，注入给 AI + 落任务详情，便于精准定位用户问题。
   // 接入方可选 window.BailingChat.setContext({page_key,page_name}) 显式声明语义页面（SPA 无 URL 语义时的逃生口，非必需）。
-  window.BailingChat = window.BailingChat || {};
-  window.BailingChat.apiVersion = WIDGET_API; // 嵌入方/排查可读：当前组件的嵌入契约主版本
-  window.BailingChat.setContext = (o) => { try { window.BailingChat._ctx = (o && typeof o === 'object') ? o : null; } catch { /* 忽略 */ } };
+  const bailingChatApi = window.BailingChat = window.BailingChat || {};
+  const preloadedRenderers = Array.isArray(bailingChatApi.renderers) ? bailingChatApi.renderers.slice() : [];
+  const rendererRegistry = new Map();
+  function normalizeRendererDefinition(definition) {
+    if (!definition || typeof definition !== 'object') throw new TypeError('renderer definition must be an object');
+    const type = String(definition.type || '').trim().toLowerCase();
+    if (!RENDERER_TYPE_RE.test(type)) throw new TypeError('renderer type must match ' + RENDERER_TYPE_RE);
+    if (typeof definition.mount !== 'function') throw new TypeError('renderer mount must be a function');
+    const contentType = definition.contentType === 'text/plain' ? 'text/plain' : 'application/json';
+    const requestedBytes = Number(definition.maxPayloadBytes);
+    const maxPayloadBytes = Number.isFinite(requestedBytes)
+      ? Math.min(Math.max(Math.floor(requestedBytes), 1), MAX_RENDERER_PAYLOAD_BYTES)
+      : DEFAULT_RENDERER_PAYLOAD_BYTES;
+    return Object.freeze({
+      type,
+      version: Number.isInteger(definition.version) && definition.version > 0 ? definition.version : 1,
+      label: String(definition.label || type).slice(0, 80),
+      contentType,
+      maxPayloadBytes,
+      mount: definition.mount,
+    });
+  }
+  function registerRenderer(definition) {
+    const normalized = normalizeRendererDefinition(definition);
+    rendererRegistry.set(normalized.type, normalized);
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      if (rendererRegistry.get(normalized.type) === normalized) rendererRegistry.delete(normalized.type);
+    };
+  }
+  bailingChatApi.apiVersion = WIDGET_API; // 嵌入方/排查可读：当前组件的嵌入契约主版本
+  bailingChatApi.rendererApiVersion = RENDERER_API;
+  bailingChatApi.registerRenderer = registerRenderer;
+  bailingChatApi.setContext = (o) => { try { bailingChatApi._ctx = (o && typeof o === 'object') ? o : null; } catch { /* 忽略 */ } };
+  for (const definition of preloadedRenderers) {
+    try { registerRenderer(definition); }
+    catch (e) { console.warn('[百灵聊天组件] 忽略不合法的预注册渲染器', e); }
+  }
   // 保留 path+query+hash（很多传统后台的页面身份就在 query 里），但抹掉敏感参数值与超长值，防 token/PII 泄露
   const SENSITIVE_Q = /(token|sign|secret|password|passwd|pwd|apikey|api_key|accesstoken|access_token|sessionkey|session_?id|session|auth|ticket|openid|unionid|mobile|phone|idcard|email|code|skey)/i;
   function redactSearch(search) {
@@ -55,7 +97,7 @@
     const c = {};
     try { c.url = (location.pathname + redactSearch(location.search) + (location.hash || '')).slice(0, 400); } catch { /* 沙箱/隐私模式 */ }
     try { if (document.title) c.title = document.title.slice(0, 200); } catch { /* 忽略 */ }
-    const ext = window.BailingChat && window.BailingChat._ctx;
+    const ext = bailingChatApi._ctx;
     if (ext && typeof ext === 'object') {
       if (ext.page_key) c.page_key = String(ext.page_key).slice(0, 64);
       if (ext.page_name) c.page_name = String(ext.page_name).slice(0, 128);
@@ -113,6 +155,9 @@
       box-shadow: 0 8px 40px rgba(0,0,0,.22); display: none; flex-direction: column; overflow: hidden; }
     .pos-left .panel { left: var(--off-x, 24px); right: auto; }
     .panel.open { display: flex; }
+    .panel.maximized { width: calc(100vw - 32px) !important; height: calc(100dvh - 32px) !important;
+      max-width: none; max-height: none; left: 16px !important; right: 16px !important; bottom: 16px !important;
+      border-radius: 10px; }
     /* 访客拖边框改尺寸（cfg.resizable 开才显示）：上边改高、侧边改宽；面板锚右下角故向上/向左长，侧边贴左缘，左下锚时翻到右缘 */
     .panel .rz { position: absolute; z-index: 6; display: none; }
     .panel.rzable .rz { display: block; }
@@ -137,6 +182,7 @@
     .head button:hover { opacity: 1; }
     .head .close { font-size: 18px; }
     .head .restart svg { width: 19px; height: 19px; display: block; }
+    .head .maximize svg { width: 18px; height: 18px; display: block; }
     .msgs { flex: 1; overflow-y: auto; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
     .m { max-width: 82%; padding: 9px 12px; border-radius: 12px; font-size: 14px; line-height: 1.6;
       white-space: pre-wrap; word-break: break-word; }
@@ -168,6 +214,10 @@
     .m.md table { border-collapse: collapse; margin: 8px 0; font-size: 13px; display: block; overflow-x: auto; }
     .m.md th, .m.md td { border: 1px solid #e3ded5; padding: 4px 8px; text-align: left; white-space: nowrap; }
     .m.md th { background: #f6f4ef; font-weight: 600; }
+    .m.md .rich-renderer { width: 100%; min-width: 0; margin: 8px 0; overflow: auto; }
+    .m.rich { width: 100%; max-width: 100%; }
+    .m.md .rich-renderer[aria-busy="true"] { min-height: 44px; border: 1px solid #ece8e1; border-radius: 8px;
+      background: #faf9f7; }
     .typing { align-self: flex-start; padding: 12px 14px; }
     .typing i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #b8b0a4; margin: 0 2px;
       animation: blink 1.2s infinite; font-style: normal; }
@@ -260,6 +310,7 @@
         max-width: calc(100vw - 16px) !important; max-height: calc(100dvh - 92px) !important;
         left: 8px !important; right: 8px !important; bottom: 84px !important; border-radius: 12px; }
       .panel .rz { display: none !important; }  /* 手机端面板已全屏，拖动改尺寸无意义 */
+      .head .maximize { display: none; }
     }
   `;
   root.appendChild(style);
@@ -268,7 +319,7 @@
   wrap.innerHTML = `
     <div class="panel" part="panel">
       <div class="rz rz-t" data-rz="y"></div><div class="rz rz-s" data-rz="x"></div>
-      <div class="head"><img class="avatar" alt=""><span class="t"></span><div class="ctrls"><button class="restart" type="button" aria-label="开启新对话" title="开启新对话"><svg viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M788.266667 625.749333A298.666667 298.666667 0 1 1 721.024 298.666667H640a42.666667 42.666667 0 0 0 0 85.333333h170.666667a42.666667 42.666667 0 0 0 42.666666-42.666667V170.666667a42.666667 42.666667 0 0 0-85.333333 0v55.125333A384 384 0 0 0 128 512a384 384 0 0 0 739.2 146.133333 42.666667 42.666667 0 0 0-78.890667-32.341333l-0.042666-0.042667z"/></svg></button><button class="close" type="button" aria-label="关闭">✕</button></div></div>
+      <div class="head"><img class="avatar" alt=""><span class="t"></span><div class="ctrls"><button class="maximize" type="button" aria-label="全屏显示" aria-pressed="false" title="全屏显示"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button><button class="restart" type="button" aria-label="开启新对话" title="开启新对话"><svg viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M788.266667 625.749333A298.666667 298.666667 0 1 1 721.024 298.666667H640a42.666667 42.666667 0 0 0 0 85.333333h170.666667a42.666667 42.666667 0 0 0 42.666666-42.666667V170.666667a42.666667 42.666667 0 0 0-85.333333 0v55.125333A384 384 0 0 0 128 512a384 384 0 0 0 739.2 146.133333 42.666667 42.666667 0 0 0-78.890667-32.341333l-0.042666-0.042667z"/></svg></button><button class="close" type="button" aria-label="关闭">✕</button></div></div>
       <div class="msgs"></div>
       <div class="attbar"></div>
       <div class="foot"><button class="attach" type="button" aria-label="添加附件" title="添加附件" style="display:none"><svg viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M85.333333 512C85.333333 276.352 276.352 85.333333 512 85.333333s426.666667 191.018667 426.666667 426.666667-191.018667 426.666667-426.666667 426.666667S85.333333 747.648 85.333333 512z m426.666667-341.333333a341.333333 341.333333 0 1 0 0 682.666666 341.333333 341.333333 0 0 0 0-682.666666z m0 128a42.666667 42.666667 0 0 1 42.666667 42.666666v128h128a42.666667 42.666667 0 1 1 0 85.333334h-128v128a42.666667 42.666667 0 1 1-85.333334 0v-128H341.333333a42.666667 42.666667 0 1 1 0-85.333334h128V341.333333a42.666667 42.666667 0 0 1 42.666667-42.666666z"/></svg></button><input class="file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,text/plain,text/markdown,text/csv,text/tab-separated-values,text/html,text/xml,text/yaml,text/x-log,text/x-ini,text/x-conf,application/json,application/x-ndjson,application/xml,application/yaml,application/x-yaml,application/sql,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/zip,application/x-rar-compressed,application/x-7z-compressed,.txt,.md,.markdown,.csv,.tsv,.json,.jsonl,.xml,.html,.htm,.log,.ini,.conf,.sql,.yaml,.yml,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rar,.7z" hidden><button class="voice" type="button" aria-label="按住录音" title="点击开始/停止录音" style="display:none"><svg viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"><path d="M512 640a128 128 0 0 0 128-128V224a128 128 0 0 0-256 0v288a128 128 0 0 0 128 128z"/><path d="M768 448a42.667 42.667 0 0 0-85.333 0v64a170.667 170.667 0 0 1-341.334 0v-64a42.667 42.667 0 0 0-85.333 0v64a256.171 256.171 0 0 0 213.333 252.373V832H384a42.667 42.667 0 0 0 0 85.333h256A42.667 42.667 0 0 0 640 832h-85.333v-67.627A256.171 256.171 0 0 0 768 512v-64z"/></svg></button><textarea rows="1" placeholder="输入你的问题…"></textarea><button class="send">发送</button></div>
@@ -294,6 +345,7 @@
   const headEl = wrap.querySelector('.head');
   const avatarEl = wrap.querySelector('.avatar');
   const bubbleEl = wrap.querySelector('.bubble');
+  const maximizeBtn = wrap.querySelector('.maximize');
   const restartBtn = wrap.querySelector('.restart');
 
   function setAccent(c) { host.style.setProperty('--accent', c); wrap.style.setProperty('--accent', c); }
@@ -334,6 +386,26 @@
       const im = document.createElement('img'); im.className = 'licon'; im.src = cfg.launcher_icon; im.alt = '';
       bubbleEl.appendChild(im);
     }
+  }
+  function setMaximized(maximized) {
+    if (!panel || !maximizeBtn || window.innerWidth <= 480) return;
+    panel.classList.toggle('maximized', !!maximized);
+    maximizeBtn.setAttribute('aria-pressed', maximized ? 'true' : 'false');
+    maximizeBtn.setAttribute('aria-label', maximized ? '还原窗口' : '全屏显示');
+    maximizeBtn.title = maximized ? '还原窗口' : '全屏显示';
+  }
+  function ensureRichLayout() {
+    if (!panel || window.innerWidth <= 720 || panel.classList.contains('maximized')) return;
+    const targetWidth = Math.min(680, window.innerWidth - 32);
+    if (curW >= targetWidth) return;
+    curW = targetWidth;
+    applyPanelSize();
+    const c = clampOff(curX, curY);
+    setOff(c.x, c.y);
+  }
+  function collectClientCapabilities() {
+    const renderers = Array.from(rendererRegistry.keys()).slice(0, 16);
+    return renderers.length ? { renderers } : null;
   }
 
   // AI 回复的轻量 markdown 渲染：标题/加粗/斜体/行内·块代码/链接/图片/有序无序列表/引用/表格/分隔线/软换行。
@@ -407,18 +479,121 @@
     }
     tbl.appendChild(tbody); return tbl;
   }
-  function renderReply(el, text) {
+  const richMounts = new WeakMap();
+  function payloadByteLength(value) {
+    const text = String(value || '');
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text).byteLength;
+    return new Blob([text]).size;
+  }
+  function createCodeBlock(source, language) {
+    const pre = document.createElement('pre'), code = document.createElement('code');
+    if (language) code.dataset.language = language;
+    code.textContent = source;
+    pre.appendChild(code);
+    return pre;
+  }
+  function cleanupHandle(handle) {
+    if (typeof handle === 'function') return handle;
+    if (handle && typeof handle.destroy === 'function') return () => handle.destroy();
+    return null;
+  }
+  function disposeRichContent(el) {
+    const states = richMounts.get(el) || [];
+    richMounts.delete(el);
+    for (const state of states) {
+      state.active = false;
+      try { state.controller.abort(); } catch { /* 旧浏览器 */ }
+      if (state.destroy) {
+        try { state.destroy(); } catch (e) { console.warn('[百灵聊天组件] 渲染器销毁失败', e); }
+        state.destroy = null;
+      }
+    }
+  }
+  function clearRenderedReply(el) {
+    disposeRichContent(el);
+    el.replaceChildren();
+  }
+  function renderRegisteredBlock(el, type, source) {
+    const definition = rendererRegistry.get(type);
+    if (!definition || payloadByteLength(source) > definition.maxPayloadBytes) return false;
+    let payload = source;
+    if (definition.contentType === 'application/json') {
+      try { payload = JSON.parse(source); }
+      catch { return false; }
+      if (payload === null || typeof payload !== 'object') return false;
+    }
+
+    const container = document.createElement('div');
+    container.className = 'rich-renderer';
+    container.dataset.renderer = definition.type;
+    container.dataset.rendererVersion = String(definition.version);
+    container.setAttribute('role', 'region');
+    container.setAttribute('aria-label', definition.label);
+    container.setAttribute('aria-busy', 'true');
+    el.classList.add('rich');
+    el.appendChild(container);
+    ensureRichLayout();
+
+    const state = { active: true, controller: new AbortController(), destroy: null };
+    const states = richMounts.get(el) || [];
+    states.push(state);
+    richMounts.set(el, states);
+    const fallback = () => {
+      if (!state.active) return;
+      state.active = false;
+      try { state.controller.abort(); } catch { /* 旧浏览器 */ }
+      if (container.isConnected) container.replaceWith(createCodeBlock(source, type));
+    };
+
+    let result;
+    try {
+      result = definition.mount(Object.freeze({
+        container,
+        payload,
+        source,
+        type: definition.type,
+        version: definition.version,
+        theme: Object.freeze({ accent: String(cfg.color || '#7a5b3a') }),
+        signal: state.controller.signal,
+      }));
+    } catch (e) {
+      console.warn('[百灵聊天组件] 富内容渲染失败，已降级为代码块', e);
+      fallback();
+      return true;
+    }
+    Promise.resolve(result).then((handle) => {
+      const destroy = cleanupHandle(handle);
+      if (!state.active) {
+        if (destroy) { try { destroy(); } catch { /* 已离开视图 */ } }
+        return;
+      }
+      state.destroy = destroy;
+      container.removeAttribute('aria-busy');
+    }).catch((e) => {
+      console.warn('[百灵聊天组件] 富内容渲染失败，已降级为代码块', e);
+      fallback();
+    });
+    return true;
+  }
+  function renderReply(el, text, options = {}) {
+    const allowRich = options.allowRich !== false;
     el.classList.add('md');
     const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
       if (/^\s*```/.test(line)) {                                   // 代码块
+        const opening = line.match(/^\s*```([a-zA-Z0-9._+-]*)\s*$/);
+        const language = opening ? String(opening[1] || '').toLowerCase() : '';
         const buf = []; i++;
-        while (i < lines.length && !/^\s*```/.test(lines[i])) { buf.push(lines[i]); i++; }
-        i++;
-        const pre = document.createElement('pre'), code = document.createElement('code');
-        code.textContent = buf.join('\n'); pre.appendChild(code); el.appendChild(pre); continue;
+        while (i < lines.length && !/^\s*```\s*$/.test(lines[i])) { buf.push(lines[i]); i++; }
+        const closed = i < lines.length;
+        if (closed) i++;
+        const source = buf.join('\n');
+        if (!(closed && allowRich && language && renderRegisteredBlock(el, language, source))) {
+          el.appendChild(createCodeBlock(source, language));
+        }
+        continue;
       }
       if (!line.trim()) { i++; continue; }                          // 空行
       if (/^\s*([-*_])\1{2,}\s*$/.test(line)) { el.appendChild(document.createElement('hr')); i++; continue; } // 分隔线
@@ -460,8 +635,8 @@
     let i = 0;
     const timer = setInterval(() => {
       i = Math.min(total, i + step);
-      el.replaceChildren();
-      renderReply(el, full.slice(0, i));
+      clearRenderedReply(el);
+      renderReply(el, full.slice(0, i), { allowRich: i >= total });
       msgsEl.scrollTop = msgsEl.scrollHeight;
       if (i >= total) { clearInterval(timer); if (onDone) onDone(); }
     }, 24);
@@ -693,7 +868,9 @@
   }
 
   function renderHistory() {
-    msgsEl.innerHTML = '';
+    for (const el of msgsEl.querySelectorAll('.m.md')) disposeRichContent(el);
+    msgsEl.replaceChildren();
+    typingEl = null;
     if (!history.length && cfg.greeting) addMsg('a', cfg.greeting);
     for (const m of history) addMsg(m.r, m.t, m.e, { refs: m.refs, jobId: m.j, voted: m.v, comment: m.c, atts: m.atts });
   }
@@ -766,11 +943,11 @@
     let progressCopyEl = null;
     let progressStatusEl = null;
 
-    function flush() {
+    function flush(allowRich = false) {
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (!bubble) return;
-      bubble.replaceChildren();
-      renderReply(bubble, text);
+      clearRenderedReply(bubble);
+      renderReply(bubble, text, { allowRich });
       msgsEl.scrollTop = msgsEl.scrollHeight;
     }
     function scheduleRender() {
@@ -778,12 +955,12 @@
     }
     function removeProvisional() {
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
-      if (bubble) bubble.remove();
+      if (bubble) { disposeRichContent(bubble); bubble.remove(); }
       bubble = null;
       text = '';
     }
     function removeProgress() {
-      if (progressEl) progressEl.remove();
+      if (progressEl) { disposeRichContent(progressEl); progressEl.remove(); }
       progressEl = null;
       progressCopyEl = null;
       progressStatusEl = null;
@@ -810,7 +987,7 @@
       progressEl.className = 'm a progress';
       progressEl.setAttribute('role', 'status');
       progressEl.setAttribute('aria-live', 'polite');
-      progressEl.replaceChildren();
+      clearRenderedReply(progressEl);
       progressCopyEl = document.createElement('div');
       progressCopyEl.className = 'progress-copy';
       progressCopyEl.textContent = nextCopy || '好的，我正在处理您的请求。';
@@ -831,7 +1008,7 @@
       const copy = text;
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       const reuseBubble = progressEl ? null : bubble;
-      if (bubble && !reuseBubble) bubble.remove();
+      if (bubble && !reuseBubble) { disposeRichContent(bubble); bubble.remove(); }
       bubble = null;
       text = '';
       ensureProgress(copy, reuseBubble);
@@ -886,7 +1063,7 @@
         removeProgress();
         if (!bubble) return false;
         text = String(resp.reply || '（无内容）');
-        flush();
+        flush(true);
         const refs = Array.isArray(resp.references) ? resp.references : undefined;
         const atts = Array.isArray(resp.attachments) ? resp.attachments : undefined;
         appendExtras('a', false, { refs, jobId: resp.job_id, atts, copyText: text }, bubble);
@@ -1127,9 +1304,10 @@
     let jobId = '';
     const beforeAssistantCount = history.filter((m) => m.r === 'a').length;
     try {
+      const clientCapabilities = collectClientCapabilities();
       let resp = await api(`/chat/${ENTRY}`, {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ message: sentText, visitor_id: visitorId, context: collectPageContext(), ...(threadId ? { thread_id: threadId } : {}), ...(TICKET ? { ticket: TICKET } : {}) }),
+        body: JSON.stringify({ message: sentText, visitor_id: visitorId, context: collectPageContext(), ...(clientCapabilities ? { client_capabilities: clientCapabilities } : {}), ...(threadId ? { thread_id: threadId } : {}), ...(TICKET ? { ticket: TICKET } : {}) }),
       });
       jobId = resp.job_id || '';
       if (resp.visitor_id && resp.visitor_id !== visitorId) {
@@ -1181,6 +1359,9 @@
     if (panel.classList.contains('open')) { inputEl.focus(); void syncServerHistory(); }
   });
   wrap.querySelector('.close').addEventListener('click', () => panel.classList.remove('open'));
+  if (maximizeBtn) maximizeBtn.addEventListener('click', () => {
+    setMaximized(!panel.classList.contains('maximized'));
+  });
   // 开启新对话：换一个 thread_id（已验身份下的平行会话分区键）→ 后端换 scope = 全新 session+总账。
   // thread_id 负责会话分区；visitor_id 负责访客连续性，二者职责分离。
   if (restartBtn) restartBtn.addEventListener('click', () => {

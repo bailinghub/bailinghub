@@ -43,6 +43,31 @@ test('trace severity: 流式完成是信息，明确降级是警告', () => {
   assert.equal(traceSeverityOf('llm_stream_fallback'), 'warning');
 });
 
+test('llm_stream_completed 摘要直接展示首 token、总耗时与请求规模', () => {
+  const entry = completeTraceEntry({
+    ts: '2026-07-01T00:00:00.000Z',
+    job_id: 'job-trace',
+    request_id: 'req-trace',
+    event: 'llm_stream_completed',
+    detail: {
+      model: 'kimi-k3',
+      round: 2,
+      chunks: 150,
+      content_chars: 22,
+      reasoning_chars: 640,
+      first_token_ms: 10452,
+      duration_ms: 14003,
+      request_chars: 12890,
+      finish_reason: 'tool_calls',
+    },
+  });
+
+  assert.equal(
+    entry.summary,
+    'kimi-k3 · round 2 · 150 chunks · 22 chars · 640 reasoning chars · first token 10452ms · total 14003ms · request 12890 chars · tool_calls',
+  );
+});
+
 test('traceSeverityOf: 错误、降级、跳过和正常事件分级', () => {
   assert.equal(traceSeverityOf('finished', { status: 'error' }), 'error');
   assert.equal(traceSeverityOf('channel_delivery_error'), 'error');

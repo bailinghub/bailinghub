@@ -8,7 +8,7 @@ import type { RuntimeContext } from '../core/edition';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { CHAT_STREAM_PROTOCOL, InMemoryJobStreamBroker } from '../core/runtime/job-stream';
-import { handleChatConfigFor, handleChatEventsFor, type ChatApiDeps } from './chat';
+import { handleChatConfigFor, handleChatEventsFor, normalizePresentationCapabilities, type ChatApiDeps } from './chat';
 
 class FakeResponse {
   statusCode = 0;
@@ -86,6 +86,14 @@ function finishedJob(overrides: Partial<Job> = {}): Job {
     ...overrides,
   };
 }
+
+test('chat presentation capabilities: 仅保留有限且合法的渲染器标识', () => {
+  assert.deepEqual(normalizePresentationCapabilities({
+    renderers: ['bailing-chart', ' BAILING-CHART ', 'table.v2', '../bad', 123, ...Array(20).fill('extra-renderer')],
+  }), { renderers: ['bailing-chart', 'table.v2', 'extra-renderer'] });
+  assert.equal(normalizePresentationCapabilities({ renderers: [] }), undefined);
+  assert.equal(normalizePresentationCapabilities('bailing-chart'), undefined);
+});
 
 function streamDeps(job: Job, broker: InMemoryJobStreamBroker): ChatApiDeps {
   const config = {

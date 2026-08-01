@@ -24,6 +24,19 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.1.15 - Trusted Rich Rendering and Chat Reliability
+
+Released on 2026-08-01.
+
+- Added versioned trusted-renderer registration, allowlisted dispatch, cleanup, and safe fallback to the dependency-free official widget. Model-generated HTML or scripts are never executed.
+- Added presentation-only client capability negotiation. It does not change identity, routing, tools, approval, or final business authorization.
+- Made `delta` provisional, `reset` discard it, and `done.reply` replace the provisional bubble as the only authoritative final text.
+- Bounded additional tool discovery and stopped it when no new tools are found. Tool error pages are compacted for model context while full evidence remains in audit, and LLM traces include low-sensitivity latency and size measurements.
+- No database migration is required.
+- Existing clients are unchanged. Custom clients enabling rich content must advertise capabilities explicitly and implement the complete SSE lifecycle and trusted-rendering boundary.
+- Validation: `npm run release:check`, including renderer registration/fallback/cleanup, capability negotiation, provisional-message replacement, and custom-client example syntax.
+- Related docs: [RELEASE_NOTES_v0.1.15.en.md](RELEASE_NOTES_v0.1.15.en.md), [WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md), [STREAMING.md](STREAMING.md), and [INTEGRATION.en.md](INTEGRATION.en.md).
+
 ## v0.1.14 - Transient Progress Feedback for Streaming Chat
 
 Released on 2026-07-30.

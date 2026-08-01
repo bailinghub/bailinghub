@@ -589,6 +589,8 @@ AI 的回复是 **GitHub 风味 markdown**。为让没有 markdown 渲染器的�
 
 约束：图片/文件本体存放在业务自己的存储/CDN（中枢只透传 url，不代管二进制）；同一 url 在 attachments 内去重。
 
+> **聊天组件专用的图表/交互报告不是新的服务端 `attachments` 类型。** 它是宿主页面通过 `window.BailingChat.registerRenderer(...)` 注册的可选展示扩展，消费回复中的声明式 fenced payload；未知类型、无效 JSON、超限载荷或渲染失败必须降级为纯文本代码块。服务端契约保持 `reply/text + attachments` 不变，完整边界见 [WIDGET_RENDERERS.md](WIDGET_RENDERERS.md)。
+
 ## 2.6 入站渠道：外部平台消息进中枢
 
 第三类触发入口（与 `/run`、聊天组件并列）：外部平台（当前企业微信）的消息回调直达中枢。控制台「渠道」注册 `kind + config + route_key`（`kind` 区分平台、`config` 放平台密钥、`route_key` 绑大脑），回调路径 `/<平台>/<渠道名>`（企微 = `/wecom/<name>`）。企微链路：GET 验证握手 → POST 解密消息 → 按路由派大脑 → `reply_wait_ms`（≤4500，须 < 企微 5s）窗口内答完走**被动加密回复**、超窗则空 ack + 任务完成后**异步主动推**（qyapi，需 agentid+secret）。成员身份来自企微解密报文（可信主体），按成员切会话。完整接入步骤、字段、握手与安全见 **docs/CHANNELS.md**。

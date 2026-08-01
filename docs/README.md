@@ -19,6 +19,8 @@
 | [CONTRACT.en.md](CONTRACT.en.md) | English HTTP and wire contract summary. |
 | [第三方对接指南.md](第三方对接指南.md) | 业务侧如何暴露工具、验签、授权与返回结果。 |
 | [INTEGRATION.en.md](INTEGRATION.en.md) | English third-party integration guide. |
+| [WIDGET_RENDERERS.md](WIDGET_RENDERERS.md) | 聊天组件的可信富内容渲染扩展：图表、交互报告与安全降级。 |
+| [WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) | English trusted rich-content renderer extension for the chat widget. |
 | [integrations/dify/README.md](integrations/dify/README.md) | Dify 通过 BailingHub `/run` 与 `/jobs/{job_id}` 发起受治理任务的最小接入配方。 |
 | [integrations/dify/README.en.md](integrations/dify/README.en.md) | English Dify + BailingHub minimal integration recipe. |
 | [integrations/deepseek/README.md](integrations/deepseek/README.md) | DeepSeek V4 通过 BailingHub 参与受治理业务动作的双语 E2E 配方。 |
@@ -84,8 +86,12 @@
 | [RELEASE_NOTES_v0.1.11.en.md](RELEASE_NOTES_v0.1.11.en.md) | English `v0.1.11` side-effect execution journal and uncertain-outcome freezing release notes. |
 | [RELEASE_NOTES_v0.1.12.md](RELEASE_NOTES_v0.1.12.md) | `v0.1.12` 语音转写策略与失败关闭说明。 |
 | [RELEASE_NOTES_v0.1.12.en.md](RELEASE_NOTES_v0.1.12.en.md) | English `v0.1.12` voice transcription policy and fail-closed audio handling release notes. |
+| [RELEASE_NOTES_v0.1.13.md](RELEASE_NOTES_v0.1.13.md) | `v0.1.13` 语音转写与分发版本一致性说明。 |
+| [RELEASE_NOTES_v0.1.13.en.md](RELEASE_NOTES_v0.1.13.en.md) | English `v0.1.13` voice transcription and distribution-version alignment release notes. |
 | [RELEASE_NOTES_v0.1.14.md](RELEASE_NOTES_v0.1.14.md) | `v0.1.14` 流式对话阶段性进度提示说明。 |
 | [RELEASE_NOTES_v0.1.14.en.md](RELEASE_NOTES_v0.1.14.en.md) | English `v0.1.14` transient progress feedback for streaming chat release notes. |
+| [RELEASE_NOTES_v0.1.15.md](RELEASE_NOTES_v0.1.15.md) | `v0.1.15` 可信富内容渲染与聊天可靠性说明。 |
+| [RELEASE_NOTES_v0.1.15.en.md](RELEASE_NOTES_v0.1.15.en.md) | English `v0.1.15` trusted rich rendering and chat reliability release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |
