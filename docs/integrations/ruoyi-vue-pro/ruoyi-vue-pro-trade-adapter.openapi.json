@@ -1,0 +1,148 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RuoYi-Vue-Pro Trade Adapter for BailingHub",
+    "version": "0.1.0",
+    "description": "Community recipe for a thin, authority-preserving adapter. This is not an official RuoYi-Vue-Pro integration."
+  },
+  "servers": [
+    {
+      "url": "https://your-yudao-adapter.example.com"
+    }
+  ],
+  "paths": {
+    "/agent/trade/after-sales/{id}": {
+      "get": {
+        "operationId": "yudao_trade_after_sale_detail",
+        "summary": "查询一个售后订单详情",
+        "description": "适配层验签并按可信主体复核 trade:after-sale:query 后，调用现有售后查询服务。",
+        "x-agent-capability": {
+          "version": 1,
+          "enabled": true,
+          "scope": "trade.after-sale.read",
+          "risk": {
+            "level": "low"
+          },
+          "subject": {
+            "required": true
+          },
+          "audit": {
+            "sensitive": true
+          },
+          "execution": {
+            "readonly": true,
+            "idempotent": true,
+            "timeout_ms": 10000,
+            "rate_limit": {
+              "count": 60,
+              "window": "1m"
+            }
+          },
+          "guidance": {
+            "when_to_use": "当用户需要查看一个已知售后编号的详情、状态和日志时使用。不能用于批量枚举售后单。",
+            "returns": "返回业务系统当前可见的售后详情；不存在或无权限时由业务系统拒绝。",
+            "context": [
+              "after_sale_id"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AfterSaleId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "售后详情"
+          },
+          "401": {
+            "description": "BailingHub 签名无效或已过期"
+          },
+          "403": {
+            "description": "主体、租户或原业务权限校验失败"
+          },
+          "404": {
+            "description": "售后单不存在"
+          }
+        }
+      }
+    },
+    "/agent/trade/after-sales/{id}/refund": {
+      "put": {
+        "operationId": "yudao_trade_after_sale_refund",
+        "summary": "确认一个售后订单退款",
+        "description": "BailingHub 先冻结参数并取得人工批准；适配层随后验签、复核主体与 trade:after-sale:refund，最终由现有售后和支付服务裁决。",
+        "x-agent-capability": {
+          "version": 1,
+          "enabled": true,
+          "scope": "trade.after-sale.refund",
+          "risk": {
+            "level": "high"
+          },
+          "subject": {
+            "required": true
+          },
+          "approval": {
+            "required": true,
+            "prompt": "请确认该操作主体可以对指定售后单执行真实退款。批准内容必须固定售后编号，不得在批准后更换参数。"
+          },
+          "audit": {
+            "sensitive": true
+          },
+          "execution": {
+            "readonly": false,
+            "idempotent": true,
+            "timeout_ms": 30000,
+            "rate_limit": {
+              "count": 10,
+              "window": "1m"
+            }
+          },
+          "guidance": {
+            "when_to_use": "仅当用户明确要求对一个处于可退款状态的售后单确认退款时使用。先查询详情并向用户说明售后编号和退款后果。",
+            "returns": "返回业务系统接受、拒绝或已处理该退款的结果；审批通过不等于退款必然成功。",
+            "context": [
+              "after_sale_id",
+              "current_after_sale_status",
+              "acting_admin"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AfterSaleId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "退款操作由业务系统处理"
+          },
+          "401": {
+            "description": "BailingHub 签名无效或已过期"
+          },
+          "403": {
+            "description": "主体、租户、审批或原业务权限校验失败"
+          },
+          "409": {
+            "description": "幂等键冲突、参数漂移或售后状态已变化"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "AfterSaleId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "RuoYi-Vue-Pro 售后编号",
+        "schema": {
+          "type": "integer",
+          "format": "int64",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

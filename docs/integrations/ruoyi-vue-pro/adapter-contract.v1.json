@@ -1,0 +1,71 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "bailinghub-community-integration-recipe",
+  "official_upstream_integration": false,
+  "upstream": {
+    "repository": "https://github.com/YunaiV/ruoyi-vue-pro",
+    "commit": "0418084e222612af2fc1141f566af454f9236ab1",
+    "controller": "yudao-module-mall/yudao-module-trade/src/main/java/cn/iocoder/yudao/module/trade/controller/admin/aftersale/AfterSaleController.java",
+    "service": "yudao-module-mall/yudao-module-trade/src/main/java/cn/iocoder/yudao/module/trade/service/aftersale/AfterSaleServiceImpl.java"
+  },
+  "subject": {
+    "source": "signed_header:X-Bailing-On-Behalf-Of",
+    "format": "tenant_id:admin_user_id",
+    "model_controlled": false,
+    "empty_or_unknown": "deny"
+  },
+  "transport": {
+    "signature": "sha256=hmac_sha256",
+    "required_headers": [
+      "X-Bailing-Signature",
+      "X-Bailing-Timestamp",
+      "X-Bailing-Tool-Scope",
+      "X-Bailing-Job-Id",
+      "X-Bailing-On-Behalf-Of"
+    ],
+    "write_required_headers": [
+      "X-Bailing-Idempotency-Key"
+    ],
+    "fail_closed": true
+  },
+  "mappings": [
+    {
+      "scope": "trade.after-sale.read",
+      "adapter_operation_id": "yudao_trade_after_sale_detail",
+      "adapter_method": "GET",
+      "adapter_path": "/agent/trade/after-sales/{id}",
+      "upstream_method": "GET",
+      "upstream_path": "/admin-api/trade/after-sale/get-detail",
+      "upstream_permission": "trade:after-sale:query",
+      "business_authority_owner": "RuoYi-Vue-Pro permission and trade services"
+    },
+    {
+      "scope": "trade.after-sale.refund",
+      "adapter_operation_id": "yudao_trade_after_sale_refund",
+      "adapter_method": "PUT",
+      "adapter_path": "/agent/trade/after-sales/{id}/refund",
+      "upstream_method": "PUT",
+      "upstream_path": "/admin-api/trade/after-sale/refund",
+      "upstream_permission": "trade:after-sale:refund",
+      "business_authority_owner": "RuoYi-Vue-Pro permission, after-sale state, and payment services"
+    }
+  ],
+  "excluded_endpoints": [
+    {
+      "method": "POST",
+      "path": "/admin-api/trade/after-sale/update-refunded",
+      "reason": "Payment callback endpoint is not an Agent-facing business action."
+    }
+  ],
+  "required_invariants": [
+    "bailing_signature_is_verified_before_business_logic",
+    "signed_subject_is_not_taken_from_model_arguments",
+    "tenant_context_is_restored_before_authorization",
+    "original_ruoyi_permission_is_rechecked",
+    "refund_requires_pre_execution_approval",
+    "refund_reuses_one_business_idempotency_key",
+    "business_state_is_rechecked_at_execution_time",
+    "payment_callback_is_not_exposed_to_agents",
+    "business_system_remains_final_authority"
+  ]
+}
