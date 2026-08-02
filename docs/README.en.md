@@ -21,6 +21,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [integrations/deepseek/README.md](integrations/deepseek/README.md) | Chinese DeepSeek V4 + BailingHub E2E recipe. |
 | [integrations/bailian/README.en.md](integrations/bailian/README.en.md) | Alibaba Cloud Model Studio custom MCP recipe for governed BailingHub jobs. |
 | [integrations/bailian/README.md](integrations/bailian/README.md) | Chinese Alibaba Cloud Model Studio + BailingHub custom MCP recipe. |
+| [integrations/ruoyi-vue-pro/README.en.md](integrations/ruoyi-vue-pro/README.en.md) | Authority-preserving RuoYi-Vue-Pro after-sale and refund integration recipe. |
+| [integrations/ruoyi-vue-pro/README.md](integrations/ruoyi-vue-pro/README.md) | Chinese RuoYi-Vue-Pro / Yudao community integration recipe. |
 
 ## Architecture And Models
 

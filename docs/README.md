@@ -27,6 +27,8 @@
 | [integrations/deepseek/README.en.md](integrations/deepseek/README.en.md) | English DeepSeek V4 + BailingHub bilingual E2E recipe. |
 | [integrations/bailian/README.md](integrations/bailian/README.md) | 阿里云百炼通过自定义 MCP 调用 BailingHub 受治理任务的最小接入配方。 |
 | [integrations/bailian/README.en.md](integrations/bailian/README.en.md) | English Alibaba Cloud Model Studio + BailingHub custom MCP recipe. |
+| [integrations/ruoyi-vue-pro/README.md](integrations/ruoyi-vue-pro/README.md) | RuoYi-Vue-Pro / 芋道源码售后查询与退款的权限保留型社区接入配方。 |
+| [integrations/ruoyi-vue-pro/README.en.md](integrations/ruoyi-vue-pro/README.en.md) | English authority-preserving RuoYi-Vue-Pro after-sale and refund recipe. |
 
 ## 架构与模型
 
