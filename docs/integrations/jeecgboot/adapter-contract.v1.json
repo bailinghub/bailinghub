@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "bailinghub-community-integration-recipe",
+  "official_upstream_integration": false,
+  "upstream": {
+    "repository": "https://github.com/jeecgboot/JeecgBoot",
+    "commit": "df83f4de76811ea73bf5b37a8fe00cbb59988a1b",
+    "controller": "jeecg-boot/jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/controller/SysUserController.java",
+    "service": "jeecg-boot/jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/service/impl/SysUserServiceImpl.java",
+    "tenant_service": "jeecg-boot/jeecg-module-system/jeecg-system-biz/src/main/java/org/jeecg/modules/system/service/ISysUserTenantService.java"
+  },
+  "subject": {
+    "source": "signed_header:X-Bailing-On-Behalf-Of",
+    "format": "tenant_id:operator_user_id",
+    "model_controlled": false,
+    "empty_or_unknown": "deny"
+  },
+  "transport": {
+    "signature": "sha256=hmac_sha256",
+    "required_headers": [
+      "X-Bailing-Signature",
+      "X-Bailing-Timestamp",
+      "X-Bailing-Tool-Scope",
+      "X-Bailing-Job-Id",
+      "X-Bailing-On-Behalf-Of"
+    ],
+    "write_required_headers": [
+      "X-Bailing-Idempotency-Key"
+    ],
+    "fail_closed": true
+  },
+  "status_values": {
+    "1": "normal",
+    "2": "frozen"
+  },
+  "mappings": [
+    {
+      "scope": "system.user.read",
+      "adapter_operation_id": "jeecgboot_system_user_detail",
+      "adapter_method": "GET",
+      "adapter_path": "/agent/system/users/{id}",
+      "upstream_method": "GET",
+      "upstream_path": "/sys/user/queryById",
+      "upstream_permission": "system:user:queryById",
+      "business_authority_owner": "JeecgBoot Shiro permission, tenant membership, and user services"
+    },
+    {
+      "scope": "system.user.status.update",
+      "adapter_operation_id": "jeecgboot_system_user_status_update",
+      "adapter_method": "PUT",
+      "adapter_path": "/agent/system/users/{id}/status",
+      "upstream_method": "PUT",
+      "upstream_path": "/sys/user/frozenBatch",
+      "upstream_permission": "system:user:frozenBatch",
+      "business_authority_owner": "JeecgBoot Shiro permission, tenant membership, user state, and cache services"
+    }
+  ],
+  "excluded_endpoints": [
+    {
+      "method": "GET",
+      "path": "/sys/user/listAll",
+      "reason": "The upstream endpoint explicitly bypasses tenant isolation."
+    },
+    {
+      "method": "DELETE",
+      "path": "/sys/user/deleteBatch",
+      "reason": "Irreversible batch deletion is outside this narrow recipe."
+    },
+    {
+      "method": "PUT",
+      "path": "/sys/user/resetPassword",
+      "reason": "Credential reset requires a separate identity and security workflow."
+    },
+    {
+      "method": "PUT",
+      "path": "/sys/user/updatePassword",
+      "reason": "Models must not construct or hold account credentials."
+    }
+  ],
+  "required_invariants": [
+    "bailing_signature_is_verified_before_business_logic",
+    "signed_subject_is_not_taken_from_model_arguments",
+    "tenant_context_is_restored_and_cleared",
+    "operator_tenant_membership_is_active",
+    "original_jeecg_permission_is_rechecked",
+    "target_tenant_membership_is_active",
+    "target_user_and_status_are_rechecked_at_execution_time",
+    "admin_user_is_never_mutated",
+    "status_update_requires_pre_execution_approval",
+    "status_update_reuses_one_business_idempotency_key",
+    "non_tenant_isolated_and_credential_endpoints_are_not_exposed",
+    "business_system_remains_final_authority"
+  ]
+}

@@ -23,6 +23,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [integrations/bailian/README.md](integrations/bailian/README.md) | Chinese Alibaba Cloud Model Studio + BailingHub custom MCP recipe. |
 | [integrations/ruoyi-vue-pro/README.en.md](integrations/ruoyi-vue-pro/README.en.md) | Authority-preserving RuoYi-Vue-Pro after-sale and refund integration recipe. |
 | [integrations/ruoyi-vue-pro/README.md](integrations/ruoyi-vue-pro/README.md) | Chinese RuoYi-Vue-Pro / Yudao community integration recipe. |
+| [integrations/jeecgboot/README.en.md](integrations/jeecgboot/README.en.md) | Authority-preserving JeecgBoot user read and freeze/unfreeze integration recipe. |
+| [integrations/jeecgboot/README.md](integrations/jeecgboot/README.md) | Chinese JeecgBoot governed user-action community integration recipe. |
 
 ## Architecture And Models
 

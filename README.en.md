@@ -220,6 +220,7 @@ export default buildOpenApiSpec({
 - [Business Tools and Governance](docs/TOOLS.en.md)
 - [SDK Guide](docs/SDK.en.md)
 - [Dify Integration Recipe](docs/integrations/dify/README.en.md)
+- [JeecgBoot Integration Recipe](docs/integrations/jeecgboot/README.en.md)
 - [English Documentation Map](docs/README.en.md)
 - [Architecture](docs/ARCHITECTURE.en.md)
 - [Pipeline](docs/PIPELINE.en.md)
