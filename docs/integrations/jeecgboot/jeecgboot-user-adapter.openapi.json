@@ -1,0 +1,183 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "JeecgBoot User Adapter for BailingHub",
+    "version": "0.1.0",
+    "description": "Community recipe for a thin, tenant-aware and authority-preserving adapter. This is not an official JeecgBoot integration."
+  },
+  "servers": [
+    {
+      "url": "https://your-jeecgboot-adapter.example.com"
+    }
+  ],
+  "paths": {
+    "/agent/system/users/{id}": {
+      "get": {
+        "operationId": "jeecgboot_system_user_detail",
+        "summary": "查询当前租户内一个用户的详情",
+        "description": "适配层验签，恢复租户上下文，并复核操作人、目标用户的有效租户关系与 system:user:queryById 后调用现有用户服务。",
+        "x-agent-capability": {
+          "version": 1,
+          "enabled": true,
+          "scope": "system.user.read",
+          "risk": {
+            "level": "low"
+          },
+          "subject": {
+            "required": true
+          },
+          "audit": {
+            "sensitive": true
+          },
+          "execution": {
+            "readonly": true,
+            "idempotent": true,
+            "timeout_ms": 10000,
+            "rate_limit": {
+              "count": 60,
+              "window": "1m"
+            }
+          },
+          "guidance": {
+            "when_to_use": "当用户需要查询当前租户内一个已知用户编号的基本信息与账号状态时使用。不能用于枚举全部用户或跨租户查询。",
+            "returns": "返回 JeecgBoot 当前租户与权限范围内可见的用户详情；不存在或无权访问时由适配层拒绝。",
+            "context": [
+              "target_user_id",
+              "current_tenant",
+              "acting_operator"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前租户内的用户详情"
+          },
+          "401": {
+            "description": "BailingHub 签名无效或已过期"
+          },
+          "403": {
+            "description": "主体、租户关系或原 JeecgBoot 权限校验失败"
+          },
+          "404": {
+            "description": "当前租户内不存在该用户"
+          }
+        }
+      }
+    },
+    "/agent/system/users/{id}/status": {
+      "put": {
+        "operationId": "jeecgboot_system_user_status_update",
+        "summary": "冻结或解冻当前租户内一个用户",
+        "description": "BailingHub 先固定租户、目标用户与状态并取得人工批准；适配层随后重新验签、认人、查租户关系与 system:user:frozenBatch，最终由 JeecgBoot 用户服务执行。",
+        "x-agent-capability": {
+          "version": 1,
+          "enabled": true,
+          "scope": "system.user.status.update",
+          "risk": {
+            "level": "high"
+          },
+          "subject": {
+            "required": true
+          },
+          "approval": {
+            "required": true,
+            "prompt": "请确认要在当前租户中冻结或解冻指定用户。批准内容必须固定租户、目标用户编号和目标状态，参数变化后必须重新批准。"
+          },
+          "audit": {
+            "sensitive": true
+          },
+          "execution": {
+            "readonly": false,
+            "idempotent": true,
+            "timeout_ms": 15000,
+            "rate_limit": {
+              "count": 10,
+              "window": "1m"
+            }
+          },
+          "guidance": {
+            "when_to_use": "仅当用户明确要求冻结或解冻当前租户内一个已知账号时使用。执行前先查询用户并说明目标账号与状态变化。",
+            "returns": "返回 JeecgBoot 接受、拒绝或已处于目标状态的结果；审批通过不代表状态变更必然成功。",
+            "context": [
+              "target_user_id",
+              "target_status",
+              "current_tenant",
+              "acting_operator"
+            ]
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/UserId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserStatusUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "状态变更由 JeecgBoot 用户服务处理"
+          },
+          "401": {
+            "description": "BailingHub 签名无效或已过期"
+          },
+          "403": {
+            "description": "主体、租户关系、审批或原 JeecgBoot 权限校验失败"
+          },
+          "404": {
+            "description": "当前租户内不存在该用户"
+          },
+          "409": {
+            "description": "幂等键冲突、参数漂移、租户关系或目标状态已变化"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "UserId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "JeecgBoot 全局用户编号；适配层必须额外验证其属于当前租户",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "schemas": {
+      "UserStatusUpdate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "JeecgBoot 用户状态：1 正常（解冻），2 冻结"
+          }
+        }
+      }
+    }
+  }
+}
