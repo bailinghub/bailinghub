@@ -63,7 +63,8 @@ export function createRuntimeComposition<EditionT extends RuntimeCompositionEdit
     cfgStore,
     kbService,
     kbSync: cfgStore && kbService ? new KbSyncService(cfgStore.kbDatasources, kbService) : null,
-    toolIndex: cfgStore ? new ToolIndexService(cfgStore, input.cfg, cfgStore.toolEmbeddings) : null,
+    // 复用运行期短租约锁：同一工具源的索引重建在多实例下也不会交错写入。
+    toolIndex: cfgStore ? new ToolIndexService(cfgStore, input.cfg, cfgStore.toolEmbeddings, store) : null,
     jobStream: input.jobStream ?? new InMemoryJobStreamBroker(),
   };
 }

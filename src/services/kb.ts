@@ -7,11 +7,15 @@ import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { KbBase, KbDoc } from '../core/contracts/types';
 import type { KbHit } from '../core/runtime/knowledge-runtime';
 import { dt } from '../core/config/config-codec';
+import { dot, embedViaApi } from './embedding';
 import type { KnowledgeRepository } from './kb-repository';
 
-const EMBED_BATCH = 10;            // DashScope text-embedding-v3/v4 单请求上限 10 条，按下限走最稳
 const CHUNK_MAX = 700;             // 切块目标长度（字符）；中文 ≈ 500~700 token，远低于模型 8192 上限
 const INDEX_TTL_MS = 10 * 60_000;  // 内存索引兜底过期；写路径会主动失效，TTL 只防外部直改库
+
+export { dot, embedViaApi, normalize } from './embedding';
+export type { EmbeddingRequestOptions, EmbeddingRequestErrorKind } from './embedding';
+export { EmbeddingRequestError } from './embedding';
 
 /** 文本切块：按空行/markdown 标题分段，段落聚合到目标长度；超长段按句末标点切，单句仍超长才硬切。 */
 export function chunkText(text: string, maxLen = CHUNK_MAX): string[] {
@@ -102,44 +106,6 @@ function docHash(title: string, content: string): string {
 /** embedding 入参降噪：图片 markdown 换成短占位（URL 对语义检索是噪音还费 token）。只影响送给向量模型的文本，落库内容保持原样。 */
 function stripImagesForEmbedding(text: string): string {
   return text.replace(/!\[([^\]]*)\]\(\s*[^)]*\)/g, (_m, alt: string) => (alt ? `[图：${alt}]` : ''));
-}
-
-export function normalize(v: Float32Array): Float32Array {
-  let s = 0;
-  for (let i = 0; i < v.length; i++) s += v[i]! * v[i]!;
-  const n = Math.sqrt(s) || 1;
-  for (let i = 0; i < v.length; i++) v[i] = v[i]! / n;
-  return v;
-}
-
-export function dot(a: Float32Array, b: Float32Array): number {
-  let s = 0;
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) s += a[i]! * b[i]!;
-  return s;
-}
-
-/** OpenAI 兼容 /embeddings 调用（分批），返回 L2 归一化向量。KB 与工具检索（tools-index）共用同一出口，避免向量基建漂移。 */
-export async function embedViaApi(cred: { base_url: string; api_key: string }, model: string, dim: number, texts: string[]): Promise<Float32Array[]> {
-  const url = `${cred.base_url.replace(/\/$/, '')}/embeddings`;
-  const out: Float32Array[] = [];
-  for (let i = 0; i < texts.length; i += EMBED_BATCH) {
-    const batch = texts.slice(i, i + EMBED_BATCH);
-    const body: Record<string, unknown> = { model, input: batch };
-    if (dim) body['dimensions'] = dim;
-    const resp = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${cred.api_key}` },
-      body: JSON.stringify(body),
-    });
-    if (!resp.ok) throw new Error(`embedding API ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-    const data = (await resp.json()) as { data?: Array<{ index: number; embedding: number[] }> };
-    const items = data?.data ?? [];
-    if (items.length !== batch.length) throw new Error(`embedding 返回条数不符：要 ${batch.length} 得 ${items.length}`);
-    items.sort((a, b) => a.index - b.index);
-    for (const it of items) out.push(normalize(Float32Array.from(it.embedding)));
-  }
-  return out;
 }
 
 interface IndexRow { id: number; doc_id: number; seq: number; content: string; title: string; vec: Float32Array }

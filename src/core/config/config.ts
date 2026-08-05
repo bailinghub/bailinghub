@@ -30,6 +30,17 @@ export interface MetricsConfig {
   scrapeTimeoutMs: number;
 }
 
+/** 工具语义检索的运行保护。这些是部署级时限，不是路由或工具提供方的业务策略。 */
+export interface ToolRetrievalConfig {
+  indexLoadTimeoutMs: number;
+  embeddingTimeoutMs: number;
+}
+
+export const DEFAULT_TOOL_RETRIEVAL_CONFIG: Readonly<ToolRetrievalConfig> = Object.freeze({
+  indexLoadTimeoutMs: 5000,
+  embeddingTimeoutMs: 15_000,
+});
+
 export interface LlmCredential {
   base_url: string;
   api_key: string;
@@ -64,6 +75,8 @@ export interface AppConfig {
   auditRetentionDays: number; // bz_audit 保留天数；0=不自动删除
   alerts: AlertsConfig | null;
   metrics: MetricsConfig;
+  /** loadConfig 始终补齐；保留 optional 让旧版扩展注入的 AppConfig 继续兼容。 */
+  toolRetrieval?: ToolRetrievalConfig;
   bootstrapAdmin: BootstrapAdminConfig | null;
   concurrency: number;
   killSwitchFile: string;
@@ -202,6 +215,10 @@ export function loadConfig(): AppConfig {
       enabled: booleanEnv('BAILING_METRICS_ENABLED'),
       token: String(env['BAILING_METRICS_TOKEN'] ?? '').trim(),
       scrapeTimeoutMs: boundedIntegerEnv('BAILING_METRICS_SCRAPE_TIMEOUT_MS', 5000, 250, 30_000),
+    },
+    toolRetrieval: {
+      indexLoadTimeoutMs: boundedIntegerEnv('BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS', DEFAULT_TOOL_RETRIEVAL_CONFIG.indexLoadTimeoutMs, 100, 60_000),
+      embeddingTimeoutMs: boundedIntegerEnv('BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS', DEFAULT_TOOL_RETRIEVAL_CONFIG.embeddingTimeoutMs, 250, 120_000),
     },
     bootstrapAdmin: bootstrapAdminFromEnv(env),
     concurrency: Number(raw['concurrency'] ?? 2),

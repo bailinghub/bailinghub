@@ -30,7 +30,9 @@ A route may combine capabilities from several business systems without weakening
 
 Each source keeps its own scope allowlist, subject mapping, signature secret, rate limits, approval records, and audit identity. The runtime presents one combined tool surface to the Agent, but dispatches every call back through the governance chain of its owning provider. Operation IDs must be unique across all sources attached to the same route; a collision is rejected before execution.
 
-`max_calls` is a route-wide budget shared by all sources. It prevents an Agent from multiplying the call budget simply by crossing provider boundaries.
+`max_calls` is a route-wide budget shared by all sources and configured independently per route. It prevents an Agent from multiplying the call budget simply by crossing provider boundaries. After each business-tool round, the runtime supplies trusted used and remaining counts; it guides the model to converge with one call left and removes all tools at exhaustion so the model must form a final answer.
+
+Internal DSML-like tool-protocol markup in a final answer is intercepted, never displayed or parsed for execution, and receives at most one tool-free safe rewrite. A repeated violation fails closed. Streaming clients must discard provisional text when they receive `reset.reason=protocol_violation`.
 
 ## Risk Levels
 

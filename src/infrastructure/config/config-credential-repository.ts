@@ -1,6 +1,8 @@
 import { dt, rowCredential } from '../../core/config/config-codec';
 import type { Credential } from '../../core/contracts/types';
 
+export interface CredentialQueryOptions { timeoutMs?: number }
+
 export class CredentialRepository {
   constructor(private readonly poolOf: () => any) {}
 
@@ -11,8 +13,14 @@ export class CredentialRepository {
     return (rows as any[]).map(rowCredential);
   }
 
-  async get(name: string): Promise<Credential | null> {
-    const [rows] = await this.pool.query('SELECT * FROM bz_credentials WHERE name=? LIMIT 1', [name]);
+  async get(name: string, options: CredentialQueryOptions = {}): Promise<Credential | null> {
+    const [rows] = options.timeoutMs
+      ? await this.pool.query({
+          sql: 'SELECT * FROM bz_credentials WHERE name=? LIMIT 1',
+          values: [name],
+          timeout: options.timeoutMs,
+        })
+      : await this.pool.query('SELECT * FROM bz_credentials WHERE name=? LIMIT 1', [name]);
     return rows[0] ? rowCredential(rows[0]) : null;
   }
 

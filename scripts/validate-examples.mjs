@@ -43,6 +43,8 @@ for (const key of [
   'BAILING_MYSQL_CONNECTION_LIMIT=15',
   'BAILING_JSON_BODY_MAX_BYTES=1048576',
   'BAILING_SHUTDOWN_DRAIN_MS=30000',
+  'BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS=5000',
+  'BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS=15000',
   'BAILING_INSTALL_MODE=image',
   'BAILING_SKIP_PORT_CHECK=0',
   'BAILING_ALLOW_UNTESTED_ARCH=0',
@@ -58,6 +60,8 @@ for (const [file, text] of [
   requireIncludes(file, text, '${BAILING_DEMO_PUBLIC_PORT:-19080}:19080');
   requireIncludes(file, text, '${BAILING_MYSQL_PUBLIC_PORT:-3307}:3306');
   requireIncludes(file, text, 'BAILING_STATE_BACKEND: mysql');
+  requireIncludes(file, text, 'BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS: ${BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS:-5000}');
+  requireIncludes(file, text, 'BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS: ${BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS:-15000}');
   requireIncludes(file, text, 'BAILING_SEED_DEMO: "1"');
   if (/bailing\.bnopen\.cn/.test(text)) findings.push(`${file}: must not reference self-hosted internal instance`);
 }

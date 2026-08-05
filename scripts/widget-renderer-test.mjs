@@ -149,6 +149,30 @@ try {
   assert.ok(maximized.width >= 1200, `expected maximized panel width, got ${maximized.width}`);
   await page.locator('.maximize').click();
 
+  const minimizeControl = await page.evaluate(() => {
+    const host = Array.from(document.body.children).find((node) => node.shadowRoot);
+    const root = host?.shadowRoot;
+    const control = root?.querySelector('.minimize');
+    return {
+      exists: Boolean(control),
+      ariaLabel: control?.getAttribute('aria-label'),
+      title: control?.getAttribute('title'),
+      hasSvg: Boolean(control?.querySelector('svg')),
+      legacyCloseExists: Boolean(root?.querySelector('.close')),
+    };
+  });
+  assert.deepEqual(minimizeControl, {
+    exists: true,
+    ariaLabel: '最小化',
+    title: '最小化',
+    hasSvg: true,
+    legacyCloseExists: false,
+  });
+  await page.locator('.minimize').click();
+  assert.equal(await page.locator('.panel').evaluate((panel) => panel.classList.contains('open')), false);
+  await page.locator('.bubble').click();
+  assert.equal(await page.locator('.panel').evaluate((panel) => panel.classList.contains('open')), true);
+
   await page.locator('textarea').fill('请分析这组数据');
   await page.locator('.send').click();
   const submitted = await submission;
@@ -175,7 +199,7 @@ try {
   assert.equal(afterRestart.activeCount, 0);
   assert.equal(afterRestart.mounts, afterRestart.destroys);
 
-  console.log('✓ widget renderers widen safely, expose presentation capabilities, maximize, fall back, and clean up');
+  console.log('✓ widget renderers widen safely, expose presentation capabilities, maximize/minimize, fall back, and clean up');
 } finally {
   await browser.close();
   await new Promise((resolve) => server.close(resolve));

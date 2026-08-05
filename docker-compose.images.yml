@@ -18,7 +18,7 @@ services:
       retries: 30
 
   demo-business:
-    image: ${BAILING_DEMO_BUSINESS_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:0.1.15}
+    image: ${BAILING_DEMO_BUSINESS_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:0.1.16}
     environment:
       DEMO_HOST: 0.0.0.0
       DEMO_PORT: 19080
@@ -29,7 +29,7 @@ services:
       - "${BAILING_DEMO_PUBLIC_PORT:-19080}:19080"
 
   bailinghub:
-    image: ${BAILINGHUB_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:0.1.15}
+    image: ${BAILINGHUB_IMAGE:-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:0.1.16}
     depends_on:
       mysql:
         condition: service_healthy
@@ -51,6 +51,8 @@ services:
       BAILING_METRICS_ENABLED: ${BAILING_METRICS_ENABLED:-false}
       BAILING_METRICS_TOKEN: ${BAILING_METRICS_TOKEN:-}
       BAILING_METRICS_SCRAPE_TIMEOUT_MS: ${BAILING_METRICS_SCRAPE_TIMEOUT_MS:-5000}
+      BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS: ${BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS:-5000}
+      BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS: ${BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS:-15000}
       BAILING_ALERTS_TYPE: ""
       BAILING_SEED_DEMO: "1"
       BAILING_DEMO_ADMIN_PASSWORD: ${BAILING_DEMO_ADMIN_PASSWORD:-bailing-demo-admin}

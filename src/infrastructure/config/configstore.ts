@@ -20,6 +20,7 @@ import { ToolCallLedger } from './config-tool-call-ledger';
 import { DeliveryDlqLedger } from './config-delivery-dlq-ledger';
 import { ObservabilityLedger } from './config-observability-ledger';
 import { MysqlToolEmbeddingRepository } from './config-tool-embedding-repository';
+import type { ToolEmbeddingRepository } from '../../services/tool-index-repository';
 import { MysqlKbDatasourceRepository, MysqlKnowledgeRepository } from './config-knowledge-repository';
 import { InstanceBrandingRepository } from './config-instance-branding-repository';
 import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
@@ -41,7 +42,8 @@ export type ApprovalLedgerContract = Pick<ApprovalLedger, keyof ApprovalLedger>;
 export type ConversationLedgerContract = Pick<ConversationLedger, keyof ConversationLedger>;
 export type ExecutorLedgerContract = Pick<ExecutorLedger, keyof ExecutorLedger>;
 export type ToolCallLedgerContract = Pick<ToolCallLedger, keyof ToolCallLedger>;
-export type ToolEmbeddingRepositoryContract = Pick<MysqlToolEmbeddingRepository, keyof MysqlToolEmbeddingRepository>;
+/** 公开扩展契约以稳定服务接口为准；事务 replaceProvider 对旧仓储保持可选。 */
+export type ToolEmbeddingRepositoryContract = ToolEmbeddingRepository;
 export type KnowledgeRepositoryContract = Pick<MysqlKnowledgeRepository, keyof MysqlKnowledgeRepository>;
 export type KbDatasourceRepositoryContract = Pick<MysqlKbDatasourceRepository, keyof MysqlKbDatasourceRepository>;
 export type { InstanceBrandingRepositoryContract };

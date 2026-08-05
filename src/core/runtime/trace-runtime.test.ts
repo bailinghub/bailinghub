@@ -25,9 +25,14 @@ function job(extra: Partial<Job> = {}): Job {
 test('traceStageOf: 常见任务事件归入稳定阶段', () => {
   assert.equal(traceStageOf('received'), 'launch');
   assert.equal(traceStageOf('kb_injected'), 'context');
+  assert.equal(traceStageOf('tools_retrieval_diagnostics'), 'context');
   assert.equal(traceStageOf('llm_request'), 'execution');
   assert.equal(traceStageOf('llm_stream_completed'), 'execution');
   assert.equal(traceStageOf('llm_stream_fallback'), 'execution');
+  assert.equal(traceStageOf('llm_output_protocol_violation'), 'execution');
+  assert.equal(traceStageOf('llm_output_protocol_repaired'), 'execution');
+  assert.equal(traceStageOf('tool_budget_near_limit'), 'tool');
+  assert.equal(traceStageOf('tool_budget_exhausted'), 'tool');
   assert.equal(traceStageOf('tool_result'), 'tool');
   assert.equal(traceStageOf('tool_approval_pending'), 'approval');
   assert.equal(traceStageOf('tool_approved'), 'approval');
@@ -41,6 +46,61 @@ test('traceStageOf: 常见任务事件归入稳定阶段', () => {
 test('trace severity: 流式完成是信息，明确降级是警告', () => {
   assert.equal(traceSeverityOf('llm_stream_completed'), 'info');
   assert.equal(traceSeverityOf('llm_stream_fallback'), 'warning');
+  assert.equal(traceSeverityOf('llm_output_protocol_violation'), 'warning');
+  assert.equal(traceSeverityOf('llm_output_protocol_repaired'), 'info');
+  assert.equal(traceSeverityOf('tool_budget_near_limit'), 'info');
+  assert.equal(traceSeverityOf('tool_budget_exhausted'), 'warning');
+  assert.equal(traceSeverityOf('tools_retrieval_diagnostics', { status: 'ok' }), 'info');
+  assert.equal(traceSeverityOf('tools_retrieval_diagnostics', { status: 'degraded' }), 'warning');
+});
+
+test('工具检索诊断展示缓存状态、分阶段耗时与稳定降级原因', () => {
+  const entry = completeTraceEntry({
+    ts: '2026-07-01T00:00:00.000Z',
+    job_id: 'job-trace',
+    request_id: 'req-trace',
+    event: 'tools_retrieval_diagnostics',
+    detail: {
+      provider: 'mall',
+      status: 'degraded',
+      reason: 'embedding_timeout',
+      cache_state: 'fresh',
+      index_load_ms: 1,
+      embedding_ms: 15001,
+      total_ms: 15004,
+    },
+  });
+
+  assert.equal(entry.stage, 'context');
+  assert.equal(entry.severity, 'warning');
+  assert.equal(entry.title, '工具检索诊断');
+  assert.equal(entry.summary, 'mall · degraded · embedding_timeout · cache=fresh · index 1ms · embedding 15001ms · total 15004ms');
+});
+
+test('工具预算与内部协议事件生成可读追踪', () => {
+  const budget = completeTraceEntry({
+    ts: '2026-07-01T00:00:00.000Z',
+    job_id: 'job-trace',
+    request_id: 'req-trace',
+    event: 'tool_budget_exhausted',
+    detail: { used: 5, limit: 5, remaining: 0 },
+  });
+  const violation = completeTraceEntry({
+    ts: '2026-07-01T00:00:01.000Z',
+    job_id: 'job-trace',
+    request_id: 'req-trace',
+    event: 'llm_output_protocol_violation',
+    detail: { model: 'deepseek', round: 6, marker: 'dsml_tool_markup', tool_calls_used: 5, tool_calls_limit: 5 },
+  });
+
+  assert.equal(budget.stage, 'tool');
+  assert.equal(budget.severity, 'warning');
+  assert.equal(budget.title, '工具调用已达上限');
+  assert.equal(budget.summary, '5/5 calls · 0 remaining');
+  assert.equal(violation.stage, 'execution');
+  assert.equal(violation.severity, 'warning');
+  assert.equal(violation.title, '模型内部协议已拦截');
+  assert.equal(violation.summary, 'deepseek · round 6 · dsml_tool_markup · 5/5 calls');
 });
 
 test('llm_stream_completed 摘要直接展示首 token、总耗时与请求规模', () => {

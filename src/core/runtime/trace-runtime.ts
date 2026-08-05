@@ -97,7 +97,7 @@ export function traceStageOf(event: string, detail: Record<string, unknown> = {}
   if (
     event === 'kb_injected' || event === 'kb_error' ||
     event === 'perception_degraded' || event === 'speech_degraded' || event === 'file_input' || event === 'file_input_degraded' ||
-    event === 'tools_retrieval_degraded'
+    event === 'tools_retrieval_degraded' || event === 'tools_retrieval_diagnostics'
   ) return 'context';
   if (event.startsWith('memory_summary') || event === 'memory_summarized') return 'summary';
   if (event === 'recovered' || event === 'rerun' || event === 'retry_scheduled') return 'recovery';
@@ -108,6 +108,7 @@ export function traceStageOf(event: string, detail: Record<string, unknown> = {}
   if (
     event === 'started' || event === 'dispatched' || event === 'finished' ||
     event === 'llm_request' || event === 'llm_stream_completed' || event === 'llm_stream_fallback' ||
+    event === 'llm_output_protocol_violation' || event === 'llm_output_protocol_repaired' ||
     event === 'llm_empty_response_retry' || event === 'llm_empty_response_fallback' ||
     event === 'perception' || event === 'tools_unavailable' || event === 'tools_locked'
   ) return 'execution';
@@ -123,11 +124,12 @@ export function traceStageOf(event: string, detail: Record<string, unknown> = {}
 
 export function traceSeverityOf(event: string, detail: Record<string, unknown> = {}): TraceSeverity {
   const status = String(detail['status'] ?? '');
+  if (event === 'tools_retrieval_diagnostics' && status !== 'ok') return 'warning';
   if (event === 'finished' && (status === 'error' || status === 'rejected')) return 'error';
   if (event.includes('error') || event.includes('failed') || event.endsWith('_failure')) return 'error';
   if (detail['ok'] === false || detail['final'] === true && detail['ok'] === false) return 'error';
   if (event === 'rejected' || event.includes('degraded') || event.includes('unavailable') || event.includes('locked') || event.includes('blocked')) return 'warning';
-  if (event.includes('skipped') || event === 'retry_scheduled' || event === 'llm_stream_fallback' || event === 'llm_empty_response_retry' || event === 'llm_empty_response_fallback' || event === 'memory_summary_raced' || event === 'tool_approval_pending' || event === 'tool_args_drift') return 'warning';
+  if (event.includes('skipped') || event === 'retry_scheduled' || event === 'llm_stream_fallback' || event === 'llm_output_protocol_violation' || event === 'llm_empty_response_retry' || event === 'llm_empty_response_fallback' || event === 'tool_budget_exhausted' || event === 'memory_summary_raced' || event === 'tool_approval_pending' || event === 'tool_args_drift') return 'warning';
   return 'info';
 }
 
@@ -148,6 +150,8 @@ export function traceTitleOf(event: string): string {
     llm_request: '模型请求',
     llm_stream_completed: '模型流式输出完成',
     llm_stream_fallback: '模型流式输出降级',
+    llm_output_protocol_violation: '模型内部协议已拦截',
+    llm_output_protocol_repaired: '模型回答已安全重写',
     llm_empty_response_retry: '模型空响应修复',
     llm_empty_response_fallback: '模型空响应兜底',
     perception: '视觉感知',
@@ -159,11 +163,15 @@ export function traceTitleOf(event: string): string {
     tools_unavailable: '工具不可用',
     tools_locked: '工具已锁定',
     tools_retrieved: '工具语义召回',
+    tools_retrieval_diagnostics: '工具检索诊断',
+    tools_retrieval_degraded: '工具检索已降级',
     tool_lookup: '工具定义查询',
     tool_call: '工具调用',
     tool_result: '工具结果',
     tool_call_deduped: '工具调用去重',
     tool_blocked: '工具调用被拦截',
+    tool_budget_near_limit: '工具调用接近上限',
+    tool_budget_exhausted: '工具调用已达上限',
     tool_approval_pending: '工具等待审批',
     tool_approved: '工具审批通过',
     tool_denied: '工具审批拒绝',
@@ -207,6 +215,13 @@ export function traceSummaryOf(event: string, detail: Record<string, unknown> = 
     detail['finish_reason'],
   ]);
   if (event === 'llm_stream_fallback') return compact([detail['model'], detail['round'] != null ? `round ${detail['round']}` : '', detail['status'] != null ? `HTTP ${detail['status']}` : '', detail['reason']]);
+  if (event === 'llm_output_protocol_violation') return compact([
+    detail['model'],
+    detail['round'] != null ? `round ${detail['round']}` : '',
+    detail['marker'],
+    detail['tool_calls_used'] != null && detail['tool_calls_limit'] != null ? `${detail['tool_calls_used']}/${detail['tool_calls_limit']} calls` : '',
+  ]);
+  if (event === 'llm_output_protocol_repaired') return compact([detail['model'], detail['round'] != null ? `round ${detail['round']}` : '', detail['content_chars'] != null ? `${detail['content_chars']} chars` : '']);
   if (event === 'llm_empty_response_retry') return compact([detail['model'], detail['tool_calls'] != null ? `${detail['tool_calls']} tool calls` : '', detail['last_tool']]);
   if (event === 'llm_empty_response_fallback') return compact([detail['model'], detail['last_tool'], detail['fallback']]);
   if (event === 'perception') return compact([
@@ -233,8 +248,22 @@ export function traceSummaryOf(event: string, detail: Record<string, unknown> = 
   ]);
   if (event === 'file_input_degraded') return compact([detail['requested'], detail['reason'], detail['credential']]);
   if (event === 'tools_retrieved') return compact([detail['query'] ? `"${String(detail['query']).slice(0, 40)}"` : '', Array.isArray(detail['picked']) ? `${detail['picked'].length} tools` : '']);
+  if (event === 'tools_retrieval_diagnostics') return compact([
+    detail['provider'],
+    detail['status'],
+    detail['reason'],
+    detail['cache_state'] ? `cache=${detail['cache_state']}` : '',
+    detail['index_load_ms'] != null ? `index ${detail['index_load_ms']}ms` : '',
+    detail['embedding_ms'] != null ? `embedding ${detail['embedding_ms']}ms` : '',
+    detail['total_ms'] != null ? `total ${detail['total_ms']}ms` : '',
+  ]);
+  if (event === 'tools_retrieval_degraded') return compact([detail['reason']]);
   if (event === 'tool_lookup') return compact([Array.isArray(detail['found']) ? `${detail['found'].length} found` : '', Array.isArray(detail['names']) ? `${detail['names'].length} requested` : '']);
   if (event === 'tool_call') return compact([detail['tool'], detail['scope'], detail['method'], detail['path']]);
+  if (event === 'tool_budget_near_limit' || event === 'tool_budget_exhausted') return compact([
+    detail['used'] != null && detail['limit'] != null ? `${detail['used']}/${detail['limit']} calls` : '',
+    detail['remaining'] != null ? `${detail['remaining']} remaining` : '',
+  ]);
   if (event === 'tool_result') return compact([detail['tool'], detail['status'] != null ? `HTTP ${detail['status']}` : '', detail['duration_ms'] != null ? `${detail['duration_ms']}ms` : '']);
   if (event === 'tool_approval_pending' || event === 'tool_approved' || event === 'tool_denied' || event === 'tool_approved_external' || event === 'tool_denied_external') return compact([detail['approval_id'], detail['summary'] ?? detail['reason'], detail['tool'], detail['policy'], detail['by']]);
   if (event.startsWith('delivery') || event.startsWith('channel_')) return compact([detail['type'], detail['channel'], detail['to'], detail['reason'], detail['error']]);

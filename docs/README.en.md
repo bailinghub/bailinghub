@@ -83,6 +83,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.14.md](RELEASE_NOTES_v0.1.14.md) | Chinese `v0.1.14` release notes. |
 | [RELEASE_NOTES_v0.1.15.en.md](RELEASE_NOTES_v0.1.15.en.md) | `v0.1.15` trusted rich rendering and chat reliability release notes. |
 | [RELEASE_NOTES_v0.1.15.md](RELEASE_NOTES_v0.1.15.md) | Chinese `v0.1.15` release notes. |
+| [RELEASE_NOTES_v0.1.16.en.md](RELEASE_NOTES_v0.1.16.en.md) | `v0.1.16` bounded tool runtime and resilient semantic retrieval release notes. |
+| [RELEASE_NOTES_v0.1.16.md](RELEASE_NOTES_v0.1.16.md) | Chinese `v0.1.16` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

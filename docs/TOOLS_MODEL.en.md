@@ -47,6 +47,10 @@ tool source
   -> trace and audit records are written
 ```
 
+## Semantic Retrieval and Index Lifecycle
+
+Semantic retrieval is an optional context enhancement inside the governed allowlist, not a new authorization layer. Index cache entries use fresh, stale, and miss states: stale snapshots continue serving while a single background refresh runs, and only a true cold cache waits within a deployment-level deadline. Index, credential, or query-embedding failures fall back to the catalog and `find_tools` path. Retrieval verifies the stored model, dimension, and byte length, and the embedding service must return the requested vector length. Legacy extensions without row-level coordinates fail closed to progressive discovery instead of guessing coordinates from a second mutable snapshot. Reindexing is serialized per provider, rereads authoritative configuration under the lock, and atomically replaces the provider index when the embedding model or dimension changes; failures preserve the previous coordinate system.
+
 ## Design Rule
 
 Do not expose raw backend CRUD by default. Design agent-facing tools as business actions: query, preview, create request, create draft, execute with confirmation.

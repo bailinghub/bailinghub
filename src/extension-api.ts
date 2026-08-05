@@ -1,8 +1,8 @@
 // Extension API: stable, injectable building blocks for custom deployments.
 // Do not export OSS default wrappers or runtime singletons from this file.
 
-export { loadConfig } from './core/config/config';
-export type { AppConfig, MysqlConfig } from './core/config/config';
+export { DEFAULT_TOOL_RETRIEVAL_CONFIG, loadConfig } from './core/config/config';
+export type { AppConfig, MysqlConfig, ToolRetrievalConfig } from './core/config/config';
 export type { AlertRule, AuditEntry, AudiencePolicy, Channel, ChatEntry, Client, Credential, ExecutorToken, Job, JobRating, JobStatus, NormalizedPrincipal, ProjectReg, Route, RunRequest, StorageBucket, TargetDef, ToolApproval, ToolProvider } from './core/contracts/types';
 export type { PageRule } from './core/platform/pagecontext';
 export type { JobOperationalMetricsSnapshot, RuntimeStateStore } from './core/state/state-contracts';
