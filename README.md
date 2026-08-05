@@ -222,6 +222,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/RELEASE_NOTES_v0.1.13.md` | `v0.1.13` 语音转写与分发版本一致性说明 |
 | `docs/RELEASE_NOTES_v0.1.14.md` | `v0.1.14` 流式对话阶段性进度提示说明 |
 | `docs/RELEASE_NOTES_v0.1.15.md` | `v0.1.15` 可信富内容渲染与聊天可靠性说明 |
+| `docs/RELEASE_NOTES_v0.1.16.md` | `v0.1.16` 工具运行时收敛与语义检索韧性说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |

@@ -24,6 +24,21 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.1.16 - Bounded Tool Runtime and Resilient Semantic Retrieval
+
+Released on 2026-08-05.
+
+- Made the runtime derive its bounded model rounds from each route's existing `tools.max_calls` budget. The model receives used and remaining counts after every business-tool round, is guided to converge near the limit, and loses tool access at exhaustion.
+- Added a streaming and non-streaming output gate for DSML-like internal tool-protocol markup. Provisional text is discarded through `reset`, one tool-free rewrite is allowed, repeated violations fail closed, and text protocol is never parsed for execution.
+- Added background index prewarming, stale-while-revalidate service, single-flight refresh, bounded index and credential reads, abortable query embeddings, and progressive tool-discovery fallback.
+- Serialized same-provider reindexing, reread authoritative configuration under the lock, atomically replaced changed embedding coordinates, and added sanitized phase-latency diagnostics.
+- Replaced the widget's misleading close glyph with an accessible minimize control while preserving the existing hide-and-reopen behavior.
+- Added independent community governance recipes for RuoYi-Vue-Pro after-sale lookup/refund and JeecgBoot user lookup/freeze-unfreeze, including Agent-facing OpenAPI, adapter contracts, and verification scripts. They do not imply official upstream integration or endorsement.
+- No database migration is required.
+- ACC, the Client API version, executor protocol, tool signatures, approval semantics, and final business authorization are unchanged. Existing routes require no configuration migration. Custom chat clients should continue discarding provisional text on every `reset` and treating `done.reply` as authoritative.
+- Validation: `npm run release:check` plus both community-recipe verification scripts, covering budget convergence, protocol interception, retrieval timeout fallback, cache refresh, atomic reindexing, and widget minimize behavior.
+- Related docs: [RELEASE_NOTES_v0.1.16.en.md](RELEASE_NOTES_v0.1.16.en.md), [TOOLS_DESIGN.en.md](TOOLS_DESIGN.en.md), [OPERATIONS.en.md](OPERATIONS.en.md), [RuoYi-Vue-Pro recipe](integrations/ruoyi-vue-pro/README.en.md), and [JeecgBoot recipe](integrations/jeecgboot/README.en.md).
+
 ## v0.1.15 - Trusted Rich Rendering and Chat Reliability
 
 Released on 2026-08-01.

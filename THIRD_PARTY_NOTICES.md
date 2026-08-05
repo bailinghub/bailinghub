@@ -208,7 +208,7 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [duck](https://www.npmjs.com/package/duck) | 0.1.12 | BSD | runtime |
 | Hub | [esbuild](https://www.npmjs.com/package/esbuild) | 0.28.1 | MIT | build/test |
 | Hub | [fast-deep-equal](https://www.npmjs.com/package/fast-deep-equal) | 3.1.3 | MIT | build/test |
-| Hub | [fast-uri](https://www.npmjs.com/package/fast-uri) | 3.1.4 | BSD-3-Clause | build/test |
+| Hub | [fast-uri](https://www.npmjs.com/package/fast-uri) | 3.1.5 | BSD-3-Clause | build/test |
 | Hub | [fsevents](https://www.npmjs.com/package/fsevents) | 2.3.2 | MIT | build/test |
 | Hub | [fsevents](https://www.npmjs.com/package/fsevents) | 2.3.3 | MIT | build/test |
 | Hub | [generate-function](https://www.npmjs.com/package/generate-function) | 2.3.1 | MIT | runtime |
