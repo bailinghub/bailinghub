@@ -35,7 +35,19 @@ export async function assembleToolRuntimeFor(
       const ti = index;
       const allowedSet = new Set(allowed.map((t) => t.name));
       retrieveNames = async (query: string) => {
-        const hits = await ti.retrieve(provider.name, allowedSet, query, ec, { minScore: ropts.minScore, maxTools: ropts.maxTools }).catch(() => null);
+        const hits = await ti.retrieve(provider.name, allowedSet, query, ec, {
+          minScore: ropts.minScore,
+          maxTools: ropts.maxTools,
+          observe: async (observation) => {
+            await state.appendAudit({
+              ts: nowFn(),
+              job_id: job.job_id,
+              request_id: job.request_id,
+              event: 'tools_retrieval_diagnostics',
+              detail: { ...observation },
+            });
+          },
+        }).catch(() => null);
         return hits === null ? null : hits.map((h) => h.name);
       };
     }

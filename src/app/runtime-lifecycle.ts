@@ -11,6 +11,7 @@ import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { KbService } from '../services/kb';
 import type { KbSyncService } from '../services/kbsync';
 import type { ToolIndexService } from '../services/tools-index';
+import { embedConfigOf } from './tool-context';
 
 const TARGET_REFRESH_MS = 60_000;
 const INHUB_DRAIN_MS = 500;
@@ -21,6 +22,7 @@ const KB_SYNC_MS = 60_000;
 const REAPER_INTERVAL_MS = 60_000;
 const TOOL_CALL_CLEANUP_MS = 60 * 60 * 1000;
 const AUDIT_RETENTION_CLEANUP_MS = 6 * 60 * 60 * 1000;
+const TOOL_INDEX_PREWARM_DELAY_MS = 0;
 
 // 兜底：定期把派发后长时间未回报的 dispatched 任务重排回队列（执行器/网络异常时不至于卡死）。
 // 阈值需大于最长任务耗时（出厂能力档上限 6min），这里取 20min。
@@ -51,6 +53,65 @@ export interface RuntimeLifecycleDeps {
   now: () => string;
   sleep: (ms: number) => Promise<void>;
   afterStoresInitialized?: () => Promise<void>;
+}
+
+export interface ToolIndexPrewarmSummary {
+  eligible: number;
+  warmed: number;
+  failed: number;
+  rows: number;
+}
+
+/**
+ * 冷启动索引预热：只读已持久化向量，不查凭证、不请求 embedding。
+ * 按源顺序 best-effort，避免实例重启时瞬间打满数据库连接池；单源失败不影响后续源。
+ */
+export async function prewarmToolIndexesFor(configStore: ConfigStoreContract, toolIndex: ToolIndexService): Promise<ToolIndexPrewarmSummary> {
+  const providers = await configStore.toolProviders.list();
+  const eligible = providers.flatMap((provider) => {
+    const embedConfig = provider.enabled ? embedConfigOf(provider) : null;
+    return embedConfig ? [{ provider, embedConfig }] : [];
+  });
+  const summary: ToolIndexPrewarmSummary = { eligible: eligible.length, warmed: 0, failed: 0, rows: 0 };
+  for (const item of eligible) {
+    try {
+      summary.rows += await toolIndex.prewarmProvider(item.provider.name, item.embedConfig);
+      summary.warmed++;
+    } catch {
+      summary.failed++;
+    }
+  }
+  return summary;
+}
+
+function appendToolIndexPrewarmAudit(
+  deps: RuntimeLifecycleDeps,
+  event: 'tool_index_prewarmed' | 'tool_index_prewarm_degraded',
+  detail: Record<string, unknown>,
+): void {
+  try {
+    void deps.stateStore.appendAudit({
+      ts: deps.now(), job_id: '-', request_id: 'tools', event, detail,
+    }).catch(() => undefined);
+  } catch { /* 预热观测不得影响运行时 */ }
+}
+
+function startToolIndexPrewarmFor(deps: RuntimeLifecycleDeps): void {
+  if (!deps.configStore || !deps.toolIndex) return;
+  const startedAt = Date.now();
+  void prewarmToolIndexesFor(deps.configStore, deps.toolIndex).then((summary) => {
+    appendToolIndexPrewarmAudit(
+      deps,
+      summary.failed ? 'tool_index_prewarm_degraded' : 'tool_index_prewarmed',
+      { ...summary, duration_ms: Math.max(0, Date.now() - startedAt) },
+    );
+  }).catch(() => {
+    appendToolIndexPrewarmAudit(deps, 'tool_index_prewarm_degraded', {
+      eligible: 0, warmed: 0, failed: 0, rows: 0,
+      duration_ms: Math.max(0, Date.now() - startedAt),
+      reason: 'provider_list_failed',
+    });
+  });
 }
 
 export async function initializeRuntimeLifecycleFor(deps: RuntimeLifecycleDeps): Promise<void> {
@@ -94,6 +155,9 @@ export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSc
     timer.unref();
     timers.push(timer);
   };
+
+  // 服务先启动，索引随后在后台预热；任何数据库/索引异常都不阻塞 HTTP 就绪。
+  later(() => startToolIndexPrewarmFor(deps), TOOL_INDEX_PREWARM_DELAY_MS);
 
   every(() => void deps.refreshTargets().then(() => deps.kickInhubScheduler()).catch(() => undefined), TARGET_REFRESH_MS);
 

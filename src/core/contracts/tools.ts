@@ -346,7 +346,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       const want = new Set(names.map(String).slice(0, 20));
       const found = llmTools.filter((x) => want.has(x.function.name));
       // 看菜单不点菜：不计 max_calls；审计留痕但非 fail-closed（只读元操作）
-      await d.audit('tool_lookup', { names: [...want], found: found.map((x) => x.function.name) }).catch(() => undefined);
+      try { void Promise.resolve(d.audit('tool_lookup', { names: [...want], found: found.map((x) => x.function.name) })).catch(() => undefined); } catch { /* best-effort 元审计 */ }
       return found;
     },
     ...(retrievalMode ? {
@@ -355,7 +355,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         if (names === null) return null; // 检索运行时不可用 → 透传降级信号
         // 保留相关度顺序（retrieveNames 已按分数排序），映射回完整定义
         const found = names.map((n) => llmTools.find((x) => x.function.name === n)).filter(Boolean) as ToolRuntime['llmTools'];
-        await d.audit('tools_retrieved', { query: query.slice(0, 120), picked: found.map((x) => x.function.name) }).catch(() => undefined);
+        try { void Promise.resolve(d.audit('tools_retrieved', { query: query.slice(0, 120), picked: found.map((x) => x.function.name) })).catch(() => undefined); } catch { /* best-effort 元审计 */ }
         return found;
       },
     } : {}),

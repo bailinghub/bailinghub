@@ -5,7 +5,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { compileOpenApiTools } from './openapi-tools';
 import { TOOL_DEFINITION_SCHEMA_VERSION } from './tool-definition';
-import { argsHash, composeToolRuntimes, LocalSlidingWindowRateLimiter, scopeAllowed, signToolCall, type ToolRuntime } from './tools';
+import { argsHash, buildToolRuntime, composeToolRuntimes, LocalSlidingWindowRateLimiter, scopeAllowed, signToolCall, type ToolRuntime } from './tools';
+import type { ToolProvider } from './types';
 
 test('scopeAllowed: 精确匹配命中', () => {
   assert.equal(scopeAllowed('goods.read', ['goods.read']), true);
@@ -84,6 +85,45 @@ test('composeToolRuntimes: 聚合多工具源清单并把调用路由回所属�
 
 test('composeToolRuntimes: 同名工具跨源冲突时 fail-closed', () => {
   assert.throws(() => composeToolRuntimes([fakeRuntime('duplicate', 'a'), fakeRuntime('duplicate', 'b')], 5), /工具名冲突 duplicate/);
+});
+
+test('buildToolRuntime: 只读工具发现不等待挂起的 best-effort 审计', async () => {
+  const spec = JSON.stringify({
+    openapi: '3.0.0',
+    info: { title: 'meta audit', version: '1' },
+    paths: {
+      '/items': {
+        get: {
+          operationId: 'item_list',
+          summary: '查询项目',
+          'x-agent-capability': { version: 1, enabled: true, scope: 'item.read' },
+        },
+      },
+    },
+  });
+  const [definition] = compileOpenApiTools(spec).tools;
+  assert.ok(definition);
+  const runtime = buildToolRuntime({
+    provider: { name: 'meta', enabled: true } as ToolProvider,
+    allowedTools: [definition],
+    maxCalls: 5,
+    onBehalfOf: '',
+    jobId: 'job-meta',
+    clientAppId: '',
+    truncateBytes: 8192,
+    audit: async () => await new Promise<void>(() => undefined),
+    retrieveNames: async () => ['item_list'],
+    retrievalMode: true,
+  });
+  const bounded = async <T>(promise: Promise<T>): Promise<T> => await Promise.race([
+    promise,
+    new Promise<never>((_resolve, reject) => setTimeout(() => reject(new Error('meta audit blocked result')), 100)),
+  ]);
+
+  assert.deepEqual((await bounded(runtime.lookup(['item_list']))).map((item) => item.function.name), ['item_list']);
+  const retrieved = await bounded(runtime.retrieve!('items'));
+  assert.ok(retrieved);
+  assert.deepEqual(retrieved.map((item) => item.function.name), ['item_list']);
 });
 
 const SECRET = 'test-secret-蚂蚁';

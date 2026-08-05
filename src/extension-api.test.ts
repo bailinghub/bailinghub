@@ -11,6 +11,7 @@ import {
   type ConfigStoreContract,
   type RuntimeStateStore,
   type StoreFactory,
+  type ToolEmbeddingRepositoryContract,
 } from './extension-api';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -43,6 +44,18 @@ test('extension-api can compose a runtime from injected edition stores', () => {
   assert.equal(runtime.storeFactory, storeFactory);
   assert.equal(runtime.store, stateStore);
   assert.equal(runtime.cfgStore, null);
+});
+
+test('extension-api keeps legacy tool embedding repositories source-compatible', () => {
+  const legacyRepository: ToolEmbeddingRepositoryContract = {
+    async listSnapshot() { return []; },
+    async deleteProvider() { /* legacy adapter */ },
+    async upsert() { /* legacy adapter */ },
+    async deleteTools() { /* legacy adapter */ },
+    async listVectors() { return []; },
+  };
+
+  assert.equal(legacyRepository.replaceProvider, undefined);
 });
 
 test('package exports the stable extension-api subpath', () => {

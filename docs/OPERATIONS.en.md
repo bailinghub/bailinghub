@@ -116,6 +116,21 @@ Metrics feed external monitoring. They do not replace `/health/ready`, final bus
 
 Measure queue depth, oldest queued age, success rate, P95/P99 duration, tool latency, MySQL connections and lock waits, CPU, memory, and event-loop delay. BailingHub does not publish an unverified universal QPS number; load-test with your actual task mix before making capacity commitments.
 
+### Tool semantic retrieval safeguards
+
+Tool semantic retrieval is an optional context enhancement. If the index store or query-embedding service exceeds its deadline, that turn falls back to progressive tool discovery instead of leaving the whole conversation waiting indefinitely for retrieval. Two deployment environment variables set independent deadlines:
+
+After startup, the process prewarms persisted indexes sequentially in the background; HTTP readiness does not wait for prewarm. An expired in-memory cache continues serving its previous snapshot while a single background refresh runs. Only a true cold cache waits, bounded by the index deadline below.
+
+| Variable | Default | Allowed range | Purpose |
+|---|---:|---:|---|
+| `BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS` | 5000 ms | 100–60000 ms | Bounds each database wait for tool vectors and their embedding credential metadata |
+| `BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS` | 15000 ms | 250–120000 ms | Bounds the wait while embedding the current query |
+
+These are infrastructure safeguards for one BailingHub deployment, not route-level or provider-level business policy, so they apply to every tool semantic retrieval performed by the process. Validate the deployment's normal latency distribution before lowering them; increasing them prolongs conversation waits during dependency failures.
+
+The new stage-diagnostic event records cache state, index/credential/query-embedding latency, and stable reason codes, but carries no user query, service URL, or credential. Diagnostic writes are best-effort and never hold up retrieval fallback.
+
 ## 5. Upgrades
 
 1. Back up MySQL.

@@ -25,6 +25,8 @@ const ENV_KEYS = [
   'BAILING_METRICS_ENABLED',
   'BAILING_METRICS_TOKEN',
   'BAILING_METRICS_SCRAPE_TIMEOUT_MS',
+  'BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS',
+  'BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS',
   'BAILING_BOOTSTRAP_ADMIN_USERNAME',
   'BAILING_BOOTSTRAP_ADMIN_PASSWORD',
 ];
@@ -200,6 +202,35 @@ test('loadConfig: metrics 配置拒绝模糊布尔值和越界超时', () => {
   });
   withTempConfig(config, { BAILING_METRICS_SCRAPE_TIMEOUT_MS: '100' }, () => {
     assert.throws(() => loadConfig(), /必须是 250~30000 的整数/);
+  });
+});
+
+test('loadConfig: 工具检索运行保护使用安全默认值并允许部署覆盖', () => {
+  const config = { server: { host: '127.0.0.1', token: '' }, state: { backend: 'jsonl' } };
+  withTempConfig(config, {}, () => {
+    assert.deepEqual(loadConfig().toolRetrieval, {
+      indexLoadTimeoutMs: 5000,
+      embeddingTimeoutMs: 15_000,
+    });
+  });
+  withTempConfig(config, {
+    BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS: '1200',
+    BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS: '8000',
+  }, () => {
+    assert.deepEqual(loadConfig().toolRetrieval, {
+      indexLoadTimeoutMs: 1200,
+      embeddingTimeoutMs: 8000,
+    });
+  });
+});
+
+test('loadConfig: 工具检索运行保护拒绝非整数与越界超时', () => {
+  const config = { server: { host: '127.0.0.1', token: '' }, state: { backend: 'jsonl' } };
+  withTempConfig(config, { BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS: '99' }, () => {
+    assert.throws(() => loadConfig(), /BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS 必须是 100~60000 的整数/);
+  });
+  withTempConfig(config, { BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS: '120000.5' }, () => {
+    assert.throws(() => loadConfig(), /BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS 必须是 250~120000 的整数/);
   });
 });
 
