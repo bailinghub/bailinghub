@@ -14,6 +14,16 @@ test('job stream: assigns monotonic ids and replays from cursor', () => {
   assert.equal(broker.read('job-1', 2).latestSeq, 2);
 });
 
+test('job stream: protocol violation reset is replayable for clients to clear unsafe draft text', () => {
+  const broker = new InMemoryJobStreamBroker();
+  const event = broker.publish('job-1', { type: 'reset', data: { reason: 'protocol_violation', round: 2 } });
+
+  assert.deepEqual(broker.read('job-1').events, [event]);
+  assert.equal(event.type, 'reset');
+  if (event.type !== 'reset') assert.fail('expected reset event');
+  assert.equal(event.data.reason, 'protocol_violation');
+});
+
 test('job stream: bounded replay reports a lost cursor', () => {
   const broker = new InMemoryJobStreamBroker({ maxEventsPerJob: 2, maxBytesPerJob: 10_000 });
   broker.publish('job-1', { type: 'delta', data: { text: 'a', round: 0 } });

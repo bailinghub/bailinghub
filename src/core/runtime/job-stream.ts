@@ -1,7 +1,7 @@
 export const CHAT_STREAM_PROTOCOL = 'bailing.chat.stream.v1' as const;
 
 export type JobStreamPhaseName = 'model' | 'tool';
-export type JobStreamResetReason = 'model_round' | 'tool_call' | 'retry' | 'fallback';
+export type JobStreamResetReason = 'model_round' | 'tool_call' | 'retry' | 'fallback' | 'protocol_violation';
 
 export type JobStreamEventInput =
   | { type: 'phase'; data: { name: JobStreamPhaseName; round: number } }

@@ -34,7 +34,7 @@ This document defines incremental output, reconnect replay, fallback, and persis
 | `failed` | `done`, `error`, `reply` | The connection can no longer read the job. |
 | `timeout` | `done:false`, `job_id` | This connection window ended; the job may still complete and can be recovered from history. |
 
-Current `reset.reason` values are `model_round`, `tool_call`, `retry`, `fallback`, and `replay_gap`.
+Current `reset.reason` values are `model_round`, `tool_call`, `retry`, `fallback`, `protocol_violation`, and `replay_gap`. `protocol_violation` means internal model tool-protocol markup was intercepted; clients must discard the current provisional text, which is neither displayed nor parsed for execution.
 
 ## 4. Event IDs And Replay
 
