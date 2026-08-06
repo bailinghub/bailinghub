@@ -37,6 +37,8 @@ Agent 由此从“会答”升级为“能查、能办”。
 | `spec_url` | VARCHAR(512) | spec_source=url 时拉取 openapi.json 的地址 |
 | `spec_json` | MEDIUMTEXT | spec 缓存（url 拉取后存这里；inline 直接存）|
 | `spec_refreshed_at` | DATETIME | 上次拉取时间（控制台手动刷新 + 可选定时）|
+| `spec_access_policy` | VARCHAR(32) | URL spec 的期望访问策略；公开可配置值只有 `signed_required` / `public_allowed`，新建默认前者 |
+| `spec_access_probe_json` | JSON | URL 刷新时的实测结果；正常配置流程为 `protected` / `public` / `inconclusive`，并按策略附 signed/unsigned/invalid HTTP 状态与时间 |
 | `authz_probe_json` | JSON | 最近一次授权探针结果（`pass` / `suspect` / `inconclusive` / `skipped`）|
 | `secret` | VARCHAR(128) | 调用签名密钥（**与触发方 token、server token 全部解耦**，单独轮换）|
 | `log_payload` | TINYINT | 审计是否记参数全量值（≤4KB 截断）；0=只记键名。默认 1 |
@@ -49,6 +51,14 @@ Agent 由此从“会答”升级为“能查、能办”。
 - 工具名：`operationId` 优先；缺省 `<method>_<path slug>`（如 `get_opentenantapi_staff_list`）；
 - 参数 schema：OpenAPI parameters（query）+ requestBody（json）原样转 LLM function 参数；
 - **无完整参数 schema 的 operation 即使标了 enabled 也不暴露**（不让 Agent 瞎猜参数）。
+
+### 3.1.1 URL spec 访问策略与证据
+
+`spec_access_policy` 是管理员声明的**期望**，不是安全事实；`spec_access_probe_json` 才是最近一次刷新得到的**观测证据**。控制台必须并列展示两者，不得把“配置为签名保护”渲染成“已验证受保护”。公开配置面只允许 `signed_required` 和 `public_allowed`：新 URL 工具源默认前者，保存后者前应明确提示能力清单会暴露哪些信息。升级前历史记录的内部只读状态见[兼容性与升级](兼容性与升级.md#十url-工具清单访问策略升级)，不作为第三个配置值进入 Schema、API 或控制台选项。
+
+`signed_required` 刷新分别核验正确签名、无签名和错误签名三种形态：正确签名 2xx 且另两种为 401/403/404 才记为 `protected` 并允许新 spec 覆盖缓存；负向请求可读记为 `public`，网络/网关/响应组合无法可靠下结论记为 `inconclusive`，两者都刷新失败并保留旧缓存。`public_allowed` 只使用未签名主请求，成功记为 `public`；端点若实际受保护则记为 `inconclusive` 并刷新失败，不会回退签名绕过策略。这条探针只验证 **spec 读取面**，与验证工具接口是否按主体 fail-closed 的 `authz_probe_json` 是两条独立证据链。
+
+签名保护响应必须发送 `Cache-Control: private, no-store`，避免浏览器、代理或 CDN 缓存一次合法响应后绕过验签。PHP/PHP7 SDK 的裸 PHP `SpecServer::respond($spec, $secret)` 自动发送；框架接入用 `SpecServer::responseHeaders($secret)`；明确公开时使用 `handlePublic()` / `respondPublic()`。旧 `null` secret 调用继续兼容，但不再作为推荐写法。
 
 ### 3.2 路由挂工具 `bz_routes.tools`（JSON 列）
 

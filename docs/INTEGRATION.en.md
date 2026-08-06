@@ -60,7 +60,20 @@ Expose a tool spec at a stable endpoint such as:
 /.well-known/bailing/tools.json
 ```
 
-Use OpenAPI plus `x-agent-capability` fields, or an SDK that generates the same shape.
+Use OpenAPI plus `x-agent-capability` fields, or an SDK that generates the same shape. The URL must return the final document directly; the new access policies do not follow redirects.
+
+Choose one of exactly two configurable catalog policies:
+
+| Policy | Business endpoint | Console |
+|---|---|---|
+| Protected (recommended) | Verify `X-Bailing-Timestamp` and `X-Bailing-Signature` with the same provider secret used for tool calls. For this GET, the body, subject, and job id are empty. Reject unsigned and invalid signatures with 401, 403, or 404, and return `Cache-Control: private, no-store` on success. | `signed_required` |
+| Deliberately public | Return a valid spec to an unsigned GET. Never include secrets, private addresses, or operations that should not be discoverable. | `public_allowed` |
+
+PHP and PHP7 applications can use `SpecServer::respond($spec, $secret)` or framework-mode `handle(...)` plus `responseHeaders($secret)`. Use `respondPublic()` or `handlePublic()` only for a deliberate public catalog. Other stacks should implement the frozen spec-signature vector in `CONTRACT.en.md` rather than inventing a second signature scheme.
+
+After saving the provider, refresh it and compare configured intent with observed evidence. `protected` means both negative probes were rejected, `public` means an unsigned read succeeded, and `inconclusive` means the result could not be established reliably. Changing the URL, secret, or policy clears old evidence and requires another refresh. For providers created before this policy existed, follow the read-only migration procedure in [COMPATIBILITY.en.md](COMPATIBILITY.en.md#url-tool-catalog-access-policy-upgrade).
+
+For `signed_required`, the signed request must return 2xx and both negative probes must return 401/403/404. A negative 2xx is a public mismatch. Redirects, 429, 5xx, network failures, a request longer than 10 seconds, a body larger than 5 MiB, or an invalid document are inconclusive/failures. A 404 on the correctly signed primary request is a failure; only a 404 on a negative probe counts as rejection. Failures preserve the previous cached catalog.
 
 ## Verify Tool Calls
 

@@ -11,6 +11,255 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ToolIndexService } from '../services/tools-index';
 import type { AppConfig } from '../core/config/config';
 
+const SPEC_FETCH_TIMEOUT_MS = 10_000;
+const SPEC_MAX_BYTES = 5 * 1024 * 1024;
+const INVALID_SPEC_SIGNATURE = `sha256=${'0'.repeat(64)}`;
+const PROTECTED_NEGATIVE_STATUSES = new Set([401, 403, 404]);
+
+type SpecAccessPolicy = NonNullable<ToolProvider['spec_access_policy']>;
+type SpecAccessProbe = NonNullable<ToolProvider['spec_access_probe']>;
+
+async function cancelResponseBody(response: Response): Promise<void> {
+  try { await response.body?.cancel(); } catch { /* 负向探针只看状态，取消失败不改变分类 */ }
+}
+
+async function readSpecBody(response: Response): Promise<string> {
+  const declared = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > SPEC_MAX_BYTES) {
+    await cancelResponseBody(response);
+    throw new Error(`spec 响应超过 ${SPEC_MAX_BYTES} 字节上限`);
+  }
+  if (!response.body) return '';
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > SPEC_MAX_BYTES) {
+        await reader.cancel();
+        throw new Error(`spec 响应超过 ${SPEC_MAX_BYTES} 字节上限`);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    return text;
+  } catch (error) {
+    try { await reader.cancel(); } catch { /* best effort */ }
+    throw error;
+  }
+}
+
+function fetchInit(headers: Record<string, string>, strictRedirects: boolean): RequestInit {
+  return {
+    headers,
+    redirect: strictRedirects ? 'manual' : 'follow',
+    signal: AbortSignal.timeout(SPEC_FETCH_TIMEOUT_MS),
+  };
+}
+
+function httpLabel(status: number | undefined): string {
+  return status === undefined ? 'network_error' : `HTTP ${status}`;
+}
+
+function fetchFailureReason(error: unknown): string {
+  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
+    ? '请求超时'
+    : '网络请求失败';
+}
+
+function specReadFailureReason(error: unknown): string {
+  const message = errMsg(error);
+  return message.startsWith('spec 响应超过 ') ? message : 'spec 响应读取失败';
+}
+
+async function negativeSpecRequest(
+  url: string,
+  headers: Record<string, string>,
+): Promise<{ status?: number; error?: string }> {
+  try {
+    const response = await fetch(url, fetchInit(headers, true));
+    const status = response.status;
+    await cancelResponseBody(response);
+    return { status };
+  } catch (error) {
+    return { error: fetchFailureReason(error) };
+  }
+}
+
+async function persistSpecAccessProbe(
+  config: ConfigStoreContract,
+  state: RuntimeStateStore,
+  provider: ToolProvider,
+  policy: SpecAccessPolicy,
+  probe: SpecAccessProbe,
+  nowFn: () => string,
+): Promise<void> {
+  if (config.toolProviders.updateSpecAccessProbe) {
+    await config.toolProviders.updateSpecAccessProbe(provider.name, probe);
+  } else {
+    // v0.1.16 及更早的自定义 ConfigStore 没有窄更新方法；复用既有 upsert 保持扩展源码兼容。
+    await config.toolProviders.upsert({ ...provider, spec_access_probe: probe });
+  }
+  await state.appendAudit({
+    ts: nowFn(),
+    job_id: '-',
+    request_id: 'tools',
+    event: 'spec_access_probe',
+    detail: {
+      provider: provider.name,
+      policy,
+      status: probe.status,
+      ...(probe.signed_http !== undefined ? { signed_http: probe.signed_http } : {}),
+      ...(probe.unsigned_http !== undefined ? { unsigned_http: probe.unsigned_http } : {}),
+      ...(probe.invalid_http !== undefined ? { invalid_http: probe.invalid_http } : {}),
+      ...(probe.reason ? { reason: probe.reason.slice(0, 300) } : {}),
+    },
+  }).catch(() => undefined);
+}
+
+async function fetchProviderSpecWithPolicy(
+  config: ConfigStoreContract,
+  state: RuntimeStateStore,
+  provider: ToolProvider,
+  nowFn: () => string,
+): Promise<{ text: string; probe: SpecAccessProbe }> {
+  const policy: SpecAccessPolicy = provider.spec_access_policy ?? 'legacy_unverified';
+  let url: URL;
+  try {
+    url = new URL(provider.spec_url!);
+  } catch {
+    const probe: SpecAccessProbe = policy === 'legacy_unverified'
+      ? { status: 'skipped', reason: '兼容模式未验证访问保护；spec_url 不是合法 URL', at: nowFn() }
+      : { status: 'inconclusive', reason: 'spec_url 不是合法 URL', at: nowFn() };
+    await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+    throw new Error('拉取 spec 失败：spec_url 不是合法 URL');
+  }
+  const ts = Math.floor(Date.now() / 1000);
+  const signedHeaders = {
+    'x-bailing-timestamp': String(ts),
+    'x-bailing-signature': signToolCall(provider.secret, ts, 'GET', url.pathname + url.search, ''),
+  };
+  const mainHeaders = policy === 'public_allowed' ? {} : signedHeaders;
+  const strictRedirects = policy !== 'legacy_unverified';
+  let response: Response;
+
+  try {
+    response = await fetch(provider.spec_url!, fetchInit(mainHeaders, strictRedirects));
+  } catch (error) {
+    const reason = fetchFailureReason(error);
+    const probe: SpecAccessProbe = policy === 'legacy_unverified'
+      ? { status: 'skipped', reason: `兼容模式未验证访问保护；${reason}`, at: nowFn() }
+      : { status: 'inconclusive', reason, at: nowFn() };
+    await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+    throw new Error(`拉取 spec 失败：${reason}`);
+  }
+
+  const mainHttpField = policy === 'public_allowed'
+    ? { unsigned_http: response.status }
+    : { signed_http: response.status };
+  if (!response.ok) {
+    await cancelResponseBody(response);
+    const redirectNote = strictRedirects && response.status >= 300 && response.status < 400 ? '（访问策略禁止重定向）' : '';
+    const probe: SpecAccessProbe = policy === 'legacy_unverified'
+      ? { status: 'skipped', ...mainHttpField, reason: `兼容模式未验证访问保护；拉取返回 HTTP ${response.status}${redirectNote}`, at: nowFn() }
+      : { status: 'inconclusive', ...mainHttpField, reason: `拉取返回 HTTP ${response.status}${redirectNote}`, at: nowFn() };
+    await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+    throw new Error(`拉取 spec 失败：HTTP ${response.status}${redirectNote}`);
+  }
+
+  let text: string;
+  try {
+    text = await readSpecBody(response);
+  } catch (error) {
+    const reason = specReadFailureReason(error);
+    const probe: SpecAccessProbe = policy === 'legacy_unverified'
+      ? { status: 'skipped', ...mainHttpField, reason: `兼容模式未验证访问保护；${reason}`, at: nowFn() }
+      : policy === 'public_allowed'
+        ? { status: 'public', ...mainHttpField, reason: `匿名端点可访问，但响应不可用：${reason}`, at: nowFn() }
+        : { status: 'inconclusive', ...mainHttpField, reason, at: nowFn() };
+    await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+    throw new Error(reason);
+  }
+
+  if (policy === 'public_allowed') {
+    const probe: SpecAccessProbe = {
+      status: 'public',
+      unsigned_http: response.status,
+      reason: '工具源已明确允许匿名读取 spec',
+      at: nowFn(),
+    };
+    await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+    return { text, probe };
+  }
+
+  if (policy === 'legacy_unverified') {
+    const probe: SpecAccessProbe = {
+      status: 'skipped',
+      signed_http: response.status,
+      reason: '兼容模式继续签名拉取，未验证匿名或坏签访问是否被拒绝',
+      at: nowFn(),
+    };
+    await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+    return { text, probe };
+  }
+
+  // 两个负向探针彼此独立；并发执行，把最坏等待从 20 秒压到单次 10 秒超时窗口。
+  const [unsigned, invalid] = await Promise.all([
+    negativeSpecRequest(provider.spec_url!, {}),
+    negativeSpecRequest(provider.spec_url!, {
+      'x-bailing-timestamp': String(ts),
+      'x-bailing-signature': INVALID_SPEC_SIGNATURE,
+    }),
+  ]);
+  const acceptedUnsigned = unsigned.status !== undefined && unsigned.status >= 200 && unsigned.status < 300;
+  const acceptedInvalid = invalid.status !== undefined && invalid.status >= 200 && invalid.status < 300;
+  const rejectsUnsigned = unsigned.status !== undefined && PROTECTED_NEGATIVE_STATUSES.has(unsigned.status);
+  const rejectsInvalid = invalid.status !== undefined && PROTECTED_NEGATIVE_STATUSES.has(invalid.status);
+  const negativeFields = {
+    signed_http: response.status,
+    ...(unsigned.status !== undefined ? { unsigned_http: unsigned.status } : {}),
+    ...(invalid.status !== undefined ? { invalid_http: invalid.status } : {}),
+  };
+
+  if (acceptedUnsigned || acceptedInvalid) {
+    const accepted = [acceptedUnsigned ? `未签名=${httpLabel(unsigned.status)}` : '', acceptedInvalid ? `坏签=${httpLabel(invalid.status)}` : ''].filter(Boolean).join('、');
+    const probe: SpecAccessProbe = {
+      status: 'public',
+      ...negativeFields,
+      reason: `要求仅签名访问，但${accepted}仍可读取`,
+      at: nowFn(),
+    };
+    await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+    throw new Error(`工具源 ${provider.name} 要求 spec 仅签名可读，但匿名或坏签请求仍可读取；已拒绝更新并保留旧缓存`);
+  }
+
+  if (!rejectsUnsigned || !rejectsInvalid) {
+    const reason = `无法确认访问保护：未签名=${unsigned.error ?? httpLabel(unsigned.status)}，坏签=${invalid.error ?? httpLabel(invalid.status)}`;
+    const probe: SpecAccessProbe = {
+      status: 'inconclusive',
+      ...negativeFields,
+      reason,
+      at: nowFn(),
+    };
+    await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+    throw new Error(`工具源 ${provider.name} 的 spec ${reason}；已拒绝更新并保留旧缓存`);
+  }
+
+  const probe: SpecAccessProbe = {
+    status: 'protected',
+    ...negativeFields,
+    reason: '正确签名可读取，未签名与坏签请求均被拒绝',
+    at: nowFn(),
+  };
+  await persistSpecAccessProbe(config, state, provider, policy, probe, nowFn);
+  return { text, probe };
+}
+
 function specToolFingerprints(specJson: string | undefined): Map<string, string> {
   const m = new Map<string, string>();
   if (!specJson) return m;
@@ -35,21 +284,14 @@ export async function refreshProviderSpecFor(
   if (!config) throw new Error('configstore 不可用');
   const outboundRuntime = outboundRuntimeDepsFor({ cfg: appConfig, configStore: config, stateStore: state, now: nowFn, sleep: sleepFn });
   if (p.spec_source !== 'url' || !p.spec_url) throw new Error('该工具源是 inline 模式，直接在编辑里粘贴新 spec');
-  const u = new URL(p.spec_url);
-  const ts = Math.floor(Date.now() / 1000);
-  const sig = signToolCall(p.secret, ts, 'GET', u.pathname + u.search, '');
-  const r = await fetch(p.spec_url, {
-    headers: { 'x-bailing-timestamp': String(ts), 'x-bailing-signature': sig },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!r.ok) throw new Error(`拉取 spec 失败：HTTP ${r.status}`);
-  const text = await r.text();
+  const { text, probe } = await fetchProviderSpecWithPolicy(config, state, p, nowFn);
   const parsed = parseOpenApiSpec(text);
   if (!parsed.ok) throw new Error(parsed.error);
   const specJson = parsed.canonicalJson;
+  const providerWithProbe = { ...p, spec_access_probe: probe };
   const after = specToolFingerprints(specJson);
   if (specJson === p.spec_json) {
-    await config.toolProviders.upsert({ ...p, spec_refreshed_at: new Date().toISOString() });
+    await config.toolProviders.upsert({ ...providerWithProbe, spec_refreshed_at: new Date().toISOString() });
     return { tools: after.size, added: [], removed: [], changed: [] };
   }
   const before = specToolFingerprints(p.spec_json);
@@ -59,7 +301,7 @@ export async function refreshProviderSpecFor(
     else if (before.get(name) !== fp) changed.push(`${name}：${before.get(name)} → ${fp}`);
   }
   for (const name of before.keys()) if (!after.has(name)) removed.push(name);
-  await config.toolProviders.upsert({ ...p, spec_json: specJson, spec_refreshed_at: new Date().toISOString() });
+  await config.toolProviders.upsert({ ...providerWithProbe, spec_json: specJson, spec_refreshed_at: new Date().toISOString() });
   await state.appendAudit({
     ts: nowFn(), job_id: '-', request_id: 'tools', event: 'spec_refreshed',
     detail: { provider: p.name, via, tools: after.size, added, removed, changed },
@@ -73,7 +315,7 @@ export async function refreshProviderSpecFor(
     const fpHash = createHash('sha256').update(lines).digest('hex').slice(0, 8);
     void sendAlertWithDeps(outboundRuntime, `spec_change_${p.name}_${fpHash}`, lines);
   }
-  await reindexToolProviderIndexFor(state, index, { ...p, spec_json: specJson }, nowFn).catch(async (e) => {
+  await reindexToolProviderIndexFor(state, index, { ...providerWithProbe, spec_json: specJson }, nowFn).catch(async (e) => {
     await state.appendAudit({ ts: nowFn(), job_id: '-', request_id: 'tools', event: 'tool_index_failed', detail: { provider: p.name, error: String(e).slice(0, 200) } }).catch(() => undefined);
   });
   return { tools: after.size, added, removed, changed };
@@ -287,7 +529,8 @@ export async function runSpecAutoRefreshFor(
         ts: nowFn(), job_id: '-', request_id: 'tools', event: 'spec_refresh_failed',
         detail: { provider: p.name, error: String(e).slice(0, 200) },
       }).catch(() => undefined);
-      void sendAlertWithDeps(outboundRuntime, `spec_refresh_fail_${p.name}`, `工具源 ${p.name} 自动刷新 spec 失败：${errMsg(e)}（spec_url: ${p.spec_url}）。AI 仍按旧清单工作，请检查业务侧发布地址。`);
+      // 告警不回显完整 spec_url，避免查询参数或路径中的临时凭据进入通知渠道。
+      void sendAlertWithDeps(outboundRuntime, `spec_refresh_fail_${p.name}`, `工具源 ${p.name} 自动刷新 spec 失败：${errMsg(e)}。AI 仍按旧清单工作，请到控制台检查业务侧发布地址。`);
     }
   }
 }

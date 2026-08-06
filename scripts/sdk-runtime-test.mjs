@@ -62,20 +62,40 @@ ok('Python HubClient is exported', py.status === 0 && py.stdout.split('\n')[1] =
 const php = run('php', ['-r', `
 require '${root}/sdk/php/src/Ticket.php';
 require '${root}/sdk/php/src/HubClient.php';
+require '${root}/sdk/php/src/SpecServer.php';
 echo Bailing\\Connect\\Ticket::sign('secret', 'tenant:user', 7200, 2000000000), "\\n";
-echo class_exists('Bailing\\\\Connect\\\\HubClient') ? 'HubClient' : 'missing';
+echo class_exists('Bailing\\\\Connect\\\\HubClient') ? 'HubClient' : 'missing', "\\n";
+$protectedHeaders = Bailing\\Connect\\SpecServer::responseHeaders('tool-secret');
+echo isset($protectedHeaders['Cache-Control']) ? $protectedHeaders['Cache-Control'] : 'missing', "\\n";
+list($publicStatus, $publicBody) = Bailing\\Connect\\SpecServer::handlePublic('{"ok":true}', 'GET', '/tools.json');
+echo ($publicStatus === 200 && $publicBody === '{"ok":true}') ? 'public-helper' : 'bad-public-helper', "\\n";
+list($legacyStatus, $legacyBody) = Bailing\\Connect\\SpecServer::handle('{"ok":true}', null, 'GET', '/tools.json', array());
+echo ($legacyStatus === 200 && $legacyBody === '{"ok":true}') ? 'legacy-null' : 'bad-legacy-null';
 `]);
 ok('PHP sign ticket deterministic vector', php.status === 0 && php.stdout.split('\n')[0] === expectedTicket, php.stderr || php.stdout);
 ok('PHP HubClient is exported', php.status === 0 && php.stdout.split('\n')[1] === 'HubClient', php.stderr || php.stdout);
+ok('PHP protected spec response is private/no-store', php.status === 0 && php.stdout.split('\n')[2] === 'private, no-store', php.stderr || php.stdout);
+ok('PHP explicit public spec helper works', php.status === 0 && php.stdout.split('\n')[3] === 'public-helper', php.stderr || php.stdout);
+ok('PHP legacy null-public signature remains compatible', php.status === 0 && php.stdout.split('\n')[4] === 'legacy-null', php.stderr || php.stdout);
 
 const php7 = run('php', ['-r', `
 require '${root}/sdk/php7/src/Ticket.php';
 require '${root}/sdk/php7/src/HubClient.php';
+require '${root}/sdk/php7/src/SpecServer.php';
 echo Bailing\\Connect\\Ticket::sign('secret', 'tenant:user', 7200, 2000000000), "\\n";
-echo class_exists('Bailing\\\\Connect\\\\HubClient') ? 'HubClient' : 'missing';
+echo class_exists('Bailing\\\\Connect\\\\HubClient') ? 'HubClient' : 'missing', "\\n";
+$protectedHeaders = Bailing\\Connect\\SpecServer::responseHeaders('tool-secret');
+echo isset($protectedHeaders['Cache-Control']) ? $protectedHeaders['Cache-Control'] : 'missing', "\\n";
+list($publicStatus, $publicBody) = Bailing\\Connect\\SpecServer::handlePublic('{"ok":true}', 'GET', '/tools.json');
+echo ($publicStatus === 200 && $publicBody === '{"ok":true}') ? 'public-helper' : 'bad-public-helper', "\\n";
+list($legacyStatus, $legacyBody) = Bailing\\Connect\\SpecServer::handle('{"ok":true}', null, 'GET', '/tools.json', array());
+echo ($legacyStatus === 200 && $legacyBody === '{"ok":true}') ? 'legacy-null' : 'bad-legacy-null';
 `]);
 ok('PHP7 sign ticket deterministic vector', php7.status === 0 && php7.stdout.split('\n')[0] === expectedTicket, php7.stderr || php7.stdout);
 ok('PHP7 HubClient is exported', php7.status === 0 && php7.stdout.split('\n')[1] === 'HubClient', php7.stderr || php7.stdout);
+ok('PHP7 protected spec response is private/no-store', php7.status === 0 && php7.stdout.split('\n')[2] === 'private, no-store', php7.stderr || php7.stdout);
+ok('PHP7 explicit public spec helper works', php7.status === 0 && php7.stdout.split('\n')[3] === 'public-helper', php7.stderr || php7.stdout);
+ok('PHP7 legacy null-public signature remains compatible', php7.status === 0 && php7.stdout.split('\n')[4] === 'legacy-null', php7.stderr || php7.stdout);
 
 console.log(`\n结果：通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

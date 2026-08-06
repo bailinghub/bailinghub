@@ -29,7 +29,10 @@ export type RouteRepositoryContract = Pick<RouteRepository, keyof RouteRepositor
 export type ClientRepositoryContract = Pick<ClientRepository, keyof ClientRepository>;
 export type CredentialRepositoryContract = Pick<CredentialRepository, keyof CredentialRepository>;
 export type ChannelRepositoryContract = Pick<ChannelRepository, keyof ChannelRepository>;
-export type ToolProviderRepositoryContract = Pick<ToolProviderRepository, keyof ToolProviderRepository>;
+/** 新增的探针窄更新对旧扩展仓储保持可选；运行时可回退到既有 upsert。 */
+export type ToolProviderRepositoryContract =
+  Omit<Pick<ToolProviderRepository, keyof ToolProviderRepository>, 'updateSpecAccessProbe'>
+  & Partial<Pick<ToolProviderRepository, 'updateSpecAccessProbe'>>;
 export type AdminRepositoryContract = Pick<AdminRepository, keyof AdminRepository>;
 export type ProjectRepositoryContract = Pick<ProjectRepository, keyof ProjectRepository>;
 export type ExecutorTokenRepositoryContract = Pick<ExecutorTokenRepository, keyof ExecutorTokenRepository>;

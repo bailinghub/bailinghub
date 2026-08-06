@@ -40,7 +40,24 @@ async function expectVisible(page, text) {
 const fixtures = {
   credentials: [{ name: 'demo-llm', kind: 'chat', enabled: true }],
   targets: [{ name: 'demo-agent', kind: 'inhub', stateless: true, enabled: true, description: 'demo target' }],
-  providers: [{ name: 'demo-business', base_url: 'http://demo-business:19080', enabled: true, has_spec: true, spec_source: 'url', authz_probe: { status: 'pass' } }],
+  providers: [{
+    name: 'demo-business',
+    base_url: 'http://demo-business:19080',
+    enabled: true,
+    has_spec: true,
+    spec_source: 'url',
+    spec_url: 'http://demo-business:19080/bailing/tools.json',
+    spec_access_policy: 'legacy_unverified',
+    spec_access_probe: {
+      status: 'protected',
+      signed_http: 200,
+      unsigned_http: 401,
+      invalid_http: 401,
+      at: new Date().toISOString(),
+    },
+    authz_probe: { status: 'pass' },
+    auto_refresh_min: 60,
+  }],
   clients: [{ app_id: 'demo-app', name: 'Demo 业务系统', token: '****oken', allowed_routes: ['demo_support'], allowed_channels: [], rate_limit_per_min: 60, enabled: true }],
   routes: [{ route_key: 'demo_support', name: 'Demo 售后助手', target: 'demo-agent', enabled: true, tools: { sources: [{ provider: 'demo-business', allow: ['demo.*'] }], max_calls: 5 } }],
   runs: [{ job_id: '00000000-0000-4000-8000-000000000001', request_id: 'demo-e2e', status: 'done', route: 'demo_support', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }],
@@ -138,7 +155,11 @@ async function mockApi(context) {
 
 const server = createServer(serveStatic);
 const port = await listen(server);
-const browser = await chromium.launch({ headless: true });
+const browserChannel = String(process.env.PLAYWRIGHT_CHANNEL || '').trim();
+const browser = await chromium.launch({
+  headless: true,
+  ...(browserChannel ? { channel: browserChannel } : {}),
+});
 const context = await browser.newContext();
 await mockApi(context);
 const page = await context.newPage();
@@ -158,6 +179,24 @@ try {
 
   await page.getByRole('menuitem', { name: '触发路由' }).click();
   await expectVisible(page, 'Demo 售后助手');
+
+  await page.getByRole('menuitem', { name: '工具源' }).click();
+  await expectVisible(page, '期望：待确认（历史配置）');
+  await expectVisible(page, '实测：已保护');
+  await page.getByRole('button', { name: '编辑' }).first().click();
+  await page.getByRole('tab', { name: '接口清单' }).click();
+  await expectVisible(page, '升级后待确认访问方式');
+  if (await page.getByText('历史记录未声明', { exact: false }).count()) {
+    throw new Error('legacy_unverified 不应渲染为第三个配置选项');
+  }
+  const signedPolicy = page.getByRole('radio', { name: /签名保护/ }).first();
+  const publicPolicy = page.getByRole('radio', { name: '允许公开' }).first();
+  if (await signedPolicy.isChecked() || await publicPolicy.isChecked()) {
+    throw new Error('历史配置打开时不应默认选择公开策略');
+  }
+  await page.getByRole('button', { name: '采用实测结果：签名保护' }).click();
+  if (!await signedPolicy.isChecked()) throw new Error('采用实测结果后应选择签名保护');
+  await page.getByRole('button', { name: '取消' }).click();
 
   await page.getByRole('menuitem', { name: '任务' }).click();
   await expectVisible(page, '查询订单 SO-1001');

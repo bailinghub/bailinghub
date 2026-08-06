@@ -136,6 +136,16 @@ function parseOptionalJson(v: unknown): Record<string, unknown> | null {
 }
 
 export function rowToolProvider(r: any): ToolProvider {
+  const specSource: ToolProvider['spec_source'] = r.spec_source === 'url' ? 'url' : 'inline';
+  const specAccessPolicy = ['signed_required', 'public_allowed', 'legacy_unverified'].includes(r.spec_access_policy)
+    ? r.spec_access_policy as ToolProvider['spec_access_policy']
+    : specSource === 'url' ? 'legacy_unverified' : undefined;
+  const specAccessProbeRaw = r.spec_access_probe_json
+    ? parseOptionalJson(r.spec_access_probe_json)
+    : undefined;
+  const specAccessProbe = specAccessProbeRaw && typeof specAccessProbeRaw === 'object' && !Array.isArray(specAccessProbeRaw)
+    ? specAccessProbeRaw as ToolProvider['spec_access_probe']
+    : undefined;
   const authzProbeRaw = r.authz_probe_json
     ? parseOptionalJson(r.authz_probe_json)
     : undefined;
@@ -144,9 +154,11 @@ export function rowToolProvider(r: any): ToolProvider {
     : undefined;
   return {
     name: r.name, base_url: r.base_url,
-    spec_source: (r.spec_source === 'url' ? 'url' : 'inline'),
+    spec_source: specSource,
+    spec_access_policy: specAccessPolicy,
     spec_url: r.spec_url ?? undefined, spec_json: r.spec_json ?? undefined,
     spec_refreshed_at: r.spec_refreshed_at ? new Date(r.spec_refreshed_at).toISOString() : undefined,
+    spec_access_probe: specAccessProbe,
     authz_probe: authzProbe,
     secret: r.secret, log_payload: !!r.log_payload,
     timeout_ms: Number(r.timeout_ms ?? 10000), rate_limit_per_min: Number(r.rate_limit_per_min ?? 120),

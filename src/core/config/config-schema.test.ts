@@ -131,6 +131,10 @@ test('Config JSON Schemas: 接入方、渠道、存储桶和工具源契约对�
   assert.deepEqual(storageBucket.allOf[0].then.required, ['region', 'bucket', 'public_base_url']);
 
   assert.deepEqual(toolProvider.properties.spec_source.enum, ['url', 'inline']);
+  assert.deepEqual(toolProvider.properties.spec_access_policy.enum, ['signed_required', 'public_allowed']);
+  assert.equal(toolProvider.properties.spec_access_policy.default, 'signed_required');
+  assert.deepEqual(toolProvider.properties.spec_access_probe.properties.status.enum, ['protected', 'public', 'inconclusive', 'skipped']);
+  assert.deepEqual(toolProvider.properties.spec_access_probe.required, ['status', 'at']);
   assert.deepEqual(toolProvider.required, ['name', 'base_url', 'spec_source', 'secret', 'log_payload', 'timeout_ms', 'rate_limit_per_min', 'auto_refresh_min', 'enabled']);
   assert.deepEqual(toolProvider.allOf[0].then.required, ['spec_url']);
 

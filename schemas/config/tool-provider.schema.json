@@ -9,9 +9,23 @@
     "name": { "$ref": "common.schema.json#/$defs/resourceName", "title": "名称", "description": "工具源的稳定机器标识，用于路由 tools.sources[].provider 引用。保存后不建议改名。" },
     "base_url": { "type": "string", "minLength": 1, "title": "Base URL", "description": "中枢调用业务工具时使用的源站前缀，请指向不会重写 URI 的直连地址。" },
     "spec_source": { "type": "string", "enum": ["url", "inline"], "title": "接口清单来源", "description": "选择工具清单由 URL 拉取还是直接粘贴 OpenAPI JSON。" },
-    "spec_url": { "type": "string", "title": "接口清单地址", "description": "OpenAPI/AI 工具清单 URL。中枢拉取时会带同款 sha256 签名头。" },
+    "spec_access_policy": { "type": "string", "enum": ["signed_required", "public_allowed"], "default": "signed_required", "title": "接口清单访问策略", "description": "URL 工具清单默认要求签名保护；允许公开读取必须显式选择。" },
+    "spec_url": { "type": "string", "title": "接口清单地址", "description": "OpenAPI/AI 工具清单 URL。中枢会按 spec_access_policy 使用签名保护或显式公开方式拉取。" },
     "spec_json": { "type": "string", "title": "OpenAPI 文档", "description": "含 x-agent-capability 契约的 OpenAPI 3.x JSON 或 YAML；保存后统一归一化为 JSON，编辑时留空表示保留已载入清单。" },
     "spec_refreshed_at": { "type": "string" },
+    "spec_access_probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "at"],
+      "properties": {
+        "status": { "type": "string", "enum": ["protected", "public", "inconclusive", "skipped"] },
+        "signed_http": { "type": "integer" },
+        "unsigned_http": { "type": "integer" },
+        "invalid_http": { "type": "integer" },
+        "reason": { "type": "string" },
+        "at": { "type": "string" }
+      }
+    },
     "authz_probe": {
       "type": "object",
       "additionalProperties": false,

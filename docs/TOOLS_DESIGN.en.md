@@ -14,6 +14,37 @@ Tool governance is the core runtime value of BailingHub. It lets agents call bus
 | Business authorization | The business backend checks the on-behalf-of subject against its own permissions. |
 | Audit and trace | Every important decision and call is recorded. |
 
+## URL Spec Access Posture
+
+A URL-backed provider stores two different kinds of state:
+
+- `spec_access_policy` is the operator's expectation: `signed_required`
+  (default) or `public_allowed`. These are the only configurable values;
+- `spec_access_probe` is refresh-time evidence with status `protected`,
+  `public`, or `inconclusive`, plus whichever signed, unsigned, and
+  invalid-signature HTTP observations apply to that policy.
+
+The console must display expectation and evidence separately. Read-only state
+for providers created before the policy existed is documented only in
+[COMPATIBILITY.en.md](COMPATIBILITY.en.md#url-tool-catalog-access-policy-upgrade)
+and is not a third Schema, API, or console choice. Choosing `public_allowed`
+requires a clear warning because paths,
+parameters, scopes, and risk metadata become readable to anyone who can reach
+the URL. This choice does not weaken tool-call verification or business-side
+authorization.
+
+Protected spec responses send `Cache-Control: private, no-store`. PHP/PHP7
+`SpecServer::respond()` adds it when a secret is present, and framework
+integrations can use `SpecServer::responseHeaders($secret)`. Explicitly public
+endpoints use `handlePublic()` / `respondPublic()`; the older null-secret form
+remains wire-compatible but is no longer the recommended spelling.
+
+For `signed_required`, a refresh may replace the cache only when the correctly
+signed request succeeds and both unsigned and invalid-signature probes return
+401/403/404. Public or inconclusive observations fail the refresh and preserve
+the previous cache. `public_allowed` uses an unsigned primary request and never
+falls back to a signed fetch when the endpoint is actually protected.
+
 ## Multiple Tool Providers Per Route
 
 A route may combine capabilities from several business systems without weakening provider boundaries:

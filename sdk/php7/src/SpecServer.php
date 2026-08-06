@@ -10,7 +10,8 @@ namespace Bailing\Connect;
  *  - 裸 PHP 单文件：SpecServer::respond($spec, $secret);（直接输出并退出）
  *
  * $secret 传中枢「工具源」登记的同一把签名密钥时，本端点只对中枢开放
- * （中枢拉取 spec 的 GET 请求带 sha256= 签名，空体/空主体/空任务参与签名）；传 null 则公开。
+ * （中枢拉取 spec 的 GET 请求带 sha256= 签名，空体/空主体/空任务参与签名）。
+ * 公开发布请优先调用 handlePublic()/respondPublic() 明确表达意图；旧的 null 传法继续兼容。
  *
  * 缓存：传 $cacheFile 时优先读缓存文件（CI 部署后跑 build-spec.php 落盘），
  * 不传则每次请求实时构建（毫秒级，多数业务无需缓存）。
@@ -73,6 +74,31 @@ final class SpecServer
     }
 
     /**
+     * 显式公开发布的纯函数入口。与 handle($spec, null, ...) 等价，但不会把公开暴露藏在一个 null 里。
+     *
+     * @return array [HTTP 状态码, JSON 响应体]
+     */
+    public static function handlePublic($spec, $method, $pathWithQuery, array $headers = array(), $cacheFile = null)
+    {
+        return self::handle($spec, null, $method, $pathWithQuery, $headers, $cacheFile);
+    }
+
+    /**
+     * HTTP 响应头。框架接入 handle() 时应把返回值写入响应；respond() 会自动写入。
+     * 受签名保护的 spec 禁止被浏览器、代理或 CDN 缓存，避免一次合法响应被旁路复用。
+     *
+     * @return array
+     */
+    public static function responseHeaders($secret)
+    {
+        $headers = array('Content-Type' => 'application/json; charset=utf-8');
+        if ($secret !== null) {
+            $headers['Cache-Control'] = 'private, no-store';
+        }
+        return $headers;
+    }
+
+    /**
      * 处理独立授权探针。$authorize 必须走业务自己的权限表；探针主体默认不存在，正确结果应为 authorized=false。
      *
      * @param callable $authorize function (string $subject): bool
@@ -112,7 +138,7 @@ final class SpecServer
         return array(200, $j !== false ? $j : '{"authorized":false}');
     }
 
-    /** 裸 PHP 便捷入口：处理当前请求、输出响应并退出。 */
+    /** 裸 PHP 便捷入口：处理当前请求、输出响应并退出。传 secret 时自动禁止缓存。 */
     public static function respond($spec, $secret = null, $cacheFile = null)
     {
         $headers = array();
@@ -130,9 +156,17 @@ final class SpecServer
             $cacheFile
         );
         http_response_code($status);
-        header('Content-Type: application/json; charset=utf-8');
+        foreach (self::responseHeaders($secret) as $name => $value) {
+            header($name . ': ' . $value);
+        }
         echo $body;
         exit;
+    }
+
+    /** 裸 PHP 显式公开入口。旧的 respond($spec, null, ...) 继续兼容。 */
+    public static function respondPublic($spec, $cacheFile = null)
+    {
+        self::respond($spec, null, $cacheFile);
     }
 
     /**

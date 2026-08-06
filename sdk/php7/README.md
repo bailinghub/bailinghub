@@ -80,6 +80,25 @@ $builder = ToolSpec::create('你的业务系统')
 SpecServer::respond($builder, $secret); // $secret = 中枢「工具源」登记的签名密钥；中枢拉取时带 sha256= 签名校验
 ```
 
+传入 `$secret` 时 `respond()` 会自动发送 `Cache-Control: private, no-store`，防止浏览器、代理或 CDN 缓存一次合法响应后旁路公开。框架里调用 `handle()` 时，把 `SpecServer::responseHeaders($secret)` 写进框架响应。确实要公开能力清单时，控制台明确选“允许公开”，代码用 `SpecServer::handlePublic(...)` / `SpecServer::respondPublic(...)`；旧的 `null` secret 写法继续兼容但不再推荐。公开清单不会放宽工具调用的验签与业务授权。
+
+裸 PHP 明确公开时：
+
+```php
+SpecServer::respondPublic($builder);
+```
+
+框架模式受保护时，必须把 helper 返回的响应头写回框架响应：
+
+```php
+list($status, $body) = SpecServer::handle($builder, $secret, $method, $uri, $headers);
+$response = response($body, $status);
+$response->header(SpecServer::responseHeaders($secret));
+return $response;
+```
+
+框架模式明确公开时改用 `SpecServer::handlePublic($builder, $method, $uri, $headers)`，并在控制台选择 `public_allowed`。
+
 CI 预生成静态 JSON（量大时省去每次请求实时构建）：`php build-spec.php > tools.json`，`SpecServer::respond($spec, $secret, __DIR__.'/tools.json')` 传第 3 参走缓存。
 
 > ⚠️ 宝塔/BT 面板：默认 vhost 的 `.well-known` 放行段会抢路由——约定路径建议用**非点开头**（如 `/bailing/tools.json`），spec_url 填它即可。详见控制台「工具源 → 接入说明」。

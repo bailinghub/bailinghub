@@ -14,18 +14,22 @@ declare(strict_types=1);
 use think\facade\Route;
 
 Route::get('.well-known/bailing/tools.json', function () {
+    $secret = config('bailing.tool_secret');
     $spec = (new \Bailing\Connect\SpecBuilder(title: '你的业务系统'))
         ->addClass(\app\opentenantapi\controller\StaffController::class)
         ->addClass(\app\opentenantapi\controller\OrderController::class);
-    // 传 secret = 只对中枢开放（中枢拉取带 sha256= 签名）；传 null = 公开
+    // 传 secret = 只对中枢开放（中枢拉取带 sha256= 签名）。
+    // 确需公开时显式使用 handlePublic()，并在控制台选择 public_allowed。
     [$status, $body] = \Bailing\Connect\SpecServer::handle(
         $spec,
-        config('bailing.tool_secret'),
+        $secret,
         request()->method(),
         request()->url(),
         request()->header(),
     );
-    return response($body, $status)->contentType('application/json');
+    $response = response($body, $status);
+    $response->header(\Bailing\Connect\SpecServer::responseHeaders($secret));
+    return $response;
 });
 */
 

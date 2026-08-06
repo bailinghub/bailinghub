@@ -98,6 +98,8 @@
 | [RELEASE_NOTES_v0.1.15.en.md](RELEASE_NOTES_v0.1.15.en.md) | English `v0.1.15` trusted rich rendering and chat reliability release notes. |
 | [RELEASE_NOTES_v0.1.16.md](RELEASE_NOTES_v0.1.16.md) | `v0.1.16` 工具运行时收敛与语义检索韧性说明。 |
 | [RELEASE_NOTES_v0.1.16.en.md](RELEASE_NOTES_v0.1.16.en.md) | English `v0.1.16` bounded tool runtime and resilient semantic retrieval release notes. |
+| [RELEASE_NOTES_v0.2.0.md](RELEASE_NOTES_v0.2.0.md) | `v0.2.0` 工具清单访问保护与主动核验说明。 |
+| [RELEASE_NOTES_v0.2.0.en.md](RELEASE_NOTES_v0.2.0.en.md) | English `v0.2.0` tool catalog access protection and active verification release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

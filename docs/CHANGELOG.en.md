@@ -24,6 +24,18 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.2.0 - Tool Catalog Access Protection and Active Verification
+
+Released on 2026-08-06.
+
+- **Explicit tool-catalog access policy:** URL-backed providers expose exactly two configurable policies: `signed_required` (default and recommended) and `public_allowed` (intentional public catalog). The console shows configured intent separately from observed evidence.
+- **Active protection verification:** after a valid signed read, the hub also confirms that unsigned and invalid-signature reads are rejected. A mismatch fails closed and preserves the previous cache. Public mode sends only an unsigned request and never silently falls back to a signed read.
+- **Business integration impact:** a protected spec endpoint should use the same provider secret as tool calls, reject unsigned or invalid requests with 401, 403, or 404, and return `Cache-Control: private, no-store`. Deliberate public access must be explicit in both code and console. Tool calls remain signed and subject to final business authorization in either mode.
+- **SDKs:** PHP and PHP7 `SpecServer` add `handlePublic()`, `respondPublic()`, and `responseHeaders()`. Protected bare-PHP responses automatically disable caching, while the older `null` public call remains compatible.
+- **Database schema:** `053_tool_spec_access_policy.sql` adds policy and latest-probe columns to `bz_tool_providers`. Existing URL providers keep the previous signed-fetch behavior. They may still be disabled or updated in descriptive, governance, retrieval, and other non-catalog fields without choosing a policy; changing the catalog URL, secret, auto-refresh, re-enabling, or another catalog-sensitive setting first requires one of the two access policies. Internal migration state is documented only in [COMPATIBILITY.en.md](COMPATIBILITY.en.md#url-tool-catalog-access-policy-upgrade).
+- **Validation:** run `npm run release:check`, verify that no migration is pending and cached specs are unchanged, then use the status matrix in [COMPATIBILITY.en.md](COMPATIBILITY.en.md#url-tool-catalog-access-policy-upgrade) against real business endpoints.
+- **Related docs:** [RELEASE_NOTES_v0.2.0.en.md](RELEASE_NOTES_v0.2.0.en.md), [CONTRACT.en.md](CONTRACT.en.md), [INTEGRATION.en.md](INTEGRATION.en.md#publish-tools), [TOOLS.en.md](TOOLS.en.md), and [SDK.en.md](SDK.en.md).
+
 ## v0.1.16 - Bounded Tool Runtime and Resilient Semantic Retrieval
 
 Released on 2026-08-05.

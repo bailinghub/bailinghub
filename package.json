@@ -1,6 +1,6 @@
 {
   "name": "bailinghub",
-  "version": "0.1.16",
+  "version": "0.2.0",
   "private": false,
   "type": "module",
   "description": "Open-source ACC runtime and agent control plane for existing business systems.",
