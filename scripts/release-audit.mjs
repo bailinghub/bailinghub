@@ -71,7 +71,11 @@ function readText(path) {
 
 function runPack(dryRun) {
   const args = ['pack'];
-  if (dryRun) args.push('--dry-run');
+  // The dry-run path only reads npm's file manifest. Letting it execute
+  // lifecycle scripts propagates npm_config_dry_run into prepack, which makes
+  // nested installs no-ops and breaks a following clean-checkout console
+  // build. The non-dry-run audit below still performs the real prepack.
+  if (dryRun) args.push('--dry-run', '--ignore-scripts');
   args.push('--json', '--silent');
   const packed = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, {
     encoding: 'utf8',
