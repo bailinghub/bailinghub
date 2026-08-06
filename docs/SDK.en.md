@@ -36,7 +36,24 @@ The exact method names follow each language's style, but every official SDK shou
 | Tool call verification | `Verify::gate` / `Verify::toolCall` | `verifyToolCall` | `verify_tool_call` | `verifyToolCall` / `VerifyToolCall` |
 | Callback verification | `Verify::callback` | `verifyCallback` | `verify_callback` | `verifyCallback` / `VerifyCallback` |
 | Authz probe | `SpecServer::authzProbe` | `authzProbeResponse` | `authz_probe_response` | `authzProbeResponse` / `AuthzProbeResponse` |
+| PHP spec serving | `SpecServer::handle` / `respond` / `handlePublic` / `respondPublic` | — | — | — |
 | Hub APIs | `HubClient` | `HubClient` | `HubClient` | `HubClient` |
+
+## PHP Spec Endpoint Security
+
+Pass the tool-provider secret to `SpecServer::handle()` or `respond()` for a
+signed-only spec endpoint. Bare PHP `respond()` automatically emits
+`Cache-Control: private, no-store`; framework integrations should apply
+`SpecServer::responseHeaders($secret)` to the returned response.
+
+The console exposes exactly two catalog policies: `signed_required` for the
+protected form above and `public_allowed` for an intentionally public catalog.
+For the latter, use `SpecServer::handlePublic()` or
+`SpecServer::respondPublic()`. The
+older `null` secret argument remains compatible, but the explicit helper keeps
+the security decision visible in code. Public catalog access never makes tool
+calls public: every tool call still requires signature verification and the
+business system's on-behalf-of authorization.
 
 ## Node Example
 

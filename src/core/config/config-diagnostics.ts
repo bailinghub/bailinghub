@@ -316,6 +316,25 @@ export async function inspectConfig(
     if (!provider.base_url) add(diags, 'error', 'tool_provider', id, 'base_url 必填');
     if (!provider.secret) add(diags, 'error', 'tool_provider', id, 'secret 必填');
     if (provider.spec_source === 'url' && !provider.spec_url) add(diags, 'error', 'tool_provider', id, 'spec_source=url 时 spec_url 必填');
+    if (provider.spec_source === 'url') {
+      const accessPolicy = provider.spec_access_policy ?? 'legacy_unverified';
+      const accessProbe = provider.spec_access_probe;
+      if (!['signed_required', 'public_allowed', 'legacy_unverified'].includes(accessPolicy)) {
+        add(diags, 'error', 'tool_provider', id, 'spec_access_policy 仅支持 signed_required/public_allowed/legacy_unverified');
+      } else if (accessPolicy === 'legacy_unverified') {
+        add(diags, 'warning', 'tool_provider', id, '历史 URL 工具源的访问方式待确认；当前按兼容方式运行，请确认要求签名保护还是允许公开读取');
+      } else if (accessPolicy === 'public_allowed') {
+        add(diags, 'warning', 'tool_provider', id, '工具清单已显式允许公开读取，请确认其中不含内部路径、参数或治理规则');
+      } else if (!accessProbe) {
+        add(diags, 'warning', 'tool_provider', id, '工具清单要求签名保护，但尚未验证匿名和错误签名请求是否被拒绝');
+      } else if (accessProbe.status === 'public') {
+        add(diags, 'error', 'tool_provider', id, `工具清单要求签名保护，但仍可匿名或使用错误签名读取：${accessProbe.reason || '负向探针返回成功'}`);
+      } else if (accessProbe.status === 'inconclusive') {
+        add(diags, 'warning', 'tool_provider', id, `工具清单访问保护无法判定：${accessProbe.reason || '探针响应不足以形成结论'}`);
+      } else if (accessProbe.status === 'skipped') {
+        add(diags, 'warning', 'tool_provider', id, `工具清单访问探针已跳过：${accessProbe.reason || '当前配置不适合执行探针'}`);
+      }
+    }
     if (provider.spec_source === 'inline' && !provider.spec_json) add(diags, 'warning', 'tool_provider', id, 'inline 工具源尚未保存 spec_json');
     if (provider.spec_json) {
       const parsed = parseOpenApiSpec(provider.spec_json);

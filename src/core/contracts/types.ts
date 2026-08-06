@@ -371,9 +371,19 @@ export interface ToolProvider {
   name: string;
   base_url: string;
   spec_source: 'url' | 'inline';
+  /** URL 工具清单状态；legacy_unverified 仅为历史空值的内部只读兼容映射，不是可写策略。 */
+  spec_access_policy?: 'signed_required' | 'public_allowed' | 'legacy_unverified';
   spec_url?: string;
   spec_json?: string;
   spec_refreshed_at?: string;
+  spec_access_probe?: {
+    status: 'protected' | 'public' | 'inconclusive' | 'skipped';
+    signed_http?: number;
+    unsigned_http?: number;
+    invalid_http?: number;
+    reason?: string;
+    at: string;
+  };
   authz_probe?: {
     status: 'pass' | 'suspect' | 'inconclusive' | 'skipped';
     http?: number;

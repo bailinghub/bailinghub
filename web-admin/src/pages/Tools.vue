@@ -21,7 +21,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="接口清单" min-width="230">
+      <el-table-column label="接口清单" min-width="310">
         <template #default="{ row }">
           <div class="tool-stack">
             <div class="tagline">
@@ -29,6 +29,11 @@
               <el-tag size="small" effect="plain" type="info">{{ specSourceLabel(row) }}</el-tag>
               <el-tag v-if="row.embed_credential" size="small" effect="plain" type="warning" :title="'工具检索已开启 · ' + (row.embed_model || '')">语义检索</el-tag>
             </div>
+            <div v-if="row.spec_source === 'url'" class="tagline">
+              <el-tag size="small" effect="plain" :type="specAccessPolicyType(row.spec_access_policy)">{{ specAccessPolicyLabel(row.spec_access_policy) }}</el-tag>
+              <el-tag size="small" effect="plain" :type="specAccessProbeType(row)" :title="specAccessProbeTitle(row.spec_access_probe)">{{ specAccessProbeLabel(row.spec_access_probe) }}</el-tag>
+            </div>
+            <span v-if="row.spec_source === 'url'" class="muted">{{ specAccessProbeSummary(row.spec_access_probe) }}</span>
             <span class="muted">{{ refreshPolicyLabel(row) }}</span>
             <span class="muted">{{ specRefreshedLabel(row) }}</span>
           </div>
@@ -139,6 +144,44 @@
           <p>建议 spec 根声明 <code>x-bailing-authz-probe</code>，并在业务系统单独挂一个授权探针端点；中枢刷新后会用不存在的主体验证业务侧是否 fail-closed。</p>
         </HelpTip></template>
         <el-input v-model="form.spec_url" placeholder="https://server.example.com/.well-known/bailing/tools.json" class="mono" />
+      </el-form-item>
+      <el-form-item v-if="form.spec_source === 'url'">
+        <template #label>接口清单访问策略 <HelpTip title="接口清单访问策略">
+          <p><b>签名保护（推荐）</b>：未签名或错误签名的请求必须被业务侧拒绝；中枢刷新时会用正确签名读取，再以未签名和错误签名请求确认它们均被拒绝。</p>
+          <p><b>允许公开</b>：中枢以未签名请求读取；任何能访问该 URL 的人都可以下载接口路径、参数、scope 与风险声明。只应在你明确接受公开时选择。</p>
+          <p>该策略只约束接口清单的读取方式；工具调用仍必须验签并按操作主体授权。</p>
+        </HelpTip></template>
+        <div class="spec-access-policy">
+          <el-radio-group v-model="form.spec_access_policy">
+            <el-radio value="signed_required">
+              签名保护（推荐）
+              <el-tag v-if="historicalProtectedEvidence" size="small" type="success" effect="plain">与当前实测一致</el-tag>
+            </el-radio>
+            <el-radio value="public_allowed">允许公开</el-radio>
+          </el-radio-group>
+          <el-alert
+            v-if="historicalAccessPending"
+            title="升级后待确认访问方式；当前运行不受影响"
+            :description="historicalAccessDescription"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+          <el-button
+            v-if="historicalAccessPending && historicalProtectedEvidence"
+            type="primary"
+            plain
+            size="small"
+            @click="adoptProtectedSpecAccess"
+          >采用实测结果：签名保护</el-button>
+          <el-alert
+            v-if="form.spec_access_policy === 'public_allowed'"
+            title="公开的是能力清单，不是签名密钥；但接口路径、参数和风险声明会对 URL 访问者可见。保存时还会再次确认。"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+        </div>
       </el-form-item>
       <el-form-item v-if="form.spec_source === 'url'">
         <template #label>{{ fieldTitle('auto_refresh_min', '自动刷新') }}（分钟，0 = 关闭） <HelpTip :title="fieldTitle('auto_refresh_min', '自动刷新')">
@@ -363,6 +406,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
+import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
 import { openDoc } from '../docs';
 import { fmtTime } from '../util';
@@ -381,7 +425,33 @@ const refreshing = ref('');
 const reindexing = ref('');
 const probing = ref('');
 const embCreds = ref<any[]>([]); // 可做向量化的凭证（kind embedding/both），供工具检索选坐标系
-const form = reactive({ name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
+type SpecAccessPolicy = 'signed_required' | 'public_allowed' | 'legacy_unverified';
+type SpecAccessChoice = Exclude<SpecAccessPolicy, 'legacy_unverified'> | '';
+type ToolProviderEditBaseline = {
+  spec_source: string;
+  spec_url: string;
+  spec_access_policy: SpecAccessPolicy;
+  spec_access_probe?: any;
+  auto_refresh_min: number;
+  enabled: boolean;
+};
+const form = reactive({ name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', spec_access_policy: 'signed_required' as SpecAccessChoice, log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
+const editBaseline = ref<ToolProviderEditBaseline | null>(null);
+const historicalAccessPending = computed(() => editing.value
+  && editBaseline.value?.spec_source === 'url'
+  && editBaseline.value.spec_access_policy === 'legacy_unverified'
+  && form.spec_source === 'url'
+  && form.spec_access_policy === '');
+const historicalProtectedEvidence = computed(() => editing.value
+  && editBaseline.value?.spec_source === 'url'
+  && editBaseline.value.spec_access_policy === 'legacy_unverified'
+  && form.spec_source === 'url'
+  && form.spec_url.trim() === editBaseline.value.spec_url.trim()
+  && form.secret.trim() === ''
+  && hasProtectedSpecAccessEvidence(editBaseline.value.spec_access_probe));
+const historicalAccessDescription = computed(() => historicalProtectedEvidence.value
+  ? `最近实测已保护：正签 ${editBaseline.value?.spec_access_probe?.signed_http} / 未签 ${editBaseline.value?.spec_access_probe?.unsigned_http} / 错签 ${editBaseline.value?.spec_access_probe?.invalid_http}。建议采用“签名保护”，仍需由管理员明确确认。`
+  : '这只是升级前配置缺少管理员意图，不代表清单已公开。当前继续按历史兼容方式运行；可先停用或维护说明、治理、检索等非清单字段。');
 
 const previewOpen = ref(false);
 const previewName = ref('');
@@ -473,6 +543,83 @@ function authzProbeAdvice(p: any): string[] {
 
 function specSourceLabel(row: any): string {
   return row.spec_source === 'url' ? 'URL 托管' : '内联 JSON';
+}
+
+function specAccessPolicyValue(value: unknown): SpecAccessPolicy {
+  if (value === 'signed_required' || value === 'public_allowed' || value === 'legacy_unverified') return value;
+  return 'legacy_unverified';
+}
+
+function specAccessPolicyLabel(value: unknown): string {
+  const policy = specAccessPolicyValue(value);
+  if (policy === 'signed_required') return '期望：签名保护';
+  if (policy === 'public_allowed') return '期望：允许公开';
+  return '期望：待确认（历史配置）';
+}
+
+function specAccessPolicyType(value: unknown): 'success' | 'danger' | 'warning' | 'info' {
+  const policy = specAccessPolicyValue(value);
+  if (policy === 'signed_required') return 'info';
+  if (policy === 'public_allowed') return 'warning';
+  return 'warning';
+}
+
+function hasProtectedSpecAccessEvidence(probe: any): boolean {
+  const rejected = (status: unknown): boolean => {
+    const code = Number(status);
+    return code === 401 || code === 403 || code === 404;
+  };
+  return probe?.status === 'protected'
+    && Number(probe.signed_http) >= 200
+    && Number(probe.signed_http) < 300
+    && rejected(probe.unsigned_http)
+    && rejected(probe.invalid_http);
+}
+
+function adoptProtectedSpecAccess(): void {
+  form.spec_access_policy = 'signed_required';
+}
+
+function specAccessProbeLabel(probe: any): string {
+  if (probe?.status === 'protected') return '实测：已保护';
+  if (probe?.status === 'public') return '实测：可公开读取';
+  if (probe?.status === 'inconclusive') return '实测：无法判定';
+  if (probe?.status === 'skipped') return '实测：兼容未验证';
+  return '实测：未执行';
+}
+
+function specAccessProbeType(row: any): 'success' | 'danger' | 'warning' | 'info' {
+  const status = row.spec_access_probe?.status;
+  const policy = specAccessPolicyValue(row.spec_access_policy);
+  if (status === 'protected') return policy === 'public_allowed' ? 'warning' : 'success';
+  if (status === 'public') return policy === 'signed_required' ? 'danger' : 'warning';
+  if (status === 'inconclusive') return 'warning';
+  return 'info';
+}
+
+function specAccessProbeTitle(probe: any): string {
+  const parts = [specAccessProbeLabel(probe)];
+  if (probe?.signed_http) parts.push(`签名 HTTP ${probe.signed_http}`);
+  if (probe?.unsigned_http) parts.push(`未签名 HTTP ${probe.unsigned_http}`);
+  if (probe?.invalid_http) parts.push(`错误签名 HTTP ${probe.invalid_http}`);
+  if (probe?.reason) parts.push(String(probe.reason));
+  return parts.join(' · ');
+}
+
+function specAccessProbeSummary(probe: any): string {
+  if (!probe) return '尚未执行访问保护检测';
+  if (probe.status === 'skipped') {
+    const signed = probe.signed_http ? ` · 正签 ${probe.signed_http}` : '';
+    const at = probe.at ? ` · ${fmtTime(probe.at)}` : '';
+    return `兼容刷新未验证访问保护${signed}${at}`;
+  }
+  const codes = [
+    probe.signed_http ? `签名 ${probe.signed_http}` : '',
+    probe.unsigned_http ? `未签名 ${probe.unsigned_http}` : '',
+    probe.invalid_http ? `错误签名 ${probe.invalid_http}` : '',
+  ].filter(Boolean).join(' / ');
+  const at = probe.at ? ` · ${fmtTime(probe.at)}` : '';
+  return `${codes || probe.reason || '已完成探测'}${at}`;
 }
 
 function refreshPolicyLabel(row: any): string {
@@ -737,14 +884,27 @@ async function probeAuthz(name: string): Promise<void> {
 }
 function openCreate(): void {
   editing.value = false;
+  editBaseline.value = null;
   toolFormTab.value = 'basic';
-  Object.assign(form, { name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
+  Object.assign(form, { name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', spec_access_policy: 'signed_required', log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
   open.value = true;
 }
 function openEdit(row: any): void {
   editing.value = true;
   toolFormTab.value = 'basic';
-  Object.assign(form, { name: row.name, base_url: row.base_url, secret: '', spec_source: row.spec_source, spec_url: row.spec_url || '', spec_json: '', log_payload: !!row.log_payload, timeout_ms: row.timeout_ms, rate_limit_per_min: row.rate_limit_per_min, auto_refresh_min: row.auto_refresh_min ?? 0, description: row.description || '', enabled: !!row.enabled, embed_credential: row.embed_credential || '', embed_model: row.embed_model || '', embed_dim: row.embed_dim || 1024 });
+  const policy = specAccessPolicyValue(row.spec_access_policy);
+  editBaseline.value = {
+    spec_source: row.spec_source,
+    spec_url: row.spec_url || '',
+    spec_access_policy: policy,
+    spec_access_probe: row.spec_access_probe ? { ...row.spec_access_probe } : undefined,
+    auto_refresh_min: Number(row.auto_refresh_min ?? 0),
+    enabled: !!row.enabled,
+  };
+  const policyChoice: SpecAccessChoice = row.spec_source === 'url'
+    ? policy === 'legacy_unverified' ? '' : policy
+    : 'signed_required';
+  Object.assign(form, { name: row.name, base_url: row.base_url, secret: '', spec_source: row.spec_source, spec_url: row.spec_url || '', spec_json: '', spec_access_policy: policyChoice, log_payload: !!row.log_payload, timeout_ms: row.timeout_ms, rate_limit_per_min: row.rate_limit_per_min, auto_refresh_min: row.auto_refresh_min ?? 0, description: row.description || '', enabled: !!row.enabled, embed_credential: row.embed_credential || '', embed_model: row.embed_model || '', embed_dim: row.embed_dim || 1024 });
   open.value = true;
 }
 function onEmbedCred(): void {
@@ -758,10 +918,40 @@ function genSecret(): void {
   crypto.getRandomValues(a);
   form.secret = Array.from(a, (b) => b.toString(16).padStart(2, '0')).join('');
 }
+function historicalAccessSensitiveChange(): boolean {
+  const baseline = editBaseline.value;
+  if (!historicalAccessPending.value || !baseline) return false;
+  return form.spec_url.trim() !== baseline.spec_url.trim()
+    || form.secret.trim() !== ''
+    || Number(form.auto_refresh_min) !== baseline.auto_refresh_min
+    || (!baseline.enabled && form.enabled);
+}
 async function save(): Promise<void> {
+  if (historicalAccessSensitiveChange()) {
+    toolFormTab.value = 'spec';
+    ElMessage.warning('这项修改会改变接口清单拉取或重新启用历史工具源，请先确认签名保护或允许公开');
+    return;
+  }
+  if (form.spec_source === 'url' && form.spec_access_policy === 'public_allowed') {
+    try {
+      const message = historicalProtectedEvidence.value
+        ? '当前实测为正签可读、未签和错签均被拒绝。选择允许公开是在改变访问方式；需先让业务端允许匿名读取，否则刷新会失败。确认仍允许公开吗？'
+        : '任何能访问该 URL 的人都可以下载接口路径、参数、scope 与风险声明。工具调用仍需验签和授权。确认允许公开这份接口清单吗？';
+      await ElMessageBox.confirm(
+        message,
+        '确认公开接口清单',
+        { confirmButtonText: '确认允许公开', cancelButtonText: '返回修改', type: 'warning' },
+      );
+    } catch {
+      return;
+    }
+  }
   saving.value = true;
   try {
-    await api('/admin/api/tool-providers', { method: 'POST', body: JSON.stringify(form) });
+    const payload: Record<string, unknown> = { ...form };
+    // 历史 URL 工具源未确认时省略该字段：后端会保留既有 sentinel，空串绝不代表允许公开。
+    if (form.spec_source === 'url' && form.spec_access_policy === '') delete payload.spec_access_policy;
+    await api('/admin/api/tool-providers', { method: 'POST', body: JSON.stringify(payload) });
     ElMessage.success('已保存（密钥不再回显完整值）'); open.value = false; await load();
   } catch (e) { ElMessage.error((e as Error).message); }
   finally { saving.value = false; }
@@ -811,6 +1001,7 @@ watch(debugTool, () => resetDebugForTool());
 .tool-main b { font-size: 13px; color: var(--el-text-color-primary); }
 .tool-main code { font-family: var(--bz-mono); font-size: 12px; color: var(--el-text-color-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; min-width: 0; line-height: 1.35; }
+.spec-access-policy { display: flex; flex-direction: column; gap: 10px; width: 100%; }
 .tagline { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .probe-line, .secret-line { display: flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; }
 .probe-line .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

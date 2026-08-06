@@ -313,3 +313,272 @@ test('prepareToolProviderConfig: 编辑留空时保留现有密钥并校验 spec
   assert.equal(badDim.ok, false);
   assert.match(badDim.ok ? '' : badDim.error, /embed_dim/);
 });
+
+test('prepareToolProviderConfig: URL 新源默认签名保护，历史源保持未验证', () => {
+  const created = prepareToolProviderConfig({
+    name: 'new-url-tools',
+    base_url: 'https://biz.example.com',
+    secret: 'secret',
+    spec_source: 'url',
+    spec_url: 'https://biz.example.com/tools.json',
+  });
+  assert.equal(created.ok, true);
+  if (created.ok) assert.equal(created.value.spec_access_policy, 'signed_required');
+
+  const inline = prepareToolProviderConfig({
+    name: 'inline-tools',
+    base_url: 'https://biz.example.com',
+    secret: 'secret',
+    spec_source: 'inline',
+  });
+  assert.equal(inline.ok, true);
+  if (inline.ok) assert.equal(inline.value.spec_access_policy, undefined);
+
+  const inlineWithIrrelevantPolicy = prepareToolProviderConfig({
+    name: 'inline-policy-tools',
+    base_url: 'https://biz.example.com',
+    secret: 'secret',
+    spec_source: 'inline',
+    spec_access_policy: 'signed_required',
+  });
+  assert.equal(inlineWithIrrelevantPolicy.ok, true);
+  if (inlineWithIrrelevantPolicy.ok) {
+    assert.equal(inlineWithIrrelevantPolicy.value.spec_access_policy, undefined);
+    assert.equal(inlineWithIrrelevantPolicy.value.spec_access_probe, undefined);
+  }
+  const inlineLegacy = prepareToolProviderConfig({
+    name: 'inline-legacy-tools',
+    base_url: 'https://biz.example.com',
+    secret: 'secret',
+    spec_source: 'inline',
+    spec_access_policy: 'legacy_unverified',
+  });
+  assert.equal(inlineLegacy.ok, false);
+  assert.match(inlineLegacy.ok ? '' : inlineLegacy.error, /仅用于历史读取兼容/);
+
+  const historical: ToolProvider = {
+    name: 'old-url-tools',
+    base_url: 'https://biz.example.com',
+    spec_source: 'url',
+    spec_url: 'https://biz.example.com/tools.json',
+    secret: 'secret',
+    log_payload: true,
+    timeout_ms: 10000,
+    rate_limit_per_min: 120,
+    auto_refresh_min: 0,
+    enabled: true,
+  };
+  const edited = prepareToolProviderConfig({
+    name: historical.name,
+    base_url: historical.base_url,
+    spec_source: 'url',
+    spec_url: historical.spec_url,
+  }, historical);
+  assert.equal(edited.ok, true);
+  if (edited.ok) assert.equal(edited.value.spec_access_policy, 'legacy_unverified');
+
+  const editedMappedLegacy = prepareToolProviderConfig({
+    name: historical.name,
+    base_url: historical.base_url,
+    spec_source: 'url',
+    spec_url: historical.spec_url,
+  }, { ...historical, spec_access_policy: 'legacy_unverified' });
+  assert.equal(editedMappedLegacy.ok, true);
+  if (editedMappedLegacy.ok) assert.equal(editedMappedLegacy.value.spec_access_policy, 'legacy_unverified');
+
+  const explicitlyLegacy = prepareToolProviderConfig({
+    name: historical.name,
+    base_url: historical.base_url,
+    spec_source: 'url',
+    spec_url: historical.spec_url,
+    spec_access_policy: 'legacy_unverified',
+  }, historical);
+  assert.equal(explicitlyLegacy.ok, false);
+  assert.match(explicitlyLegacy.ok ? '' : explicitlyLegacy.error, /仅用于历史读取兼容/);
+
+  const changedFromInline = prepareToolProviderConfig({
+    name: 'inline-tools',
+    base_url: 'https://biz.example.com',
+    spec_source: 'url',
+    spec_url: 'https://biz.example.com/tools.json',
+  }, inline.ok ? inline.value : undefined);
+  assert.equal(changedFromInline.ok, true);
+  if (changedFromInline.ok) assert.equal(changedFromInline.value.spec_access_policy, 'signed_required');
+
+  const newLegacy = prepareToolProviderConfig({
+    name: 'new-legacy-tools',
+    base_url: 'https://biz.example.com',
+    secret: 'secret',
+    spec_source: 'url',
+    spec_url: 'https://biz.example.com/tools.json',
+    spec_access_policy: 'legacy_unverified',
+  });
+  assert.equal(newLegacy.ok, false);
+  assert.match(newLegacy.ok ? '' : newLegacy.error, /仅用于历史读取兼容/);
+});
+
+test('prepareToolProviderConfig: 历史 URL 源的清单敏感修改必须显式选择访问策略', () => {
+  const historical: ToolProvider = {
+    name: 'old-url-tools',
+    base_url: 'https://biz.example.com',
+    spec_source: 'url',
+    spec_access_policy: 'legacy_unverified',
+    spec_url: 'https://biz.example.com/tools.json',
+    secret: 'secret',
+    log_payload: true,
+    timeout_ms: 10000,
+    rate_limit_per_min: 120,
+    auto_refresh_min: 0,
+    enabled: true,
+    description: 'old description',
+  };
+  const baseInput = {
+    name: historical.name,
+    base_url: historical.base_url,
+    spec_source: 'url',
+    spec_url: historical.spec_url,
+  };
+
+  for (const { input, old } of [
+    { input: { ...baseInput, spec_url: 'https://biz.example.com/tools-v2.json' }, old: historical },
+    { input: { ...baseInput, secret: 'rotated-secret' }, old: historical },
+    { input: { ...baseInput, auto_refresh_min: 10 }, old: historical },
+    { input: { ...baseInput, enabled: true }, old: { ...historical, enabled: false } },
+  ]) {
+    const result = prepareToolProviderConfig(input, old);
+    assert.equal(result.ok, false);
+    assert.match(result.ok ? '' : result.error, /必须先选择 signed_required 或 public_allowed/);
+  }
+
+  const nonCatalogEdit = prepareToolProviderConfig({
+    ...baseInput,
+    secret: historical.secret,
+    description: 'new description',
+    rate_limit_per_min: 60,
+    embed_credential: 'embed-main',
+    embed_model: 'text-embedding',
+    embed_dim: 1024,
+    enabled: false,
+  }, historical);
+  assert.equal(nonCatalogEdit.ok, true);
+  if (nonCatalogEdit.ok) {
+    assert.equal(nonCatalogEdit.value.spec_access_policy, 'legacy_unverified');
+    assert.equal(nonCatalogEdit.value.enabled, false);
+  }
+
+  const confirmed = prepareToolProviderConfig({
+    ...baseInput,
+    spec_url: 'https://biz.example.com/tools-v2.json',
+    secret: 'rotated-secret',
+    auto_refresh_min: 10,
+    spec_access_policy: 'signed_required',
+  }, { ...historical, enabled: false });
+  assert.equal(confirmed.ok, true);
+  if (confirmed.ok) {
+    assert.equal(confirmed.value.spec_access_policy, 'signed_required');
+    assert.equal(confirmed.value.enabled, true);
+  }
+
+  const publicConfirmed = prepareToolProviderConfig({
+    ...baseInput,
+    auto_refresh_min: 10,
+    spec_access_policy: 'public_allowed',
+  }, historical);
+  assert.equal(publicConfirmed.ok, true);
+  if (publicConfirmed.ok) assert.equal(publicConfirmed.value.spec_access_policy, 'public_allowed');
+
+  const switchedInline = prepareToolProviderConfig({
+    name: historical.name,
+    base_url: historical.base_url,
+    spec_source: 'inline',
+    spec_json: '{"openapi":"3.1.0","paths":{}}',
+  }, historical);
+  assert.equal(switchedInline.ok, true);
+  if (switchedInline.ok) {
+    assert.equal(switchedInline.value.spec_access_policy, undefined);
+    assert.equal(switchedInline.value.spec_access_probe, undefined);
+  }
+});
+
+test('prepareToolProviderConfig: 地址或访问策略变化会清空旧访问探针', () => {
+  const old: ToolProvider = {
+    name: 'url-tools',
+    base_url: 'https://biz.example.com',
+    spec_source: 'url',
+    spec_access_policy: 'signed_required',
+    spec_url: 'https://biz.example.com/tools.json',
+    spec_access_probe: {
+      status: 'protected',
+      signed_http: 200,
+      unsigned_http: 401,
+      invalid_http: 401,
+      at: '2026-08-05T12:00:00.000Z',
+    },
+    secret: 'secret',
+    log_payload: true,
+    timeout_ms: 10000,
+    rate_limit_per_min: 120,
+    auto_refresh_min: 0,
+    enabled: true,
+  };
+  const unchanged = prepareToolProviderConfig({
+    name: old.name,
+    base_url: old.base_url,
+    spec_source: 'url',
+    spec_url: old.spec_url,
+    spec_access_policy: 'signed_required',
+  }, old);
+  assert.equal(unchanged.ok, true);
+  if (unchanged.ok) assert.deepEqual(unchanged.value.spec_access_probe, old.spec_access_probe);
+
+  const changedPolicy = prepareToolProviderConfig({
+    name: old.name,
+    base_url: old.base_url,
+    spec_source: 'url',
+    spec_url: old.spec_url,
+    spec_access_policy: 'public_allowed',
+  }, old);
+  assert.equal(changedPolicy.ok, true);
+  if (changedPolicy.ok) assert.equal(changedPolicy.value.spec_access_probe, undefined);
+
+  const changedUrl = prepareToolProviderConfig({
+    name: old.name,
+    base_url: old.base_url,
+    spec_source: 'url',
+    spec_url: 'https://biz.example.com/tools-v2.json',
+    spec_access_policy: 'signed_required',
+  }, old);
+  assert.equal(changedUrl.ok, true);
+  if (changedUrl.ok) assert.equal(changedUrl.value.spec_access_probe, undefined);
+
+  const changedSecret = prepareToolProviderConfig({
+    name: old.name,
+    base_url: old.base_url,
+    secret: 'rotated-secret',
+    spec_source: 'url',
+    spec_url: old.spec_url,
+    spec_access_policy: 'signed_required',
+  }, old);
+  assert.equal(changedSecret.ok, true);
+  if (changedSecret.ok) assert.equal(changedSecret.value.spec_access_probe, undefined);
+
+  const downgraded = prepareToolProviderConfig({
+    name: old.name,
+    base_url: old.base_url,
+    spec_source: 'url',
+    spec_url: old.spec_url,
+    spec_access_policy: 'legacy_unverified',
+  }, old);
+  assert.equal(downgraded.ok, false);
+  assert.match(downgraded.ok ? '' : downgraded.error, /仅用于历史读取兼容/);
+
+  const invalid = prepareToolProviderConfig({
+    name: old.name,
+    base_url: old.base_url,
+    spec_source: 'url',
+    spec_url: old.spec_url,
+    spec_access_policy: 'maybe',
+  }, old);
+  assert.equal(invalid.ok, false);
+  assert.match(invalid.ok ? '' : invalid.error, /spec_access_policy/);
+});

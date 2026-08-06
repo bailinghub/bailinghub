@@ -157,6 +157,44 @@ test('inspectConfig: 工具源授权探针结果进入体检', async () => {
   assert.ok(messages.some((m) => m.includes('warning:tool_provider:skipped-tools:授权探针已跳过')));
 });
 
+test('inspectConfig: URL 工具清单访问策略与负向探针进入体检', async () => {
+  const urlProvider = (name: string, input: Partial<ToolProvider>): ToolProvider => ({
+    ...provider,
+    name,
+    spec_source: 'url',
+    spec_url: `https://biz.example.com/${name}.json`,
+    ...input,
+  });
+  const report = await inspectConfig(store({
+    targets: [target],
+    credentials: [cred, embedCred],
+    providers: [
+      urlProvider('protected-tools', {
+        spec_access_policy: 'signed_required',
+        spec_access_probe: {
+          status: 'protected', signed_http: 200, unsigned_http: 401, invalid_http: 403,
+          at: '2026-08-05T12:00:00.000Z',
+        },
+      }),
+      urlProvider('public-leak', {
+        spec_access_policy: 'signed_required',
+        spec_access_probe: {
+          status: 'public', signed_http: 200, unsigned_http: 200, invalid_http: 200,
+          reason: '匿名请求返回 200', at: '2026-08-05T12:00:00.000Z',
+        },
+      }),
+      urlProvider('legacy-tools', { spec_access_policy: 'legacy_unverified' }),
+      urlProvider('public-tools', { spec_access_policy: 'public_allowed' }),
+    ],
+  }), { cfg: cfg() });
+
+  const messages = report.diagnostics.map((d) => `${d.severity}:${d.area}:${d.id}:${d.message}`);
+  assert.equal(messages.some((m) => m.includes('protected-tools:工具清单')), false);
+  assert.ok(messages.some((m) => m.includes('error:tool_provider:public-leak:工具清单要求签名保护')));
+  assert.ok(messages.some((m) => m.includes('warning:tool_provider:legacy-tools:历史 URL 工具源的访问方式待确认')));
+  assert.ok(messages.some((m) => m.includes('warning:tool_provider:public-tools:工具清单已显式允许公开读取')));
+});
+
 test('inspectConfig: Audience 与 route=auto 规则进入配置体检', async () => {
   const autoA: Route = {
     ...route,

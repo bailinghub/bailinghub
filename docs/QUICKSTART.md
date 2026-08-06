@@ -100,7 +100,7 @@ node bailing-executor.mjs --hub <中枢地址> --targets <目标名> \
 **第 9 步 · 给 AI 接工具**（要"能查、能办"时，「工具源」+「审批意图」）：
 
 1. 业务系统声明可调接口 + 实现验签中间件。**PHP 业务直接用 SDK**（`sdk/php/`，零依赖）：控制器方法标 `#[AiTool(...)]` 注解（完整字段注册表见 CONTRACT §2.4a，构建期自动体检），`SpecServer` 一行挂出 `/.well-known/bailing/tools.json`，`Verify::toolCall` 即验签；其他语言照 CONTRACT 手写 openapi.json + 验签（参考 `docs/examples/bailing-tool-verify.php`）；
-2. 控制台「工具源」注册：base_url + 签名密钥 + spec（粘贴或 URL 拉取，推荐业务把 spec 发布到 `/.well-known/bailing/tools.json` 并开自动刷新——业务侧新标注的接口自动成为工具，清单增删/风险变化会审计并告警；中枢拉 spec 也带 `sha256=` 签名，业务可选只对中枢开放该地址），「工具清单」预览能看到哪些接口进来了、哪些被跳过及原因；「授权探针」会显示业务侧是否对合成越权主体 fail-closed；页面右上「开发文档」跳转官网对应文档；
+2. 控制台「工具源」注册：base_url + 签名密钥 + spec（粘贴或 URL 拉取，推荐业务把 spec 发布到 `/.well-known/bailing/tools.json` 并开自动刷新）。URL 来源只有“签名保护”和“允许公开”两项可选，默认前者；只有你明确接受任何 URL 访问者都能看到接口路径、参数和风险声明时，才选后者。签名保护刷新会在正确签名读取后补做未签名/错误签名负向探测，未实测通过就拒绝覆盖、继续用旧缓存；允许公开以未签名请求读取，不会偷偷改用签名。列表把“期望策略”和“实测结果”分开显示；PHP/PHP7 SDK 在受保护响应上自动加 `Cache-Control: private, no-store`。业务侧新标注的接口会自动成为工具，清单增删/风险变化会审计并告警；「工具清单」预览能看到哪些接口进来了、哪些被跳过及原因；「授权探针」另行显示业务侧是否对合成越权主体 fail-closed；页面右上「开发文档」跳转官网对应文档；
 3. 路由挂 `tools`：`{"sources":[{"provider":"你的工具源","allow":["tenant.staff.*"],"subject_field":"operator_uid"}],"max_calls":5}` ——每个来源的 `allow` 是 scope 白名单（双闸：业务标了 ∩ 路由允许才暴露）；`subject_field` 指明 metadata 里哪个字段是操作主体，业务后端触发时写入（全程不经 LLM）；跨系统场景可在 `sources` 继续添加来源；
 4. 完成。llm 走 function-calling 循环；执行器大脑（自研智能体 / 脚本 / 第三方运行时）认领件里自带工具清单 + `tool_token`，curl 中枢代理即可调用——两条路走**同一套**白名单/风险闸/限流/审计/签名出口。
 5. 风险操作不放养：`high` / `confirm-required` 的调用先冻结成「审批意图」，批准后任务自动重跑，且只允许执行被批准的那个调用快照。

@@ -323,7 +323,9 @@ https://<你的域名>/.well-known/bailing/tools.json
 
 - **自动生效**：CI 部署后更新该文件即可，中枢按间隔（分钟级，0=关闭）拉取，新标注的接口自动成为工具，无需人工重新导入；
 - **变更对账**：每次拉取与上次派生清单 diff（比对 method/path/scope/risk/confirm 安全指纹）；工具新增 / 移除 / 指纹变化 → 审计事件 `spec_refreshed`（detail 含 added/removed/changed）+ 告警中枢管理员。仅描述文案变化只更新不告警；
-- **签名拉取**：中枢拉 spec 的 GET 请求同样带 `X-Bailing-Timestamp` / `X-Bailing-Signature`（v2，空体哈希参与签名）——业务侧**可选**用同一验签函数保护 spec 地址，只对中枢开放接口清单；不验也能用；
+- **访问策略显式声明**：URL 工具源的 `spec_access_policy` 只有 `signed_required`（默认，推荐）和 `public_allowed`（明确接受公开）两个可配置值；`public_allowed` 只表示接口清单可以公开读取，**不放宽任何工具调用的验签与业务授权**。升级前历史记录的只读迁移状态不属于公开配置契约，见[兼容性与升级](兼容性与升级.md#十url-工具清单访问策略升级)；
+- **签名拉取与主动核验**：签名请求使用 `X-Bailing-Timestamp` / `X-Bailing-Signature`（空体/主体/任务签空串）。`signed_required` 刷新先以正确签名读取，再以未签名和错误签名请求确认二者均被拒；正确签名 2xx 且另两种返回 401/403/404 才记录 `protected` 并更新缓存，负向请求可读记 `public`、无法可靠判定记 `inconclusive`，两者都使刷新失败并保留旧缓存。`public_allowed` 按公开语义只发未签名主请求，成功记 `public`；若端点实际受保护则记 `inconclusive` 并刷新失败，不会偷偷回退签名绕过管理员选择。控制台把“期望策略”和“实测结果”分开显示，不能用配置值冒充已验证事实；
+- **受保护响应禁止缓存**：签名保护的 spec 响应必须带 `Cache-Control: private, no-store`，防止浏览器、反向代理或 CDN 把一次合法响应缓存后旁路公开。PHP/PHP7 SDK 的 `SpecServer::respond()` 在传入 secret 时自动加该响应头；框架模式使用 `SpecServer::responseHeaders($secret)`。确需公开时优先使用显式 `handlePublic()` / `respondPublic()`，旧的 `null` 传法仅为兼容保留；
 - **拉取失败**：审计 `spec_refresh_failed` + 告警；AI 继续按缓存清单工作（缓存不失效），不因业务侧发布事故中断；
 - **宝塔/BT 面板注意项**：宝塔默认 vhost 可能自带 `location ~ \.well-known { allow all; }` 证书验证段，**正则 location 优先于 `location /` 的框架重写**——动态路由方式会被它按静态文件处理直接 404；而静态文件方式可能被公开直出，绕过“只对中枢开放”的签名保护（且 content-type 错为 text/plain）。两个修法任选：①在网站配置加前缀匹配段（`^~` 优先级高于正则）把约定路径放行给 PHP：`location ^~ /.well-known/bailing/ { rewrite ^(.*)$ /index.php?s=$1 last; }`——**ThinkPHP 必须带 `?s=$1`**（nginx+FPM 下 TP 靠 `s` 参数恢复 pathinfo，REQUEST_URI 链路仅 cli 生效，裸 rewrite 丢路径会路由到默认页；Laravel 等直接解析 REQUEST_URI 的框架可省略）；②**约定路径本来就不是强制的**——注册工具源时 spec_url 填任意非点开头路径（如 `/bailing/tools.json`）同样有效。验签注意：内部 rewrite 不改 `REQUEST_URI`，仍用原始 URI 验签即可。
 

@@ -69,3 +69,37 @@ test('rowToolProvider: 读取持久化授权探针结果', () => {
     at: '2026-07-01T12:00:00.000Z',
   });
 });
+
+test('rowToolProvider: URL 历史记录缺少访问策略时保持未验证并读取访问探针', () => {
+  const provider = rowToolProvider({
+    name: 'demo-business',
+    base_url: 'https://biz.example.com',
+    spec_source: 'url',
+    spec_url: 'https://biz.example.com/.well-known/bailing/tools.json',
+    spec_access_probe_json: JSON.stringify({
+      status: 'public',
+      signed_http: 200,
+      unsigned_http: 200,
+      invalid_http: 200,
+      reason: '匿名请求仍可读取',
+      at: '2026-08-05T12:00:00.000Z',
+    }),
+    secret: 'secret',
+    log_payload: 1,
+    timeout_ms: 10000,
+    rate_limit_per_min: 120,
+    auto_refresh_min: 0,
+    enabled: 1,
+  });
+
+  assert.equal(provider.spec_access_policy, 'legacy_unverified');
+  assert.deepEqual(provider.spec_access_probe, {
+    status: 'public',
+    signed_http: 200,
+    unsigned_http: 200,
+    invalid_http: 200,
+    reason: '匿名请求仍可读取',
+    at: '2026-08-05T12:00:00.000Z',
+  });
+  assert.equal(rowToolProvider({ ...provider, spec_source: 'inline', spec_access_policy: null }).spec_access_policy, undefined);
+});

@@ -34,6 +34,25 @@ Recommended path:
 
 The hub imports the spec, validates it, and compiles it into internal `ToolDefinition` records.
 
+For a URL-backed provider, access posture is explicit rather than inferred:
+
+| Policy | Meaning |
+|---|---|
+| `signed_required` | Default. Only a correctly signed hub request may read the spec. |
+| `public_allowed` | The operator intentionally permits public catalog reads. Tool calls remain signed and business-authorized. |
+
+For `signed_required`, refresh reads with a valid signature and then checks
+unsigned and invalid-signature requests. It writes a new cache only when the
+signed request succeeds and both negative probes return 401/403/404; otherwise
+the old cache is kept. `public_allowed` uses only an unsigned primary request
+and never silently retries with a signature. These are the only configurable
+policies. The configured policy is an expectation; the observed `protected`,
+`public`, or `inconclusive` status is evidence. A protected response must include
+`Cache-Control: private, no-store` to prevent
+intermediary caches from turning a valid signed fetch into a public copy.
+For providers created before this policy existed, follow the read-only migration
+procedure in [COMPATIBILITY.en.md](COMPATIBILITY.en.md#url-tool-catalog-access-policy-upgrade).
+
 Attach one or more providers to a route through `tools.sources[]`:
 
 ```json

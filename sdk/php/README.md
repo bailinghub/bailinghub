@@ -63,20 +63,38 @@ ThinkPHP 路由一段（完整示例见 `examples/thinkphp-integration.php`）�
 
 ```php
 Route::get('.well-known/bailing/tools.json', function () {
+    $secret = config('bailing.tool_secret');
     $spec = (new \Bailing\Connect\SpecBuilder(title: '你的业务系统'))
         ->authzProbe('/.well-known/bailing/authz-probe')
         ->addClass(StaffController::class);
     [$status, $body] = \Bailing\Connect\SpecServer::handle(
-        $spec, config('bailing.tool_secret'),
+        $spec, $secret,
         request()->method(), request()->url(), request()->header());
-    return response($body, $status)->contentType('application/json');
+    $response = response($body, $status);
+    $response->header(\Bailing\Connect\SpecServer::responseHeaders($secret));
+    return $response;
 });
 ```
 
 - `->authzProbe(...)` 会在 spec 根上声明 `x-bailing-authz-probe`。中枢刷新工具源时，会用一个不存在的主体探测该端点，确认业务侧授权闸是默认拒绝；
-- `$secret` 传中枢「工具源」登记的密钥 = **spec 只对中枢开放**（中枢拉取自带 `sha256=` 签名）；传 `null` = 公开；
+- `$secret` 传中枢「工具源」登记的密钥 = **spec 只对中枢开放**（中枢拉取自带 `sha256=` 签名）；`responseHeaders($secret)` 会同时给框架响应加 `Cache-Control: private, no-store`，裸 PHP `respond()` 则自动添加，避免代理/CDN 缓存后旁路公开；
+- 确实要公开能力清单时，在控制台明确选“允许公开”，代码用 `SpecServer::handlePublic(...)` 或 `SpecServer::respondPublic(...)`。旧的 `handle(..., null, ...)` / `respond(..., null, ...)` 继续兼容，但不再推荐用一个 `null` 隐藏安全决定；公开清单不等于公开工具调用，后者仍须验签并授权；
 - 中枢侧开"自动刷新"后，你**每次部署新标注的接口自动成为 AI 工具**，无需任何人工导入；工具清单增删/风险变化中枢会审计并告警管理员；
 - 实时反射模式下注解写错 spec 端点会回 500（响应体带具体错误）；**用 `$cacheFile` 时改注解后必须重新生成缓存文件**，否则一直发旧 spec——建议 CI 里固定跑构建脚本落盘。
+
+明确公开时对应代码应直接写出公开意图，而不是把密钥变量改成空值：
+
+```php
+Route::get('.well-known/bailing/tools.json', function () {
+    $spec = (new \Bailing\Connect\SpecBuilder(title: '你的业务系统'))
+        ->addClass(StaffController::class);
+    [$status, $body] = \Bailing\Connect\SpecServer::handlePublic(
+        $spec, request()->method(), request()->url(), request()->header());
+    return response($body, $status)->contentType('application/json');
+});
+```
+
+这段代码必须与控制台的 `public_allowed` 同时出现；如果控制台选 `signed_required`，业务端点就必须使用前面的受保护示例。
 
 同路径再挂一个独立授权探针端点（不要复用真实业务工具）：
 

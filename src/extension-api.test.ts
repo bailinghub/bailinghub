@@ -12,6 +12,7 @@ import {
   type RuntimeStateStore,
   type StoreFactory,
   type ToolEmbeddingRepositoryContract,
+  type ToolProviderRepositoryContract,
 } from './extension-api';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -56,6 +57,13 @@ test('extension-api keeps legacy tool embedding repositories source-compatible',
   };
 
   assert.equal(legacyRepository.replaceProvider, undefined);
+});
+
+test('extension-api keeps legacy tool provider repositories source-compatible', () => {
+  const legacyRepository = {} as Omit<ToolProviderRepositoryContract, 'updateSpecAccessProbe'>;
+  const compatibleRepository: ToolProviderRepositoryContract = legacyRepository;
+
+  assert.equal(compatibleRepository.updateSpecAccessProbe, undefined);
 });
 
 test('package exports the stable extension-api subpath', () => {

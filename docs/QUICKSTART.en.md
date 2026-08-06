@@ -198,6 +198,18 @@ To let AI agents query or operate your system, expose a tool spec:
 /.well-known/bailing/tools.json
 ```
 
+URL providers expose exactly two configurable policies and default to
+`spec_access_policy: signed_required`. Choose `public_allowed` only when you
+intentionally accept exposing paths, parameters,
+scopes, and risk declarations to anyone who can reach the URL. A
+`signed_required` refresh reads with a valid signature and then runs unsigned
+and invalid-signature negative probes; it updates the cache only after the
+protected posture is proven. `public_allowed` reads unsigned and never silently
+falls back to a signed fetch. The console keeps the configured expectation
+separate from the observed `protected`, `public`, or `inconclusive` status.
+Signed-only responses must send
+`Cache-Control: private, no-store`.
+
 The preferred paths:
 
 - PHP 8+ SDK annotations

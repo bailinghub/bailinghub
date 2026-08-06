@@ -315,6 +315,44 @@ export function prepareToolProviderConfig(
   const specUrl = optionalStr(input.spec_url);
   if (specSource === 'url' && !specUrl) return fail('spec_source=url 时 spec_url 必填');
 
+  // legacy_unverified 是升级读取兼容态，不是调用方可主动写入的策略。
+  const acceptedSpecAccessPolicies = ['signed_required', 'public_allowed'] as const;
+  const requestedSpecAccessPolicy = optionalStr(input.spec_access_policy);
+  if (requestedSpecAccessPolicy
+    && !acceptedSpecAccessPolicies.includes(requestedSpecAccessPolicy as typeof acceptedSpecAccessPolicies[number])) {
+    return fail('spec_access_policy 仅支持 signed_required/public_allowed；legacy_unverified 仅用于历史读取兼容');
+  }
+  const oldSpecAccessPolicy = old?.spec_access_policy
+    ?? (old?.spec_source === 'url' ? 'legacy_unverified' : undefined);
+  const specAccessPolicy: ToolProvider['spec_access_policy'] = specSource === 'inline'
+    ? undefined
+    : requestedSpecAccessPolicy
+      ? requestedSpecAccessPolicy as ToolProvider['spec_access_policy']
+      : old?.spec_source === 'url' ? oldSpecAccessPolicy : 'signed_required';
+  const autoRefreshMin = Math.min(Math.max(Number(input.auto_refresh_min ?? old?.auto_refresh_min ?? 0) || 0, 0), 1440);
+  const enabled = input.enabled !== false;
+
+  // 历史 URL 源可以继续按旧方式运行，也允许停用或编辑非清单字段；但任何会改变
+  // 清单读取面的操作都必须先明确选择正式策略。该约束必须在服务端执行，不能只靠控制台。
+  const historicalUrlNeedsDecision = old?.spec_source === 'url'
+    && oldSpecAccessPolicy === 'legacy_unverified'
+    && specSource === 'url'
+    && !requestedSpecAccessPolicy;
+  if (historicalUrlNeedsDecision) {
+    const catalogAccessChanged = specUrl !== old.spec_url
+      || secret !== old.secret
+      || autoRefreshMin !== (old.auto_refresh_min ?? 0)
+      || (old.enabled === false && enabled);
+    if (catalogAccessChanged) {
+      return fail('历史 URL 工具源修改清单地址、密钥、自动刷新或重新启用前，必须先选择 signed_required 或 public_allowed');
+    }
+  }
+  const specAccessChanged = !!old
+    && (specSource !== old.spec_source
+      || specUrl !== old.spec_url
+      || specAccessPolicy !== oldSpecAccessPolicy
+      || secret !== old.secret);
+
   let specJson = typeof input.spec_json === 'string' && input.spec_json.trim() ? input.spec_json : old?.spec_json;
   if (specJson) {
     const parsed = parseOpenApiSpec(specJson);
@@ -333,16 +371,18 @@ export function prepareToolProviderConfig(
       name: name.value,
       base_url: baseUrl,
       spec_source: specSource,
+      spec_access_policy: specAccessPolicy,
       spec_url: specUrl,
       spec_json: specJson,
       spec_refreshed_at: specJson && specJson !== old?.spec_json ? new Date().toISOString() : old?.spec_refreshed_at,
+      spec_access_probe: specSource === 'inline' || specAccessChanged ? undefined : old?.spec_access_probe,
       authz_probe: old?.authz_probe,
       secret,
       log_payload: input.log_payload !== false,
       timeout_ms: Math.min(Math.max(Number(input.timeout_ms ?? old?.timeout_ms ?? 10000) || 10000, 1000), 60000),
       rate_limit_per_min: Math.max(Number(input.rate_limit_per_min ?? old?.rate_limit_per_min ?? 120) || 0, 0),
-      auto_refresh_min: Math.min(Math.max(Number(input.auto_refresh_min ?? old?.auto_refresh_min ?? 0) || 0, 0), 1440),
-      enabled: input.enabled !== false,
+      auto_refresh_min: autoRefreshMin,
+      enabled,
       description: optionalStr(input.description),
       embed_credential: embedCredential,
       embed_model: embedModel,

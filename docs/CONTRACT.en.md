@@ -115,6 +115,35 @@ Recommended location:
 /.well-known/bailing/tools.json
 ```
 
+For URL-backed providers, declare the expected access posture with
+`spec_access_policy`:
+
+- `signed_required` is the default and recommended policy;
+- `public_allowed` is an explicit decision to let anyone who can reach the URL
+  read the capability catalog; it never relaxes tool-call signatures or
+  business authorization.
+
+These are the only configurable policy values. The read-only migration state
+for providers created before this contract is not part of the public
+configuration surface; see
+[COMPATIBILITY.en.md](COMPATIBILITY.en.md#url-tool-catalog-access-policy-upgrade).
+
+For `signed_required`, a URL refresh reads with a correct signature and then
+checks unsigned and invalid-signature requests. It updates the cache only when
+the signed request succeeds and both negative requests return 401/403/404;
+public or inconclusive evidence fails the refresh and preserves the old cache.
+`public_allowed` uses only an unsigned primary request and records `public` on
+success; if the endpoint is actually protected, it records `inconclusive` and
+fails instead of silently retrying with a signature. The console displays
+expected policy and observed status separately.
+A signed-only spec response must include
+`Cache-Control: private, no-store` so an intermediary cannot replay one valid
+response as a public cached document. PHP/PHP7 `SpecServer::respond()` adds this
+header when a secret is supplied; framework integrations can apply
+`SpecServer::responseHeaders($secret)`. Deliberately public PHP endpoints should
+use `handlePublic()` or `respondPublic()` instead of hiding the decision in a
+`null` secret.
+
 Minimal OpenAPI shape:
 
 ```json
