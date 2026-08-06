@@ -64,7 +64,12 @@ let packFiles = [];
 try {
   const packed = spawnSync(
     process.platform === 'win32' ? 'npm.cmd' : 'npm',
-    ['pack', '--dry-run', '--json', '--silent'],
+    // This check only needs npm's final file manifest. Running lifecycle
+    // scripts under --dry-run propagates npm_config_dry_run into prepack, so
+    // nested installs are simulated and the following console build fails in
+    // a clean checkout. The real package build is covered independently by
+    // prepack and package:artifact:check.
+    ['pack', '--dry-run', '--ignore-scripts', '--json', '--silent'],
     {
       cwd: root,
       encoding: 'utf8',
