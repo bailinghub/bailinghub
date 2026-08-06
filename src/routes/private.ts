@@ -30,7 +30,7 @@ export interface PrivateHttpDeps extends AuthRuntimeDeps {
   handleSend(req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<void>;
   handleWecomInbound(req: IncomingMessage, res: ServerResponse, accountId: string, url: URL): Promise<void>;
   /**
-   * 商业宿主的可信身份入口。设置后，Core 不再读取自己的管理员 Cookie/密码；宿主必须先完成
+   * 外部宿主的可信身份入口。设置后，Core 不再读取自己的管理员 Cookie/密码；宿主必须先完成
    * 平台 session、租户成员关系与当前租户校验，再返回租户绑定的 Principal。
    */
   identityProvider?: KernelIdentityProviderV1;
@@ -38,7 +38,7 @@ export interface PrivateHttpDeps extends AuthRuntimeDeps {
 }
 
 /**
- * 商业身份只接管“人”的管理员会话；业务 client、执行器和宿主机器 token 仍由每个
+ * 宿主身份只接管“人”的管理员会话；业务 client、执行器和宿主机器 token 仍由每个
  * 租户 Core 的原生凭据表验证。Core 本地管理员 Cookie 在宿主模式下明确禁用，避免
  * 平台身份与租户库里的历史账号形成两套登录源。
  */

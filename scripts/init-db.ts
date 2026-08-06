@@ -1,5 +1,5 @@
 // 显式初始化 mysql 状态库。Kernel 启动不会隐式执行结构迁移。
-// 迁移语义由公开的 Kernel API v1 统一提供，商业宿主与 CLI 不再各自复制一套实现。
+// 迁移语义由公开的 Kernel API v1 统一提供，外部宿主与 CLI 不再各自复制一套实现。
 import { loadConfig, migrateBailingHubCoreSchema } from '../src/kernel-api/v1';
 
 const cfg = loadConfig();
