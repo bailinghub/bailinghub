@@ -470,3 +470,35 @@ test('public route: 根路径进控制台且不托管官网资源', async () => 
   assert.equal(docsHandled, true);
   assert.equal(docs.statusCode, 404);
 });
+
+test('public route: embedded redirects retain the host-owned mount prefix', async () => {
+  const deps: PublicHttpDeps = {
+    cfg: { root: process.cwd(), state: { backend: 'memory' } } as unknown as AppConfig,
+    mountPath: '/tenant/tenant-a',
+    configStore: null,
+    brandingProvider,
+    queue: { stats: () => ({}) },
+    isPaused: () => false,
+    serveConsole: (_path, res) => { res.writeHead(204); res.end(); },
+    handleChat: async () => undefined,
+    handleChatConfig: async () => undefined,
+    handleChatEvents: async () => undefined,
+    handleChatThread: async () => undefined,
+    handleChatUpload: async () => undefined,
+    handleChatRate: async () => undefined,
+    serveChatDemo: (res) => { res.writeHead(204); res.end(); },
+  };
+
+  for (const path of ['/', '/admin']) {
+    const res = new FakeResponse();
+    const handled = await handlePublicHttpFor(
+      deps,
+      req('GET'),
+      res as unknown as ServerResponse,
+      new URL(`http://local${path}`),
+    );
+    assert.equal(handled, true);
+    assert.equal(res.statusCode, 302);
+    assert.equal(res.headers.location, '/tenant/tenant-a/console/');
+  }
+});

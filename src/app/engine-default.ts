@@ -1,6 +1,6 @@
 // OSS 默认调度引擎包装：这里才绑定 app/runtime 单组织单例。
 // 自定义部署应直接使用 engine.ts 的 createEngineRuntime(deps)。
-import { cfg, cfgStore, isPaused, jobStream, kbService, queue, resolveProjectPath, store, toolIndex } from './runtime';
+import { cfg, cfgStore, isPaused, jobStream, kbService, queue, resolveProjectPath, store, targetRegistry, toolIndex } from './runtime';
 import { now, sleep } from './http';
 import type { Job } from '../core/contracts/types';
 import type { LaunchSpec } from '../core/runtime/launch-runtime';
@@ -19,6 +19,7 @@ function defaultEngineDeps(): EngineRuntimeDeps {
     now,
     sleep,
     jobStream,
+    targetRegistry,
   };
 }
 

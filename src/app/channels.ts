@@ -2,7 +2,7 @@
 // 这是中枢「送达」能力的通用底座——系统告警(sendAlert)是第一个调用方；未来业务侧出站(带 token 调"发给渠道A用户A")
 // 是另一个调用方，另加 client↔channel 授权治理即可，共用本原语。接飞书/钉钉=这里加一个 case，调用方零改动。
 // 不建任何 job、不过 LLM、逐字送达——正式通知所见即所得；与「执行器拉取(wecom-notify)」那套解耦（内部告警不再走它）。
-import { sendWecomText, sendWecomMedia, sendWecomCard, uploadWecomMedia } from '../adapters/channels/wecom-api';
+import { sendWecomText, sendWecomMedia, sendWecomCard, uploadWecomMedia, type WecomAccessTokenCache } from '../adapters/channels/wecom-api';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 
 export interface ChannelSendResult {
@@ -56,7 +56,13 @@ export function channelScopeKey(kind: string, channelName: string, recipient: st
 
 /** 经 channelName 渠道把消息推给 recipient（渠道原生 id）。message 传 string=纯文本，或对象带 images/files。
  * 渠道不存在/停用/类型不支持/凭证缺失/附件拉取失败 → ok:false + 原因（调用方负责审计）。 */
-export async function channelSendFor(config: ConfigStoreContract | null, channelName: string, recipient: string, message: string | ChannelMessage): Promise<ChannelSendResult> {
+export async function channelSendFor(
+  config: ConfigStoreContract | null,
+  channelName: string,
+  recipient: string,
+  message: string | ChannelMessage,
+  wecomAccessTokenCache?: WecomAccessTokenCache,
+): Promise<ChannelSendResult> {
   if (!config) return { ok: false, error: '无 mysql 后端' };
   if (!recipient) return { ok: false, error: '收件人为空' };
   const msg: ChannelMessage = typeof message === 'string' ? { text: message } : (message ?? {});
@@ -81,7 +87,7 @@ export async function channelSendFor(config: ConfigStoreContract | null, channel
     for (const url of images) {
       const got = await fetchBinary(url);
       if ('error' in got) return { ok: false, error: `图片 ${url}：${got.error}` };
-      const up = await uploadWecomMedia(corpid, secret, 'image', got.buf, fileNameFor(url, got.mime, 'image'), got.mime);
+      const up = await uploadWecomMedia(corpid, secret, 'image', got.buf, fileNameFor(url, got.mime, 'image'), got.mime, wecomAccessTokenCache);
       if (!up.ok || !up.mediaId) return { ok: false, error: `图片上传失败：${up.error}` };
       media.push({ kind: 'image', mediaId: up.mediaId });
     }
@@ -97,18 +103,18 @@ export async function channelSendFor(config: ConfigStoreContract | null, channel
         if ('error' in got) return { ok: false, error: `附件 ${f.url}：${got.error}` };
         buf = got.buf; mime = f.mime || got.mime; fname = f.name || fileNameFor(f.url!, mime, 'file');
       }
-      const up = await uploadWecomMedia(corpid, secret, 'file', buf, fname, mime);
+      const up = await uploadWecomMedia(corpid, secret, 'file', buf, fname, mime, wecomAccessTokenCache);
       if (!up.ok || !up.mediaId) return { ok: false, error: `附件上传失败：${up.error}` };
       media.push({ kind: 'file', mediaId: up.mediaId });
     }
     // 发送：卡片优先（card 是 text 的富形态，企微支持时发卡片、text 仅作降级/入历史，不重复发）→ 否则文字 → 各图片 → 各文件（企微每条只能一个类型）。
     let delivered = false;
     if (card) {
-      const r = await sendWecomCard(corpid, secret, agentid, recipient, card);
+      const r = await sendWecomCard(corpid, secret, agentid, recipient, card, wecomAccessTokenCache);
       if (!r.ok) return { ok: false, error: `企微 textcard errcode=${r.errcode} ${r.errmsg}` };
       delivered = true;
     } else if (text) {
-      const r = await sendWecomText(corpid, secret, agentid, recipient, text);
+      const r = await sendWecomText(corpid, secret, agentid, recipient, text, wecomAccessTokenCache);
       if (!r.ok) {
         return {
           ok: false,
@@ -119,7 +125,7 @@ export async function channelSendFor(config: ConfigStoreContract | null, channel
       delivered = true;
     }
     for (const m of media) {
-      const r = await sendWecomMedia(corpid, secret, agentid, recipient, m.kind, m.mediaId);
+      const r = await sendWecomMedia(corpid, secret, agentid, recipient, m.kind, m.mediaId, wecomAccessTokenCache);
       if (!r.ok) {
         return {
           ok: false,

@@ -1,7 +1,7 @@
 // OSS 默认执行器通道包装：这里才绑定 app/runtime 单组织单例。
 // 自定义部署应使用 executor.ts 的 *For(deps) 入口。
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { cfg, isPaused, toolIndex } from '../app/runtime';
+import { cfg, isPaused, targetRegistry, toolIndex } from '../app/runtime';
 import { resolveProjectPathFor, runtimeContextFor, runtimeStoresFor } from '../app/runtime-context-default';
 import { now, sleep } from '../app/http';
 import type { EngineRuntime } from '../app/engine';
@@ -26,8 +26,9 @@ export function defaultExecutorApiDeps(): ExecutorApiDeps {
     resolveProjectPathFor,
     now,
     sleep,
-    toolsForWorkItemFor,
+    toolsForWorkItemFor: (deps, job) => toolsForWorkItemFor({ ...deps, targetRegistry }, job),
     engineForContext: (_ctx: RuntimeContext): Pick<EngineRuntime, 'finish'> => ({ finish }),
+    targetRegistry,
   };
 }
 

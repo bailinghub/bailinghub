@@ -100,7 +100,12 @@ export class ToolIndexService {
     private readonly cfg: AppConfig,
     private readonly embeddings: ToolEmbeddingRepository,
     private readonly serialLease?: SerialLease,
+    private readonly serialScope = '',
   ) {}
+
+  private serialKey(provider: string): string {
+    return `${this.serialScope ? `${this.serialScope}:` : ''}tool-index:${provider}`;
+  }
 
   /** embedding 凭证解析：与 KB 同源——bz_credentials（kind embedding/both，后台可配）优先，回退 config.json llm_credentials。无硬编码默认。 */
   private async resolveCred(name: string, timeoutMs?: number): Promise<{ base_url: string; api_key: string } | null> {
@@ -138,7 +143,7 @@ export class ToolIndexService {
    * 凭证不可用 / 无 spec 抛错——调用方（手动重建按钮 / spec 自动刷新钩子）捕获并降级，不阻塞主流程。
    */
   async reindexProvider(p: ToolProvider, ec: ToolEmbedConfig): Promise<ToolReindexResult> {
-    return await runSerial(`tool-index:${p.name}`, async () => {
+    return await runSerial(this.serialKey(p.name), async () => {
       const current = await this.currentReindexInput(p, ec);
       if (!current.embedConfig.credential) throw new Error('未配置 embedding 凭证（工具检索未开启）');
       if (!current.provider.spec_json) throw new Error(`工具源 ${current.provider.name} 无 spec（先刷新/粘贴）`);

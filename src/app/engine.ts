@@ -7,9 +7,10 @@ import { randomUUID } from 'node:crypto';
 import { fireCallbackWithDeps, outboundRuntimeDepsFor, sendAlertWithDeps } from './outbound';
 import { runSerial } from '../core/platform/serial';
 import { resolveSendChannelsFor, runSendMessageFor, sendToolDef } from './builtin-tools';
+import { channelSendFor } from './channels';
 import { assembleToolRuntimeFor } from './tool-assembly';
 import { callLlmText } from '../core/runtime/memory';
-import { getAdapter, getTargetDef, listTargetDefs } from '../core/targets/registry';
+import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
 import type { Job, Route, SessionTarget, TargetDef } from '../core/contracts/types';
 import { spawnDeliveryJobFor } from './delivery';
 import { resolveSummaryCredential } from '../core/runtime/credential-resolver';
@@ -52,6 +53,12 @@ export interface EngineRuntimeDeps {
   sleep: (ms: number) => Promise<void>;
   jobStream?: JobStreamBroker;
   launchGuard?: (spec: LaunchSpec) => Promise<LaunchGuardDecision> | LaunchGuardDecision;
+  /** 可嵌入宿主必须为每个 Kernel 注入独立实例；缺省值只保留旧扩展源码兼容。 */
+  targetRegistry?: TargetRegistry;
+  /** 进程内串行 lane 的 Kernel 命名空间，防止不同 Schema 的同名 thread 互相阻塞。 */
+  serialScope?: string;
+  /** Kernel-owned channel sender, used to scope transient credential caches. */
+  channelSendFor?: typeof channelSendFor;
 }
 
 export interface LaunchGuardDecision {
@@ -69,26 +76,23 @@ export interface EngineRuntime {
   recoverInhubJobs(scope: 'boot' | 'stale', staleMs: number): Promise<number>;
   kickInhubScheduler(): void;
   drainInhubScheduler(maxClaims?: number): Promise<number>;
+  /** 停止新的 inhub 认领/重试唤醒，并等待已认领的串行执行链收尾。 */
+  stopInhubRuntime(): Promise<void>;
   finish(job: Job, patch: Partial<Job>): Promise<void>;
 }
 
 export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
-  let targetDefs = new Map<string, TargetDef>(listTargetDefs().map((target) => [target.name, target]));
+  const targetRegistry = deps.targetRegistry ?? defaultTargetRegistry;
+  targetRegistry.bindStore(deps.configStore);
+  let targetDefs = new Map<string, TargetDef>(targetRegistry.list().map((target) => [target.name, target]));
 
   async function refreshEngineTargets(): Promise<void> {
-    const next = new Map<string, TargetDef>(listTargetDefs().map((target) => [target.name, target]));
-    if (deps.configStore) {
-      try {
-        for (const target of await deps.configStore.targets.list()) next.set(target.name, target);
-      } catch {
-        // 配置仓储短暂不可用时保留内置目标，避免调度器被 DB 抖动放倒。
-      }
-    }
-    targetDefs = next;
+    await targetRegistry.refresh();
+    targetDefs = new Map<string, TargetDef>(targetRegistry.list().map((target) => [target.name, target]));
   }
 
   function targetDef(name: string): TargetDef | null {
-    return targetDefs.get(name) ?? getTargetDef(name);
+    return targetDefs.get(name) ?? targetRegistry.get(name);
   }
 
   function isRemoteExecutorTargetForEngine(target: string): boolean {
@@ -118,12 +122,16 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
   });
 
   const inhubSerialOwner = `inhub:${process.pid}:${randomUUID()}`;
-  const runInhubSerial = <T>(key: string | number | undefined, task: () => Promise<T>) => runSerial(key, task, {
+  const runInhubSerial = <T>(key: string | number | undefined, task: () => Promise<T>) => runSerial(
+    key === undefined ? undefined : `${deps.serialScope ? `${deps.serialScope}:` : ''}${String(key)}`,
+    task,
+    {
     lease: deps.stateStore,
     owner: inhubSerialOwner,
     ttlMs: INHUB_SERIAL_LOCK_TTL_MS,
     maxWaitMs: INHUB_SERIAL_LOCK_MAX_WAIT_MS,
-  });
+    },
+  );
 
   const inhubRuntime = createInhubRuntime({
     store: deps.stateStore,
@@ -134,7 +142,7 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
     processJob,
     workerId: inhubSerialOwner,
     leaseMs: INHUB_JOB_LEASE_MS,
-    inhubTargets: () => [...targetDefs.values()].filter((t) => t.enabled !== false && t.kind === 'inhub' && !!getAdapter(t.name)).map((t) => t.name),
+    inhubTargets: () => [...targetDefs.values()].filter((t) => t.enabled !== false && t.kind === 'inhub' && !!targetRegistry.getAdapter(t.name)).map((t) => t.name),
     prepareClaimedJob,
   });
 
@@ -224,6 +232,10 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
   async function drainInhubScheduler(maxClaims = 1): Promise<number> {
     await refreshEngineTargets();
     return await inhubRuntime.drain(maxClaims);
+  }
+
+  async function stopInhubRuntime(): Promise<void> {
+    await inhubRuntime.stop();
   }
 
   async function prepareClaimedJob(job: Job): Promise<PreparedInhubJob> {
@@ -319,7 +331,7 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
         }
       }
 
-      const adapter = job.target ? getAdapter(job.target) : null;
+      const adapter = job.target ? targetRegistry.getAdapter(job.target) : null;
       if (!adapter) { await finish(job, { status: 'error', error: `未实现的 target: ${job.target}` }); return; }
 
       const ctx = await prepareAdapterContext({
@@ -331,10 +343,10 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
         cfg: deps.cfg,
         credentialStore: deps.configStore?.credentials,
         targetTimeoutMs: targetTimeoutMsForEngine,
-        assembleToolRuntime: (toolJob, toolRoute) => assembleToolRuntimeFor(deps.configStore, deps.stateStore, deps.toolIndex, toolJob, toolRoute, deps.cfg, deps.now, deps.sleep),
+        assembleToolRuntime: (toolJob, toolRoute) => assembleToolRuntimeFor(deps.configStore, deps.stateStore, deps.toolIndex, toolJob, toolRoute, deps.cfg, deps.now, deps.sleep, targetRegistry),
         resolveSendChannels: (toolsConfig) => resolveSendChannelsFor(deps.configStore, toolsConfig),
         makeSendToolDef: sendToolDef,
-        runSendMessage: (sendJob, channels, args, audit) => runSendMessageFor(deps.configStore, sendJob, channels, args, audit),
+        runSendMessage: (sendJob, channels, args, audit) => runSendMessageFor(deps.configStore, sendJob, channels, args, audit, deps.channelSendFor),
         audit: (event, detail) => deps.stateStore.appendAudit({ ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event, detail }),
         stream: job.source.startsWith('chat:') && deps.jobStream
           ? (event) => { try { deps.jobStream?.publish(job.job_id, event); } catch { /* 临时输出不能影响权威任务链 */ } }
@@ -378,6 +390,7 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
       stateStore: deps.stateStore,
       now: deps.now,
       sleep: deps.sleep,
+      channelSendFor: deps.channelSendFor,
     });
     await finishJob(job, patch, {
       store: deps.stateStore,
@@ -391,6 +404,8 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
         stateStore: deps.stateStore,
         now: deps.now,
         sleep: deps.sleep,
+        targetRegistry,
+        channelSendFor: deps.channelSendFor,
       }, deliveryJob),
       sendAlert: (key, text) => sendAlertWithDeps(outboundRuntime, key, text),
       summarizeThread: summaryRuntime.maybeSummarizeThread,
@@ -406,6 +421,7 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
     recoverInhubJobs,
     kickInhubScheduler,
     drainInhubScheduler,
+    stopInhubRuntime,
     finish,
   };
 }

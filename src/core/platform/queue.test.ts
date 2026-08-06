@@ -27,3 +27,33 @@ test('Queue.drain: 超时返回 false 且不取消在途任务', async () => {
   await running;
   assert.equal(done, true);
 });
+
+test('Queue: Kernel 本地 drain 不等待共享闸里的其他租户任务', async () => {
+  const global = new Queue(2);
+  const tenantA = new Queue(1, global);
+  const tenantB = new Queue(1, global);
+  let releaseB!: () => void;
+  const blockedB = tenantB.run(() => new Promise<void>((resolve) => { releaseB = resolve; }));
+  await tenantA.run(async () => undefined);
+
+  assert.equal(await tenantA.drain(50), true);
+  assert.equal(global.stats().running, 1);
+
+  releaseB();
+  await blockedB;
+});
+
+test('Queue: closeAdmission rejects queued and future work but lets running work drain safely', async () => {
+  const q = new Queue(1);
+  let release!: () => void;
+  const running = q.run(() => new Promise<void>((resolve) => { release = resolve; }));
+  const queued = q.run(async () => undefined);
+  q.closeAdmission();
+
+  await assert.rejects(queued, /queue is closing/);
+  await assert.rejects(() => q.run(async () => undefined), /not accepting/);
+  assert.equal(await q.drain(1), false);
+  release();
+  await running;
+  assert.equal(await q.drain(50), true);
+});

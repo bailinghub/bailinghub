@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { useMe } from './store';
+import { kernelConsoleBase, kernelFetch } from './runtime-path';
 
 export const SETUP_PAGE = { path: 'setup', perm: 'audit:read', title: '上手向导' } as const;
 
@@ -38,7 +39,7 @@ export const PAGES = [
 ] as const;
 
 export const router = createRouter({
-  history: createWebHistory('/console/'),
+  history: createWebHistory(kernelConsoleBase()),
   routes: [
     { path: '/login', component: () => import('./pages/Login.vue') },
     {
@@ -71,7 +72,7 @@ export const router = createRouter({
 });
 
 async function readAdminList<T = Record<string, unknown>>(path: string): Promise<T[]> {
-  const r = await fetch(path);
+  const r = await kernelFetch(path);
   if (r.status === 401) throw new Error('unauthorized');
   if (!r.ok) return [];
   const data = await r.json().catch(() => []);
@@ -103,10 +104,12 @@ router.beforeEach(async (to) => {
       await s.logout();
       return { path: '/login', query: to.query };
     }
-    const first = PAGES.find((p) => s.can(p.perm));
+    const first = PAGES.find((p) => s.can(p.perm) && s.hasModule(p.path));
     if (!first) { await s.logout(); return { path: '/login', query: to.query }; } // 零权限账号（不应出现）
     return '/' + first.path;
   }
+  const page = PAGES.find((candidate) => `/${candidate.path}` === to.path);
+  if (page && !s.hasModule(page.path)) return '/';
   if (to.meta['perm'] && !s.can(to.meta['perm'] as string)) return '/';
   return true;
 });

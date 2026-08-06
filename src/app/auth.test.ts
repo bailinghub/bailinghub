@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { IncomingMessage } from 'node:http';
 import type { AppConfig } from '../core/config/config';
-import { authenticateFor, sessionCookieHeader } from './auth';
+import { authenticateFor, permsOf, sessionCookieHeader } from './auth';
 
 function req(headers: Record<string, string>, encrypted = false): IncomingMessage {
   return { headers, socket: { encrypted } } as unknown as IncomingMessage;
@@ -44,4 +44,14 @@ test('authenticateFor: tokenless admin fallback is restricted to local developme
     new URL('http://127.0.0.1:18900/admin/api/me'),
   );
   assert.equal(production, null);
+});
+
+test('external session principals use the explicitly injected tenant permissions', () => {
+  assert.deepEqual(permsOf({
+    kind: 'admin',
+    via: 'session',
+    username: 'tenant-user',
+    role: 'operator',
+    permissions: ['runs:read', 'routes:write', 'runs:read'],
+  }), ['runs:read', 'routes:write']);
 });

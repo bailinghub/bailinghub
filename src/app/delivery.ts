@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { outboundRuntimeDepsFor, postSignedWithDeps, secretForJobWithDeps, sendAlertWithDeps } from './outbound';
 import { channelScopeKey, channelSendFor } from './channels';
 import { extractAttachments } from '../core/platform/content';
-import { getTargetDef } from '../core/targets/registry';
+import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
 import { routeDeliveryConfig } from '../core/config/route-config';
 import type { Job } from '../core/contracts/types';
 import type { AppConfig } from '../core/config/config';
@@ -17,6 +17,8 @@ export interface DeliveryDeps {
   stateStore: RuntimeStateStore;
   now: () => string;
   sleep: (ms: number) => Promise<void>;
+  targetRegistry?: TargetRegistry;
+  channelSendFor?: typeof channelSendFor;
 }
 
 /**
@@ -27,12 +29,14 @@ export interface DeliveryDeps {
  * 收件人解析：metadata[to_field] 优先，缺省回落 delivery.to；都没有则跳过并记审计。
  */
 export async function spawnDeliveryJobFor(deps: DeliveryDeps, parent: Job): Promise<void> {
+  const sendChannel = deps.channelSendFor ?? channelSendFor;
   const outboundRuntime = outboundRuntimeDepsFor({
     cfg: deps.cfg,
     configStore: deps.configStore,
     stateStore: deps.stateStore,
     now: deps.now,
     sleep: deps.sleep,
+    channelSendFor: sendChannel,
   });
   if (parent.source === 'delivery') return; // 投递任务自身绝不再投递（防递归）
   if ((parent.metadata ?? {})['no_delivery']) {
@@ -47,7 +51,7 @@ export async function spawnDeliveryJobFor(deps: DeliveryDeps, parent: Job): Prom
     const r = (parent.result ?? {}) as Record<string, unknown>;
     const text = (typeof r['text'] === 'string' && r['text']) ? (r['text'] as string) : (parent.raw_result || '');
     if (channelName && recipient && text) {
-      const sent = await channelSendFor(deps.configStore, channelName, recipient, String(text));
+      const sent = await sendChannel(deps.configStore, channelName, recipient, String(text));
       await deps.stateStore.appendAudit({ ts: deps.now(), job_id: parent.job_id, request_id: parent.request_id, event: sent.ok ? 'channel_delivered' : 'channel_delivery_error', detail: { channel: channelName, to: recipient, ...(sent.ok ? {} : { error: sent.error }) } });
       if (!sent.ok) {
         void sendAlertWithDeps(outboundRuntime, `delivery_failed_${channelName}`, `渠道回流送达失败（${channelName} → ${recipient}）：${String(sent.error ?? '未知').slice(0, 200)}。用户可能未收到结果，关联任务 ${parent.job_id}。`).catch(() => { /* 告警失败不阻塞 */ });
@@ -119,7 +123,7 @@ export async function spawnDeliveryJobFor(deps: DeliveryDeps, parent: Job): Prom
     }
     const r0 = (parent.result ?? {}) as Record<string, unknown>;
     const body = (typeof r0['text'] === 'string' && (r0['text'] as string).trim()) ? (r0['text'] as string) : content;
-    const sent = await channelSendFor(deps.configStore, channelName, recipients.join('|'), String(body));
+    const sent = await sendChannel(deps.configStore, channelName, recipients.join('|'), String(body));
     let threadId: number | undefined;
     if (sent.ok && deps.configStore) {
       const config = deps.configStore;
@@ -156,7 +160,7 @@ export async function spawnDeliveryJobFor(deps: DeliveryDeps, parent: Job): Prom
 
   // 执行器渠道：type → `${type}-notify` 目标（注册表里必须存在且为 executor）
   const targetName = `${type}-notify`;
-  const def = getTargetDef(targetName);
+  const def = (deps.targetRegistry ?? defaultTargetRegistry).get(targetName);
   if (!def || def.kind !== 'executor' || !def.enabled) {
     await deps.stateStore.appendAudit({ ts: deps.now(), job_id: parent.job_id, request_id: parent.request_id, event: 'delivery_skipped', detail: { reason: `未注册的送达类型 ${type}（需要执行器目标 ${targetName}）` } });
     return;

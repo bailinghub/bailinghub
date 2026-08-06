@@ -24,6 +24,20 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.3.0 - Composable Core and Kernel Host API v1
+
+Released on 2026-08-06.
+
+- Added the stable `bailinghub/kernel-api/v1` export so an exact npm artifact can create, mount, drain, and stop Kernels. The standalone service now composes the same Kernel path instead of maintaining a second engine implementation.
+- One process may host multiple isolated Kernels, provided each instance has a separate state database, runtime directory, configuration, and request prefix. Platform identity, tenant directories, registration, plans, billing, and cross-tenant authorization remain host control-plane responsibilities.
+- Made Core Schema migration an explicit host/deployment step. The ledger gains SHA-256 digests; legacy rows are backfilled without replaying SQL. Three early retired migrations remain `replay: never` evidence and are never executed on a fresh Schema. Digest drift and unknown migrations fail closed.
+- Included the Kernel API, official SQL, console assets, and artifact identity in the real npm tarball. `BAILINGHUB_CORE_ARTIFACT_V1` binds the exact version, active migrations, retired evidence, and aggregate digest for provisioning and upgrade checks.
+- Prevented prerelease image tags from updating `latest`, even when a manual workflow requests it. Stable tags may update the stable channel according to release configuration.
+- The standalone startup path, public Client API, chat protocol, Executor Protocol, ACC, tool signatures, approval semantics, and final business authorization are unchanged. Ecosystem adapters do not need a release solely for this composition API.
+- The only database-shape change is the nullable `checksum_sha256` metadata column on `bz_schema_migrations`; there is no new business table or business field. Run `npm run db:init` before restarting.
+- Validation: `npm run release:check` and a real npm `.tgz` install, including 515 Core tests, migration compatibility, composition lifecycle, multi-instance isolation, OSS boundaries, and image policy.
+- Related docs: [RELEASE_NOTES_v0.3.0.en.md](RELEASE_NOTES_v0.3.0.en.md), [Kernel Host API v1](KERNEL_HOST_API.en.md), [SQL migration discipline](../sql/README.en.md), and [Architecture](ARCHITECTURE.en.md).
+
 ## v0.2.0 - Tool Catalog Access Protection and Active Verification
 
 Released on 2026-08-06.

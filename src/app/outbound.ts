@@ -100,11 +100,16 @@ export async function fireCallbackWithDeps(deps: OutboundRuntimeDeps, url: strin
 // ---- 运行告警：监控/spec 变更等内部事件 → 经渠道出站推送（bz_alert_rules 配「通知谁/什么事/走哪个渠道」）。带冷却去重。----
 // 渠道规则使用 channelSend 直推（复用渠道凭证），通用 webhook 使用签名 HTTP 直发；
 // 两种出口都不创建需要执行器认领的任务，避免告警链路因执行器离线而积压。
-const alertSentAt = new Map<string, number>();
+const alertSentAtByStore = new WeakMap<RuntimeStateStore, Map<string, number>>();
 export async function sendAlertWithDeps(deps: OutboundRuntimeDeps, key: string, text: string): Promise<void> {
   const rules = deps.configStore ? await deps.configStore.alertRules.matching(key).catch(() => []) : [];
   const a = deps.cfg.alerts;
   const webhookUrl = (a && a.type === 'webhook' && a.url) ? a.url : '';
+  let alertSentAt = alertSentAtByStore.get(deps.stateStore);
+  if (!alertSentAt) {
+    alertSentAt = new Map<string, number>();
+    alertSentAtByStore.set(deps.stateStore, alertSentAt);
+  }
   // 冷却：同一事件 key 窗口内只吵一次（取命中规则最小冷却，否则 config 或 60min）。无出口也走冷却，避免审计刷屏。
   const cooldownMin = rules.length ? Math.min(...rules.map((r) => r.cooldown_min)) : (a?.cooldown_min ?? 60);
   if (Date.now() - (alertSentAt.get(key) ?? 0) < cooldownMin * 60_000) return;

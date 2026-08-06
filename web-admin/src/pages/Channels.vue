@@ -384,6 +384,7 @@ import { copyText } from '../util';
 import { useMe } from '../store';
 import HelpTip from '../components/HelpTip.vue';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
+import { kernelOrigin } from '../runtime-path';
 
 const KIND: Record<string, string> = { wecom: '企业微信', feishu: '飞书' };
 const s = useMe();
@@ -418,7 +419,7 @@ function fieldRequired(field: string): boolean {
 // 回调地址：企微走 /wecom/<name>（未来其它 kind 各自前缀）
 function callbackUrlFor(name: string, kind = 'wecom'): string {
   const prefix = kind === 'wecom' ? 'wecom' : kind;
-  return `${location.origin}/${prefix}/${name}`;
+  return `${kernelOrigin()}/${prefix}/${name}`;
 }
 function callbackUrl(row: any): string { return callbackUrlFor(row.name, row.kind); }
 function routeName(routeKey?: string): string {
@@ -524,7 +525,7 @@ async function fetchCodeToken(): Promise<void> {
 }
 const phpCode = computed(() => {
   const ch = codeChannel.value; if (!ch) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const fn = 'bailing_send_' + String(ch.name).replace(/[^a-z0-9]+/gi, '_');
   const prefix = codeClientId.value ? codeClientId.value + '_' : '';
   return `/**
@@ -569,7 +570,7 @@ function ${fn}(string $requestId, $to, string $text, array $images = [], array $
 });
 const curlCode = computed(() => {
   const ch = codeChannel.value; if (!ch) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const prefix = codeClientId.value ? codeClientId.value + '_' : '';
   return `# ① 纯文字
 curl -X POST '${base}/send' \\
@@ -597,7 +598,7 @@ curl -X POST '${base}/send' \\
 });
 const nodeCode = computed(() => {
   const ch = codeChannel.value; if (!ch) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const prefix = codeClientId.value ? codeClientId.value + '_' : '';
   return `// 百灵中枢 · 经「${ch.name}」渠道主动推消息
 // to 使用渠道原生用户 id；企业微信即成员 UserID。可传数组一次发多人。
@@ -625,7 +626,7 @@ console.log(await response.json());`;
 });
 const pythonCode = computed(() => {
   const ch = codeChannel.value; if (!ch) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const prefix = codeClientId.value ? codeClientId.value + '_' : '';
   return `# 百灵中枢 · 经「${ch.name}」渠道主动推消息
 # to 使用渠道原生用户 id；企业微信即成员 UserID。可传数组一次发多人。

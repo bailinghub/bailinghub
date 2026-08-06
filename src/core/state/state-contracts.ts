@@ -49,6 +49,8 @@ export interface RuntimeLockRepository {
 
 export interface RuntimeStateStore extends JobRepository, AuditLedger, RuntimeLockRepository {
   init(): Promise<void>;
+  /** Kernel 释放时关闭自己拥有的资源；外部实现可不提供。 */
+  close?(): Promise<void>;
   /**
    * Optional optimized aggregate for monitoring. Keeping this optional preserves
    * compatibility with external state-store implementations.

@@ -5,7 +5,9 @@ const hubDevTarget = process.env.VITE_BAILING_HUB_DEV_TARGET || 'http://127.0.0.
 
 // 构建产物进 hub 的 web/console/，由中枢静态托管（/console），服务器零构建。
 export default defineConfig({
-  base: '/console/',
+  // Relative assets let one immutable console build run at /console/ or at a
+  // trusted embedding prefix such as /tenant/<id>/console/.
+  base: './',
   plugins: [vue()],
   build: {
     outDir: '../web/console',

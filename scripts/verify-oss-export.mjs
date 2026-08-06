@@ -176,10 +176,13 @@ for (const file of [
 
 verifyGitBoundary();
 run('npm', ['ci'], exportDir);
+// The npm Core artifact builds the console during prepack, so make its build
+// toolchain available before release:audit invokes npm pack. Be explicit even
+// when the verification shell inherited NODE_ENV=production.
+run('npm', ['--prefix', 'web-admin', 'ci', '--include=dev'], exportDir);
 run('npm', ['run', 'release:audit'], exportDir);
 run('npm', ['run', 'typecheck'], exportDir);
 run('npm', ['test'], exportDir);
-run('npm', ['--prefix', 'web-admin', 'ci'], exportDir);
 run('npm', ['run', 'web-admin:check'], exportDir);
 run('npm', ['run', 'sdk:test'], exportDir);
 run('npm', ['run', 'sdk:test7'], exportDir);

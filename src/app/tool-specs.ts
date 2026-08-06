@@ -350,8 +350,22 @@ export interface AuthzProbeResult {
   at: string;
 }
 
-const lastProbe = new Map<string, AuthzProbeResult>();
-export function getAuthzProbe(name: string): AuthzProbeResult | undefined { return lastProbe.get(name); }
+const fallbackProbeCache = new Map<string, AuthzProbeResult>();
+const probeCacheByStore = new WeakMap<ConfigStoreContract, Map<string, AuthzProbeResult>>();
+
+function probeCache(config: ConfigStoreContract | null | undefined): Map<string, AuthzProbeResult> {
+  if (!config) return fallbackProbeCache;
+  let cache = probeCacheByStore.get(config);
+  if (!cache) {
+    cache = new Map<string, AuthzProbeResult>();
+    probeCacheByStore.set(config, cache);
+  }
+  return cache;
+}
+
+export function getAuthzProbe(name: string, config?: ConfigStoreContract | null): AuthzProbeResult | undefined {
+  return probeCache(config).get(name);
+}
 
 function pickProbeTarget(tools: ToolDefinition[]): ToolDefinition | undefined {
   const hasRequired = (t: ToolDefinition): boolean => { const r = t.inputSchema['required']; return Array.isArray(r) && r.length > 0; };
@@ -433,7 +447,7 @@ export async function probeAuthorizeFor(
   const outboundRuntime = outboundRuntimeDepsFor({ cfg: appConfig, configStore: config, stateStore: state, now: nowFn, sleep: sleepFn });
   const at = new Date().toISOString();
   const done = (r: Omit<AuthzProbeResult, 'at'>): AuthzProbeResult => {
-    const full = { ...r, at }; lastProbe.set(p.name, full); return full;
+    const full = { ...r, at }; probeCache(config).set(p.name, full); return full;
   };
   const finish = async (result: Omit<AuthzProbeResult, 'at'>): Promise<AuthzProbeResult> => {
     const r = done(result);
@@ -502,7 +516,7 @@ export async function probeAuthorizeFor(
   return r;
 }
 
-const specRefreshAttemptAt = new Map<string, number>();
+const specRefreshAttemptAtByStore = new WeakMap<ConfigStoreContract, Map<string, number>>();
 export async function runSpecAutoRefreshFor(
   config: ConfigStoreContract | null,
   state: RuntimeStateStore,
@@ -512,6 +526,11 @@ export async function runSpecAutoRefreshFor(
   sleepFn: (ms: number) => Promise<void>,
 ): Promise<void> {
   if (!config) return;
+  let specRefreshAttemptAt = specRefreshAttemptAtByStore.get(config);
+  if (!specRefreshAttemptAt) {
+    specRefreshAttemptAt = new Map<string, number>();
+    specRefreshAttemptAtByStore.set(config, specRefreshAttemptAt);
+  }
   const outboundRuntime = outboundRuntimeDepsFor({ cfg: appConfig, configStore: config, stateStore: state, now: nowFn, sleep: sleepFn });
   const providers = await config.toolProviders.list().catch(() => [] as ToolProvider[]);
   for (const p of providers) {

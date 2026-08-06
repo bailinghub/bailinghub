@@ -38,6 +38,8 @@
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 当前架构的主说明：分层、核心运行链路、解耦边界和扩展方向。 |
 | [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | English architecture overview. |
+| [KERNEL_HOST_API.md](KERNEL_HOST_API.md) | 完整 Core 的版本化高层嵌入 API、托管生命周期和升级边界。 |
+| [KERNEL_HOST_API.en.md](KERNEL_HOST_API.en.md) | English versioned Kernel Host API and lifecycle boundary. |
 | [PIPELINE.md](PIPELINE.md) | 一次任务从入口到执行、审计、送达的流水线。 |
 | [PIPELINE.en.md](PIPELINE.en.md) | English runtime pipeline. |
 
@@ -100,6 +102,8 @@
 | [RELEASE_NOTES_v0.1.16.en.md](RELEASE_NOTES_v0.1.16.en.md) | English `v0.1.16` bounded tool runtime and resilient semantic retrieval release notes. |
 | [RELEASE_NOTES_v0.2.0.md](RELEASE_NOTES_v0.2.0.md) | `v0.2.0` 工具清单访问保护与主动核验说明。 |
 | [RELEASE_NOTES_v0.2.0.en.md](RELEASE_NOTES_v0.2.0.en.md) | English `v0.2.0` tool catalog access protection and active verification release notes. |
+| [RELEASE_NOTES_v0.3.0.md](RELEASE_NOTES_v0.3.0.md) | `v0.3.0` 可组合 Core 与 Kernel Host API v1 说明。 |
+| [RELEASE_NOTES_v0.3.0.en.md](RELEASE_NOTES_v0.3.0.en.md) | English `v0.3.0` composable Core and Kernel Host API v1 release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

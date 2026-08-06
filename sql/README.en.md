@@ -14,6 +14,10 @@ npm run db:init
 
 Applied files are skipped and never replayed. This makes one-time schema actions safe after they have been recorded.
 
+A small immutable catalog records the filename, original byte checksum, and length of migrations that appeared only in early deployment ledgers and have since retired from the active SQL sequence. Existing ledger rows may receive a missing checksum from that catalog, but a fresh schema neither executes nor records retired migrations. Their SQL files must not be restored to this directory. Unknown ledger history and checksum mismatches fail closed before any new migration runs.
+
+Duplicate-column or duplicate-index errors are tolerated only when the live object exactly matches the official `ADD COLUMN` or `ADD INDEX` statement. Other SQL errors remain fatal.
+
 ## Migration Rules
 
 Schema files are part of the deployment safety boundary.

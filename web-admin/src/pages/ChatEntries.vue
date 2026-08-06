@@ -389,6 +389,7 @@ import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import { openDoc } from '../docs';
 import { fmtTime } from '../util';
+import { kernelOrigin } from '../runtime-path';
 import HelpTip from '../components/HelpTip.vue';
 
 const list = ref<any[]>([]);
@@ -449,7 +450,7 @@ const embedOpen = ref(false);
 const embedRow = ref<any | null>(null);
 const embedTab = ref<'script' | 'demo' | 'api' | 'ticket'>('script');
 const ticketTab = ref<'node' | 'python' | 'php'>('node');
-const HOST = location.origin;
+const HOST = kernelOrigin();
 const embedScript = computed(() => `<script src="${HOST}/widget.js" data-entry="${embedRow.value?.entry_key}" async><\/script>`);
 const demoUrl = computed(() => `${HOST}/widget/demo/${embedRow.value?.entry_key}`);
 const curlText = computed(() => [

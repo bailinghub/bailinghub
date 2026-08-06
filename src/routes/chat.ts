@@ -2,7 +2,7 @@
 // entry_key 可公开；防滥用 = Origin 白名单 + 按 IP 限速 + 可停用。访客=匿名主体；签名访客票据(verifyVisitorTicket)验签后写 metadata.visitor_uid。
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
-import { ipOf, readBody, readBodyCapped, send } from '../app/http';
+import { ipOf, normalizeHttpMountPath, readBody, readBodyCapped, send } from '../app/http';
 import type { EngineRuntime } from '../app/engine';
 import { resolveTargetDef } from '../core/targets/resolve';
 import { extractAttachments } from '../core/platform/content';
@@ -15,6 +15,7 @@ import type { RuntimeActor, RuntimeContext, RuntimeSource } from '../core/editio
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { CHAT_STREAM_PROTOCOL, type JobStreamBroker } from '../core/runtime/job-stream';
+import type { TargetRegistry } from '../core/targets/registry';
 
 // ---- 聊天入口（公开面）：网页组件 → POST /chat/:entry → 同一条路由/总账/知识/工具链路 ----
 // entry_key 设计为可公开（页面源码可见）；防滥用 = Origin 白名单 + 按 IP 限速 + 可停用/删除。
@@ -29,11 +30,11 @@ export function chatCors(res: ServerResponse): void {
   res.setHeader('access-control-allow-headers', 'content-type, last-event-id');
 }
 
-function publicBaseUrl(req: IncomingMessage): string {
+export function chatPublicBaseUrl(req: IncomingMessage, mountPath = ''): string {
   const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(',')[0]!.trim();
   const protoHeader = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0]!.trim();
   const proto = protoHeader || (/^(localhost|127\.|0\.0\.0\.0)/.test(host) ? 'http' : 'https');
-  return `${proto}://${host || 'localhost'}`;
+  return `${proto}://${host || 'localhost'}${normalizeHttpMountPath(mountPath)}`;
 }
 
 function inferUploadMime(filename: string, mime: string): string {
@@ -55,6 +56,8 @@ function inferUploadMime(filename: string, mime: string): string {
 
 export interface ChatApiDeps {
   cfg: AppConfig;
+  /** Trusted public prefix owned by an embedding host. */
+  httpMountPath?: string;
   isPaused: () => boolean;
   runtimeContextFor: (input: RuntimeContextInput) => Promise<RuntimeContext>;
   runtimeStoresFor: (ctx: RuntimeContext) => { state: RuntimeStateStore; config: ConfigStoreContract | null };
@@ -62,6 +65,7 @@ export interface ChatApiDeps {
   now: () => string;
   jobStream?: JobStreamBroker;
   engineForContext: (ctx: RuntimeContext) => Pick<EngineRuntime, 'launchJob'>;
+  targetRegistry?: TargetRegistry;
 }
 
 interface RuntimeContextInput {
@@ -160,7 +164,7 @@ export async function handleChatFor(deps: ChatApiDeps, req: IncomingMessage, res
   }
 
   const route = await cfgStore.routes.get(entry.route_key);
-  const targetDef = route ? await resolveTargetDef(cfgStore, route.target) : null;
+  const targetDef = route ? await resolveTargetDef(cfgStore, route.target, deps.targetRegistry) : null;
   if (!route || !route.enabled || !targetDef || targetDef.enabled === false) {
     send(res, 503, { done: true, error: true, reply: '该入口尚未就绪（路由或目标未配置），请联系站点管理员。' }); return;
   }
@@ -347,7 +351,7 @@ export async function handleChatUploadFor(deps: ChatApiDeps, req: IncomingMessag
   if (deps.isPaused()) { send(res, 503, { error: '服务暂停中，请稍后再试。' }); return; }
   if (await chatRateLimited(cfgStore, entry, ipOf(req))) { send(res, 429, { error: '操作太频繁，请稍后再试' }); return; }
   const configuredBucket = entry.bucket ? await cfgStore.storageBuckets.get(entry.bucket).catch(() => null) : null;
-  const bucket = storageBucketForRuntime(configuredBucket, publicBaseUrl(req));
+  const bucket = storageBucketForRuntime(configuredBucket, chatPublicBaseUrl(req, deps.httpMountPath));
 
   let body: Record<string, unknown>;
   try { body = await readBodyCapped(req, FILE_UPLOAD_MAX_BYTES); }
@@ -369,7 +373,7 @@ export async function handleChatUploadFor(deps: ChatApiDeps, req: IncomingMessag
   const auditId = `upload_${randomUUID()}`;
   const key = objectKey(bucket, entryKey, mime);
   try {
-    const url = await putObject(bucket, key, buf, mime, { root: deps.cfg.root });
+    const url = await putObject(bucket, key, buf, mime, { root: deps.cfg.runtimeRoot ?? deps.cfg.root });
     await store.appendAudit({ ts: deps.now(), job_id: auditId, request_id: auditId, event: 'chat_upload',
       detail: { entry: entryKey, bucket: bucket.name, storage: bucket.kind, key, bytes: buf.length, mime, type: kind } }).catch(() => undefined);
     send(res, 200, { ok: true, url, name: filename, type: kind });
@@ -449,7 +453,13 @@ export async function handleChatConfigFor(deps: ChatApiDeps, req: IncomingMessag
 }
 
 /** 演示页：贴一行 script 的效果，建好入口立即可看（也是给第三方的"先试再接"入口）。 */
-export function serveChatDemoFor(deps: Pick<ChatApiDeps, 'cfg'>, res: ServerResponse, entryKey: string): void {
+export function serveChatDemoFor(
+  deps: Pick<ChatApiDeps, 'cfg'>,
+  res: ServerResponse,
+  entryKey: string,
+  mountPath = '',
+): void {
+  const safeMountPath = normalizeHttpMountPath(mountPath);
   const html = [
     '<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
     `<title>聊天入口演示 · ${deps.cfg.brand.name}</title></head>`,
@@ -459,8 +469,8 @@ export function serveChatDemoFor(deps: Pick<ChatApiDeps, 'cfg'>, res: ServerResp
     '<p style="color:#8a8378">右下角的气泡就是嵌入效果。把下面这行代码贴进你网站任意页面的 &lt;/body&gt; 前即可：</p>',
     `<pre style="background:#fff;border:1px solid #e8e4dd;border-radius:8px;padding:12px;overflow:auto;font-size:12px">&lt;script src="<span data-host></span>/widget.js" data-entry="${entryKey}" async&gt;&lt;/script&gt;</pre>`,
     '</div>',
-    '<script>document.querySelector("[data-host]").textContent=location.origin;</script>',
-    `<script src="/widget.js" data-entry="${entryKey}" data-open="1" async></script>`,
+    `<script>document.querySelector("[data-host]").textContent=location.origin+${JSON.stringify(safeMountPath)};</script>`,
+    `<script src="${safeMountPath}/widget.js" data-entry="${entryKey}" data-open="1" async></script>`,
     '</body></html>',
   ].join('\n');
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });

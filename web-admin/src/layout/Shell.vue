@@ -46,7 +46,7 @@
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item v-if="s.can('audit:read')" command="setup">上手向导</el-dropdown-item>
-              <el-dropdown-item :divided="s.can('audit:read')" command="pwd">修改密码</el-dropdown-item>
+              <el-dropdown-item v-if="s.hasModule('accounts')" :divided="s.can('audit:read')" command="pwd">修改密码</el-dropdown-item>
               <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -91,6 +91,7 @@ import { Box, Brush, ChatDotRound, Coin, Collection, Connection, Cpu, Document, 
 import { useMe } from '../store';
 import { PAGES } from '../router';
 import { api } from '../request';
+import { kernelFetch } from '../runtime-path';
 import BrandLockup from '../components/BrandLockup.vue';
 
 const s = useMe();
@@ -107,12 +108,12 @@ const GROUP_ORDER = ['场景配置', '接入入口', '能力装配', '运行', '
 const DEFAULT_OPEN_GROUPS = new Set<string>(['场景配置', '接入入口', '能力装配', '运行']);
 const CONFIG_CENTER_PATHS = new Set<string>(['credentials', 'storage', 'projects', 'settings', 'system', 'diagnostics', 'accounts']);
 const MENU_OPEN_STORAGE_KEY = 'bailing:console:menu-open-groups:v1';
-const primaryPages = computed(() => PAGES.filter((p) => p.group === '场景' && s.can(p.perm)));
+const primaryPages = computed(() => PAGES.filter((p) => p.group === '场景' && s.can(p.perm) && s.hasModule(p.path)));
 
 // 菜单 = 权限过滤后的分组（后端接口另有二次拦截，这里只是体验层）
 const groups = computed(() => {
   return GROUP_ORDER
-    .map((title) => ({ title, items: PAGES.filter((p) => p.group === title && s.can(p.perm)) }))
+    .map((title) => ({ title, items: PAGES.filter((p) => p.group === title && s.can(p.perm) && s.hasModule(p.path)) }))
     .filter((g) => g.items.length);
 });
 function groupIndex(title: string): string { return 'group:' + title; }
@@ -131,7 +132,7 @@ const defaultOpeneds = computed(() => {
   if (activeGroup.value) opened.add(activeGroup.value);
   return groups.value.filter((g) => opened.has(g.title)).map((g) => groupIndex(g.title));
 });
-const configCenterPages = computed(() => PAGES.filter((p) => CONFIG_CENTER_PATHS.has(p.path) && s.can(p.perm)));
+const configCenterPages = computed(() => PAGES.filter((p) => CONFIG_CENTER_PATHS.has(p.path) && s.can(p.perm) && s.hasModule(p.path)));
 
 watch(activeGroup, (group) => {
   if (!group) return;
@@ -159,7 +160,7 @@ const healthy = ref(true);
 const execText = ref('');
 const execBad = ref(false);
 async function loadStatus(): Promise<void> {
-  try { healthy.value = (await (await fetch('/health')).json()).status === 'ok'; }
+  try { healthy.value = (await (await kernelFetch('/health')).json()).status === 'ok'; }
   catch { healthy.value = false; }
   if (!s.can('runs:read')) return;
   try {

@@ -1,21 +1,13 @@
-// server.ts = OSS 默认进程入口：把开源版 runtime 注入通用 HTTP 服务组合器。
-// 这里保持极薄，避免扩展发行版为了替换 edition/store/scope 而复制整套 HTTP 启动逻辑。
-import { cfg, cfgStore, queue } from './app/runtime';
-import { createBailingHttpServer } from './app/http-server';
-import { handlePrivateHttp } from './routes/private-default';
-import { handlePublicHttp } from './routes/public-default';
-import { initializeRuntimeLifecycle, scheduleBootRecovery, startRuntimeSchedulers } from './app/runtime-lifecycle-default';
+// OSS 默认进程也走公开 Kernel Host API，确保独立部署与外部宿主复用同一条装配路径。
+import { createBailingHubKernel } from './app/kernel';
+import { loadConfig } from './core/config/config';
 
-const appServer = createBailingHttpServer({
-  cfg,
-  configStore: cfgStore,
-  queue,
-  handlePublicHttp,
-  handlePrivateHttp,
-  initializeRuntimeLifecycle,
-  startRuntimeSchedulers,
-  scheduleBootRecovery,
+const kernel = createBailingHubKernel({
+  instanceKey: 'oss:default',
+  config: loadConfig(),
+  schedulerMode: 'standalone',
 });
+const appServer = kernel.createStandaloneServer();
 
 await appServer.start();
 appServer.registerSignalHandlers();

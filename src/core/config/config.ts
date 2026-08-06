@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { hostname } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { assertServerTokenPolicy } from '../platform/server-token';
 import { assertMetricsTokenPolicy } from '../platform/metrics-token';
 
@@ -67,6 +68,13 @@ export interface AlertsConfig {
 
 export interface AppConfig {
   root: string;
+  /**
+   * 可写运行数据的根目录。缺省时与历史版本一样使用 root；嵌入式多 Kernel
+   * 宿主必须为每个租户注入不同目录，避免本地上传、暂停文件等运行数据共用。
+   * Kernel 会把历史默认 root/.paused 自动重定位到 runtimeRoot/.paused；
+   * 宿主显式传入的其他 killSwitchFile 仍保持不变。
+   */
+  runtimeRoot?: string;
   env: 'development' | 'production';
   server: { host: string; port: number; token: string };
   brand: { name: string }; // 对外产出署名（送达消息落款等），部署方可改
@@ -88,6 +96,13 @@ export interface AppConfig {
   llmCredentials: Record<string, LlmCredential>; // llm 凭据，按名引用，不落 DB/admin
   executor: ExecutorConfig;                      // Mac 执行器进程用（server 进程忽略）
 }
+
+export interface LoadConfigOptions {
+  /** Embedded hosts receive only process-level defaults; each Kernel injects its own state identity. */
+  mode?: 'standalone' | 'kernel-host';
+}
+
+const CORE_ARTIFACT_ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 function envName(v: unknown): 'development' | 'production' {
   return String(v ?? '').toLowerCase() === 'production' ? 'production' : 'development';
@@ -165,10 +180,15 @@ function bootstrapAdminFromEnv(env: NodeJS.ProcessEnv): BootstrapAdminConfig | n
   return { username, password };
 }
 
-/** 加载配置：config.json 优先，缺省回退 config.example.json；环境变量再覆盖。路径相对仓库根目录解析。 */
-export function loadConfig(): AppConfig {
-  const root = process.cwd();
-  const file = existsSync(resolve(root, 'config.json')) ? 'config.json' : 'config.example.json';
+/**
+ * Standalone 模式从当前部署目录读取 config.json；Kernel Host 模式只读已安装
+ * Core 制品内的安全默认。这样宿主 cwd 不会被误当成 Core 制品根或配置根。
+ */
+export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
+  const root = options.mode === 'kernel-host' ? CORE_ARTIFACT_ROOT : process.cwd();
+  const file = options.mode === 'kernel-host'
+    ? 'config.example.json'
+    : existsSync(resolve(root, 'config.json')) ? 'config.json' : 'config.example.json';
   const raw = JSON.parse(readFileSync(resolve(root, file), 'utf8')) as Record<string, any>;
   const env = process.env;
   const runtimeEnv = envName(env['BAILING_ENV']);
@@ -265,7 +285,25 @@ export function loadConfig(): AppConfig {
       api_key: String(creds[name]?.api_key ?? ''),
     };
   }
-  assertServerTokenPolicy({ env: cfg.env, host: cfg.server.host, token: cfg.server.token });
+  if (options.mode === 'kernel-host') {
+    // A multi-Kernel host must not accidentally retain the standalone Core
+    // database identity, local admin bootstrap, project paths or LLM secrets.
+    cfg.state = {
+      backend: 'jsonl',
+      jsonlPath: resolve(root, 'data', 'kernel-host-unused.jsonl'),
+      mysql: { host: '', port: 3306, database: '', user: '', password: '', connectionLimit: 1 },
+    };
+    cfg.server = { ...cfg.server, token: '' };
+    cfg.bootstrapAdmin = null;
+    cfg.projects = {};
+    cfg.llmCredentials = {};
+    cfg.alerts = null;
+    cfg.metrics = { ...cfg.metrics, enabled: false, token: '' };
+    cfg.executor = { ...cfg.executor, hubUrl: '', token: '', executorId: '', targets: [], labels: [] };
+  }
+  if (options.mode !== 'kernel-host') {
+    assertServerTokenPolicy({ env: cfg.env, host: cfg.server.host, token: cfg.server.token });
+  }
   assertMetricsTokenPolicy({
     enabled: cfg.metrics.enabled,
     token: cfg.metrics.token,
@@ -274,7 +312,7 @@ export function loadConfig(): AppConfig {
   if (cfg.bootstrapAdmin && cfg.state.backend !== 'mysql') {
     throw new Error('首次管理员初始化需要 mysql 状态后端');
   }
-  if (cfg.env === 'production') {
+  if (cfg.env === 'production' && options.mode !== 'kernel-host') {
     if (cfg.state.backend === 'mysql') {
       requiredEnv('BAILING_MYSQL_HOST');
       requiredEnv('BAILING_MYSQL_DATABASE');

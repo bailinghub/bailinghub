@@ -17,6 +17,20 @@
 
 当前无待发布变更。
 
+## v0.3.0 - 可组合 Core 与 Kernel Host API v1
+
+发布日期：2026-08-06。
+
+- **正式组合入口**：新增稳定导出 `bailinghub/kernel-api/v1`，宿主可以从精确 npm 制品创建、挂载、排空和停止 Kernel；独立服务也改为装配同一 Kernel 路径，不维护第二套运行内核。
+- **多实例边界**：同一进程可托管多个隔离 Kernel，但每个实例必须拥有独立状态库、运行目录、配置和请求前缀。平台身份、租户目录、注册、套餐、计费及跨租户授权仍由宿主控制面负责，不进入开源 Core。
+- **官方迁移器**：Schema 迁移从启动副作用收敛为宿主显式步骤；账本增加 SHA-256，旧记录只补摘要、不重放 SQL。三条早期退役迁移作为 `replay: never` 证据保留，fresh Schema 永不执行；摘要漂移和未知迁移失败关闭。
+- **精确制品**：npm tarball 包含 Kernel API、官方 SQL、控制台静态资源及制品描述；`BAILINGHUB_CORE_ARTIFACT_V1` 固定版本、活动迁移、退役证据与整体摘要，供开通和升级编排校验。
+- **镜像发布安全**：预发布标签即使被手工请求也不能更新 `latest`；稳定标签才可按发布配置更新稳定通道。
+- **对接影响**：普通自托管启动方式、公开 Client API、聊天协议、Executor Protocol、ACC、工具签名、审批语义和业务系统最终授权不变；生态适配器无需因本次组合 API 升级版本。
+- **数据库结构**：只为 `bz_schema_migrations` 增加可空 `checksum_sha256` 元数据列，不新增业务表或业务字段。升级先运行 `npm run db:init`，成功后再重启。
+- **验证方式**：`npm run release:check` 和真实 npm `.tgz` 安装检查，覆盖 515 项核心测试、迁移兼容、组合生命周期、多实例隔离、OSS 边界和镜像策略。
+- **相关文档**：[RELEASE_NOTES_v0.3.0.md](RELEASE_NOTES_v0.3.0.md)、[Kernel Host API v1](KERNEL_HOST_API.md)、[SQL 迁移纪律](../sql/README.md) 与 [架构说明](ARCHITECTURE.md)。
+
 ## v0.2.0 - 工具清单访问保护与主动核验
 
 发布日期：2026-08-06。

@@ -2,36 +2,40 @@
 // 自带验签（无需 admin/接入方鉴权）；短窗口聚合(WECOM_COALESCE)把连发的图+文合成一轮；身份=解密报文 FromUserName。
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { readRawBody } from '../app/http';
+import { normalizeHttpMountPath, readRawBody } from '../app/http';
 import type { EngineRuntime } from '../app/engine';
 import { UPLOAD_MIME, objectKey, putObject, storageBucketForRuntime } from '../adapters/storage/object-storage';
 import { resolveTargetDef } from '../core/targets/resolve';
 import { wecomBuildReply, wecomDecrypt, wecomSign, wecomVerifyUrl, wecomXmlField } from '../adapters/channels/wecom-crypto';
-import { WECOM_TEXT_SAFE_BYTES, getWecomMedia, sendWecomText } from '../adapters/channels/wecom-api';
+import { WECOM_TEXT_SAFE_BYTES, getWecomMedia, sendWecomText, type WecomAccessTokenCache } from '../adapters/channels/wecom-api';
 import { channelScopeKey } from '../app/channels';
 import type { RuntimeActor, RuntimeContext, RuntimeSource } from '../core/edition';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { AppConfig } from '../core/config/config';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import type { TargetRegistry } from '../core/targets/registry';
 
 // ---- 企业微信入站（公开面）：自建应用「接收消息」回调 → 中枢当回调地址 → 走 llm 路由 → 被动加密回复 ----
 // v1 只做被动回复（回复随回调 HTTP 响应返回，无需 qyapi/可信IP）；慢回答靠企微自身重试（同 MsgId 复用任务）兜一程。
 // 后续增量：注册 wecom-notify 送达 + 中枢 qyapi 主动推，覆盖 >5s 的长回答与执行器大脑。身份纪律：企微解密报文里的 FromUserName 即可信操作主体。
-const wecomSeen = new Map<string, { jobId: string; ts: number }>(); // MsgId 去重：企微 5s 无响应会重试同一条，首攻已接管则重试直接空 ack
-function pruneWecomSeen(): void { const cut = Date.now() - 5 * 60_000; for (const [k, v] of wecomSeen) if (v.ts < cut) wecomSeen.delete(k); }
-
 function wecomActor(accountId: string): RuntimeActor {
   return { kind: 'channel', id: `wecom:${accountId}`, roles: ['channel'], displayName: accountId };
 }
 
 export interface WecomApiDeps {
   cfg: AppConfig;
+  /** Trusted public prefix owned by an embedding host. */
+  httpMountPath?: string;
   isPaused: () => boolean;
   runtimeContextFor: (input: RuntimeContextInput) => Promise<RuntimeContext>;
   runtimeStoresFor: (ctx: RuntimeContext) => { state: RuntimeStateStore; config: ConfigStoreContract | null };
   resolveProjectPathFor: (config: ConfigStoreContract | null, name: string) => Promise<string | null>;
   now: () => string;
   engineForContext: (ctx: RuntimeContext) => Pick<EngineRuntime, 'launchJob' | 'waitForJob'>;
+  targetRegistry?: TargetRegistry;
+  runtimeState?: WecomRuntimeState;
+  /** Kernel-owned credential cache; embedded hosts must inject and dispose it with the Kernel. */
+  accessTokenCache?: WecomAccessTokenCache;
 }
 
 interface RuntimeContextInput {
@@ -62,7 +66,7 @@ function scheduleWecomPush(deps: WecomApiDeps, accountId: string, corpid: string
     const text = typeof r['text'] === 'string' && r['text'] ? (r['text'] as string) : (j.raw_result || '');
     if (!text) return;
     try {
-      const res = await sendWecomText(corpid, secret, agentid, touser, String(text));
+      const res = await sendWecomText(corpid, secret, agentid, touser, String(text), deps.accessTokenCache);
       await store.appendAudit({ ts: deps.now(), job_id: jobId, request_id: j.request_id, event: res.ok ? 'wecom_push' : 'wecom_push_error', detail: { to: touser, errcode: res.errcode, errmsg: res.errmsg } }).catch(() => { /* 审计失败不影响 */ });
     } catch (e) {
       await store.appendAudit({ ts: deps.now(), job_id: jobId, request_id: j.request_id, event: 'wecom_push_error', detail: { to: touser, error: String(e).slice(0, 200) } }).catch(() => { /* 审计失败不影响 */ });
@@ -80,28 +84,55 @@ interface WecomBuf {
   parts: WecomPart[]; msgIds: string[]; timer: ReturnType<typeof setTimeout> | null; firstMs: number;
   held: { res: ServerResponse; token: string; aesKey: string; corpid: string; fromUser: string } | null;
   accountId: string; routeKey: string; secret: string; agentId: string; corpid: string; fromUser: string;
+  runtimeScopeKey: string;
   cc: Record<string, unknown>; replyWaitMs: number; publicBaseUrl: string;
   deps: WecomApiDeps;
 }
-const wecomBuf = new Map<string, WecomBuf>();
+
+/** Kernel-owned 企微瞬态状态；dispose 后不会残留跨 Kernel 的 held response 或定时器。 */
+export class WecomRuntimeState {
+  readonly seen = new Map<string, { jobId: string; ts: number }>();
+  readonly buffers = new Map<string, WecomBuf>();
+
+  pruneSeen(): void {
+    const cut = Date.now() - 5 * 60_000;
+    for (const [key, value] of this.seen) if (value.ts < cut) this.seen.delete(key);
+  }
+
+  dispose(): void {
+    for (const buffer of this.buffers.values()) {
+      if (buffer.timer) clearTimeout(buffer.timer);
+      try {
+        if (buffer.held && !buffer.held.res.writableEnded) {
+          buffer.held.res.writeHead(503, { 'content-type': 'text/plain' });
+          buffer.held.res.end('');
+        }
+      } catch { /* best effort */ }
+    }
+    this.buffers.clear();
+    this.seen.clear();
+  }
+}
+
+const defaultWecomRuntimeState = new WecomRuntimeState();
 const WECOM_COALESCE_MS = 1500;     // 攒消息窗口：同一用户这段时间内连发的合成一轮
 const WECOM_COALESCE_MAX_MS = 3000; // 窗口上限：连发不断也不无限等，到顶就发（给大脑留时间）
 // 企微聊天窗不渲染 Markdown：默认给大脑注入"纯文本、无 emoji"输出风格（随任务 metadata.reply_hint 透传，llm 适配器据此追加进系统提示）。
 // 渠道配置里显式设 reply_hint 可覆盖文案、设为空串可关闭；网页嵌入聊天组件等能渲染 md 的入口不走这条路径、行为不变。
 const WECOM_PLAINTEXT_HINT = '【输出格式·企业微信】你的回复会发送到企业微信聊天窗口，它不渲染 Markdown：请用纯文本回答，不要使用任何 Markdown 语法——不要用 #/## 标题、* 或 ** 加粗、`代码`/```代码块```、| 表格、- 或 * 列表符号、> 引用。需要分条时用「1. 2. 3.」加换行；需要呈现表格类信息时改用「字段：值」逐行罗列。也不要使用 emoji 表情符号。用简洁的文字和换行组织内容，确保在纯文本里清晰易读。';
 
-function publicBaseUrl(req: IncomingMessage): string {
+export function wecomPublicBaseUrl(req: IncomingMessage, mountPath = ''): string {
   const host = String(req.headers['x-forwarded-host'] ?? req.headers.host ?? '').split(',')[0]!.trim();
   const protoHeader = String(req.headers['x-forwarded-proto'] ?? '').split(',')[0]!.trim();
   const proto = protoHeader || (/^(localhost|127\.|0\.0\.0\.0)/.test(host) ? 'http' : 'https');
-  return `${proto}://${host || 'localhost'}`;
+  return `${proto}://${host || 'localhost'}${normalizeHttpMountPath(mountPath)}`;
 }
 
 /** 窗口结束：把缓冲里的多条消息合成一轮 → 下载/落桶图片 → 起一个任务 → 首条回调被动回复 or 异步推。永不抛。 */
-async function flushWecom(key: string): Promise<void> {
-  const buf = wecomBuf.get(key);
+async function flushWecom(runtimeState: WecomRuntimeState, key: string): Promise<void> {
+  const buf = runtimeState.buffers.get(key);
   if (!buf) return;
-  wecomBuf.delete(key);
+  runtimeState.buffers.delete(key);
   if (buf.timer) clearTimeout(buf.timer);
   let auditStore: RuntimeStateStore | null = null;
   const held = buf.held;
@@ -126,12 +157,12 @@ async function flushWecom(key: string): Promise<void> {
       hasImage = true;
       let imgUrl = '';
       if (part.mediaId && bucket.enabled && buf.corpid && buf.secret) {
-        const media = await getWecomMedia(buf.corpid, buf.secret, part.mediaId);
+        const media = await getWecomMedia(buf.corpid, buf.secret, part.mediaId, buf.deps.accessTokenCache);
         if (media.ok && media.buf) {
           try {
             const mime = UPLOAD_MIME.test(media.mime ?? '') ? media.mime! : 'image/jpeg';
             const okey = objectKey(bucket, `wecom_${buf.accountId}`, mime);
-            imgUrl = await putObject(bucket, okey, media.buf, mime, { root: buf.deps.cfg.root });
+            imgUrl = await putObject(bucket, okey, media.buf, mime, { root: buf.deps.cfg.runtimeRoot ?? buf.deps.cfg.root });
             await store.appendAudit({ ts: buf.deps.now(), job_id: '-', request_id: buf.msgIds[0] ?? '-', event: 'wecom_image_rehosted', detail: { account: buf.accountId, bucket: bucket.name, storage: bucket.kind, key: okey, bytes: media.buf.length, mime } }).catch(() => undefined);
           } catch (e) { await store.appendAudit({ ts: buf.deps.now(), job_id: '-', request_id: buf.msgIds[0] ?? '-', event: 'wecom_image_rehost_failed', detail: { account: buf.accountId, error: String(e).slice(0, 300) } }).catch(() => undefined); }
         } else { await store.appendAudit({ ts: buf.deps.now(), job_id: '-', request_id: buf.msgIds[0] ?? '-', event: 'wecom_image_rehost_failed', detail: { account: buf.accountId, error: media.error ?? 'media/get 失败' } }).catch(() => undefined); }
@@ -145,7 +176,7 @@ async function flushWecom(key: string): Promise<void> {
     if (hasImage && !hasText) fullInput += '\n[用户发来一张图片]'; // 纯图无文字：给大脑一句中性引导
 
     const route = await cfgStore.routes.get(buf.routeKey);
-    const targetDef = route ? await resolveTargetDef(cfgStore, route.target) : null;
+    const targetDef = route ? await resolveTargetDef(cfgStore, route.target, buf.deps.targetRegistry) : null;
     if (!route || !route.enabled || !targetDef || targetDef.enabled === false) { replyHeld('该渠道尚未配置好（路由缺失或未启用），请联系管理员。'); return; }
     const projectPath = route.project ? await buf.deps.resolveProjectPathFor(cfgStore, route.project) : null;
     const scopeKey = channelScopeKey('wecom', buf.accountId, buf.fromUser); // 出站 /send 复用同一函数，杜绝 scope 漂移
@@ -160,7 +191,7 @@ async function flushWecom(key: string): Promise<void> {
       session: { sessionId: sess.sessionId, isContinue: sess.isContinue },
       threadScope: scopeKey, principalId: `wxuid:${buf.fromUser}`.slice(0, 64), channel: `wecom:${buf.accountId}`,
     });
-    for (const mid of buf.msgIds) wecomSeen.set(mid, { jobId: job.job_id, ts: Date.now() });
+    for (const mid of buf.msgIds) runtimeState.seen.set(`${buf.runtimeScopeKey}:${mid}`, { jobId: job.job_id, ts: Date.now() });
     // 5s 窗口余额：用掉了 攒窗口+图片下载 的时间，剩下的给大脑；够则被动回复，不够则空 ack + 异步推
     const budget = Math.max(300, Math.min(buf.replyWaitMs, 4500) - (Date.now() - buf.firstMs));
     const fin = await engine.waitForJob(job.job_id, budget);
@@ -186,7 +217,9 @@ async function flushWecom(key: string): Promise<void> {
 }
 
 export async function handleWecomInboundFor(deps: WecomApiDeps, req: IncomingMessage, res: ServerResponse, accountId: string, url: URL): Promise<void> {
-  const { config: cfgStore } = await wecomRuntime(deps, accountId, `wecom:${accountId}:${url.searchParams.get('timestamp') ?? Date.now()}`);
+  const runtimeState = deps.runtimeState ?? defaultWecomRuntimeState;
+  const { ctx, config: cfgStore } = await wecomRuntime(deps, accountId, `wecom:${accountId}:${url.searchParams.get('timestamp') ?? Date.now()}`);
+  const runtimeScopeKey = `${ctx.scope.kind}:${ctx.scope.id}`;
   if (!cfgStore) { res.writeHead(503, { 'content-type': 'text/plain' }); res.end('service not ready'); return; }
   // 渠道配置来自后台「渠道」注册表（bz_channels），不再写死 config.json
   const channel = await cfgStore.channels.get(accountId);
@@ -233,9 +266,10 @@ export async function handleWecomInboundFor(deps: WecomApiDeps, req: IncomingMes
   if (deps.isPaused()) { replyText('服务暂停中，请稍后再试。'); return; }
 
   // 企微 5s 无响应会重试同一 MsgId：占位去重（提前到入缓冲前，避免重试重复并入/重复处理）
-  pruneWecomSeen();
-  if (wecomSeen.has(msgId)) { ackEmpty(); return; }
-  wecomSeen.set(msgId, { jobId: '', ts: Date.now() });
+  runtimeState.pruneSeen();
+  const seenKey = `${runtimeScopeKey}:${msgId}`;
+  if (runtimeState.seen.has(seenKey)) { ackEmpty(); return; }
+  runtimeState.seen.set(seenKey, { jobId: '', ts: Date.now() });
 
   // 解析这条消息为一个 part；图片此刻只记 MediaId/PicUrl，下载落桶推迟到窗口结束统一做（见 flushWecom）
   let part: WecomPart;
@@ -250,23 +284,24 @@ export async function handleWecomInboundFor(deps: WecomApiDeps, req: IncomingMes
   }
 
   // 短窗口聚合：同一 (账号+用户) 的连发合成一轮。首条 hold 住回调（被动回复），后续条立即空 ack。
-  const key = `${accountId}:${fromUser}`;
+  const key = `${runtimeScopeKey}:${accountId}:${fromUser}`;
   const coalesceMs = Math.min(Math.max(Number(cc['coalesce_ms'] ?? WECOM_COALESCE_MS) || WECOM_COALESCE_MS, 0), WECOM_COALESCE_MAX_MS);
-  const existing = wecomBuf.get(key);
+  const existing = runtimeState.buffers.get(key);
   if (existing) {
     existing.parts.push(part); existing.msgIds.push(msgId);
     if (existing.timer) clearTimeout(existing.timer);
     const wait = Math.max(0, Math.min(coalesceMs, WECOM_COALESCE_MAX_MS - (Date.now() - existing.firstMs)));
-    existing.timer = setTimeout(() => { void flushWecom(key); }, wait);
+    existing.timer = setTimeout(() => { void flushWecom(runtimeState, key); }, wait);
     ackEmpty(); return;                       // 后续条：正文已并入缓冲，立即空 ack
   }
   const buf: WecomBuf = {
     parts: [part], msgIds: [msgId], timer: null, firstMs: Date.now(),
     held: { res, token, aesKey, corpid, fromUser },   // 首条 hold 住 res，窗口结束由 flushWecom 统一回复
-    accountId, routeKey: channel.route_key, secret, agentId, corpid, fromUser, cc, replyWaitMs, publicBaseUrl: publicBaseUrl(req),
+    accountId, routeKey: channel.route_key, secret, agentId, corpid, fromUser, runtimeScopeKey, cc, replyWaitMs,
+    publicBaseUrl: wecomPublicBaseUrl(req, deps.httpMountPath),
     deps,
   };
-  buf.timer = setTimeout(() => { void flushWecom(key); }, coalesceMs);
-  wecomBuf.set(key, buf);
+  buf.timer = setTimeout(() => { void flushWecom(runtimeState, key); }, coalesceMs);
+  runtimeState.buffers.set(key, buf);
   // 首条不立即响应：res 已交给 buf.held，连接保持到 flushWecom 写回
 }

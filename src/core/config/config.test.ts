@@ -130,6 +130,23 @@ test('loadConfig: 本地回环开发允许不配置 token', () => {
   });
 });
 
+test('loadConfig: Kernel Host 从已安装 Core 制品加载默认值，不依赖或信任 consumer cwd', () => {
+  withTempConfig({
+    brand: { name: 'consumer-cwd-must-not-be-read' },
+    server: { host: '0.0.0.0', token: 'consumer-secret' },
+    state: { backend: 'mysql', mysql: { host: 'consumer-db', password: 'consumer-password' } },
+  }, {}, () => {
+    const consumerCwd = process.cwd();
+    const cfg = loadConfig({ mode: 'kernel-host' });
+    assert.notEqual(cfg.root, consumerCwd);
+    assert.notEqual(cfg.brand.name, 'consumer-cwd-must-not-be-read');
+    assert.equal(cfg.server.token, '');
+    assert.deepEqual(cfg.state.mysql, {
+      host: '', port: 3306, database: '', user: '', password: '', connectionLimit: 1,
+    });
+  });
+});
+
 test('loadConfig: 非回环开发监听缺少 token 时拒绝启动', () => {
   withTempConfig({
     server: { host: '0.0.0.0', token: '' },

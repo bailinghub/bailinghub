@@ -3,7 +3,7 @@
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeContext, StoreFactory } from '../core/edition';
 import { Queue } from '../core/platform/queue';
-import { registerTargetAdapter } from '../core/targets/registry';
+import { defaultTargetRegistry, TargetRegistry } from '../core/targets/registry';
 import { llmAdapter } from '../adapters/targets/llm';
 import { demoAgentAdapter } from '../adapters/targets/demo-agent';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
@@ -30,15 +30,12 @@ export interface RuntimeComposition<EditionT extends RuntimeCompositionEdition =
   kbSync: KbSyncService | null;
   toolIndex: ToolIndexService | null;
   jobStream: JobStreamBroker;
+  targetRegistry: TargetRegistry;
 }
 
-let builtinAdaptersRegistered = false;
-
-export function registerBuiltinTargetAdapters(): void {
-  if (builtinAdaptersRegistered) return;
-  registerTargetAdapter('llm', llmAdapter);
-  registerTargetAdapter('demo-agent', demoAgentAdapter);
-  builtinAdaptersRegistered = true;
+export function registerBuiltinTargetAdapters(targetRegistry: TargetRegistry = defaultTargetRegistry): void {
+  targetRegistry.registerAdapter('llm', llmAdapter);
+  targetRegistry.registerAdapter('demo-agent', demoAgentAdapter);
 }
 
 export function createRuntimeComposition<EditionT extends RuntimeCompositionEdition>(input: {
@@ -46,8 +43,13 @@ export function createRuntimeComposition<EditionT extends RuntimeCompositionEdit
   edition: EditionT;
   registerAdapters?: boolean;
   jobStream?: JobStreamBroker;
+  targetRegistry?: TargetRegistry;
+  queue?: Queue;
+  /** 只用于给进程级串行设施加命名空间；不参与业务数据作用域判断。 */
+  serialScope?: string;
 }): RuntimeComposition<EditionT> {
-  if (input.registerAdapters !== false) registerBuiltinTargetAdapters();
+  const targetRegistry = input.targetRegistry ?? new TargetRegistry();
+  if (input.registerAdapters !== false) registerBuiltinTargetAdapters(targetRegistry);
   const runtimeContext = input.edition.systemContext;
   const storeFactory = input.edition.storeFactory;
   const store = storeFactory.state(runtimeContext);
@@ -59,12 +61,13 @@ export function createRuntimeComposition<EditionT extends RuntimeCompositionEdit
     runtimeContext,
     storeFactory,
     store,
-    queue: new Queue(input.cfg.concurrency),
+    queue: input.queue ?? new Queue(input.cfg.concurrency),
     cfgStore,
     kbService,
     kbSync: cfgStore && kbService ? new KbSyncService(cfgStore.kbDatasources, kbService) : null,
     // 复用运行期短租约锁：同一工具源的索引重建在多实例下也不会交错写入。
-    toolIndex: cfgStore ? new ToolIndexService(cfgStore, input.cfg, cfgStore.toolEmbeddings, store) : null,
+    toolIndex: cfgStore ? new ToolIndexService(cfgStore, input.cfg, cfgStore.toolEmbeddings, store, input.serialScope) : null,
     jobStream: input.jobStream ?? new InMemoryJobStreamBroker(),
+    targetRegistry,
   };
 }

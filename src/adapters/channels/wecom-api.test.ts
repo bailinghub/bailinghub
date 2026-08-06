@@ -1,7 +1,7 @@
 // 覆盖：企微长文本按字节分条（splitWecomText）——每条不超上限、拼回无损、不切断多字节字符。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { splitWecomText } from './wecom-api';
+import { sendWecomText, splitWecomText, WecomAccessTokenCache } from './wecom-api';
 
 const utf8 = (s: string): number => Buffer.byteLength(s, 'utf8');
 const MAX = 1900; // 默认切分粒度
@@ -42,4 +42,36 @@ test('splitWecomText：含 emoji（代理对）不被从中切断', () => {
     assert.ok(!p.includes('�'), '不应出现替换字符');
   }
   assert.equal(parts.join(''), text);
+});
+
+test('WecomAccessTokenCache：Kernel dispose 清空凭证且禁止关闭后重新填充', async (t) => {
+  const originalFetch = globalThis.fetch;
+  let tokenRequests = 0;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes('/gettoken?')) {
+      tokenRequests++;
+      return new Response(JSON.stringify({ errcode: 0, access_token: 'tenant-token', expires_in: 7200 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ errcode: 0, errmsg: 'ok' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  const cache = new WecomAccessTokenCache();
+  assert.equal((await sendWecomText('corp-a', 'secret-a', 1, 'user-a', 'one', cache)).ok, true);
+  assert.equal((await sendWecomText('corp-a', 'secret-a', 1, 'user-a', 'two', cache)).ok, true);
+  assert.equal(tokenRequests, 1, '同一 Kernel 复用令牌');
+
+  cache.dispose();
+  await assert.rejects(
+    sendWecomText('corp-a', 'secret-a', 1, 'user-a', 'after close', cache),
+    /cache is disposed/,
+  );
+  assert.equal(tokenRequests, 1, '关闭后不得重新获取或留存令牌');
 });

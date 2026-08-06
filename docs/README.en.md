@@ -31,6 +31,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | Document | Purpose |
 |---|---|
 | [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | Architecture overview: layers, runtime path, boundaries, and extension points. |
+| [KERNEL_HOST_API.en.md](KERNEL_HOST_API.en.md) | Versioned high-level embedding API, managed lifecycle, mount paths, and artifact upgrade boundary. |
+| [KERNEL_HOST_API.md](KERNEL_HOST_API.md) | Chinese Kernel Host API guide. |
 | [PIPELINE.en.md](PIPELINE.en.md) | Runtime pipeline from trigger to dispatch, tools, audit, approval, and delivery. |
 
 ## Runtime Capabilities
@@ -87,6 +89,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.1.16.md](RELEASE_NOTES_v0.1.16.md) | Chinese `v0.1.16` release notes. |
 | [RELEASE_NOTES_v0.2.0.en.md](RELEASE_NOTES_v0.2.0.en.md) | `v0.2.0` tool catalog access protection and active verification release notes. |
 | [RELEASE_NOTES_v0.2.0.md](RELEASE_NOTES_v0.2.0.md) | Chinese `v0.2.0` release notes. |
+| [RELEASE_NOTES_v0.3.0.en.md](RELEASE_NOTES_v0.3.0.en.md) | `v0.3.0` composable Core and Kernel Host API v1 release notes. |
+| [RELEASE_NOTES_v0.3.0.md](RELEASE_NOTES_v0.3.0.md) | Chinese `v0.3.0` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

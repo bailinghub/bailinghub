@@ -3,7 +3,7 @@ import { outboundRuntimeDepsFor, postSignedWithDeps, secretForJobWithDeps } from
 import type { ApprovalDeps, ApprovalIntentSnap } from '../core/contracts/tools';
 import { approvalConfig, type RouteToolsConfig, type ToolSourceConfig } from '../core/config/tools-config';
 import type { Job, ToolProvider } from '../core/contracts/types';
-import { getTargetDef } from '../core/targets/registry';
+import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
 import { subjectOf } from './tool-context';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
@@ -31,6 +31,7 @@ export function approvalDepsForStores(
   appConfig: AppConfig,
   nowFn: () => string,
   sleepFn: (ms: number) => Promise<void>,
+  targetRegistry: TargetRegistry = defaultTargetRegistry,
 ): ApprovalDeps | undefined {
   if (!config) return undefined;
   const cs = config;
@@ -60,7 +61,7 @@ export function approvalDepsForStores(
       });
     },
     async notify(id, snap) {
-      await notifyApprovalFor(config, state, job, provider, toolsCfg, sourceCfg, id, snap, appConfig, nowFn, sleepFn);
+      await notifyApprovalFor(config, state, job, provider, toolsCfg, sourceCfg, id, snap, appConfig, nowFn, sleepFn, targetRegistry);
     },
   };
 }
@@ -106,6 +107,7 @@ async function notifyApprovalFor(
   appConfig: AppConfig,
   nowFn: () => string,
   sleepFn: (ms: number) => Promise<void>,
+  targetRegistry: TargetRegistry,
 ): Promise<void> {
   const outboundRuntime = outboundRuntimeDepsFor({
     cfg: appConfig,
@@ -194,7 +196,7 @@ async function notifyApprovalFor(
     return;
   }
   const targetName = `${type}-notify`;
-  if (getTargetDef(targetName)?.kind !== 'executor' || !ap['to']) {
+  if (targetRegistry.get(targetName)?.kind !== 'executor' || !ap['to']) {
     await state.appendAudit({ ts: nowFn(), job_id: job.job_id, request_id: job.request_id, event: 'approval_notify_skipped', detail: { approval_id: approvalId, reason: `送达类型 ${type} 不可用（需注册 ${targetName} 执行器目标且配收件人）` } });
     return;
   }

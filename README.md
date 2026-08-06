@@ -187,6 +187,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | 路径 | 作用 |
 |---|---|
 | `docs/ARCHITECTURE.md` | **架构说明**：七层模型、通用性推演、解耦边界和扩展方向 |
+| `docs/KERNEL_HOST_API.md` | **Kernel Host API v1**：完整 Core 的高层嵌入、生命周期、挂载路径与制品升级边界 |
 | `docs/README.md` / `docs/README.en.md` | 文档地图：每类文档的职责边界与维护纪律 |
 | `docs/user-guide/` | 使用者指南：面向业务负责人、产品经理、系统管理员和实施顾问，按业务场景说明为什么需要中枢、后台怎么配、配完交给开发者什么 |
 | `docs/CONTRACT.md` | **边界契约**：`/run`、聊天入口、工具调用/签名、回送、降级、鉴权——业务与中枢唯一的「缝」 |
@@ -224,6 +225,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/RELEASE_NOTES_v0.1.15.md` | `v0.1.15` 可信富内容渲染与聊天可靠性说明 |
 | `docs/RELEASE_NOTES_v0.1.16.md` | `v0.1.16` 工具运行时收敛与语义检索韧性说明 |
 | `docs/RELEASE_NOTES_v0.2.0.md` | `v0.2.0` 工具清单访问保护与主动核验说明 |
+| `docs/RELEASE_NOTES_v0.3.0.md` | `v0.3.0` 可组合 Core 与 Kernel Host API v1 说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |
@@ -254,7 +256,7 @@ BailingHub 当前公开版本仍处于早期验证阶段。我们希望它经得
 
 ### 衍生项目与生态
 
-我们欢迎社区创建独立发行版、行业适配、执行器、连接器和 ACC 独立实现。衍生项目可以保持自己的名称、方向与治理；通用改进欢迎回到上游，优秀的独立项目未来也可以申请在官方生态页面展示。展示不代表官方认证、商业担保或维护责任转移。完整原则见 [社区衍生与生态合作](docs/ECOSYSTEM.md)。
+我们欢迎社区创建独立发行版、行业适配、执行器、连接器和 ACC 独立实现。衍生项目可以保持自己的名称、方向与治理；通用改进欢迎回到上游，优秀的独立项目未来也可以申请在官方生态页面展示。展示不代表官方认证、服务担保或维护责任转移。完整原则见 [社区衍生与生态合作](docs/ECOSYSTEM.md)。
 
 ## 开源基础与第三方软件
 
