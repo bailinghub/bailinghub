@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, normalize } from 'node:path';
 import type { EngineRuntime } from '../app/engine';
-import { readBody, send } from '../app/http';
+import { normalizeHttpMountPath, readBody, send } from '../app/http';
 import { type Principal, ROLE_PERMS, SESSION_COOKIE, can, permsOf, readCookie } from '../app/auth';
 import { hashPassword, verifyPassword } from '../core/platform/password';
 import { buildVersionInfo } from '../core/platform/version';
@@ -19,7 +19,7 @@ import { handleAdminKbApiFor } from './admin-kb';
 import { handleAdminRuntimeApiFor } from './admin-runtime';
 import { handleAdminToolProviderApiFor } from './admin-tool-providers';
 import { handleAdminBrandingApiFor } from './admin-branding';
-import { refreshTargets } from '../core/targets/registry';
+import { refreshTargets, type TargetRegistry } from '../core/targets/registry';
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
@@ -47,10 +47,23 @@ export interface AdminApiDeps {
   channelSend: AdminChannelSender;
   engineRuntime: Pick<EngineRuntime, 'requeueForRerun'>;
   refreshTargets: typeof refreshTargets;
+  targetRegistry?: TargetRegistry;
+  /** Trusted same-origin mount prefix used by the self-smoke loopback client. */
+  httpMountPath?: string;
+  /** False when a Host identity provider owns human accounts and passwords. */
+  localAdminManagement?: boolean;
+}
+
+export function adminSmokeHub(cfg: Pick<AppConfig, 'server'>, httpMountPath?: string): string {
+  return `http://127.0.0.1:${cfg.server.port}${normalizeHttpMountPath(httpMountPath)}`;
 }
 
 // ---- web 配置后台 API（管理项目/路由/接入方，查看任务）----
 export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path: string, req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<boolean> {
+  if (deps.localAdminManagement === false && (path === '/admin/api/password' || /^\/admin\/api\/admins(?:\/|$)/.test(path))) {
+    send(res, 404, { error: '当前登录身份由宿主管理，Core 本地账号与密码接口未开放' });
+    return true;
+  }
   if (!deps.configStore) { send(res, 400, { error: '配置后台需要 mysql 后端' }); return true; }
   const configStore = deps.configStore;
 
@@ -136,7 +149,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     const requestUrl = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     const tenantId = requestUrl.searchParams.get('tenant')?.trim() || readCookie(req, 'bz_tenant') || undefined;
     send(res, 200, await runHubSmoke({
-      hub: `http://127.0.0.1:${deps.cfg.server.port}`,
+      hub: adminSmokeHub(deps.cfg, deps.httpMountPath),
       adminToken: deps.cfg.server.token || undefined,
       adminHeaders: cookie ? { cookie } : undefined,
       tenantId,
@@ -171,7 +184,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
   if (await handleAdminChatApiFor({ configStore }, method, path, req, res)) return true;
   if (await handleAdminKbApiFor({ kbService: deps.kbService, kbSync: deps.kbSync, stateStore: deps.stateStore, now: deps.now }, method, path, req, res)) return true;
   if (await handleAdminInfraApiFor({ configStore }, method, path, req, res)) return true;
-  if (await handleAdminDispatchConfigApiFor({ configStore, defaultProfile: deps.cfg.defaultProfile, refreshTargets: deps.refreshTargets }, method, path, req, res)) return true;
+  if (await handleAdminDispatchConfigApiFor({ configStore, defaultProfile: deps.cfg.defaultProfile, refreshTargets: deps.refreshTargets, targetRegistry: deps.targetRegistry }, method, path, req, res)) return true;
 
   // ---- 后台账号管理（admin 角色专属；权限闸门已在前面拦 admins:manage）----
   if (path === '/admin/api/admins') {

@@ -62,6 +62,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useMe } from '../store';
 import BrandLockup from '../components/BrandLockup.vue';
 import { instanceBranding } from '../branding';
+import { kernelFetch, kernelPath } from '../runtime-path';
 
 const username = ref('');
 const password = ref('');
@@ -102,12 +103,12 @@ onBeforeUnmount(() => {
 
 function loginUrl(): string {
   const tenantId = resolvedTenantId.value || (typeof route.query['tenant'] === 'string' ? route.query['tenant'] : '');
-  return tenantId ? `/admin/login?tenant=${encodeURIComponent(tenantId)}` : '/admin/login';
+  return kernelPath(tenantId ? `/admin/login?tenant=${encodeURIComponent(tenantId)}` : '/admin/login');
 }
 
 async function loadSignupConfig(): Promise<void> {
   try {
-    const r = await fetch('/admin/signup-config');
+    const r = await kernelFetch('/admin/signup-config');
     if (!r.ok) return;
     const j = (await r.json().catch(() => ({}))) as {
       enabled?: boolean;
@@ -160,7 +161,7 @@ async function signup(): Promise<void> {
   if (signupVerificationRequired.value && !signupCode.value.trim()) { err.value = '请先填写邮箱验证码'; return; }
   loading.value = true; err.value = '';
   try {
-    const r = await fetch('/admin/signup', {
+    const r = await kernelFetch('/admin/signup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -187,7 +188,7 @@ async function sendSignupCode(): Promise<void> {
   if (signupVerificationRequired.value && !signupMailReady.value) { err.value = '注册邮件暂未配置，请稍后再试'; return; }
   sendingCode.value = true; err.value = '';
   try {
-    const r = await fetch('/admin/signup/start', {
+    const r = await kernelFetch('/admin/signup/start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ email: signupEmail.value }),

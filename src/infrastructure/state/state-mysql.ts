@@ -6,25 +6,23 @@ import type { AuditEntry, Job } from '../../core/contracts/types';
 import type { JobOperationalMetricsSnapshot, RuntimeStateStore } from '../../core/state/state-contracts';
 import { dt, json, rowToJob } from '../../core/state/state-codec';
 import { mysqlJobUpdatePlan } from './state-mysql-update-plan';
+import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 /** mysql 后端：生产状态库。对应 sql/001_init_state.sql 的 bz_ 表。 */
 export class MysqlStore implements RuntimeStateStore {
   private pool!: Pool;
+  private readonly poolOwner: MysqlPoolResource;
 
-  constructor(private readonly cfg: AppConfig['state']['mysql']) {}
+  constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
+    this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);
+  }
 
   async init(): Promise<void> {
-    const mysql = await import('mysql2/promise');
-    this.pool = mysql.createPool({
-      host: this.cfg.host,
-      port: this.cfg.port,
-      user: this.cfg.user,
-      password: this.cfg.password,
-      database: this.cfg.database,
-      waitForConnections: true,
-      connectionLimit: this.cfg.connectionLimit,
-      timezone: 'Z',
-    });
+    this.pool = await this.poolOwner.get();
+  }
+
+  async close(): Promise<void> {
+    await this.poolOwner.close();
   }
 
   async findByRequestId(requestId: string): Promise<Job | null> {

@@ -1,4 +1,5 @@
 import { reactive } from 'vue';
+import { kernelFetch, kernelPath } from './runtime-path';
 
 export interface InstanceBranding {
   site_name: string;
@@ -66,7 +67,7 @@ function applyDocumentMetadata(): void {
     favicon.rel = 'icon';
     document.head.appendChild(favicon);
   }
-  favicon.href = instanceBranding.favicon_url;
+  favicon.href = kernelPath(instanceBranding.favicon_url);
 }
 
 export function setInstanceBranding(value: InstanceBranding): void {
@@ -78,7 +79,7 @@ export async function loadInstanceBranding(): Promise<void> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 2500);
   try {
-    const response = await fetch('/branding', { signal: controller.signal, cache: 'no-store' });
+    const response = await kernelFetch('/branding', { signal: controller.signal, cache: 'no-store' });
     if (!response.ok) return;
     setInstanceBranding(await response.json() as InstanceBranding);
   } catch {

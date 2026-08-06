@@ -6,6 +6,7 @@ import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ToolIndexService } from '../services/tools-index';
 import type { AppConfig } from '../core/config/config';
+import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
 
 /**
  * 工具插座装配：已过双闸的清单 → 受治理的工具运行时。
@@ -20,6 +21,7 @@ export async function assembleToolRuntimeFor(
   appConfig: AppConfig,
   nowFn: () => string,
   sleepFn: (ms: number) => Promise<void>,
+  targetRegistry: TargetRegistry = defaultTargetRegistry,
 ): Promise<ToolRuntime | 'subject_locked' | undefined> {
   const r = await resolveAllowedToolsFor(config, job, route);
   if (!r) return undefined;
@@ -60,7 +62,7 @@ export async function assembleToolRuntimeFor(
       jobId: job.job_id,
       clientAppId: job.client_app_id ?? '',
       truncateBytes: 8192,
-      approvals: approvalDepsForStores(config, state, job, provider, r.toolsCfg, sourceCfg, appConfig, nowFn, sleepFn),
+      approvals: approvalDepsForStores(config, state, job, provider, r.toolsCfg, sourceCfg, appConfig, nowFn, sleepFn, targetRegistry),
       retrieveNames,
       retrievalMode,
       idempotency: config ? {

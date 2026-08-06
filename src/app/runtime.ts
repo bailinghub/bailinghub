@@ -4,11 +4,12 @@
 // 注意无循环依赖：本文件只 import 叶子库和 OSS edition，不 import server.ts 或任何路由模块。
 import { existsSync } from 'node:fs';
 import { loadConfig } from '../core/config/config';
+import { defaultTargetRegistry } from '../core/targets/registry';
 import { createOssEdition } from './oss-edition';
 import { createRuntimeComposition } from './runtime-composition';
 
 export const cfg = loadConfig();
-export const runtimeComposition = createRuntimeComposition({ cfg, edition: createOssEdition(cfg) });
+export const runtimeComposition = createRuntimeComposition({ cfg, edition: createOssEdition(cfg), targetRegistry: defaultTargetRegistry });
 export const edition = runtimeComposition.edition;
 export const runtimeContext = runtimeComposition.runtimeContext;
 export const storeFactory = runtimeComposition.storeFactory;
@@ -19,6 +20,7 @@ export const kbService = runtimeComposition.kbService;
 export const kbSync = runtimeComposition.kbSync;
 export const toolIndex = runtimeComposition.toolIndex;
 export const jobStream = runtimeComposition.jobStream;
+export const targetRegistry = runtimeComposition.targetRegistry;
 
 // ---- 运行时状态/配置 helper（引擎与路由共用，故与单例同处）----
 /** kill switch：存在该文件即全局暂停派活。 */

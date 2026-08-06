@@ -12,6 +12,7 @@ import type { RuntimeActor, RuntimeContext, RuntimeSource } from '../core/editio
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import type { TargetRegistry } from '../core/targets/registry';
 
 interface RuntimeContextInput {
   source: RuntimeSource;
@@ -44,6 +45,7 @@ export interface RunApiDeps {
   runtimeStoresFor: (ctx: RuntimeContext) => { state: RuntimeStateStore; config: ConfigStoreContract | null };
   resolveProjectPathFor: (config: ConfigStoreContract | null, name: string) => Promise<string | null>;
   engineForContext: (ctx: RuntimeContext) => Pick<EngineRuntime, 'launchJob'>;
+  targetRegistry?: TargetRegistry;
 }
 
 export async function handleRunFor(deps: RunApiDeps, req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<void> {
@@ -143,7 +145,7 @@ export async function handleRunFor(deps: RunApiDeps, req: IncomingMessage, res: 
     session = { sessionId: randomUUID(), isContinue: false };
   }
 
-  const targetDef = await resolveTargetDef(cfgStore, target);
+  const targetDef = await resolveTargetDef(cfgStore, target, deps.targetRegistry);
   if (!targetDef) { send(res, 400, { error: `未知 target: ${target}（需先在「调度目标」注册）` }); return; }
   if (targetDef.enabled === false) { send(res, 400, { error: `target 已停用: ${target}` }); return; }
 

@@ -20,8 +20,8 @@ web/site/
 web/site-dist/
 deploy/
 
-# Generated console build and local runtime state.
-web/console/
+# Local runtime state. The generated console is intentionally included in the
+# npm artifact by the prepack lifecycle; it remains ignored by Git.
 web/console.bak.*/
 data/
 config.json

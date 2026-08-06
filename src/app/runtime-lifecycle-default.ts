@@ -1,6 +1,6 @@
 // OSS 默认运行期生命周期包装：这里才绑定 app/runtime 单组织单例。
 // 自定义部署应使用 runtime-lifecycle.ts 的 *For(deps) 入口。
-import { cfg, cfgStore, isPaused, kbService, kbSync, store, toolIndex } from './runtime';
+import { cfg, cfgStore, isPaused, kbService, kbSync, store, targetRegistry, toolIndex } from './runtime';
 import { now, sleep } from './http';
 import { drainInhubScheduler, kickInhubScheduler, recoverInhubJobs } from './engine-default';
 import { refreshTargets } from '../core/targets/registry';
@@ -28,6 +28,7 @@ export function defaultRuntimeLifecycleDeps(): RuntimeLifecycleDeps {
     recoverInhubJobs,
     now,
     sleep,
+    targetRegistry,
     afterStoresInitialized: async () => {
       await bootstrapInitialAdmin(cfg.bootstrapAdmin, { admins: cfgStore?.admins ?? null });
     },

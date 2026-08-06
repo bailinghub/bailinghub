@@ -28,6 +28,10 @@ export interface PreparedInhubJob {
   session: SessionTarget;
 }
 
+export interface InhubTimeoutHandle {
+  unref?: () => void;
+}
+
 export interface InhubRuntimeDeps {
   store: InhubStoreLike;
   now: () => string;
@@ -39,7 +43,8 @@ export interface InhubRuntimeDeps {
   leaseMs: number;
   inhubTargets: () => string[];
   prepareClaimedJob: (job: Job) => Promise<PreparedInhubJob>;
-  setTimeoutFn?: (fn: () => void, ms: number) => { unref?: () => void } | void;
+  setTimeoutFn?: (fn: () => void, ms: number) => InhubTimeoutHandle | void;
+  clearTimeoutFn?: (timer: InhubTimeoutHandle) => void;
 }
 
 export interface InhubRuntime {
@@ -48,30 +53,59 @@ export interface InhubRuntime {
   scheduleRetry(job: Job, route: Route | null, projectPath: string | null, fullInput: string, session: SessionTarget, retry: RetryDecision): Promise<void>;
   kick(): void;
   drain(maxClaims?: number): Promise<number>;
+  /** 拒绝新的认领并取消所有进程内 retry 唤醒；已认领工作仍会完成。 */
+  closeAdmission(): void;
+  /** 关闭 admission，并等待认领/装配及 runSerial/processJob 全部收尾。 */
+  stop(): Promise<void>;
 }
 
 export function createInhubRuntime(deps: InhubRuntimeDeps): InhubRuntime {
+  let accepting = true;
+  const retryTimers = new Set<InhubTimeoutHandle>();
+  const activeRuns = new Set<Promise<void>>();
+  let drainInFlight: Promise<number> | null = null;
+
+  const cancelTimer = deps.clearTimeoutFn ?? ((timer: InhubTimeoutHandle) => {
+    clearTimeout(timer as ReturnType<typeof setTimeout>);
+  });
+
   const schedule = (fn: () => void, ms: number) => {
-    const timer = deps.setTimeoutFn ? deps.setTimeoutFn(fn, ms) : setTimeout(fn, ms);
+    if (!accepting) return;
+    let fired = false;
+    let timer: InhubTimeoutHandle | void;
+    const fire = () => {
+      fired = true;
+      if (timer) retryTimers.delete(timer);
+      if (accepting) fn();
+    };
+    timer = deps.setTimeoutFn ? deps.setTimeoutFn(fire, ms) : setTimeout(fire, ms);
+    if (!timer || fired) return;
+    if (!accepting) {
+      cancelTimer(timer);
+      return;
+    }
+    retryTimers.add(timer);
     timer?.unref?.();
   };
 
   const run = (job: Job, route: Route | null, projectPath: string | null, fullInput: string, session: SessionTarget) => {
-    void deps.runSerial(job.thread_id, () => deps.processJob(job, route, projectPath, fullInput, session)).catch(async (e) => {
+    const work = deps.runSerial(job.thread_id, () => deps.processJob(job, route, projectPath, fullInput, session)).catch(async (e) => {
       await deps.store.updateJob(job.job_id, { status: 'error', error: `处理异常：${String(e)}`, executor_id: undefined, claimed_at: undefined, lease_until: undefined, claim_token: undefined });
     });
+    activeRuns.add(work);
+    void work.finally(() => activeRuns.delete(work)).catch(() => undefined);
+    // 正常运行时 run 是后台链；错误已尽力落账，避免落账自身失败变成未处理拒绝。
+    void work.catch(() => undefined);
   };
 
-  let draining = false;
-
   const drain: InhubRuntime['drain'] = async (maxClaims = 1) => {
-    if (draining) return 0;
-    draining = true;
-    let n = 0;
-    try {
+    if (!accepting || drainInFlight) return 0;
+    const work = (async () => {
+      let n = 0;
       const targets = deps.inhubTargets();
       if (!targets.length) return 0;
       for (let i = 0; i < Math.max(1, maxClaims); i++) {
+        if (!accepting) break;
         const claimed = await deps.store.claimNextInhubJob(targets, deps.workerId, deps.leaseMs);
         if (!claimed) break;
         n++;
@@ -87,8 +121,12 @@ export function createInhubRuntime(deps: InhubRuntimeDeps): InhubRuntime {
         }
       }
       return n;
+    })();
+    drainInFlight = work;
+    try {
+      return await work;
     } finally {
-      draining = false;
+      if (drainInFlight === work) drainInFlight = null;
     }
   };
 
@@ -136,5 +174,25 @@ export function createInhubRuntime(deps: InhubRuntimeDeps): InhubRuntime {
     schedule(() => kick(), retry.backoffMs);
   };
 
-  return { refireJob, recoverJobs, scheduleRetry, kick, drain };
+  const closeAdmission: InhubRuntime['closeAdmission'] = () => {
+    if (!accepting) return;
+    accepting = false;
+    for (const timer of retryTimers) {
+      try { cancelTimer(timer); } catch { /* admission 已关闭；timer 回调本身也会二次检查 accepting */ }
+    }
+    retryTimers.clear();
+  };
+
+  const stop: InhubRuntime['stop'] = async () => {
+    closeAdmission();
+    // drain 可能在 await claim/prepare 时新增 run；循环到稳定空集，不能只拍一次快照。
+    for (;;) {
+      const pending: Promise<unknown>[] = [...activeRuns];
+      if (drainInFlight) pending.unshift(drainInFlight);
+      if (pending.length === 0) return;
+      await Promise.allSettled(pending);
+    }
+  };
+
+  return { refireJob, recoverJobs, scheduleRetry, kick, drain, closeAdmission, stop };
 }

@@ -104,6 +104,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import { setInstanceBranding, type InstanceBranding } from '../branding';
+import { kernelPath } from '../runtime-path';
 
 interface BrandingManagement {
   source: 'local' | 'platform';
@@ -144,8 +145,8 @@ function applyResponse(response: BrandingResponse): void {
     login_subheading: response.branding.login_subheading,
   });
   Object.assign(management, response.management);
-  logoPreview.value = response.branding.logo_url ?? '';
-  faviconPreview.value = response.branding.favicon_url ?? '';
+  logoPreview.value = response.branding.logo_url ? kernelPath(response.branding.logo_url) : '';
+  faviconPreview.value = response.branding.favicon_url ? kernelPath(response.branding.favicon_url) : '';
   logoDataUrl = undefined;
   faviconDataUrl = undefined;
   setInstanceBranding(response.branding);

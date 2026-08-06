@@ -48,9 +48,11 @@ jobs:
 
       - name: Verify release consistency
         shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event.inputs.tag || '' }}
         run: |
           set -euo pipefail
-          expected="${{ github.event.inputs.tag || '' }}"
+          expected="$REQUESTED_TAG"
           if [ -z "$expected" ] && [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             expected="${GITHUB_REF_NAME}"
           fi
@@ -64,19 +66,30 @@ jobs:
       - name: Resolve image tag
         id: meta
         shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event.inputs.tag || '' }}
+          REQUESTED_LATEST: ${{ github.event.inputs.push_latest || '' }}
         run: |
           set -euo pipefail
-          requested_tag="${{ github.event.inputs.tag || '' }}"
-          requested_latest="${{ github.event.inputs.push_latest || '' }}"
+          requested_tag="$REQUESTED_TAG"
+          requested_latest="$REQUESTED_LATEST"
           if [ -n "$requested_tag" ]; then
             tag="$requested_tag"
           elif [[ "${GITHUB_REF_TYPE}" == "tag" && "${GITHUB_REF_NAME}" == v* ]]; then
-            tag="${GITHUB_REF_NAME#v}"
+            tag="${GITHUB_REF_NAME}"
           else
             tag="$(node -p "require('./package.json').version")"
           fi
-          latest="$requested_latest"
-          if [ -z "$latest" ]; then latest="true"; fi
+          policy_output="$(node scripts/image-release-policy.mjs \
+            --tag "$tag" \
+            --requested-latest "$requested_latest")"
+          printf '%s\n' "$policy_output" >> "$GITHUB_OUTPUT"
+          tag="$(printf '%s\n' "$policy_output" | sed -n 's/^tag=//p')"
+          latest="$(printf '%s\n' "$policy_output" | sed -n 's/^push_latest=//p')"
+          if [ -z "$tag" ] || { [ "$latest" != "true" ] && [ "$latest" != "false" ]; }; then
+            echo 'image release policy returned incomplete output' >&2
+            exit 1
+          fi
           source_sha="$(git rev-parse HEAD)"
           ai_tags="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:${tag}"
           demo_tags="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
@@ -84,8 +97,6 @@ jobs:
             ai_tags="${ai_tags}"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:latest"
             demo_tags="${demo_tags}"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:latest"
           fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "push_latest=$latest" >> "$GITHUB_OUTPUT"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           {
             echo 'ai_tags<<EOF'
@@ -276,14 +287,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve image tag
+        id: meta
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ github.event.inputs.tag || '' }}
+          REQUESTED_LATEST: ${{ github.event.inputs.push_latest || '' }}
+        run: |
+          set -euo pipefail
+          tag="$REQUESTED_TAG"
+          if [ -z "$tag" ]; then
+            tag="$(node -p "require('./package.json').version")"
+          fi
+          node scripts/image-release-policy.mjs \
+            --tag "$tag" \
+            --requested-latest "$REQUESTED_LATEST" >> "$GITHUB_OUTPUT"
+
       - name: Copy released application images
         shell: bash
         run: |
           set -euo pipefail
-          tag="${{ inputs.tag }}"
-          if [ -z "$tag" ]; then
-            tag="$(node -p "require('./package.json').version")"
-          fi
+          tag="${{ steps.meta.outputs.tag }}"
 
           copy_image() {
             local source="$1"
@@ -310,7 +334,7 @@ jobs:
             "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:${tag}" \
             "${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
 
-          if [ "${{ inputs.push_latest }}" = "true" ]; then
+          if [ "${{ steps.meta.outputs.push_latest }}" = "true" ]; then
             copy_image \
               "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:${tag}" \
               "${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:latest"

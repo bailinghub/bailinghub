@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
 const findings = [];
@@ -28,6 +28,7 @@ const requiredRepoFiles = [
   'docs/RELEASE_NOTES_v0.1.15.md',
   'docs/RELEASE_NOTES_v0.1.16.md',
   'docs/RELEASE_NOTES_v0.2.0.md',
+  'docs/RELEASE_NOTES_v0.3.0.md',
   'docs/CHANGELOG.md',
   'docs/CLIENT_API.md',
   'config.example.json',
@@ -49,6 +50,8 @@ const requiredRepoFiles = [
   'scripts/generate-readme-assets.mjs',
   'scripts/validate-examples.mjs',
   'scripts/check-image-tags.sh',
+  'scripts/image-release-policy.mjs',
+  'scripts/image-release-policy.test.mjs',
   'scripts/client-api-contract-test.ts',
   'scripts/check-client-api-ecosystem.mjs',
   'scripts/write-build-info.mjs',
@@ -64,6 +67,28 @@ const requiredRepoFiles = [
 
 function readText(path) {
   return readFileSync(path, 'utf8');
+}
+
+function runPack(dryRun) {
+  const args = ['pack'];
+  if (dryRun) args.push('--dry-run');
+  args.push('--json', '--silent');
+  const packed = spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, {
+    encoding: 'utf8',
+    env: { ...process.env, npm_config_loglevel: 'silent' },
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  if (packed.status !== 0) {
+    throw new Error(packed.stderr || packed.stdout || `npm pack exited ${packed.status}`);
+  }
+  // npm forwards lifecycle output before the JSON result on some versions.
+  const jsonStart = packed.stdout.search(/(?:^|\n)\[\s*\{/);
+  if (jsonStart < 0) throw new Error('npm pack JSON manifest not found');
+  const parsed = JSON.parse(packed.stdout.slice(packed.stdout.indexOf('[', jsonStart)));
+  if (!Array.isArray(parsed) || !parsed[0] || !Array.isArray(parsed[0].files)) {
+    throw new Error('npm pack JSON manifest is incomplete');
+  }
+  return parsed[0];
 }
 
 function assertPackageMetadata() {
@@ -117,7 +142,7 @@ function assertRepoEntrance() {
   const releaseAudit = String(pkg.scripts?.['release:audit'] ?? '');
   if (pkg.scripts?.['oss:export'] !== 'node scripts/export-oss.mjs') findings.push('package.json: oss:export must run scripts/export-oss.mjs');
   if (pkg.scripts?.['oss:verify'] !== 'node scripts/verify-oss-export.mjs') findings.push('package.json: oss:verify must run scripts/verify-oss-export.mjs');
-  for (const required of ['npm run release:consistency', 'npm run release:consistency:test']) {
+  for (const required of ['npm run release:consistency', 'npm run release:consistency:test', 'npm run images:policy:test']) {
     if (!releaseAudit.includes(required)) findings.push(`package.json: release:audit must include ${required}`);
   }
   for (const required of ['npm run notices:check', 'npm run assets:check', 'npm run audit:deps', 'npm run client-api:contract', 'npm run client-api:ecosystem:clone', 'npm run typecheck', 'npm test', 'npm run widget:renderer:test', 'npm run web-admin:check', 'npm run docs:check', 'npm run examples:check', 'npm run sdk:test', 'npm run sdk:test7', 'npm run sdk:test-node', 'npm run sdk:test-python', 'npm run sdk:test-runtime', 'npm run sdk:test-p1', 'npm run release:audit', 'npm run oss:verify']) {
@@ -126,6 +151,9 @@ function assertRepoEntrance() {
   const imagesWorkflow = readText('.github/workflows/images.yml');
   if (!imagesWorkflow.includes('npm run release:consistency -- --expected "$expected"')) {
     findings.push('.github/workflows/images.yml: image publishing must verify release consistency before pushing images');
+  }
+  if ((imagesWorkflow.match(/node scripts\/image-release-policy\.mjs/g) ?? []).length !== 2) {
+    findings.push('.github/workflows/images.yml: publish and mirror jobs must both enforce image release policy');
   }
 }
 
@@ -205,10 +233,10 @@ function assertSqlMigrations() {
   }
 }
 
+let dryRunPackageManifest;
 function packageFiles() {
-  const out = execFileSync('npm', ['pack', '--dry-run', '--json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const parsed = JSON.parse(out);
-  return Array.isArray(parsed) && parsed[0]?.files ? parsed[0].files.map((f) => String(f.path ?? '')) : [];
+  dryRunPackageManifest ??= runPack(true);
+  return dryRunPackageManifest.files.map((file) => String(file.path ?? ''));
 }
 
 const rx = (parts, flags = '') => new RegExp(parts.join(''), flags);
@@ -218,7 +246,11 @@ assertRepoEntrance();
 assertSdkMetadata();
 assertSqlMigrations();
 
-const packName = execFileSync('npm', ['pack', '--silent'], { encoding: 'utf8' }).trim();
+const packedManifest = runPack(false);
+const packName = String(packedManifest.filename ?? '');
+if (!/^[A-Za-z0-9_.-]+\.tgz$/.test(packName)) {
+  throw new Error('npm pack returned an unsafe tarball filename');
+}
 function readPackageFile(path) {
   return execFileSync('tar', ['-xOf', packName, `package/${path}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 }
@@ -226,7 +258,6 @@ try {
   const files = packageFiles();
   const forbiddenPrefixes = [
     'web/site/',
-    'web/console/',
     'web/console.bak.',
     'deploy/',
     '.deploy-backup/',

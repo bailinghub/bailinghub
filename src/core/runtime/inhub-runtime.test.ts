@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createInhubRuntime } from './inhub-runtime';
+import { runSerial } from '../platform/serial';
+import { createInhubRuntime, type InhubRuntimeDeps, type InhubTimeoutHandle } from './inhub-runtime';
 import type { AuditEntry, Job } from '../contracts/types';
 
 function job(id: string, over: Partial<Job> = {}): Job {
@@ -22,12 +23,20 @@ function job(id: string, over: Partial<Job> = {}): Job {
   };
 }
 
-function mkRuntime(initial: Job[]) {
+interface TestTimer extends InhubTimeoutHandle {
+  fn: () => void;
+  ms: number;
+  cancelled: boolean;
+}
+
+function mkRuntime(
+  initial: Job[],
+  overrides: Partial<Pick<InhubRuntimeDeps, 'runSerial' | 'processJob'>> = {},
+) {
   const jobs = new Map(initial.map((j) => [j.job_id, j]));
   const audits: AuditEntry[] = [];
   const processed: Array<{ job: Job; fullInput: string }> = [];
-  let timerFn: (() => void) | null = null;
-  let timerMs = 0;
+  let timer: TestTimer | null = null;
   const rt = createInhubRuntime({
     store: {
       async updateJob(jobId, patch) {
@@ -79,15 +88,25 @@ function mkRuntime(initial: Job[]) {
     now: () => '2026-07-01T00:00:02.000Z',
     isRemoteExecutorTarget: (target) => target === 'claude-code',
     resolveProjectPath: async (project) => project ? `/repo/${project}` : null,
-    runSerial: async (_key, task) => task(),
-    processJob: async (j, _route, _projectPath, fullInput) => { processed.push({ job: j, fullInput }); },
+    runSerial: overrides.runSerial ?? (async (_key, task) => task()),
+    processJob: overrides.processJob ?? (async (j, _route, _projectPath, fullInput) => { processed.push({ job: j, fullInput }); }),
     workerId: 'node-a',
     leaseMs: 20 * 60 * 1000,
     inhubTargets: () => ['llm'],
     prepareClaimedJob: async (j) => ({ job: j, route: null, projectPath: null, fullInput: j.input ?? '', session: { sessionId: j.session_id ?? 's1', isContinue: !!j.dispatch?.is_continue } }),
-    setTimeoutFn: (fn, ms) => { timerFn = fn; timerMs = ms; return { unref() { /* noop */ } }; },
+    setTimeoutFn: (fn, ms) => {
+      timer = { fn, ms, cancelled: false, unref() { /* noop */ } };
+      return timer;
+    },
+    clearTimeoutFn: (handle) => { (handle as TestTimer).cancelled = true; },
   });
-  return { rt, jobs, audits, processed, timer: () => ({ fn: timerFn, ms: timerMs }) };
+  return {
+    rt,
+    jobs,
+    audits,
+    processed,
+    timer: (): { fn: (() => void) | null; ms: number; cancelled: boolean } => timer ?? { fn: null, ms: 0, cancelled: false },
+  };
 }
 
 test('refireJob: 本地任务回 queued、清理认领痕迹与 no_delivery，并唤醒 DB 调度器', async () => {
@@ -163,6 +182,47 @@ test('recoverJobs: stale 只重排 running stale；queued 是否执行交给调�
   assert.ok(processed.map((x) => x.job.job_id).includes('running-stale'));
 });
 
+test('stop: 等待同 thread 已认领的全部 runSerial/processJob 收尾，并拒绝后续认领', async () => {
+  let releaseFirst!: () => void;
+  let markFirstStarted!: () => void;
+  const firstStarted = new Promise<void>((resolve) => { markFirstStarted = resolve; });
+  const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const order: string[] = [];
+  const threadKey = 9_876_543_210;
+  const { rt } = mkRuntime([
+    job('same-thread-1', { thread_id: threadKey }),
+    job('same-thread-2', { thread_id: threadKey }),
+  ], {
+    runSerial: (key, task) => runSerial(`test:${String(key)}`, task),
+    processJob: async (current) => {
+      order.push(`${current.job_id}:start`);
+      if (current.job_id === 'same-thread-1') {
+        markFirstStarted();
+        await firstGate;
+      }
+      order.push(`${current.job_id}:end`);
+    },
+  });
+
+  assert.equal(await rt.drain(2), 2);
+  await firstStarted;
+  let stopped = false;
+  const stopping = rt.stop().then(() => { stopped = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(stopped, false, '第二个同 thread 任务仍在串行链中，stop 不能提前返回');
+  assert.equal(await rt.drain(1), 0, '停机后不得继续认领新任务');
+
+  releaseFirst();
+  await stopping;
+  assert.deepEqual(order, [
+    'same-thread-1:start',
+    'same-thread-1:end',
+    'same-thread-2:start',
+    'same-thread-2:end',
+  ]);
+});
+
 test('scheduleRetry: 先落 queued+审计，计时到点后才重新执行', async () => {
   const base = job('retry-1', { status: 'running', attempts: 0 });
   const { rt, jobs, audits, processed, timer } = mkRuntime([base]);
@@ -190,6 +250,31 @@ test('scheduleRetry: 先落 queued+审计，计时到点后才重新执行', asy
   assert.equal(processed.length, 1);
   assert.equal(processed[0]?.job.attempts, 1);
   assert.equal(processed[0]?.fullInput, 'retry input');
+});
+
+test('stop: 取消并永久失效已安排的 retry timer', async () => {
+  const base = job('retry-stop', { status: 'running', attempts: 0 });
+  const { rt, jobs, processed, timer } = mkRuntime([base]);
+
+  await rt.scheduleRetry(base, null, null, 'retry after restart', { sessionId: 's1', isContinue: false }, {
+    attempt: 1,
+    max: 2,
+    backoffMs: 500,
+    error: 'temporary',
+  });
+  const scheduled = timer();
+  assert.ok(scheduled.fn);
+  assert.equal(scheduled.cancelled, false);
+
+  await rt.stop();
+  assert.equal(scheduled.cancelled, true);
+  const queued = jobs.get('retry-stop');
+  if (queued) jobs.set('retry-stop', { ...queued, run_after: new Date(Date.now() - 1000).toISOString() });
+  scheduled.fn?.(); // 即使宿主 timer 实现取消后仍误触发，admission 也必须让它永久失效。
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(processed.length, 0);
+  assert.equal(await rt.drain(1), 0);
 });
 
 test('scheduleRetry: 状态已变化时不安排重试计时器', async () => {

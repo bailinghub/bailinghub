@@ -25,7 +25,9 @@
   if (!script) return;
   const ENTRY = script.dataset.entry;
   if (!ENTRY || !/^[a-z0-9_-]{4,32}$/.test(ENTRY)) { console.warn('[百灵聊天组件] data-entry 缺失或不合法'); return; }
-  const HUB = new URL(script.src).origin;
+  const scriptUrl = new URL(script.src);
+  const HUB = scriptUrl.origin + scriptUrl.pathname.replace(/\/widget\.js$/, '');
+  const hubAsset = (value) => typeof value === 'string' && value.startsWith('/') ? HUB + value : value;
   const AUTO_OPEN = script.dataset.open === '1';
   const TICKET = script.dataset.ticket || '';
   const LS_VISITOR = `bailing_visitor_${ENTRY}`;
@@ -378,12 +380,12 @@
     if (panel) panel.classList.toggle('rzable', !!cfg.resizable);
     if (headEl) headEl.classList.toggle('tl', cfg.title_align === 'left');
     if (avatarEl) {
-      if (cfg.avatar) { avatarEl.src = cfg.avatar; avatarEl.classList.add('on'); }
+      if (cfg.avatar) { avatarEl.src = hubAsset(cfg.avatar); avatarEl.classList.add('on'); }
       else { avatarEl.classList.remove('on'); avatarEl.removeAttribute('src'); }
     }
     if (bubbleEl && cfg.launcher_icon) {
       bubbleEl.replaceChildren();
-      const im = document.createElement('img'); im.className = 'licon'; im.src = cfg.launcher_icon; im.alt = '';
+      const im = document.createElement('img'); im.className = 'licon'; im.src = hubAsset(cfg.launcher_icon); im.alt = '';
       bubbleEl.appendChild(im);
     }
   }
@@ -413,10 +415,11 @@
   // 商城等接入方 100% 复用本组件渲染，markdown 与 attachments 的呈现都由这里负责。
   function makeImg(src, alt) {
     const img = document.createElement('img');
-    img.src = src; img.alt = alt || '图片'; img.loading = 'lazy';
+    const resolvedSrc = hubAsset(src);
+    img.src = resolvedSrc; img.alt = alt || '图片'; img.loading = 'lazy';
     img.addEventListener('error', () => {
       const a = document.createElement('a');
-      a.href = src; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = '[图片] ' + img.alt;
+      a.href = resolvedSrc; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.textContent = '[图片] ' + img.alt;
       img.replaceWith(a);
     }, { once: true });
     return img;
@@ -677,13 +680,13 @@
         if (a.type === 'image') {
           if (!isUser) continue;
           const im = document.createElement('img');
-          im.className = 'm-img'; im.src = a.url; im.alt = a.name || '图片'; im.loading = 'lazy';
+          im.className = 'm-img'; im.src = hubAsset(a.url); im.alt = a.name || '图片'; im.loading = 'lazy';
           msgsEl.appendChild(im);
           continue;
         }
         const card = document.createElement('a');
         card.className = 'att';
-        card.href = a.url; card.target = '_blank'; card.rel = 'noopener noreferrer';
+        card.href = hubAsset(a.url); card.target = '_blank'; card.rel = 'noopener noreferrer';
         card.textContent = (a.type === 'file' ? '📄 ' : a.type === 'audio' ? '♪ ' : '🔗 ') + (a.name || a.url);
         msgsEl.appendChild(card);
       }
@@ -1149,7 +1152,7 @@
     attbarEl.classList.add('on');
     const chip = document.createElement('div');
     chip.className = 'attchip' + (pendingAtt.error ? ' err' : '');
-    if (pendingAtt.url && pendingAtt.type === 'image') { const im = document.createElement('img'); im.src = pendingAtt.url; im.alt = ''; chip.appendChild(im); }
+    if (pendingAtt.url && pendingAtt.type === 'image') { const im = document.createElement('img'); im.src = hubAsset(pendingAtt.url); im.alt = ''; chip.appendChild(im); }
     if (pendingAtt.type === 'audio') { const ico = document.createElement('span'); ico.className = 'audio-ico'; ico.textContent = '♪'; chip.appendChild(ico); }
     if (pendingAtt.type === 'file') { const ico = document.createElement('span'); ico.className = 'audio-ico'; ico.textContent = 'FILE'; chip.appendChild(ico); }
     const nm = document.createElement('span');

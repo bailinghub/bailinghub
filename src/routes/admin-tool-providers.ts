@@ -38,7 +38,7 @@ export async function handleAdminToolProviderApiFor(
   if (path === '/admin/api/tool-providers') {
     if (method === 'GET') {
       const list = await configStore.toolProviders.list();
-      send(res, 200, list.map((p) => ({ ...p, secret: maskKey(p.secret), spec_json: undefined, has_spec: !!p.spec_json, authz_probe: p.authz_probe ?? getAuthzProbe(p.name) })));
+      send(res, 200, list.map((p) => ({ ...p, secret: maskKey(p.secret), spec_json: undefined, has_spec: !!p.spec_json, authz_probe: p.authz_probe ?? getAuthzProbe(p.name, configStore) })));
       return true;
     }
     if (method === 'POST') {

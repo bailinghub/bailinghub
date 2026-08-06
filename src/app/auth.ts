@@ -10,7 +10,14 @@ import { allowsUnauthenticatedLocalDevelopment } from '../core/platform/server-t
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 
 export type Principal =
-  | { kind: 'admin'; via: 'session' | 'token'; username?: string; role?: string }
+  | {
+      kind: 'admin';
+      via: 'session' | 'token';
+      username?: string;
+      role?: string;
+      /** 可信外部身份源可注入当前租户的显式权限；本地 OSS 会话仍使用 ROLE_PERMS。 */
+      permissions?: string[];
+    }
   | { kind: 'client'; client: Client }
   | { kind: 'executor'; token: ExecutorToken };
 
@@ -29,6 +36,7 @@ export const ROLE_PERMS: Record<string, string[]> = {
 export function permsOf(p: Principal): string[] {
   if (p.kind !== 'admin') return [];
   if (p.via === 'token') return ['*']; // server.token = 机器全能（执行器/运维脚本）
+  if (p.permissions) return [...new Set(p.permissions)];
   return ROLE_PERMS[p.role ?? 'admin'] ?? [];
 }
 export function can(p: Principal, perm: string): boolean {

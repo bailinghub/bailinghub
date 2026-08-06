@@ -1,7 +1,7 @@
 // OSS 默认企微入站包装：这里才绑定 app/runtime 单组织单例。
 // 自定义部署应使用 wecom.ts 的 handleWecomInboundFor(deps, ...)。
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { cfg, isPaused } from '../app/runtime';
+import { cfg, isPaused, targetRegistry } from '../app/runtime';
 import { resolveProjectPathFor, runtimeContextFor, runtimeStoresFor } from '../app/runtime-context-default';
 import { now } from '../app/http';
 import type { EngineRuntime } from '../app/engine';
@@ -18,6 +18,7 @@ export function defaultWecomApiDeps(): WecomApiDeps {
     resolveProjectPathFor,
     now,
     engineForContext: (_ctx: RuntimeContext): Pick<EngineRuntime, 'launchJob' | 'waitForJob'> => ({ launchJob, waitForJob }),
+    targetRegistry,
   };
 }
 

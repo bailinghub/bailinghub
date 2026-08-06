@@ -1,12 +1,16 @@
 {
   "name": "bailinghub",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": false,
   "type": "module",
   "description": "Open-source ACC runtime and agent control plane for existing business systems.",
   "license": "Apache-2.0",
   "homepage": "https://www.bailinghub.com",
   "exports": {
+    "./kernel-api/v1": {
+      "types": "./src/kernel-api/v1/index.ts",
+      "default": "./src/kernel-api/v1/index.ts"
+    },
     "./extension-api": {
       "types": "./src/extension-api.ts",
       "default": "./src/extension-api.ts"
@@ -60,6 +64,9 @@
     "bootstrap-admin:restart-test": "tsx scripts/verify-bootstrap-admin-restart.ts",
     "e2e:console": "node scripts/e2e-console.mjs",
     "widget:renderer:test": "node scripts/widget-renderer-test.mjs",
+    "package:build": "npm --prefix web-admin ci --include=dev && npm --prefix web-admin run build",
+    "package:artifact:check": "node scripts/check-package-artifact.mjs",
+    "prepack": "npm run package:build",
     "security:scan": "node scripts/security-scan.mjs",
     "notices:generate": "node scripts/generate-third-party-notices.mjs",
     "notices:check": "node scripts/generate-third-party-notices.mjs --check",
@@ -77,12 +84,13 @@
     "oss:verify": "node scripts/verify-oss-export.mjs",
     "release:consistency": "node scripts/check-release-consistency.mjs",
     "release:consistency:test": "node --test scripts/check-release-consistency.test.mjs",
-    "release:audit": "npm run release:consistency && npm run release:consistency:test && npm run security:scan && npm run oss:guard && node scripts/release-audit.mjs",
+    "release:audit": "npm run release:consistency && npm run release:consistency:test && npm run images:policy:test && npm run security:scan && npm run oss:guard && node scripts/release-audit.mjs && npm run package:artifact:check",
     "github:verify": "node scripts/verify-github-repo.mjs",
     "release:check": "npm run notices:check && npm run assets:check && npm run audit:deps && npm run client-api:contract && npm run client-api:ecosystem:clone && npm run typecheck && npm test && npm run widget:renderer:test && npm run web-admin:check && npm run docs:check && npm run examples:check && npm run sdk:test && npm run sdk:test7 && npm run sdk:test-node && npm run sdk:test-python && npm run sdk:test-runtime && npm run sdk:test-p1 && npm run release:audit && npm run oss:verify && npm run github:verify",
     "images:build": "sh scripts/publish-images.sh",
     "images:publish": "BAILING_PUSH_IMAGES=1 sh scripts/publish-images.sh",
     "images:publish-mysql": "BAILING_PUSH_IMAGES=1 sh scripts/publish-mysql-image.sh",
+    "images:policy:test": "node --test scripts/image-release-policy.test.mjs",
     "images:check": "sh scripts/check-image-tags.sh",
     "images:check:ghcr": "BAILING_IMAGE_REGISTRY=ghcr.io BAILING_IMAGE_NAMESPACE=bailinghub BAILING_MYSQL_IMAGE=mysql:8.4 sh scripts/check-image-tags.sh",
     "sdk:test": "php sdk/php/examples/build-spec.php | tsx scripts/sdk-contract-test.ts",
@@ -98,6 +106,7 @@
     "mammoth": "^1.12.0",
     "mysql2": "^3.11.4",
     "pdfjs-dist": "^5.7.284",
+    "tsx": "^4.19.2",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
@@ -105,7 +114,6 @@
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
     "playwright": "^1.61.1",
-    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

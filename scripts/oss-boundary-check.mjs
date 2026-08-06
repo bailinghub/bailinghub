@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -15,9 +15,8 @@ function requireIgnore(file, pattern) {
   if (!lines.includes(pattern)) findings.push(`${file} must exclude ${pattern}`);
 }
 
-const requiredIgnorePatterns = [
+const sharedRequiredIgnorePatterns = [
   'web/site/',
-  'web/console/',
   'web/console.bak.*/',
   'deploy/',
   '.deploy-backup/',
@@ -47,10 +46,14 @@ const requiredIgnorePatterns = [
   '*.enterprise.*',
 ];
 
-for (const pattern of requiredIgnorePatterns) {
+for (const pattern of sharedRequiredIgnorePatterns) {
   requireIgnore('.dockerignore', pattern);
   requireIgnore('.npmignore', pattern);
 }
+// The source/Docker context still excludes generated console output. The npm
+// Core artifact is different: prepack builds and intentionally ships the
+// console required by an embedded Kernel Host.
+requireIgnore('.dockerignore', 'web/console/');
 
 const dockerfile = read('Dockerfile');
 if (/COPY\s+\.\s+\./.test(dockerfile) && !read('.dockerignore').includes('web/site/')) {
@@ -59,8 +62,24 @@ if (/COPY\s+\.\s+\./.test(dockerfile) && !read('.dockerignore').includes('web/si
 
 let packFiles = [];
 try {
-  const out = execFileSync('npm', ['pack', '--dry-run', '--json'], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-  const parsed = JSON.parse(out);
+  const packed = spawnSync(
+    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    ['pack', '--dry-run', '--json', '--silent'],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, npm_config_loglevel: 'silent' },
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  if (packed.status !== 0) {
+    throw new Error(packed.stderr || packed.stdout || `npm pack exited ${packed.status}`);
+  }
+  // npm may forward lifecycle output before the final JSON array even with
+  // --silent. Parse only the manifest suffix instead of trusting pure stdout.
+  const jsonStart = packed.stdout.search(/(?:^|\n)\[\s*\{/);
+  if (jsonStart < 0) throw new Error('npm pack JSON manifest not found');
+  const parsed = JSON.parse(packed.stdout.slice(packed.stdout.indexOf('[', jsonStart)));
   packFiles = Array.isArray(parsed) && parsed[0]?.files ? parsed[0].files.map((f) => String(f.path ?? '')) : [];
 } catch (e) {
   findings.push(`npm pack --dry-run failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -68,7 +87,6 @@ try {
 
 const forbiddenPackPrefixes = [
   'web/site/',
-  'web/console/',
   'web/console.bak.',
   'deploy/',
   '.deploy-backup/',

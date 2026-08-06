@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
@@ -149,13 +149,40 @@ function scanTarball() {
   }
 }
 
+function createPackageTarball() {
+  const packed = spawnSync(
+    process.platform === 'win32' ? 'npm.cmd' : 'npm',
+    ['pack', '--json', '--silent'],
+    {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, npm_config_loglevel: 'silent' },
+      maxBuffer: 32 * 1024 * 1024,
+    },
+  );
+  if (packed.status !== 0) {
+    throw new Error(packed.stderr || packed.stdout || `npm pack exited ${packed.status}`);
+  }
+  const jsonStart = packed.stdout.search(/(?:^|\n)\[\s*\{/);
+  if (jsonStart < 0) throw new Error('npm pack JSON manifest not found');
+  const parsed = JSON.parse(packed.stdout.slice(packed.stdout.indexOf('[', jsonStart)));
+  const filename = String(Array.isArray(parsed) ? parsed[0]?.filename ?? '' : '');
+  if (!/^[A-Za-z0-9_.-]+\.tgz$/.test(filename)) {
+    throw new Error('npm pack returned an unsafe tarball filename');
+  }
+  return filename;
+}
+
 rmSync(outRoot, { recursive: true, force: true });
 mkdirSync(outRoot, { recursive: true });
 
-const packName = execFileSync('npm', ['pack', '--silent'], { cwd: root, encoding: 'utf8' }).trim();
+const packName = createPackageTarball();
 try {
   execFileSync('tar', [...tarNoMetadataArgs, '-xzf', packName, '-C', outRoot], { cwd: root, env: tarEnv, stdio: 'inherit' });
   renameSync(join(outRoot, 'package'), exportDir);
+  // npm runtime artifacts carry the generated console. The OSS source export
+  // remains reproducible source and lets installation/build steps create it.
+  rmSync(join(exportDir, 'web', 'console'), { recursive: true, force: true });
   for (const file of extraRepoFiles) copyIfExists(file);
   scanExport();
   if (findings.length) {

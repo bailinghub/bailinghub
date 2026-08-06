@@ -15,6 +15,7 @@ import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { ToolIndexService } from '../services/tools-index';
 import { requireServerToken } from '../core/platform/server-token';
 import { persistedToolExecutionUncertainty } from '../core/runtime/execution-runtime';
+import type { TargetRegistry } from '../core/targets/registry';
 
 export interface ToolProxyDeps {
   cfg: AppConfig;
@@ -23,6 +24,7 @@ export interface ToolProxyDeps {
   toolIndex: ToolIndexService | null;
   now: () => string;
   sleep: (ms: number) => Promise<void>;
+  targetRegistry?: TargetRegistry;
 }
 
 /** 任务级工具凭证：HMAC(server.token, job_id.claim_token)。 */
@@ -95,7 +97,7 @@ export async function handleToolDefsFor(deps: ToolProxyDeps, req: IncomingMessag
     if (chs.length) sendFnDef = sendToolDef(chs).function;
   }
   let runtime: ToolRuntime | 'subject_locked' | undefined;
-  try { runtime = await assembleToolRuntimeFor(deps.configStore, deps.stateStore, deps.toolIndex, job, null, deps.cfg, deps.now, deps.sleep); }
+  try { runtime = await assembleToolRuntimeFor(deps.configStore, deps.stateStore, deps.toolIndex, job, null, deps.cfg, deps.now, deps.sleep, deps.targetRegistry); }
   catch (e) { send(res, 400, { error: errMsg(e) }); return; }
   const bizDefs = runtime && runtime !== 'subject_locked' ? (await runtime.lookup(names)).map((x) => x.function) : [];
   const all = [...(sendFnDef ? [sendFnDef] : []), ...bizDefs];
@@ -159,7 +161,7 @@ export async function handleToolInvokeFor(deps: ToolProxyDeps, req: IncomingMess
     send(res, 200, out); return;
   }
   let runtime: ToolRuntime | 'subject_locked' | undefined;
-  try { runtime = await assembleToolRuntimeFor(deps.configStore, deps.stateStore, deps.toolIndex, job, null, deps.cfg, deps.now, deps.sleep); }
+  try { runtime = await assembleToolRuntimeFor(deps.configStore, deps.stateStore, deps.toolIndex, job, null, deps.cfg, deps.now, deps.sleep, deps.targetRegistry); }
   catch (e) { send(res, 400, { error: errMsg(e) }); return; }
   if (!runtime || runtime === 'subject_locked') { send(res, 400, { error: '该任务未配置工具' }); return; }
   if (deps.configStore && (await deps.configStore.observability.countAuditEvents(job.job_id, 'tool_call').catch(() => 0)) >= runtime.maxCalls) {

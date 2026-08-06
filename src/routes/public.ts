@@ -48,6 +48,12 @@ export interface PublicHttpDeps {
   handleChatUpload(req: IncomingMessage, res: ServerResponse, entryKey: string): Promise<void>;
   handleChatRate(req: IncomingMessage, res: ServerResponse, entryKey: string, jobId: string): Promise<void>;
   serveChatDemo(res: ServerResponse, entryKey: string): void;
+  /** Trusted same-origin prefix owned by an embedding host. */
+  mountPath?: string;
+}
+
+function mountedPath(deps: PublicHttpDeps, path: string): string {
+  return `${deps.mountPath ?? ''}${path}`;
 }
 
 function serveStaticFile(res: ServerResponse, file: string, contentType: string, head: boolean, disposition?: string): void {
@@ -230,18 +236,18 @@ export async function handlePublicHttpFor(deps: PublicHttpDeps, req: IncomingMes
     let key = '';
     try { key = decodeURIComponent(path.slice(LOCAL_UPLOAD_URL_PREFIX.length + 1)); }
     catch { send(res, 404, { error: 'not found' }); return true; }
-    const target = localObjectFile(deps.cfg.root, key);
+    const target = localObjectFile(deps.cfg.runtimeRoot ?? deps.cfg.root, key);
     if (!target || !existsSync(target.file)) { send(res, 404, { error: 'not found' }); return true; }
     res.writeHead(200, { 'content-type': target.contentType, 'cache-control': 'public, max-age=31536000, immutable' });
     res.end(head ? undefined : readFileSync(target.file));
     return true;
   }
   // /admin 页面进入新控制台；/admin/login、/admin/api/* 等 API 路径保持不变。
-  if (read && path === '/admin') { res.writeHead(302, { location: '/console/' }); res.end(); return true; }
+  if (read && path === '/admin') { res.writeHead(302, { location: mountedPath(deps, '/console/') }); res.end(); return true; }
   // /console 页面壳无敏感数据，公开可取；登录/登出在鉴权闸门之前。
   if (read && (path === '/console' || path.startsWith('/console/'))) { deps.serveConsole(path, res, head); return true; }
   // 中枢实例不托管官网：根路径进入控制台，官网由 www.bailinghub.com 独立承载。
-  if (read && path === '/') { res.writeHead(302, { location: '/console/' }); res.end(); return true; }
+  if (read && path === '/') { res.writeHead(302, { location: mountedPath(deps, '/console/') }); res.end(); return true; }
   if (read && (path === '/robots.txt' || path === '/sitemap.xml' || SITE_PATHS.has(path) || path.startsWith('/docs/') || path.startsWith('/site/'))) {
     send(res, 404, { error: 'site disabled' });
     return true;

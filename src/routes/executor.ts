@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readBody, send } from '../app/http';
 import type { EngineRuntime } from '../app/engine';
 import type { ToolProxyDeps } from '../app/tool-proxy';
-import { isRemoteExecutorTarget } from '../core/targets/registry';
+import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
 import type { Principal } from '../app/auth';
 import type { ExecutorCapabilities, Job } from '../core/contracts/types';
 import { routeRetryConfig } from '../core/config/route-config';
@@ -18,24 +18,36 @@ import type { ToolIndexService } from '../services/tools-index';
 
 // 执行器心跳：claim 即心跳，30s 节流落库（执行器 ~12s 一轮，不值得每轮写库）。
 // capabilities 随每轮 claim 带上（执行器自报能跑哪些 profile/claude 版本），一并落库供控制台展示+覆盖度校验。
-const executorTouchAt = new Map<string, number>();
-function touchExecutorThrottled(config: ConfigStoreContract | null, executorId: string, targets: string[], capabilities?: ExecutorCapabilities | null): void {
+export class ExecutorRuntimeState {
+  readonly executorTouchAt = new Map<string, number>();
+  readonly tokenTouchAt = new Map<string, number>();
+
+  dispose(): void {
+    this.executorTouchAt.clear();
+    this.tokenTouchAt.clear();
+  }
+}
+
+const defaultExecutorRuntimeState = new ExecutorRuntimeState();
+
+function touchExecutorThrottled(runtimeState: ExecutorRuntimeState, config: ConfigStoreContract | null, scopeKey: string, executorId: string, targets: string[], capabilities?: ExecutorCapabilities | null): void {
   const cfgStore = config;
   if (!cfgStore) return;
-  const last = executorTouchAt.get(executorId) ?? 0;
+  const key = `${scopeKey}:${executorId}`;
+  const last = runtimeState.executorTouchAt.get(key) ?? 0;
   if (Date.now() - last < 30_000) return;
-  executorTouchAt.set(executorId, Date.now());
+  runtimeState.executorTouchAt.set(key, Date.now());
   void cfgStore.executors.touch(executorId, targets, capabilities).catch(() => { /* 观测数据，失败不影响派活 */ });
 }
 // 执行器令牌的 last_seen 心跳（令牌管理页观测用，30s 节流，与上面的执行器心跳分开键）
-const tokenTouchAt = new Map<string, number>();
 const EXECUTOR_JOB_LEASE_MS = 4 * 60 * 1000;
-function touchTokenThrottled(config: ConfigStoreContract | null, name: string): void {
+function touchTokenThrottled(runtimeState: ExecutorRuntimeState, config: ConfigStoreContract | null, scopeKey: string, name: string): void {
   const cfgStore = config;
   if (!cfgStore) return;
-  const last = tokenTouchAt.get(name) ?? 0;
+  const key = `${scopeKey}:${name}`;
+  const last = runtimeState.tokenTouchAt.get(key) ?? 0;
   if (Date.now() - last < 30_000) return;
-  tokenTouchAt.set(name, Date.now());
+  runtimeState.tokenTouchAt.set(key, Date.now());
   void cfgStore.executorTokens.touch(name).catch(() => { /* 观测数据 */ });
 }
 
@@ -57,6 +69,8 @@ export interface ExecutorApiDeps {
   sleep: (ms: number) => Promise<void>;
   toolsForWorkItemFor: (deps: ToolProxyDeps, job: Job) => Promise<Record<string, unknown> | null>;
   engineForContext: (ctx: RuntimeContext) => Pick<EngineRuntime, 'finish'>;
+  targetRegistry?: TargetRegistry;
+  runtimeState?: ExecutorRuntimeState;
 }
 
 async function executorRuntime(deps: ExecutorApiDeps, input: RuntimeContextInput) {
@@ -89,12 +103,15 @@ function toWorkItem(job: Job, projectPath: string | null): Record<string, unknow
 export async function handleExecutorClaimFor(deps: ExecutorApiDeps, req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<void> {
   const body = (await readBody(req)) as Record<string, unknown>;
   const executorId = String(body['executor_id'] ?? 'unknown');
-  const { state: store, config: cfgStore } = await executorRuntime(deps, { source: 'executor', requestId: String(body['request_id'] ?? `executor_claim_${randomUUID()}`), principal });
+  const { ctx, state: store, config: cfgStore } = await executorRuntime(deps, { source: 'executor', requestId: String(body['request_id'] ?? `executor_claim_${randomUUID()}`), principal });
+  const scopeKey = `${ctx.scope.kind}:${ctx.scope.id}`;
+  const targetRegistry = deps.targetRegistry ?? defaultTargetRegistry;
+  const runtimeState = deps.runtimeState ?? defaultExecutorRuntimeState;
   const want = Array.isArray(body['targets']) ? (body['targets'] as unknown[]).map(String) : [];
   // 令牌授权闸：执行器令牌只能认领其 allowed_targets 内的目标（["*"]=全部）；管理员 token 不限。
   const allowed = principal.kind === 'executor' ? principal.token.allowed_targets : ['*'];
   const allows = (t: string): boolean => allowed.includes('*') || allowed.includes(t);
-  const registered = want.filter(isRemoteExecutorTarget);
+  const registered = want.filter((target) => targetRegistry.isRemoteExecutor(target));
   const claimable = registered.filter(allows);
   if (!claimable.length) {
     const blocked = registered.filter((t) => !allows(t));
@@ -106,9 +123,9 @@ export async function handleExecutorClaimFor(deps: ExecutorApiDeps, req: Incomin
     return;
   }
   const caps = body['capabilities'] && typeof body['capabilities'] === 'object' ? (body['capabilities'] as ExecutorCapabilities) : null;
-  touchExecutorThrottled(cfgStore, executorId, claimable, caps); // 心跳：每轮 claim 都算活着（30s 节流落库）
+  touchExecutorThrottled(runtimeState, cfgStore, scopeKey, executorId, claimable, caps); // 心跳：每轮 claim 都算活着（30s 节流落库）
   void store.extendExecutorLeases(executorId, EXECUTOR_JOB_LEASE_MS).catch(() => { /* 续租失败不影响本轮认领响应，下轮/reaper 会兜底 */ });
-  if (principal.kind === 'executor') touchTokenThrottled(cfgStore, principal.token.name); // 令牌侧 last_seen
+  if (principal.kind === 'executor') touchTokenThrottled(runtimeState, cfgStore, scopeKey, principal.token.name); // 令牌侧 last_seen
   const waitMs = Math.min(Math.max(Number(body['wait_ms'] ?? 25000) || 0, 0), 55000);
   const deadline = Date.now() + waitMs;
 
@@ -137,16 +154,19 @@ export async function handleExecutorClaimFor(deps: ExecutorApiDeps, req: Incomin
 export async function handleExecutorHeartbeatFor(deps: ExecutorApiDeps, req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<void> {
   const body = (await readBody(req)) as Record<string, unknown>;
   const executorId = String(body['executor_id'] ?? 'unknown');
-  const { state: store, config: cfgStore } = await executorRuntime(deps, { source: 'executor', requestId: String(body['request_id'] ?? `executor_heartbeat_${executorId}`), principal });
+  const { ctx, state: store, config: cfgStore } = await executorRuntime(deps, { source: 'executor', requestId: String(body['request_id'] ?? `executor_heartbeat_${executorId}`), principal });
+  const scopeKey = `${ctx.scope.kind}:${ctx.scope.id}`;
+  const targetRegistry = deps.targetRegistry ?? defaultTargetRegistry;
+  const runtimeState = deps.runtimeState ?? defaultExecutorRuntimeState;
   const want = Array.isArray(body['targets']) ? (body['targets'] as unknown[]).map(String) : [];
   const allowed = principal.kind === 'executor' ? principal.token.allowed_targets : ['*'];
   const allows = (t: string): boolean => allowed.includes('*') || allowed.includes(t);
-  const claimable = want.filter(isRemoteExecutorTarget).filter(allows);
+  const claimable = want.filter((target) => targetRegistry.isRemoteExecutor(target)).filter(allows);
   const caps = body['capabilities'] && typeof body['capabilities'] === 'object' ? (body['capabilities'] as ExecutorCapabilities) : null;
   // 心跳自带节奏（~30s），无需再节流——直接落库保证 last_seen 始终新鲜；写库失败不影响存活语义，下一拍再来。
   void cfgStore?.executors.touch(executorId, claimable, caps).catch(() => { /* 观测数据，失败不影响 */ });
   void store.extendExecutorLeases(executorId, EXECUTOR_JOB_LEASE_MS).catch(() => { /* 续租失败不影响心跳响应 */ });
-  if (principal.kind === 'executor') touchTokenThrottled(cfgStore, principal.token.name);
+  if (principal.kind === 'executor') touchTokenThrottled(runtimeState, cfgStore, scopeKey, principal.token.name);
   send(res, 200, { ok: true });
 }
 

@@ -56,7 +56,43 @@ const MIME: Record<string, string> = {
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.map': 'application/json',
 };
 
-export function serveConsoleFromRoot(root: string, urlPath: string, res: ServerResponse, head = false): void {
+export function normalizeHttpMountPath(value: string | undefined): string {
+  const mountPath = String(value ?? '').trim().replace(/\/$/, '');
+  if (!mountPath) return '';
+  if (!/^\/(?:[a-zA-Z0-9._~-]|%[0-9A-Fa-f]{2})+(?:\/(?:[a-zA-Z0-9._~-]|%[0-9A-Fa-f]{2})+)*$/.test(mountPath)) {
+    throw new Error('HTTP mount path must be an absolute encoded path without query, fragment, or trailing slash');
+  }
+  for (const encodedSegment of mountPath.slice(1).split('/')) {
+    let segment = '';
+    try {
+      segment = decodeURIComponent(encodedSegment);
+    } catch {
+      throw new Error('HTTP mount path must contain valid percent-encoded segments');
+    }
+    // URL parsers normalize dot segments before the host gets a chance to
+    // select a tenant. Encoded separators are equally ambiguous across
+    // proxies, so neither form is valid in a trusted mount prefix.
+    if (segment === '.' || segment === '..' || segment.includes('/') || segment.includes('\\')) {
+      throw new Error('HTTP mount path must not contain dot segments or encoded separators');
+    }
+  }
+  return mountPath;
+}
+
+export function injectConsoleMountPath(html: string, mountPathInput: string | undefined): string {
+  const mountPath = normalizeHttpMountPath(mountPathInput);
+  const marker = '<meta name="bailing-kernel-mount"';
+  if (html.includes(marker)) return html;
+  return html.replace(/<head(\s[^>]*)?>/i, (head) => `${head}\n  <meta name="bailing-kernel-mount" content="${mountPath}" />`);
+}
+
+export function serveConsoleFromRoot(
+  root: string,
+  urlPath: string,
+  res: ServerResponse,
+  head = false,
+  mountPath?: string,
+): void {
   const consoleDir = join(root, 'web', 'console');
   const rel = urlPath.replace(/^\/console\/?/, '');
   let file = resolve(consoleDir, rel || 'index.html');
@@ -69,7 +105,12 @@ export function serveConsoleFromRoot(root: string, urlPath: string, res: ServerR
     // 带 hash 的静态资源可长缓存；index.html 必须每次取（不然发版后还是旧壳）
     'cache-control': ext === '.html' ? 'no-cache' : 'public, max-age=86400',
   });
-  res.end(head ? undefined : readFileSync(file));
+  if (head) {
+    res.end();
+    return;
+  }
+  const content = readFileSync(file);
+  res.end(ext === '.html' ? injectConsoleMountPath(content.toString('utf8'), mountPath) : content);
 }
 /** 访客 IP（经 EdgeOne/nginx 转发取 XFF 首跳）。 */
 export function ipOf(req: IncomingMessage): string {

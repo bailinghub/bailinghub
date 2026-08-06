@@ -785,6 +785,7 @@ import HelpTip from '../components/HelpTip.vue';
 import { useMe } from '../store';
 import { LLM_PROVIDERS, detectProvider } from '../llm-catalog';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
+import { kernelOrigin } from '../runtime-path';
 
 const s = useMe();
 const routeSchema = useConfigSchema('route');
@@ -1343,7 +1344,7 @@ function demoMetaJson(r: any, sessionVal: string): string {
 const phpCode = computed(() => {
   const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
   if (!r || !c) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const fn = 'bailing_' + r.route_key.replace(/[^a-z0-9]+/gi, '_');
   const keyField = r.session_policy === 'per_key' && r.session_key_field ? r.session_key_field : '';
   const rcpt = r.delivery?.type === 'channel' ? String(r.delivery.to_field || '').trim() : '';
@@ -1381,7 +1382,7 @@ function ${fn}(string $requestId, string $input, array $metadata = []): void
 const curlCode = computed(() => {
   const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
   if (!r || !c) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const metaJson = demoMetaJson(r, 'demo-1');
   return `# 触发
 curl -m 2 -X POST '${base}/run' \\
@@ -1395,7 +1396,7 @@ curl -H 'Authorization: Bearer ${c.token}' '${base}/jobs/<job_id>'`;
 const nodeCode = computed(() => {
   const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
   if (!r || !c) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const metaJson = demoMetaJson(r, 'demo-1');
   return `// 百灵中枢 · ${r.name}（route: ${r.route_key}）
 // request_id 是幂等键：同一业务事件重复触发不会重复执行。
@@ -1432,7 +1433,7 @@ try {
 const pythonCode = computed(() => {
   const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
   if (!r || !c) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const metaJson = demoMetaJson(r, 'demo-1');
   return `# 百灵中枢 · ${r.name}（route: ${r.route_key}）
 # request_id 是幂等键：同一业务事件重复触发不会重复执行。
@@ -1463,7 +1464,7 @@ except requests.RequestException as exc:
 const skillCode = computed(() => {
   const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
   if (!r || !c) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   const metaJson = demoMetaJson(r, '<业务编号>');
   return `# Agent Skill: bailing-${r.route_key}
 
@@ -1490,7 +1491,7 @@ curl -H 'Authorization: Bearer ${c.token}' '${base}/jobs/<job_id>'
 const execCode = computed(() => {
   const r = codeRoute.value;
   if (!r) return '';
-  const base = location.origin;
+  const base = kernelOrigin();
   return `# 任务：把本机安全接入百灵中枢执行器
 
 请先读取并严格执行这份版本化接入 Skill：

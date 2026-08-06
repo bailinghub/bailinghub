@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { prepareTargetConfig } from '../core/config/config-models';
 import { readBody, send } from '../app/http';
 import { prepareRouteConfig } from '../core/config/route-config';
-import { getAdapter, isKnownTarget, listTargetDefs, targetNeedsProject } from '../core/targets/registry';
+import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
 import type { ProjectReg, Route, TargetDef } from '../core/contracts/types';
 import { resolvePrincipal } from '../core/runtime/identity-runtime';
 import { previewAutoRoute } from '../core/runtime/routing-runtime';
@@ -14,6 +14,7 @@ export interface AdminDispatchConfigApiDeps {
   configStore: ConfigStoreContract | null;
   defaultProfile: AppConfig['defaultProfile'];
   refreshTargets: () => Promise<void>;
+  targetRegistry?: TargetRegistry;
 }
 
 export async function handleAdminDispatchConfigApiFor(
@@ -25,6 +26,7 @@ export async function handleAdminDispatchConfigApiFor(
 ): Promise<boolean> {
   if (!deps.configStore) return false;
   const configStore = deps.configStore;
+  const targetRegistry = deps.targetRegistry ?? defaultTargetRegistry;
 
   if (path === '/admin/api/projects') {
     if (method === 'GET') { send(res, 200, await configStore.projects.list()); return true; }
@@ -47,8 +49,8 @@ export async function handleAdminDispatchConfigApiFor(
     if (method === 'POST') {
       const b = (await readBody(req)) as Partial<Route>;
       const prepared = await prepareRouteConfig(b, {
-        targetExists: isKnownTarget,
-        targetNeedsProject,
+        targetExists: (name) => targetRegistry.isKnown(name),
+        targetNeedsProject: (name) => targetRegistry.needsProject(name),
         toolProviderExists: async (name) => !!(await configStore.toolProviders.get(name)),
       }, { defaultProfile: deps.defaultProfile });
       if (!prepared.ok) { send(res, 400, { error: prepared.error }); return true; }
@@ -96,10 +98,10 @@ export async function handleAdminDispatchConfigApiFor(
 
   // ---- 调度目标注册表（插座板：新执行器=注册一行，自带执行器认领即可干活）----
   if (path === '/admin/api/targets') {
-    if (method === 'GET') { send(res, 200, listTargetDefs()); return true; }
+    if (method === 'GET') { send(res, 200, targetRegistry.list()); return true; }
     if (method === 'POST') {
       const b = (await readBody(req)) as Partial<TargetDef>;
-      const prepared = prepareTargetConfig(b, { hasInhubAdapter: (name) => !!getAdapter(name) });
+      const prepared = prepareTargetConfig(b, { hasInhubAdapter: (name) => !!targetRegistry.getAdapter(name) });
       if (!prepared.ok) { send(res, 400, { error: prepared.error }); return true; }
       await configStore.targets.upsert(prepared.value);
       await deps.refreshTargets();

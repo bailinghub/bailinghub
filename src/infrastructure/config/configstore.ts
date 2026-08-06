@@ -24,6 +24,7 @@ import type { ToolEmbeddingRepository } from '../../services/tool-index-reposito
 import { MysqlKbDatasourceRepository, MysqlKnowledgeRepository } from './config-knowledge-repository';
 import { InstanceBrandingRepository } from './config-instance-branding-repository';
 import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
+import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 export type RouteRepositoryContract = Pick<RouteRepository, keyof RouteRepository>;
 export type ClientRepositoryContract = Pick<ClientRepository, keyof ClientRepository>;
@@ -80,12 +81,14 @@ export interface ConfigStoreContract {
   readonly deliveryDlq: DeliveryDlqLedgerContract;
   readonly observability: ObservabilityLedgerContract;
   init(): Promise<void>;
+  close?(): Promise<void>;
   readonly db: Pool;
 }
 
 /** web 后台配置（项目/路由/会话映射）的读写。需要 mysql 后端。 */
 export class ConfigStore implements ConfigStoreContract {
   private pool!: Pool;
+  private readonly poolOwner: MysqlPoolResource;
   readonly routes = new RouteRepository(() => this.pool);
   readonly clients = new ClientRepository(() => this.pool);
   readonly credentials = new CredentialRepository(() => this.pool);
@@ -110,16 +113,16 @@ export class ConfigStore implements ConfigStoreContract {
   readonly deliveryDlq = new DeliveryDlqLedger(() => this.pool);
   readonly observability = new ObservabilityLedger(() => this.pool);
 
-  constructor(private readonly cfg: AppConfig['state']['mysql']) {}
+  constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
+    this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);
+  }
 
   async init(): Promise<void> {
-    const mysql = await import('mysql2/promise');
-    this.pool = mysql.createPool({
-      host: this.cfg.host, port: this.cfg.port, user: this.cfg.user,
-      password: this.cfg.password, database: this.cfg.database,
-      waitForConnections: true, connectionLimit: this.cfg.connectionLimit,
-      timezone: 'Z', // 全链路 UTC（同 state.ts；严禁 SQL NOW() 与 dt() 列比较）
-    });
+    this.pool = await this.poolOwner.get();
+  }
+
+  async close(): Promise<void> {
+    await this.poolOwner.close();
   }
 
   /** 共享连接池（KbService 等同库模块复用，不开第二个池） */

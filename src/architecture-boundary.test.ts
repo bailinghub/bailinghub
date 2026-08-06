@@ -101,3 +101,19 @@ test('architecture boundary: injectable HTTP/auth/tool modules stay free of runt
   ];
   assert.deepEqual(violations, []);
 });
+
+test('architecture boundary: Kernel Host API never falls back to OSS singleton/default wrappers', () => {
+  const forbidden = [
+    /^app\/runtime\.ts$/,
+    /^app\/.*-default\.ts$/,
+    /^routes\/.*-default\.ts$/,
+    /^server\.ts$/,
+    /^executor\.ts$/,
+  ];
+  const violations = [
+    ...dependencyViolations(join(srcDir, 'kernel-api'), forbidden),
+    ...dependencyViolations(join(srcDir, 'app'), forbidden)
+      .filter((violation) => violation.startsWith('app/kernel.ts -> ')),
+  ];
+  assert.deepEqual(violations, []);
+});

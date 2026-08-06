@@ -10,6 +10,8 @@ import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { KbService } from '../services/kb';
 import type { ToolIndexService } from '../services/tools-index';
+import type { TargetRegistry } from '../core/targets/registry';
+import type { KernelHostAdminSessionV1, KernelIdentityProviderV1 } from '../kernel-api/v1/contracts';
 
 export interface PrivateHttpDeps extends AuthRuntimeDeps {
   cfg: AppConfig;
@@ -27,6 +29,64 @@ export interface PrivateHttpDeps extends AuthRuntimeDeps {
   handleRun(req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<void>;
   handleSend(req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<void>;
   handleWecomInbound(req: IncomingMessage, res: ServerResponse, accountId: string, url: URL): Promise<void>;
+  /**
+   * 商业宿主的可信身份入口。设置后，Core 不再读取自己的管理员 Cookie/密码；宿主必须先完成
+   * 平台 session、租户成员关系与当前租户校验，再返回租户绑定的 Principal。
+   */
+  identityProvider?: KernelIdentityProviderV1;
+  targetRegistry?: TargetRegistry;
+}
+
+/**
+ * 商业身份只接管“人”的管理员会话；业务 client、执行器和宿主机器 token 仍由每个
+ * 租户 Core 的原生凭据表验证。Core 本地管理员 Cookie 在宿主模式下明确禁用，避免
+ * 平台身份与租户库里的历史账号形成两套登录源。
+ */
+export async function authenticatePrivateRequestFor(
+  deps: Pick<PrivateHttpDeps, 'cfg' | 'configStore' | 'identityProvider'>,
+  req: IncomingMessage,
+  url: URL,
+): Promise<Principal | null> {
+  if (!deps.identityProvider) return authenticateFor(deps, req, url);
+  const hosted = await deps.identityProvider.authenticate(req, url);
+  if (hosted) return hostedAdminPrincipal(hosted);
+  const core = await authenticateFor(deps, req, url);
+  if (core?.kind === 'admin' && core.via === 'session') return null;
+  return core;
+}
+
+function hostedAdminPrincipal(value: KernelHostAdminSessionV1): Principal {
+  const candidate: unknown = value;
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error('Kernel identityProvider 只能返回受控的 admin session');
+  }
+  const hosted = candidate as Record<string, unknown>;
+  const username = typeof hosted['username'] === 'string' ? hosted['username'].trim() : '';
+  const role = hosted['role'];
+  const permissions = hosted['permissions'];
+  const validPermissions = Array.isArray(permissions)
+    && permissions.length <= 512
+    && permissions.every((permission) => typeof permission === 'string'
+      && permission.length > 0
+      && permission.length <= 128
+      && permission === permission.trim());
+  if (
+    hosted['kind'] !== 'admin'
+    || hosted['via'] !== 'session'
+    || !username
+    || username.length > 256
+    || (role !== undefined && (typeof role !== 'string' || !role.trim() || role.length > 128 || role !== role.trim()))
+    || !validPermissions
+  ) {
+    throw new Error('Kernel identityProvider 只能返回受控的 admin session');
+  }
+  return {
+    kind: 'admin',
+    via: 'session',
+    username,
+    ...(typeof role === 'string' ? { role } : {}),
+    permissions: [...new Set(permissions as string[])],
+  };
 }
 
 function kbApiDeps(deps: PrivateHttpDeps): KbApiDeps {
@@ -34,7 +94,7 @@ function kbApiDeps(deps: PrivateHttpDeps): KbApiDeps {
 }
 
 function toolProxyDeps(deps: PrivateHttpDeps): ToolProxyDeps {
-  return { cfg: deps.cfg, configStore: deps.configStore, stateStore: deps.stateStore, toolIndex: deps.toolIndex, now, sleep };
+  return { cfg: deps.cfg, configStore: deps.configStore, stateStore: deps.stateStore, toolIndex: deps.toolIndex, now, sleep, targetRegistry: deps.targetRegistry };
 }
 
 export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
@@ -49,8 +109,18 @@ export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingM
   const mApprovalDecision = method === 'POST' ? path.match(/^\/approvals\/(\d+)\/decision$/) : null;
   if (mApprovalDecision) { await deps.handleApprovalDecision(req, res, Number(mApprovalDecision[1]), url); return; }
 
-  if (method === 'POST' && path === '/admin/login') { await handleLoginFor(deps, req, res); return; }
-  if (method === 'POST' && path === '/admin/logout') { await handleLogoutFor(deps, req, res); return; }
+  if (method === 'POST' && path === '/admin/login') {
+    if (deps.identityProvider?.handleLogin) await deps.identityProvider.handleLogin(req, res);
+    else if (deps.identityProvider) send(res, 404, { error: 'local login disabled by host' });
+    else await handleLoginFor(deps, req, res);
+    return;
+  }
+  if (method === 'POST' && path === '/admin/logout') {
+    if (deps.identityProvider?.handleLogout) await deps.identityProvider.handleLogout(req, res);
+    else if (deps.identityProvider) send(res, 404, { error: 'local logout handled by host' });
+    else await handleLogoutFor(deps, req, res);
+    return;
+  }
 
   // 统一工具面调用代理：凭任务级 tool_token 鉴权（不走 admin/client 体系）。
   const mInvoke = method === 'POST' ? path.match(/^\/jobs\/([0-9a-f-]{36})\/tools\/invoke$/) : null;
@@ -63,7 +133,7 @@ export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingM
     return;
   }
 
-  const principal = await authenticateFor(deps, req, url);
+  const principal = await authenticatePrivateRequestFor(deps, req, url);
   if (!principal) { send(res, 401, { error: 'unauthorized' }); return; }
   const isAdmin = principal.kind === 'admin';
 
