@@ -57,7 +57,7 @@ If you need to serve multiple isolated organizations, run separate hub deploymen
 
 ## 10-Minute Demo
 
-> **Prefer to look around before installing?** Open the [online experience](https://trial.bailinghub.com/console/login), create an account, inspect the console, import demo data, and run diagnostics. This environment is for understanding the product and validating its configuration model. Do not upload production credentials or sensitive data, and do not connect real workloads. Self-host the open-source edition for actual use.
+> **Prefer to look around before installing?** Open the [online experience](https://trial.bailinghub.com/register/), create an account, inspect the console, import demo data, and run diagnostics. This environment is for understanding the product and validating its configuration model. Do not upload production credentials or sensitive data, and do not connect real workloads. Self-host the open-source edition for actual use.
 
 To validate the complete loop in your own environment:
 
@@ -229,7 +229,7 @@ export default buildOpenApiSpec({
 - [Tool Governance](docs/TOOLS_DESIGN.en.md)
 - [AI-Friendly Tool Design](docs/AI_FRIENDLY_TOOLS.en.md)
 - [Third-Party Integration](docs/INTEGRATION.en.md)
-- [Latest Release Notes](docs/RELEASE_NOTES_v0.3.0.en.md)
+- [Latest Release Notes](docs/RELEASE_NOTES_v0.3.1.en.md)
 - [v0.1.7 Release Notes](docs/RELEASE_NOTES_v0.1.7.en.md)
 - [v0.1.6 Release Notes](docs/RELEASE_NOTES_v0.1.6.en.md)
 - [v0.1.5 Release Notes](docs/RELEASE_NOTES_v0.1.5.en.md)
