@@ -17,6 +17,16 @@
 
 当前无待发布变更。
 
+## v0.3.1 - PDF 解析安全更新
+
+发布日期：2026-08-07。
+
+- 将上传 PDF 文本抽取所使用的 `pdfjs-dist` 从 `5.7.284` 升级到 `6.2.108`，修复 GHSA-hq66-cqwq-w95j 所述的任意 JavaScript 执行风险。
+- 适配 PDF.js 6 的生命周期接口，在成功和失败路径都销毁加载任务并释放解析资源。
+- 没有数据库迁移或配置变化；Client API、Kernel Host API v1、聊天协议、Executor Protocol、ACC、工具签名、审批语义和业务最终授权不变。
+- **验证方式**：`npm audit --audit-level=low`、真实 PDF 抽取测试与完整 `npm run release:check`。
+- **相关文档**：[RELEASE_NOTES_v0.3.1.md](RELEASE_NOTES_v0.3.1.md)、[安全策略](../SECURITY.md) 与 [兼容性与升级](兼容性与升级.md)。
+
 ## v0.3.0 - 可组合 Core 与 Kernel Host API v1
 
 发布日期：2026-08-06。

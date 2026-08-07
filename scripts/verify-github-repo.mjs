@@ -121,6 +121,7 @@ const requiredFiles = [
   'docs/RELEASE_NOTES_v0.1.16.md',
   'docs/RELEASE_NOTES_v0.2.0.md',
   'docs/RELEASE_NOTES_v0.3.0.md',
+  'docs/RELEASE_NOTES_v0.3.1.md',
   'docs/CHANGELOG.md',
 ];
 for (const file of requiredFiles) requireFile(file);
@@ -129,7 +130,7 @@ assertIncludes('README.md', [
   'assets/bailinghub-lockup.png',
   'assets/architecture-overview.zh-CN.png',
   'THIRD_PARTY_NOTICES.md',
-  'https://trial.bailinghub.com/console/login',
+  'https://trial.bailinghub.com/register/',
   'issues/new?template=bug_report.yml',
   'curl -fsSL https://www.bailinghub.com/install.sh | sh',
   'BAILING_INSTALL_MODE=source',

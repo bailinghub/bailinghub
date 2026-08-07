@@ -86,8 +86,8 @@ async function extractPdfText(ab: ArrayBuffer): Promise<FileExtractResult> {
       standardFontDataUrl: new URL('../../../node_modules/pdfjs-dist/standard_fonts/', import.meta.url).href,
       verbosity: pdfjs.VerbosityLevel.ERRORS,
     });
-    const doc = await task.promise;
     try {
+      const doc = await task.promise;
       const pages: string[] = [];
       for (let i = 1; i <= doc.numPages; i++) {
         const page = await doc.getPage(i);
@@ -111,7 +111,7 @@ async function extractPdfText(ab: ArrayBuffer): Promise<FileExtractResult> {
         text: text || 'PDF 未抽取到可用文本。它可能是扫描件/图片型 PDF，需要启用 OCR、视觉文档解析模型，或让业务侧提供文本化内容。',
       };
     } finally {
-      await doc.destroy();
+      await task.destroy();
     }
   } catch (e) {
     return { ok: false, parser: 'pdf', text: `PDF 文本抽取失败：${String(e).slice(0, 300)}` };

@@ -24,6 +24,16 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.3.1 - PDF Parsing Security Update
+
+Released on 2026-08-07.
+
+- Upgraded `pdfjs-dist`, used for uploaded-PDF text extraction, from `5.7.284` to `6.2.108` to fix the arbitrary JavaScript execution risk described in GHSA-hq66-cqwq-w95j.
+- Adapted to the PDF.js 6 lifecycle API and destroys the loading task on both success and failure paths.
+- No database migration or configuration change is required. The Client API, Kernel Host API v1, chat protocol, Executor Protocol, ACC, tool signatures, approval semantics, and final business authorization are unchanged.
+- Validation: `npm audit --audit-level=low`, real PDF extraction tests, and the complete `npm run release:check` gate.
+- Related docs: [RELEASE_NOTES_v0.3.1.en.md](RELEASE_NOTES_v0.3.1.en.md), [Security policy](../SECURITY.md), and [Compatibility](COMPATIBILITY.en.md).
+
 ## v0.3.0 - Composable Core and Kernel Host API v1
 
 Released on 2026-08-06.
