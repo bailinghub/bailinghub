@@ -26,14 +26,33 @@ export class ClientRepository {
   async upsert(c: Omit<Client, 'token'>, rotateToken = false): Promise<string> {
     const existing = await this.get(c.app_id);
     const token = !existing || rotateToken ? randomBytes(16).toString('hex') : existing.token;
+    await this.write(c, token, true);
+    return token;
+  }
+
+  /** Insert-only variant for ownership-sensitive bootstrap flows. */
+  async create(c: Omit<Client, 'token'>, explicitToken?: string): Promise<string> {
+    const token = explicitToken ?? randomBytes(16).toString('hex');
+    if (token.length < 16) throw new Error('client token 至少 16 位');
+    await this.write(c, token, false);
+    return token;
+  }
+
+  private async write(c: Omit<Client, 'token'>, token: string, updateExisting: boolean): Promise<void> {
     await this.pool.query(
       'INSERT INTO bz_clients (app_id,name,token,allowed_routes,allowed_channels,rate_limit_per_min,budget,enabled,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ' +
-        'ON DUPLICATE KEY UPDATE name=VALUES(name),token=VALUES(token),allowed_routes=VALUES(allowed_routes),allowed_channels=VALUES(allowed_channels),rate_limit_per_min=VALUES(rate_limit_per_min),budget=VALUES(budget),enabled=VALUES(enabled),description=VALUES(description),updated_at=VALUES(updated_at)',
+        (updateExisting
+          ? 'ON DUPLICATE KEY UPDATE name=VALUES(name),token=VALUES(token),allowed_routes=VALUES(allowed_routes),allowed_channels=VALUES(allowed_channels),rate_limit_per_min=VALUES(rate_limit_per_min),budget=VALUES(budget),enabled=VALUES(enabled),description=VALUES(description),updated_at=VALUES(updated_at)'
+          : ''),
       [c.app_id, c.name, token, JSON.stringify(c.allowed_routes ?? []), JSON.stringify(c.allowed_channels ?? []), c.rate_limit_per_min ?? 60,
        c.budget && Object.keys(c.budget).length ? JSON.stringify(c.budget) : null,
        c.enabled ? 1 : 0, c.description ?? null, dt(), dt()],
     );
-    return token;
+  }
+
+  async replaceToken(appId: string, token: string): Promise<void> {
+    if (token.length < 16) throw new Error('client token 至少 16 位');
+    await this.pool.query('UPDATE bz_clients SET token=?,updated_at=? WHERE app_id=?', [token, dt(), appId]);
   }
 
   async delete(appId: string): Promise<void> {

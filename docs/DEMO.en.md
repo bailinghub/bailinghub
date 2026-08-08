@@ -33,6 +33,31 @@ Login:
 admin / bailing-demo-admin
 ```
 
+## Console Import And The Stateless Read-Only Profile
+
+Core also provides a managed demo dataset that administrators can import from the onboarding prompt or setup page. It creates deterministic targets, tool providers, routes, and clients, but it does not fabricate jobs, approvals, costs, or audit history. A smoke run generates the runtime records through the real execution path.
+
+The deployment supplies the demo endpoint and profile:
+
+```bash
+DEMO_BUSINESS_URL=http://127.0.0.1:19080
+DEMO_TOOL_SECRET=<independent-random-secret>
+DEMO_PROFILE=stateless-readonly
+```
+
+- `full-local` is the complete Docker demo with order lookup, ticket creation, refund approval, and failure tools.
+- `stateless-readonly` is for shared or embedded evaluation environments. Demo Business must bind to loopback, exposes only order lookup and failure observation, stores no request state, uses no Hub callback, and creates no public chat entry.
+
+Core records the exact objects it owns, together with their fingerprints, in the durable `bz_demo_datasets` manifest. Refresh and clear fail with `409` if a name is already occupied, a managed object changed, or another configuration references it. Clearing removes only unchanged, unreferenced demo configuration; jobs, messages, traces, and audit history remain intact.
+
+The Admin API is:
+
+- `GET /admin/api/demo-dataset/status`
+- `POST /admin/api/demo-dataset/import`
+- `DELETE /admin/api/demo-dataset`
+
+Import and clear require all of `targets:write`, `tools:write`, `routes:write`, and `clients:write`. Status requires `audit:read` or the same aggregate write permissions.
+
 ## Smoke Test
 
 ```bash

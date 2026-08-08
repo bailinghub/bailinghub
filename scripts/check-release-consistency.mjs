@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const STABLE_VERSION_RE = /^\d+\.\d+\.\d+$/;
 
 export const releaseConsistencyFiles = [
   'package.json',
@@ -50,6 +51,20 @@ function normalizeExpectedVersion(value) {
   return String(value).trim().replace(/^v/, '');
 }
 
+function currentStableVersion(changelog, findings) {
+  const version = extractSingleVersion(
+    changelog,
+    /^## v(?<version>\d+\.\d+\.\d+) /m,
+    'docs/CHANGELOG.md',
+    'current stable release entry',
+    findings,
+  );
+  if (version && !STABLE_VERSION_RE.test(version)) {
+    findings.push(`docs/CHANGELOG.md: current stable release entry must be semantic, received ${version}`);
+  }
+  return version;
+}
+
 function extractSingleVersion(text, regex, file, label, findings) {
   const match = text.match(regex);
   if (!match?.groups?.version) {
@@ -76,9 +91,22 @@ export function checkReleaseConsistency({ root = process.cwd(), expected = '' } 
   const findings = [];
   const pkg = readJson(root, 'package.json', findings);
   const version = String(pkg.version ?? '').trim();
+  const isPrerelease = version.includes('-');
+  const publishTag = String(pkg.publishConfig?.tag ?? '').trim();
 
   if (!VERSION_RE.test(version)) {
     findings.push(`package.json: version must be semantic, received ${version || '<empty>'}`);
+  }
+
+  if (isPrerelease && publishTag !== 'next') {
+    findings.push(
+      `package.json: prerelease versions must use publishConfig.tag "next", received ${publishTag || '<empty>'}`,
+    );
+  }
+  if (!isPrerelease && publishTag && publishTag !== 'latest') {
+    findings.push(
+      `package.json: stable versions may only use publishConfig.tag "latest" or omit it, received ${publishTag}`,
+    );
   }
 
   const expectedVersion = normalizeExpectedVersion(
@@ -93,6 +121,9 @@ export function checkReleaseConsistency({ root = process.cwd(), expected = '' } 
   expectVersion(String(lock.version ?? ''), version, 'package-lock.json', 'top-level version', findings);
   expectVersion(String(lock.packages?.['']?.version ?? ''), version, 'package-lock.json', 'root package version', findings);
 
+  const changelog = readText(root, 'docs/CHANGELOG.md', findings);
+  const stableVersion = isPrerelease ? currentStableVersion(changelog, findings) : version;
+
   const compose = readText(root, 'docker-compose.images.yml', findings);
   for (const image of ['bailinghub', 'bailing-demo-business']) {
     const escaped = image.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -103,7 +134,7 @@ export function checkReleaseConsistency({ root = process.cwd(), expected = '' } 
       `${image} default image tag`,
       findings,
     );
-    expectVersion(imageVersion, version, 'docker-compose.images.yml', `${image} default image tag`, findings);
+    expectVersion(imageVersion, stableVersion, 'docker-compose.images.yml', `${image} default image tag`, findings);
   }
 
   const fallbackChecks = [
@@ -126,55 +157,55 @@ export function checkReleaseConsistency({ root = process.cwd(), expected = '' } 
   for (const check of fallbackChecks) {
     const text = readText(root, check.file, findings);
     const actual = extractSingleVersion(text, check.regex, check.file, check.label, findings);
-    expectVersion(actual, version, check.file, check.label, findings);
+    expectVersion(actual, stableVersion, check.file, check.label, findings);
   }
 
   for (const [file, baselineText] of [
-    ['docs/INDEPENDENT_VALIDATION.md', `稳定基线：\`v${version}\``],
-    ['docs/INDEPENDENT_VALIDATION.en.md', `Stable baseline: \`v${version}\``],
+    ['docs/INDEPENDENT_VALIDATION.md', `稳定基线：\`v${stableVersion}\``],
+    ['docs/INDEPENDENT_VALIDATION.en.md', `Stable baseline: \`v${stableVersion}\``],
   ]) {
     const text = readText(root, file, findings);
     expectContains(text, baselineText, file, 'current validation baseline', findings);
-    expectContains(text, `--branch v${version}`, file, 'current validation clone command', findings);
-    expectContains(text, `RELEASE_NOTES_v${version}`, file, 'current release-note link', findings);
+    expectContains(text, `--branch v${stableVersion}`, file, 'current validation clone command', findings);
+    expectContains(text, `RELEASE_NOTES_v${stableVersion}`, file, 'current release-note link', findings);
   }
 
   const issueTemplate = readText(root, '.github/ISSUE_TEMPLATE/independent_validation.yml', findings);
   expectContains(
     issueTemplate,
-    `placeholder: "v${version};`,
+    `placeholder: "v${stableVersion};`,
     '.github/ISSUE_TEMPLATE/independent_validation.yml',
     'current validation placeholder',
     findings,
   );
 
   const releaseNotes = [
-    `docs/RELEASE_NOTES_v${version}.md`,
-    `docs/RELEASE_NOTES_v${version}.en.md`,
+    `docs/RELEASE_NOTES_v${stableVersion}.md`,
+    `docs/RELEASE_NOTES_v${stableVersion}.en.md`,
   ];
   for (const file of releaseNotes) {
     readText(root, file, findings);
   }
 
   const referenceChecks = [
-    ['README.md', `docs/RELEASE_NOTES_v${version}.md`],
-    ['README.en.md', `docs/RELEASE_NOTES_v${version}.en.md`],
-    ['docs/README.md', `RELEASE_NOTES_v${version}.md`],
-    ['docs/README.md', `RELEASE_NOTES_v${version}.en.md`],
-    ['docs/README.en.md', `RELEASE_NOTES_v${version}.md`],
-    ['docs/README.en.md', `RELEASE_NOTES_v${version}.en.md`],
-    ['docs/CHANGELOG.md', `## v${version} `],
-    ['docs/CHANGELOG.en.md', `## v${version} `],
-    ['scripts/check-doc-links.mjs', `docs/RELEASE_NOTES_v${version}.md`],
-    ['scripts/release-audit.mjs', `docs/RELEASE_NOTES_v${version}.md`],
-    ['scripts/verify-github-repo.mjs', `docs/RELEASE_NOTES_v${version}.md`],
+    ['README.md', `docs/RELEASE_NOTES_v${stableVersion}.md`],
+    ['README.en.md', `docs/RELEASE_NOTES_v${stableVersion}.en.md`],
+    ['docs/README.md', `RELEASE_NOTES_v${stableVersion}.md`],
+    ['docs/README.md', `RELEASE_NOTES_v${stableVersion}.en.md`],
+    ['docs/README.en.md', `RELEASE_NOTES_v${stableVersion}.md`],
+    ['docs/README.en.md', `RELEASE_NOTES_v${stableVersion}.en.md`],
+    ['docs/CHANGELOG.md', `## v${stableVersion} `],
+    ['docs/CHANGELOG.en.md', `## v${stableVersion} `],
+    ['scripts/check-doc-links.mjs', `docs/RELEASE_NOTES_v${stableVersion}.md`],
+    ['scripts/release-audit.mjs', `docs/RELEASE_NOTES_v${stableVersion}.md`],
+    ['scripts/verify-github-repo.mjs', `docs/RELEASE_NOTES_v${stableVersion}.md`],
   ];
   for (const [file, expectedText] of referenceChecks) {
     const text = readText(root, file, findings);
     expectContains(text, expectedText, file, 'current release reference', findings);
   }
 
-  return { version, expectedVersion, findings };
+  return { version, stableVersion, expectedVersion, isPrerelease, publishTag, findings };
 }
 
 function parseExpected(argv) {
@@ -191,8 +222,11 @@ function runCli() {
     process.exitCode = 1;
     return;
   }
-  const ref = result.expectedVersion ? ` (release ref ${result.expectedVersion})` : '';
-  console.log(`Release consistency check passed for ${result.version}${ref}.`);
+  const ref = result.expectedVersion ? `, release ref ${result.expectedVersion}` : '';
+  const channel = result.isPrerelease
+    ? `, stable release surface ${result.stableVersion}, npm tag ${result.publishTag}`
+    : `, npm tag ${result.publishTag || 'latest (default)'}`;
+  console.log(`Release consistency check passed for ${result.version}${channel}${ref}.`);
 }
 
 const entry = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';

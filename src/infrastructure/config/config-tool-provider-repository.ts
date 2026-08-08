@@ -17,6 +17,15 @@ export class ToolProviderRepository {
   }
 
   async upsert(p: ToolProvider): Promise<void> {
+    await this.write(p, true);
+  }
+
+  /** Insert-only variant for ownership-sensitive bootstrap flows. */
+  async create(p: ToolProvider): Promise<void> {
+    await this.write(p, false);
+  }
+
+  private async write(p: ToolProvider, updateExisting: boolean): Promise<void> {
     // legacy_unverified 只是读取历史空值时的兼容映射；数据库不持久化该 sentinel。
     const specAccessPolicy = p.spec_source === 'url'
       && (p.spec_access_policy === 'signed_required' || p.spec_access_policy === 'public_allowed')
@@ -25,7 +34,9 @@ export class ToolProviderRepository {
     await this.pool.query(
       'INSERT INTO bz_tool_providers (name,base_url,spec_source,spec_access_policy,spec_url,spec_json,spec_refreshed_at,spec_access_probe_json,authz_probe_json,secret,log_payload,timeout_ms,rate_limit_per_min,auto_refresh_min,enabled,description,embed_credential,embed_model,embed_dim,created_at,updated_at) ' +
         'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ' +
-        'ON DUPLICATE KEY UPDATE base_url=VALUES(base_url),spec_source=VALUES(spec_source),spec_access_policy=VALUES(spec_access_policy),spec_url=VALUES(spec_url),spec_json=VALUES(spec_json),spec_refreshed_at=VALUES(spec_refreshed_at),spec_access_probe_json=VALUES(spec_access_probe_json),authz_probe_json=VALUES(authz_probe_json),secret=VALUES(secret),log_payload=VALUES(log_payload),timeout_ms=VALUES(timeout_ms),rate_limit_per_min=VALUES(rate_limit_per_min),auto_refresh_min=VALUES(auto_refresh_min),enabled=VALUES(enabled),description=VALUES(description),embed_credential=VALUES(embed_credential),embed_model=VALUES(embed_model),embed_dim=VALUES(embed_dim),updated_at=VALUES(updated_at)',
+        (updateExisting
+          ? 'ON DUPLICATE KEY UPDATE base_url=VALUES(base_url),spec_source=VALUES(spec_source),spec_access_policy=VALUES(spec_access_policy),spec_url=VALUES(spec_url),spec_json=VALUES(spec_json),spec_refreshed_at=VALUES(spec_refreshed_at),spec_access_probe_json=VALUES(spec_access_probe_json),authz_probe_json=VALUES(authz_probe_json),secret=VALUES(secret),log_payload=VALUES(log_payload),timeout_ms=VALUES(timeout_ms),rate_limit_per_min=VALUES(rate_limit_per_min),auto_refresh_min=VALUES(auto_refresh_min),enabled=VALUES(enabled),description=VALUES(description),embed_credential=VALUES(embed_credential),embed_model=VALUES(embed_model),embed_dim=VALUES(embed_dim),updated_at=VALUES(updated_at)'
+          : ''),
       [p.name, p.base_url, p.spec_source, specAccessPolicy, p.spec_url ?? null, p.spec_json ?? null,
        p.spec_refreshed_at ? p.spec_refreshed_at.slice(0, 19).replace('T', ' ') : null,
        p.spec_access_probe ? JSON.stringify(p.spec_access_probe) : null,

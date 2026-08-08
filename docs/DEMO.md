@@ -78,6 +78,31 @@ curl -fsSL https://www.bailinghub.com/install.sh | env \
 - token：`bailing-demo-client-token`
 - 可调用路由：`demo_support`
 
+## 控制台导入与无状态只读 profile
+
+Core 同时提供一套可从“上手向导”导入的演示数据集。它只导入调度目标、工具源、路由和接入方等配置；不伪造任务、审批、成本或审计记录。导入后运行 smoke，才会由真实调用生成 job 和 trace。
+
+配置由运行环境注入：
+
+```bash
+DEMO_BUSINESS_URL=http://127.0.0.1:19080
+DEMO_TOOL_SECRET=<independent-random-secret>
+DEMO_PROFILE=stateless-readonly
+```
+
+- `full-local`：Docker 本地完整演示，包含查单、工单、退款审批和故障工具；
+- `stateless-readonly`：共享或宿主式体验环境，`demo-business` 必须绑定本机回环地址，只声明订单查询与故障观测工具，不保存请求状态、不使用 Hub 回调，也不创建公开聊天入口。
+
+Core 用 `bz_demo_datasets` 中的持久 ownership manifest 记录它实际创建的固定对象和指纹。再次导入只刷新已证明归属的对象；同名占用、指纹漂移或其他配置引用都会返回 `409`，不猜测所有权。清理只删除 manifest 能证明且未被修改的演示配置，任务、消息、trace 和审计账本会继续保留。
+
+对应的 Core 后台 API 为：
+
+- `GET /admin/api/demo-dataset/status`
+- `POST /admin/api/demo-dataset/import`
+- `DELETE /admin/api/demo-dataset`
+
+导入与清理同时要求 `targets:write`、`tools:write`、`routes:write` 和 `clients:write`；查看状态要求审计读权限或上述聚合写权限。
+
 ## 触发一条任务
 
 ```bash

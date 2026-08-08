@@ -18,9 +18,20 @@ export class ChatConfigRepository {
   }
 
   async upsert(e: ChatEntry): Promise<void> {
+    await this.writeEntry(e, true);
+  }
+
+  /** Insert-only variant for ownership-sensitive bootstrap flows. */
+  async create(e: ChatEntry): Promise<void> {
+    await this.writeEntry(e, false);
+  }
+
+  private async writeEntry(e: ChatEntry, updateExisting: boolean): Promise<void> {
     await this.pool.query(
       'INSERT INTO bz_chat_entries (entry_key,name,route_key,enabled,allowed_origins,rate_limit_per_min,ticket_client,bucket,title,greeting,color,appearance,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ' +
-        'ON DUPLICATE KEY UPDATE name=VALUES(name),route_key=VALUES(route_key),enabled=VALUES(enabled),allowed_origins=VALUES(allowed_origins),rate_limit_per_min=VALUES(rate_limit_per_min),ticket_client=VALUES(ticket_client),bucket=VALUES(bucket),title=VALUES(title),greeting=VALUES(greeting),color=VALUES(color),appearance=VALUES(appearance),description=VALUES(description),updated_at=VALUES(updated_at)',
+        (updateExisting
+          ? 'ON DUPLICATE KEY UPDATE name=VALUES(name),route_key=VALUES(route_key),enabled=VALUES(enabled),allowed_origins=VALUES(allowed_origins),rate_limit_per_min=VALUES(rate_limit_per_min),ticket_client=VALUES(ticket_client),bucket=VALUES(bucket),title=VALUES(title),greeting=VALUES(greeting),color=VALUES(color),appearance=VALUES(appearance),description=VALUES(description),updated_at=VALUES(updated_at)'
+          : ''),
       [e.entry_key, e.name, e.route_key, e.enabled ? 1 : 0, JSON.stringify(e.allowed_origins ?? []),
        e.rate_limit_per_min, e.ticket_client ?? null, e.bucket ?? null, e.title ?? null, e.greeting ?? null, e.color ?? null,
        e.appearance && Object.keys(e.appearance).length ? JSON.stringify(e.appearance) : null, e.description ?? null, dt(), dt()],

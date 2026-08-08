@@ -69,10 +69,10 @@
 
   <el-dialog v-model="demoOpen" title="导入演示数据" width="520px" class="demo-dialog" :close-on-click-modal="false">
     <div class="demoBody">
-      <p>当前实例还是空的。可以导入一批演示配置与运行痕迹，快速查看路由、工具源、任务追溯、审批意图和成本观测的完整心智。</p>
+      <p>当前实例还是空的。可以导入确定性演示目标、只读工具源、触发路由和接入方，快速看懂 Core 如何装配一条业务 AI 链路。</p>
       <ul>
-        <li>会写入当前实例，只用于快速理解后台结构与运行心智。</li>
-        <li>演示对象使用 <code>demo-*</code> 前缀，可重复导入刷新，也可在上手向导里一键清理。</li>
+        <li>导入本身不会伪造任务、审批或成本数据；运行 smoke 后才会生成真实任务与 trace。</li>
+        <li>Core 会用持久 ownership manifest 精确记录它拥有的配置；清理不删除运行记录或审计账本。</li>
         <li>真实接入时仍建议按自己的业务系统重新配置。</li>
       </ul>
     </div>
@@ -183,13 +183,14 @@ const pwdForm = reactive({ old: '', next: '' });
 const demoOpen = ref(false);
 const demoImporting = ref(false);
 const demoStatus = ref<any | null>(null);
+const demoCanManage = computed(() => ['targets:write', 'tools:write', 'routes:write', 'clients:write'].every((permission) => s.can(permission)));
 
 function demoDismissKey(): string {
   return `bailing:demo-dataset:dismissed:${s.me?.username ?? 'anonymous'}`;
 }
 
 async function loadDemoDatasetStatus(): Promise<void> {
-  if (!s.me || !s.can('routes:write')) return;
+  if (!s.me || !demoCanManage.value) return;
   try {
     const status = await api<any>('/admin/api/demo-dataset/status');
     demoStatus.value = status;

@@ -3,9 +3,22 @@ import { createServer } from 'node:http';
 
 const host = process.env.DEMO_HOST || '127.0.0.1';
 const port = Number(process.env.DEMO_PORT || 19080);
+const profile = process.env.DEMO_PROFILE || 'full-local';
+if (profile !== 'full-local' && profile !== 'stateless-readonly') {
+  throw new Error('DEMO_PROFILE 只支持 full-local 或 stateless-readonly');
+}
+const statelessReadonly = profile === 'stateless-readonly';
+if (statelessReadonly && !['127.0.0.1', '::1', 'localhost'].includes(host.toLowerCase())) {
+  throw new Error('stateless-readonly 模式的 DEMO_HOST 必须是本机回环地址');
+}
 const secret = process.env.DEMO_TOOL_SECRET || 'demo-tool-secret-change-me';
-const clientToken = process.env.DEMO_CLIENT_TOKEN || 'bailing-demo-client-token';
-const hubUrl = (process.env.DEMO_HUB_URL || 'http://localhost:18900').replace(/\/+$/, '');
+if (statelessReadonly && (secret.trim().length < 24 || secret !== secret.trim()
+  || /^(?:replace|change|demo|test|example|sample)(?:[_-]|$)/i.test(secret))) {
+  throw new Error('stateless-readonly 模式的 DEMO_TOOL_SECRET 不安全：请使用至少 24 位的独立随机密钥');
+}
+// 公共只读 profile 不需要回调 Hub，因此不读取也不使用客户端 token/Hub URL。
+const clientToken = statelessReadonly ? '' : (process.env.DEMO_CLIENT_TOKEN || 'bailing-demo-client-token');
+const hubUrl = statelessReadonly ? '' : (process.env.DEMO_HUB_URL || 'http://localhost:18900').replace(/\/+$/, '');
 
 const principals = new Map([
   ['demo-user-001', { uid: 'demo-user-001', tenant: 'demo-shop', name: 'Alice' }],
@@ -47,11 +60,8 @@ function acc(scope, opts = {}) {
   return capability;
 }
 
-const toolSpec = {
-  openapi: '3.1.0',
-  info: { title: 'Bailing demo business tools', version: '1.0.0' },
-  'x-bailing-authz-probe': { method: 'POST', path: '/.well-known/bailing/authz-probe' },
-  paths: {
+function buildToolSpec(selectedProfile) {
+  const paths = {
     '/orders': {
       get: {
         operationId: 'list_demo_orders',
@@ -59,72 +69,15 @@ const toolSpec = {
         description: '按订单号或客户名查询 demo 订单。无过滤条件时返回当前主体可见的最近订单。',
         'x-agent-capability': acc('demo.order.read', {
           requiresSubject: true,
+          readonly: true,
           whenToUse: '用户询问订单状态、付款状态、物流状态或历史订单时使用。',
           returns: '订单号、客户、商品、金额、状态、物流状态。',
         }),
         parameters: [
-          { name: 'order_no', in: 'query', required: false, description: '订单号，例如 SO-1001。用户没给订单号时不要编造。', schema: { type: 'string' } },
+          { name: 'order_no', in: 'query', required: false, description: '订单号，例如 SO-1001。', schema: { type: 'string' } },
           { name: 'customer', in: 'query', required: false, description: '客户名，可用于模糊过滤。', schema: { type: 'string' } },
         ],
-      },
-    },
-    '/tickets': {
-      post: {
-        operationId: 'create_demo_ticket',
-        summary: '为当前操作主体创建售后工单',
-        description: '当用户明确要求登记问题、创建工单或需要人工跟进时使用。',
-        'x-agent-capability': acc('demo.ticket.create', {
-          risk: 'medium',
-          requiresSubject: true,
-          idempotent: false,
-          whenToUse: '用户要求人工处理、售后跟进、开工单或记录问题时使用。',
-          returns: '工单编号与当前状态。',
-        }),
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  order_no: { type: 'string', description: '关联订单号，例如 SO-1001。' },
-                  title: { type: 'string', description: '工单标题，简短概括用户问题。' },
-                  message: { type: 'string', description: '工单正文，记录用户诉求和已查询到的关键信息。' },
-                },
-                required: ['title', 'message'],
-              },
-            },
-          },
-        },
-      },
-    },
-    '/refunds': {
-      post: {
-        operationId: 'request_demo_refund',
-        summary: '提交退款申请',
-        description: '高风险示例工具：会产生退款申请，必须进入中枢审批车道。',
-        'x-agent-capability': acc('demo.refund.request', {
-          risk: 'high',
-          confirm: true,
-          requiresSubject: true,
-          confirmPrompt: '确认要为订单 {{order_no}} 申请退款 {{amount}} 元吗？',
-        }),
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  order_no: { type: 'string', description: '订单号。' },
-                  amount: { type: 'number', description: '退款金额。' },
-                  reason: { type: 'string', description: '退款原因。' },
-                },
-                required: ['order_no', 'amount', 'reason'],
-              },
-            },
-          },
-        },
+        responses: { '200': { description: 'OK' } },
       },
     },
     '/failure-demo': {
@@ -132,11 +85,63 @@ const toolSpec = {
         operationId: 'demo_failure_probe',
         summary: '触发一个可观测失败',
         description: '用于演示中枢 trace 如何记录业务工具 5xx、错误正文和排障路径。',
-        'x-agent-capability': acc('demo.failure.read', { requiresSubject: true }),
+        'x-agent-capability': acc('demo.failure.read', { requiresSubject: true, readonly: true }),
+        responses: { '500': { description: 'Intentional demo failure' } },
       },
     },
-  },
-};
+  };
+  if (selectedProfile === 'full-local') {
+    paths['/tickets'] = {
+      post: {
+        operationId: 'create_demo_ticket',
+        summary: '为当前操作主体创建售后工单',
+        description: '当用户明确要求登记问题、创建工单或需要人工跟进时使用。',
+        'x-agent-capability': acc('demo.ticket.create', {
+          risk: 'medium', requiresSubject: true, idempotent: false,
+          whenToUse: '用户要求人工处理、售后跟进、开工单或记录问题时使用。',
+          returns: '工单编号与当前状态。',
+        }),
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: {
+            type: 'object',
+            properties: { order_no: { type: 'string' }, title: { type: 'string' }, message: { type: 'string' } },
+            required: ['title', 'message'],
+          } } },
+        },
+        responses: { '200': { description: 'OK' } },
+      },
+    };
+    paths['/refunds'] = {
+      post: {
+        operationId: 'request_demo_refund',
+        summary: '提交退款申请',
+        description: '本地单组织 demo 的高风险工具：会产生内存中的退款申请，必须进入审批车道。',
+        'x-agent-capability': acc('demo.refund.request', {
+          risk: 'high', requiresSubject: true,
+          confirm: true, confirmPrompt: '确认要为订单 {{order_no}} 申请退款 {{amount}} 元吗？',
+        }),
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: {
+            type: 'object',
+            properties: { order_no: { type: 'string' }, amount: { type: 'number' }, reason: { type: 'string' } },
+            required: ['order_no', 'amount', 'reason'],
+          } } },
+        },
+        responses: { '202': { description: 'Accepted' } },
+      },
+    };
+  }
+  return {
+    openapi: '3.1.0',
+    info: { title: 'Bailing demo business tools', version: '1.0.0' },
+    'x-bailing-authz-probe': { method: 'POST', path: '/.well-known/bailing/authz-probe' },
+    paths,
+  };
+}
+
+const toolSpec = buildToolSpec(profile);
 
 function json(res, status, data) {
   const body = JSON.stringify(data);
@@ -259,6 +264,40 @@ async function sendApprovalDecision(approval, decision) {
   return body;
 }
 
+function renderReadonlyPage() {
+  const orderRows = orders.map((o) => `<tr><td>${o.order_no}</td><td>${o.customer}</td><td>${o.item}</td><td>${o.amount}</td><td>${o.status}</td><td>${o.logistics}</td></tr>`).join('');
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bailing Demo Business</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0b0d10; color: #e8eaed; }
+    body { margin: 0; padding: 28px; }
+    main { max-width: 980px; margin: 0 auto; }
+    p { color: #a7adb7; line-height: 1.7; }
+    a { color: #57d178; margin-right: 14px; text-decoration: none; }
+    section { margin-top: 20px; border: 1px solid #252a33; border-radius: 8px; background: #12151a; padding: 16px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border-bottom: 1px solid #252a33; padding: 8px; text-align: left; }
+    th { color: #a7adb7; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Demo 业务系统</h1>
+    <p>公共体验环境仅提供无副作用的订单查询和故障 trace 演示，不创建工单、退款或审批状态。</p>
+    <nav><a href="/health">Health</a><a href="/.well-known/bailing/tools.json">Tools Spec</a></nav>
+    <section>
+      <h2>固定演示订单</h2>
+      <table><thead><tr><th>订单号</th><th>客户</th><th>商品</th><th>金额</th><th>状态</th><th>物流</th></tr></thead><tbody>${orderRows}</tbody></table>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
 function renderPage() {
   const orderRows = orders.map((o) => `<tr><td>${o.order_no}</td><td>${o.customer}</td><td>${o.item}</td><td>${o.amount}</td><td>${o.status}</td><td>${o.logistics}</td></tr>`).join('');
   const ticketRows = tickets.slice().reverse().map((t) => `<tr><td>${t.ticket_id}</td><td>${t.order_no || '-'}</td><td>${escapeHtml(t.title)}</td><td>${t.status}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">暂无工单</td></tr>';
@@ -357,15 +396,24 @@ function renderPage() {
 createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   if (req.method === 'GET' && url.pathname === '/') {
-    html(res, 200, renderPage());
+    html(res, 200, statelessReadonly ? renderReadonlyPage() : renderPage());
     return;
   }
   if (req.method === 'GET' && url.pathname === '/health') {
-    json(res, 200, { ok: true, app: 'demo-business' });
+    json(res, 200, { ok: true, app: 'demo-business', profile });
     return;
   }
   if (req.method === 'GET' && url.pathname === '/.well-known/bailing/tools.json') {
     json(res, 200, toolSpec);
+    return;
+  }
+  if (statelessReadonly && !(
+    (req.method === 'POST' && url.pathname === '/.well-known/bailing/authz-probe')
+    || (req.method === 'GET' && url.pathname === '/orders')
+    || (req.method === 'GET' && url.pathname === '/failure-demo')
+  )) {
+    // 在公共体验环境中先于读 body/验签返回 404，不暴露也不触发任何可变逻辑。
+    json(res, 404, { error: 'not found' });
     return;
   }
   if (req.method === 'GET' && url.pathname === '/api/state') {
@@ -479,5 +527,5 @@ createServer(async (req, res) => {
 
   json(res, 404, { error: 'not found' });
 }).listen(port, host, () => {
-  console.log(`[demo-business] listening http://${host}:${port}`);
+  console.log(`[demo-business] listening http://${host}:${port} profile=${profile}`);
 });

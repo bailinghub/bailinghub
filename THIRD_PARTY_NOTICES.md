@@ -128,7 +128,7 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [magic-string](https://www.npmjs.com/package/magic-string) | 0.30.21 | MIT | runtime |
 | Console | [mammoth](https://www.npmjs.com/package/mammoth) | 1.12.0 | BSD-2-Clause | runtime |
 | Console | [memoize-one](https://www.npmjs.com/package/memoize-one) | 6.0.0 | MIT | runtime |
-| Console | [nanoid](https://www.npmjs.com/package/nanoid) | 3.3.16 | MIT | runtime |
+| Console | [nanoid](https://www.npmjs.com/package/nanoid) | 3.3.18 | MIT | runtime |
 | Console | [normalize-wheel-es](https://www.npmjs.com/package/normalize-wheel-es) | 1.2.0 | BSD-3-Clause | runtime |
 | Console | [option](https://www.npmjs.com/package/option) | 0.2.4 | BSD-2-Clause | runtime |
 | Console | [pako](https://www.npmjs.com/package/pako) | 1.0.11 | (MIT AND Zlib) | runtime |

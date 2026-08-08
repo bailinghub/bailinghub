@@ -93,6 +93,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.3.0.md](RELEASE_NOTES_v0.3.0.md) | Chinese `v0.3.0` release notes. |
 | [RELEASE_NOTES_v0.3.1.en.md](RELEASE_NOTES_v0.3.1.en.md) | `v0.3.1` PDF parsing security update. |
 | [RELEASE_NOTES_v0.3.1.md](RELEASE_NOTES_v0.3.1.md) | Chinese `v0.3.1` release notes. |
+| [RELEASE_NOTES_v0.3.2.en.md](RELEASE_NOTES_v0.3.2.en.md) | `v0.3.2` managed demo dataset onboarding. |
+| [RELEASE_NOTES_v0.3.2.md](RELEASE_NOTES_v0.3.2.md) | Chinese `v0.3.2` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

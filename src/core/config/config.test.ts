@@ -29,6 +29,10 @@ const ENV_KEYS = [
   'BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS',
   'BAILING_BOOTSTRAP_ADMIN_USERNAME',
   'BAILING_BOOTSTRAP_ADMIN_PASSWORD',
+  'DEMO_BUSINESS_URL',
+  'DEMO_TOOL_SECRET',
+  'DEMO_PROFILE',
+  'DEMO_CLIENT_TOKEN',
 ];
 
 function withTempConfig(config: Record<string, unknown>, env: Record<string, string | undefined>, fn: () => void): void {
@@ -248,6 +252,71 @@ test('loadConfig: 工具检索运行保护拒绝非整数与越界超时', () =>
   });
   withTempConfig(config, { BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS: '120000.5' }, () => {
     assert.throws(() => loadConfig(), /BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS 必须是 250~120000 的整数/);
+  });
+});
+
+test('loadConfig: 演示数据边界由环境注入且规范化 URL', () => {
+  const config = { server: { host: '127.0.0.1', token: '' }, state: { backend: 'jsonl' } };
+  withTempConfig(config, {
+    DEMO_BUSINESS_URL: 'http://127.0.0.1:19080/',
+    DEMO_TOOL_SECRET: 'a-strong-demo-secret-for-trial',
+    DEMO_PROFILE: 'stateless-readonly',
+  }, () => {
+    assert.deepEqual(loadConfig().demoDataset, {
+      businessBaseUrl: 'http://127.0.0.1:19080',
+      toolSecret: 'a-strong-demo-secret-for-trial',
+      profile: 'stateless-readonly',
+    });
+  });
+});
+
+test('loadConfig: 无状态只读演示拒绝缺失、非 HTTP 和弱密钥', () => {
+  const config = { server: { host: '127.0.0.1', token: '' }, state: { backend: 'jsonl' } };
+  withTempConfig(config, { DEMO_BUSINESS_URL: 'http://127.0.0.1:19080' }, () => {
+    assert.throws(() => loadConfig(), /DEMO_BUSINESS_URL 与 DEMO_TOOL_SECRET 必须同时配置/);
+  });
+  withTempConfig(config, {
+    DEMO_BUSINESS_URL: 'file:///tmp/demo',
+    DEMO_TOOL_SECRET: 'a-strong-demo-secret-for-trial',
+    DEMO_PROFILE: 'stateless-readonly',
+  }, () => {
+    assert.throws(() => loadConfig(), /http\(s\) URL/);
+  });
+  withTempConfig(config, {
+    DEMO_BUSINESS_URL: 'http://127.0.0.1:19080',
+    DEMO_TOOL_SECRET: 'demo-tool-secret-change-me',
+    DEMO_PROFILE: 'stateless-readonly',
+  }, () => {
+    assert.throws(() => loadConfig(), /至少 24 位/);
+  });
+  withTempConfig(config, {
+    DEMO_BUSINESS_URL: 'http://127.0.0.1:19080',
+    DEMO_TOOL_SECRET: 'REPLACE_WITH_32_BYTE_INDEPENDENT_DEMO_TOOL_SECRET',
+    DEMO_PROFILE: 'stateless-readonly',
+  }, () => {
+    assert.throws(() => loadConfig(), /至少 24 位/);
+  });
+  withTempConfig(config, {
+    DEMO_BUSINESS_URL: 'http://127.0.0.1:19080',
+    DEMO_TOOL_SECRET: ' a-strong-demo-secret-for-trial ',
+    DEMO_PROFILE: 'stateless-readonly',
+  }, () => {
+    assert.throws(() => loadConfig(), /至少 24 位/);
+  });
+});
+
+test('loadConfig: full-local Docker demo 保留显式的本地兼容默认', () => {
+  const config = { server: { host: '127.0.0.1', token: '' }, state: { backend: 'jsonl' } };
+  withTempConfig(config, {
+    DEMO_BUSINESS_URL: 'http://demo-business:19080',
+    DEMO_TOOL_SECRET: 'demo-tool-secret-change-me',
+  }, () => {
+    assert.deepEqual(loadConfig().demoDataset, {
+      businessBaseUrl: 'http://demo-business:19080',
+      toolSecret: 'demo-tool-secret-change-me',
+      profile: 'full-local',
+      clientToken: 'bailing-demo-client-token',
+    });
   });
 });
 

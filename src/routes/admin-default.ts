@@ -8,6 +8,7 @@ import { cfg, cfgStore, edition, isPaused, kbService, kbSync, queue, store, targ
 import type { Principal } from '../app/auth';
 import { refreshTargets } from '../core/targets/registry';
 import { handleAdminApiFor, type AdminApiDeps } from './admin';
+import { DemoDatasetService } from '../services/demo-dataset';
 
 export function defaultAdminApiDeps(): AdminApiDeps {
   return {
@@ -27,6 +28,7 @@ export function defaultAdminApiDeps(): AdminApiDeps {
     engineRuntime: { requeueForRerun },
     refreshTargets,
     targetRegistry,
+    demoDataset: cfgStore ? new DemoDatasetService(cfgStore, cfg.demoDataset) : null,
   };
 }
 
