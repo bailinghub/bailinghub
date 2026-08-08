@@ -24,6 +24,18 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.3.2 - Managed Demo Dataset Onboarding
+
+Released on 2026-08-08.
+
+- **Core-native onboarding**: adds demo dataset status, import, and clear Admin APIs together with the empty-instance console prompt. Demo targets, tool providers, routes, and clients are owned by the current tenant Core rather than an external private data layer.
+- **Ownership and conflict safety**: adds a durable ownership manifest, fixed resource fingerprints, and transactional concurrency protection. Name collisions, user modifications, and external references return `409`; clearing never deletes jobs, messages, traces, or audit history.
+- **Two runtime profiles**: keeps the complete Docker `full-local` demo and adds a loopback-only, stateless, read-only `stateless-readonly` profile for shared or embedded evaluation environments.
+- **Database schema**: adds `054_demo_dataset_state.sql` and `bz_demo_datasets`, which store only the demo configuration set and fingerprints explicitly owned by Core. Run the official migrator before restarting the service.
+- **Integration impact**: Client API, Kernel Host API v1, chat protocol, Executor Protocol, ACC, tool signatures, approval semantics, and final business authorization remain compatible. Instances without Demo Business configuration do not expose the import action.
+- **Validation**: full `npm run release:check`, Docker demo coverage, npm artifact verification, and a manual candidate import, inspection, and clear flow from an empty instance.
+- **Related docs**: [RELEASE_NOTES_v0.3.2.en.md](RELEASE_NOTES_v0.3.2.en.md), [Docker Demo](DEMO.en.md), [SQL migration discipline](../sql/README.en.md), and [Compatibility](COMPATIBILITY.en.md).
+
 ## v0.3.1 - PDF Parsing Security Update
 
 Released on 2026-08-07.

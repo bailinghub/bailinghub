@@ -38,9 +38,9 @@ function updateJson(root, relativePath, update) {
 test('current release surface is internally consistent', () => {
   const result = checkReleaseConsistency({ root: repoRoot });
   assert.deepEqual(result.findings, []);
-  assert.equal(result.version, '0.3.2-rc.1');
-  assert.equal(result.stableVersion, '0.3.1');
-  assert.equal(result.publishTag, 'next');
+  assert.equal(result.version, '0.3.2');
+  assert.equal(result.stableVersion, '0.3.2');
+  assert.equal(result.publishTag, 'latest');
 });
 
 for (const [label, tag] of [
@@ -51,8 +51,13 @@ for (const [label, tag] of [
     const root = createFixture();
     try {
       updateJson(root, 'package.json', (pkg) => {
+        pkg.version = '0.3.2-rc.1';
         if (tag === undefined) delete pkg.publishConfig;
         else pkg.publishConfig = { tag };
+      });
+      updateJson(root, 'package-lock.json', (lock) => {
+        lock.version = '0.3.2-rc.1';
+        lock.packages[''].version = '0.3.2-rc.1';
       });
 
       const result = checkReleaseConsistency({ root });

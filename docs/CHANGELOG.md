@@ -17,6 +17,18 @@
 
 当前无待发布变更。
 
+## v0.3.2 - 受管演示数据引导
+
+发布日期：2026-08-08。
+
+- **Core 原生上手能力**：新增演示数据状态、导入与清理 Admin API，并恢复空实例的控制台引导；演示目标、工具源、路由和接入方由当前租户 Core 自己管理，不依赖外部私有数据层。
+- **所有权与冲突保护**：新增持久 ownership manifest、固定资源指纹和事务级并发保护；同名占用、用户修改或外部引用均返回 `409`，清理不删除任务、消息、Trace 和审计历史。
+- **双运行 profile**：保留 Docker `full-local` 完整演示，并增加只允许 loopback、无状态、只读工具的 `stateless-readonly` profile，供共享或宿主式体验环境安全复用。
+- **数据库结构**：新增 `054_demo_dataset_state.sql` 和 `bz_demo_datasets`，只记录 Core 明确拥有的演示配置清单与指纹；升级先执行官方迁移器，再重启服务。
+- **对接影响**：Client API、Kernel Host API v1、聊天协议、Executor Protocol、ACC、工具签名、审批语义和业务系统最终授权保持兼容；未配置 Demo Business 的实例不会显示可导入入口。
+- **验证方式**：完整 `npm run release:check`、Docker demo、npm 制品检查，以及从空实例执行导入、浏览和清理的人工候选验证。
+- **相关文档**：[RELEASE_NOTES_v0.3.2.md](RELEASE_NOTES_v0.3.2.md)、[Docker Demo](DEMO.md)、[SQL 迁移纪律](../sql/README.md) 与 [兼容性与升级](兼容性与升级.md)。
+
 ## v0.3.1 - PDF 解析安全更新
 
 发布日期：2026-08-07。
