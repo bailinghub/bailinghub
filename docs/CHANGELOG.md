@@ -17,6 +17,16 @@
 
 当前无待发布变更。
 
+## v0.3.3 - npm 发布元数据纠偏
+
+发布日期：2026-08-09。
+
+- **发布来源核对**：从精确 Tag 的独立完整 Git clone 发布 npm 包，使 Registry `gitHead`、Tag 提交与公开源码可以一致核对；`v0.3.2` 保留为不可变历史，不覆盖、不移动、不重发。
+- **运行时不变**：`src/`、`sql/`、`web/`、`web-admin/`、`demo/` 与 `sdk/` 相对 `v0.3.2` 无变化，受管演示数据能力保持不变。
+- **数据库结构**：没有新增迁移，最新迁移仍为 `054_demo_dataset_state.sql`。
+- **对接影响**：Client API、Kernel Host API v1、聊天协议、Executor Protocol、ACC、工具签名、审批语义与最终业务授权均不变。
+- **相关文档**：[RELEASE_NOTES_v0.3.3.md](RELEASE_NOTES_v0.3.3.md) 与 [v0.3.2 受管演示数据说明](RELEASE_NOTES_v0.3.2.md)。
+
 ## v0.3.2 - 受管演示数据引导
 
 发布日期：2026-08-08。

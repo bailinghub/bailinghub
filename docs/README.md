@@ -108,6 +108,8 @@
 | [RELEASE_NOTES_v0.3.1.en.md](RELEASE_NOTES_v0.3.1.en.md) | English `v0.3.1` PDF parsing security update. |
 | [RELEASE_NOTES_v0.3.2.md](RELEASE_NOTES_v0.3.2.md) | `v0.3.2` 受管演示数据引导说明。 |
 | [RELEASE_NOTES_v0.3.2.en.md](RELEASE_NOTES_v0.3.2.en.md) | English `v0.3.2` managed demo dataset onboarding. |
+| [RELEASE_NOTES_v0.3.3.md](RELEASE_NOTES_v0.3.3.md) | `v0.3.3` npm 发布来源元数据纠偏说明。 |
+| [RELEASE_NOTES_v0.3.3.en.md](RELEASE_NOTES_v0.3.3.en.md) | English `v0.3.3` npm publication provenance-metadata correction. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

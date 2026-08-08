@@ -24,6 +24,16 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.3.3 - npm Publication Metadata Correction
+
+Released on 2026-08-09.
+
+- **Publication identity check**: publishes npm from an independent full Git clone of the exact Tag so Registry `gitHead`, the Tag commit, and public source can be checked consistently. `v0.3.2` remains immutable history and is not overwritten, moved, or republished.
+- **Unchanged runtime**: `src/`, `sql/`, `web/`, `web-admin/`, `demo/`, and `sdk/` are unchanged from `v0.3.2`; the managed demo dataset capability is carried forward as-is.
+- **Database schema**: there is no new migration; `054_demo_dataset_state.sql` remains the latest migration.
+- **Integration impact**: Client API, Kernel Host API v1, the chat protocol, Executor Protocol, ACC, tool signatures, approval semantics, and final business authorization are unchanged.
+- **Related docs**: [RELEASE_NOTES_v0.3.3.en.md](RELEASE_NOTES_v0.3.3.en.md) and the [v0.3.2 managed demo dataset notes](RELEASE_NOTES_v0.3.2.en.md).
+
 ## v0.3.2 - Managed Demo Dataset Onboarding
 
 Released on 2026-08-08.
