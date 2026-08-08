@@ -61,6 +61,7 @@ import { handleRunFor, type RunApiDeps } from '../routes/run';
 import { handleSendFor, type SendApiDeps } from '../routes/send';
 import { handleWecomInboundFor, WecomRuntimeState, type WecomApiDeps } from '../routes/wecom';
 import { WecomAccessTokenCache } from '../adapters/channels/wecom-api';
+import { DemoDatasetService } from '../services/demo-dataset';
 
 const timezoneClaims = new Map<string, number>();
 const MAX_KERNEL_CLOSE_DRAIN_MS = 10 * 60_000;
@@ -178,6 +179,7 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     queue: new Queue(cfg.concurrency, input.executionQueue),
     serialScope: instanceKey,
   });
+  const demoDataset = composition.cfgStore ? new DemoDatasetService(composition.cfgStore, cfg.demoDataset) : null;
   const runtimeHelpers = createRuntimeContextHelpers({
     cfg,
     scopeResolver: edition.scopeResolver as ScopeResolver<Principal | null | undefined>,
@@ -329,6 +331,7 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
       targetRegistry,
       httpMountPath,
       localAdminManagement,
+      demoDataset,
     }, method, path, req, res, principal),
     handleApprovalDecision: (req, res, approvalId, url) => handleApprovalDecisionFor({
       cfg,

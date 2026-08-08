@@ -12,9 +12,20 @@ export class TargetRepository {
   }
 
   async upsert(t: TargetDef): Promise<void> {
+    await this.write(t, true);
+  }
+
+  /** Insert-only variant for ownership-sensitive bootstrap flows. */
+  async create(t: TargetDef): Promise<void> {
+    await this.write(t, false);
+  }
+
+  private async write(t: TargetDef, updateExisting: boolean): Promise<void> {
     await this.pool.query(
       'INSERT INTO bz_targets (name,kind,stateless,needs_project,timeout_ms,enabled,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ' +
-        'ON DUPLICATE KEY UPDATE kind=VALUES(kind),stateless=VALUES(stateless),needs_project=VALUES(needs_project),timeout_ms=VALUES(timeout_ms),enabled=VALUES(enabled),description=VALUES(description),updated_at=VALUES(updated_at)',
+        (updateExisting
+          ? 'ON DUPLICATE KEY UPDATE kind=VALUES(kind),stateless=VALUES(stateless),needs_project=VALUES(needs_project),timeout_ms=VALUES(timeout_ms),enabled=VALUES(enabled),description=VALUES(description),updated_at=VALUES(updated_at)'
+          : ''),
       [t.name, t.kind, t.stateless ? 1 : 0, t.needs_project ? 1 : 0, t.timeout_ms ?? 0, t.enabled ? 1 : 0, t.description ?? null, dt(), dt()],
     );
   }

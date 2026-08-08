@@ -37,6 +37,20 @@ export interface ToolRetrievalConfig {
   embeddingTimeoutMs: number;
 }
 
+export type DemoDatasetProfile = 'full-local' | 'stateless-readonly';
+
+/**
+ * Core 内置演示数据只保存中枢自己的配置。演示业务系统仍是独立 HTTP 边界；
+ * Host 可为多个隔离 Kernel 注入同一个无状态、只读的 loopback 演示服务。
+ */
+export interface DemoDatasetConfig {
+  businessBaseUrl: string;
+  toolSecret: string;
+  profile: DemoDatasetProfile;
+  /** full-local Docker demo 的业务侧审批回调凭据；无状态只读模式不使用。 */
+  clientToken?: string;
+}
+
 export const DEFAULT_TOOL_RETRIEVAL_CONFIG: Readonly<ToolRetrievalConfig> = Object.freeze({
   indexLoadTimeoutMs: 5000,
   embeddingTimeoutMs: 15_000,
@@ -85,6 +99,8 @@ export interface AppConfig {
   metrics: MetricsConfig;
   /** loadConfig 始终补齐；保留 optional 让旧版扩展注入的 AppConfig 继续兼容。 */
   toolRetrieval?: ToolRetrievalConfig;
+  /** 未配置时后台仍可读取 status，但 available=false 且不允许导入。 */
+  demoDataset?: DemoDatasetConfig | null;
   bootstrapAdmin: BootstrapAdminConfig | null;
   concurrency: number;
   killSwitchFile: string;
@@ -180,6 +196,43 @@ function bootstrapAdminFromEnv(env: NodeJS.ProcessEnv): BootstrapAdminConfig | n
   return { username, password };
 }
 
+function demoDatasetFromEnv(env: NodeJS.ProcessEnv): DemoDatasetConfig | null {
+  const rawUrl = String(env['DEMO_BUSINESS_URL'] ?? '').trim();
+  const toolSecret = String(env['DEMO_TOOL_SECRET'] ?? '');
+  if (!rawUrl && !toolSecret) return null;
+  if (!rawUrl || !toolSecret) {
+    throw new Error('DEMO_BUSINESS_URL 与 DEMO_TOOL_SECRET 必须同时配置');
+  }
+
+  let parsed: URL;
+  try { parsed = new URL(rawUrl); }
+  catch { throw new Error('DEMO_BUSINESS_URL 必须是合法的 http(s) URL'); }
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+    throw new Error('DEMO_BUSINESS_URL 必须是不含账号、查询参数或片段的 http(s) URL');
+  }
+  const profileRaw = String(env['DEMO_PROFILE'] ?? 'full-local').trim();
+  if (profileRaw !== 'full-local' && profileRaw !== 'stateless-readonly') {
+    throw new Error('DEMO_PROFILE 仅支持 full-local 或 stateless-readonly');
+  }
+  const profile: DemoDatasetProfile = profileRaw;
+  if (profile === 'stateless-readonly') {
+    const weak = toolSecret.length < 24
+      || toolSecret !== toolSecret.trim()
+      || toolSecret === 'demo-tool-secret-change-me'
+      || /^(?:replace|change|demo|test|example|sample)(?:[_-]|$)/i.test(toolSecret);
+    if (weak) throw new Error('stateless-readonly 演示服务必须配置至少 24 位的非占位 DEMO_TOOL_SECRET');
+  }
+
+  const businessBaseUrl = parsed.toString().replace(/\/+$/, '');
+  const clientToken = String(env['DEMO_CLIENT_TOKEN'] ?? '').trim();
+  return {
+    businessBaseUrl,
+    toolSecret,
+    profile,
+    ...(profile === 'full-local' ? { clientToken: clientToken || 'bailing-demo-client-token' } : {}),
+  };
+}
+
 /**
  * Standalone 模式从当前部署目录读取 config.json；Kernel Host 模式只读已安装
  * Core 制品内的安全默认。这样宿主 cwd 不会被误当成 Core 制品根或配置根。
@@ -240,6 +293,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
       indexLoadTimeoutMs: boundedIntegerEnv('BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS', DEFAULT_TOOL_RETRIEVAL_CONFIG.indexLoadTimeoutMs, 100, 60_000),
       embeddingTimeoutMs: boundedIntegerEnv('BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS', DEFAULT_TOOL_RETRIEVAL_CONFIG.embeddingTimeoutMs, 250, 120_000),
     },
+    demoDataset: demoDatasetFromEnv(env),
     bootstrapAdmin: bootstrapAdminFromEnv(env),
     concurrency: Number(raw['concurrency'] ?? 2),
     killSwitchFile: resolve(root, raw['killSwitchFile'] ?? '.paused'),

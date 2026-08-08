@@ -53,7 +53,8 @@ const requiredFiles = [
   'src/infrastructure/schema/core-schema-migrator.ts',
   'src/infrastructure/schema/retired-migrations.ts',
   'sql/001_init_state.sql',
-  'sql/053_tool_spec_access_policy.sql',
+  'sql/054_demo_dataset_state.sql',
+  'demo/business/server.mjs',
   'web/console/index.html',
   'web/widget/widget.js',
 ];

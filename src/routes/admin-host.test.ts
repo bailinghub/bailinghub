@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import test from 'node:test';
 import type { Principal } from '../app/auth';
-import { adminSmokeHub, handleAdminApiFor, type AdminApiDeps } from './admin';
+import { adminSmokeHub, adminSmokeRunInput, handleAdminApiFor, type AdminApiDeps } from './admin';
 
 function response() {
   let status = 0;
@@ -33,6 +33,15 @@ test('admin smoke loopback includes the trusted Kernel mount prefix', () => {
     () => adminSmokeHub({ server: { host: '127.0.0.1', port: 3100, token: '' } }, '/../escape'),
     /HTTP mount path/,
   );
+});
+
+test('admin smoke uses a read-only request for the stateless demo profile', () => {
+  assert.match(adminSmokeRunInput({ demoDataset: {
+    businessBaseUrl: 'http://127.0.0.1:19080',
+    toolSecret: 'not-returned',
+    profile: 'stateless-readonly',
+  } }) ?? '', /只查询订单 SO-1001/);
+  assert.equal(adminSmokeRunInput({ demoDataset: null }), undefined);
 });
 
 test('host identity cannot reach dead Core-local password or account APIs', async () => {

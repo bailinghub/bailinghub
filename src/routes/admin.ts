@@ -19,6 +19,7 @@ import { handleAdminKbApiFor } from './admin-kb';
 import { handleAdminRuntimeApiFor } from './admin-runtime';
 import { handleAdminToolProviderApiFor } from './admin-tool-providers';
 import { handleAdminBrandingApiFor } from './admin-branding';
+import { handleAdminDemoDatasetApiFor, type DemoDatasetServiceContract } from './admin-demo-dataset';
 import { refreshTargets, type TargetRegistry } from '../core/targets/registry';
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
@@ -52,10 +53,18 @@ export interface AdminApiDeps {
   httpMountPath?: string;
   /** False when a Host identity provider owns human accounts and passwords. */
   localAdminManagement?: boolean;
+  /** Core-native demo dataset service; only available with the MySQL config store. */
+  demoDataset: DemoDatasetServiceContract | null;
 }
 
 export function adminSmokeHub(cfg: Pick<AppConfig, 'server'>, httpMountPath?: string): string {
   return `http://127.0.0.1:${cfg.server.port}${normalizeHttpMountPath(httpMountPath)}`;
+}
+
+export function adminSmokeRunInput(cfg: Pick<AppConfig, 'demoDataset'>): string | undefined {
+  return cfg.demoDataset?.profile === 'stateless-readonly'
+    ? 'smoke test: 只查询订单 SO-1001 并返回订单状态'
+    : undefined;
 }
 
 // ---- web 配置后台 API（管理项目/路由/接入方，查看任务）----
@@ -81,6 +90,10 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     send(res, 200, deps.capabilities);
     return true;
   }
+  if (deps.demoDataset && await handleAdminDemoDatasetApiFor(
+    { demoDataset: deps.demoDataset, refreshTargets: deps.refreshTargets },
+    method, path, req, res, principal,
+  )) return true;
   // 权限闸门：板块:动作 不在角色权限集内一律 403
   const deny = (): true => { send(res, 403, { error: '当前角色无此权限' }); return true; };
   const PERM_RULES: Array<[RegExp, string, string]> = [ // [路径, GET 所需权限, 写操作所需权限]
@@ -155,6 +168,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
       tenantId,
       runRoute: demo?.route,
       runToken: demo?.token,
+      runInput: adminSmokeRunInput(deps.cfg),
       waitMs: 20_000,
     }));
     return true;

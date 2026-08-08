@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
+import { checkReleaseConsistency } from './check-release-consistency.mjs';
 
 const findings = [];
 
@@ -24,6 +25,7 @@ function requireIncludes(file, text, needle) {
 }
 
 const pkg = parseJson('package.json');
+const { stableVersion } = checkReleaseConsistency();
 const config = parseJson('config.example.json');
 const env = read('.env.example');
 const compose = read('docker-compose.yml');
@@ -66,11 +68,11 @@ for (const [file, text] of [
   if (/bailing\.bnopen\.cn/.test(text)) findings.push(`${file}: must not reference self-hosted internal instance`);
 }
 
-if (String(pkg.version ?? '') && !composeImages.includes(`bailinghub:${pkg.version}`)) {
-  findings.push('docker-compose.images.yml: default bailinghub image tag must match package version');
+if (stableVersion && !composeImages.includes(`bailinghub:${stableVersion}`)) {
+  findings.push('docker-compose.images.yml: default bailinghub image tag must match stable release surface');
 }
-if (String(pkg.version ?? '') && !composeImages.includes(`bailing-demo-business:${pkg.version}`)) {
-  findings.push('docker-compose.images.yml: default demo image tag must match package version');
+if (stableVersion && !composeImages.includes(`bailing-demo-business:${stableVersion}`)) {
+  findings.push('docker-compose.images.yml: default demo image tag must match stable release surface');
 }
 
 for (const required of [

@@ -9,8 +9,8 @@
           </HelpTip></span>
           <div class="headActions">
             <el-button size="small" @click="openDocs">开发文档</el-button>
-            <el-button v-if="demoAvailable" size="small" type="primary" :loading="demoLoading" @click="importDemo">导入演示数据</el-button>
-            <el-button v-if="demoAvailable && demoStatus?.imported" size="small" :loading="demoCleanupLoading" @click="clearDemo">清理演示数据</el-button>
+            <el-button v-if="demoAvailable && demoCanManage" size="small" type="primary" :loading="demoLoading" @click="importDemo">导入演示数据</el-button>
+            <el-button v-if="demoCanManage && demoStatus?.imported" size="small" :loading="demoCleanupLoading" @click="clearDemo">清理演示数据</el-button>
             <el-button size="small" :loading="smokeLoading" @click="runSmoke">运行 smoke</el-button>
             <el-button size="small" :loading="loading" @click="load">刷新</el-button>
           </div>
@@ -39,12 +39,12 @@
       <div class="nextPanel">
         <div class="nextMain">
           <span class="muted">下一步</span>
-          <b>{{ demoAvailable && demoStatus?.imported ? '演示数据已导入' : demoAvailable && demoStatus?.empty ? '导入演示数据' : (nextStep?.title || '基础链路已完成') }}</b>
-          <p>{{ demoAvailable && demoStatus?.imported ? '可以继续刷新演示数据；准备正式接入时，可一键清理中枢内置的演示配置与演示运行记录。' : demoAvailable && demoStatus?.empty ? '当前实例还没有配置。先导入一套演示数据，可以直接看到路由、工具、任务、审批和成本页面如何协同。' : (nextStep?.detail || '可以运行 smoke 或使用真实业务系统触发 /run，继续观察 trace、审批、送达和成本。') }}</p>
+          <b>{{ demoStatus?.imported ? '演示数据已导入' : demoAvailable && demoStatus?.empty ? '导入演示数据' : (nextStep?.title || '基础链路已完成') }}</b>
+          <p>{{ demoStatus?.imported ? '演示目标、工具源、触发路由和接入方已就绪。接下来运行 smoke，由真实调用生成任务与 trace；导入过程不伪造运行账本。' : demoAvailable && demoStatus?.empty ? '当前实例还没有配置。先导入一套 Core 内置演示配置，再通过 smoke 看懂路由、工具与真实 trace 如何协同。' : (nextStep?.detail || '可以运行 smoke 或使用真实业务系统触发 /run，继续观察 trace、审批、送达和成本。') }}</p>
         </div>
         <div class="nextActions">
-          <el-button v-if="demoAvailable" type="primary" :loading="demoLoading" @click="importDemo">{{ demoStatus?.imported ? '刷新演示数据' : '导入演示数据' }}</el-button>
-          <el-button v-if="demoAvailable && demoStatus?.imported" :loading="demoCleanupLoading" @click="clearDemo">清理演示数据</el-button>
+          <el-button v-if="demoAvailable && demoCanManage" type="primary" :loading="demoLoading" @click="importDemo">{{ demoStatus?.imported ? '刷新演示数据' : '导入演示数据' }}</el-button>
+          <el-button v-if="demoCanManage && demoStatus?.imported" :loading="demoCleanupLoading" @click="clearDemo">清理演示数据</el-button>
           <el-button v-if="nextStep" type="primary" @click="router.push(nextStep.path)">处理 {{ nextStep.title }}</el-button>
           <el-button :loading="smokeLoading" @click="runSmoke">运行 smoke</el-button>
           <el-button @click="openDocs">开发文档</el-button>
@@ -78,7 +78,7 @@
             在中枢注册工具源、接入方和触发路由，把“谁能触发什么场景、能用哪些工具”装配清楚。
           </el-timeline-item>
           <el-timeline-item timestamp="3" type="primary">
-            使用 smoke 或真实 <code>/run</code> 建单，确认 trace、审批意图、工具调用和结果回传都可观测。
+            使用 smoke 或真实 <code>/run</code> 发起任务，确认只读查询、trace、工具调用和结果回传都可观测。
           </el-timeline-item>
         </el-timeline>
       </el-card>
@@ -116,6 +116,7 @@ import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
 import { openDoc } from '../docs';
+import { useMe } from '../store';
 import HelpTip from '../components/HelpTip.vue';
 
 type StepStatus = 'pass' | 'warn' | 'fail' | 'skip' | 'idle';
@@ -130,6 +131,7 @@ interface SmokeReport {
 }
 
 const router = useRouter();
+const me = useMe();
 const loading = ref(false);
 const smokeLoading = ref(false);
 const credentials = ref<any[]>([]);
@@ -142,6 +144,7 @@ const demoStatus = ref<any | null>(null);
 const demoLoading = ref(false);
 const demoCleanupLoading = ref(false);
 const demoAvailable = computed(() => demoStatus.value?.available === true);
+const demoCanManage = computed(() => ['targets:write', 'tools:write', 'routes:write', 'clients:write'].every((permission) => me.can(permission)));
 
 async function safeList<T = any>(path: string): Promise<T[]> {
   try {
@@ -190,7 +193,7 @@ async function importDemo(): Promise<void> {
 async function clearDemo(): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      '只会清理中枢内置演示对象和演示任务记录，不会删除你自己新建的路由、工具源、接入方或真实任务。',
+      '只会清理 ownership manifest 能证明属于 Core、且未被修改或其他配置引用的演示配置。任务、消息、trace、审计账本和用户配置都不会被删除。',
       '清理演示数据',
       { type: 'warning', confirmButtonText: '清理', cancelButtonText: '取消' },
     );
@@ -280,7 +283,7 @@ const steps = computed(() => {
       path: '/diagnostics',
       doc: '/docs/operations',
       status: smokeStatus,
-      detail: smoke.value ? (smoke.value.fail ? 'Smoke 有失败项，建议先处理再对外接入。' : 'Smoke 已通过，基础调用链路可用。') : (hasDemoProvider ? '建议运行 smoke，确认 demo 或当前配置可完成建单与 trace。' : '完成上面配置后运行 smoke，锁定端到端链路。'),
+      detail: smoke.value ? (smoke.value.fail ? 'Smoke 有失败项，建议先处理再对外接入。' : 'Smoke 已通过，基础调用链路可用。') : (hasDemoProvider ? '建议运行 smoke，确认 demo 或当前配置可完成真实调用并生成 trace。' : '完成上面配置后运行 smoke，锁定端到端链路。'),
     },
   ] as Array<{ index: number; key: string; title: string; path: string; doc: string; status: StepStatus; detail: string }>;
 });
