@@ -20,8 +20,8 @@ import type { TargetRegistry } from '../core/targets/registry';
 // ---- 聊天入口（公开面）：网页组件 → POST /chat/:entry → 同一条路由/总账/知识/工具链路 ----
 // entry_key 设计为可公开（页面源码可见）；防滥用 = Origin 白名单 + 按 IP 限速 + 可停用/删除。
 // 落点是「触发路由」：背后是 llm 还是执行器智能体，入口无感（用户铁律：聊天不绑死 LLM）。
-// 身份纪律（总纲）：网页访客=匿名主体。metadata 由服务端构造，组件只能带 visitor_id（会话连续性用），
-// 业务操作主体（subject_field → on-behalf-of）永远为空——挂工具的路由读公开数据可用，写操作业务侧自然拒。
+// 身份纪律（总纲）：网页访客默认是匿名主体。metadata 由服务端构造，组件只能带 visitor_id（会话连续性用）；
+// 没有验签票据时业务操作主体为空，无需主体的公开工具仍可用，subject.required 工具在装配阶段不可见；业务系统继续做最终授权。
 
 export function chatCors(res: ServerResponse): void {
   // 公开面不用 Cookie，CORS 直接放开；"哪些站点能嵌"由服务端 Origin 白名单裁决（不匹配 403，浏览器 Origin 不可伪造）
@@ -452,7 +452,7 @@ export async function handleChatConfigFor(deps: ChatApiDeps, req: IncomingMessag
   });
 }
 
-/** 演示页：贴一行 script 的效果，建好入口立即可看（也是给第三方的"先试再接"入口）。 */
+/** 匿名预览页：只验证组件和公开能力；不继承中枢管理员登录态，也不伪造业务主体。 */
 export function serveChatDemoFor(
   deps: Pick<ChatApiDeps, 'cfg'>,
   res: ServerResponse,
@@ -461,12 +461,18 @@ export function serveChatDemoFor(
 ): void {
   const safeMountPath = normalizeHttpMountPath(mountPath);
   const html = [
-    '<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
-    `<title>聊天入口演示 · ${deps.cfg.brand.name}</title></head>`,
+    '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
+    `<title>聊天入口匿名预览 · ${deps.cfg.brand.name}</title></head>`,
     '<body style="margin:0;min-height:100vh;background:#faf9f7;font:15px/1.7 -apple-system,\'PingFang SC\',sans-serif;color:#3d372f">',
     '<div style="max-width:560px;margin:0 auto;padding:48px 24px">',
-    '<h2 style="margin:0 0 8px">聊天入口演示页</h2>',
-    '<p style="color:#8a8378">右下角的气泡就是嵌入效果。把下面这行代码贴进你网站任意页面的 &lt;/body&gt; 前即可：</p>',
+    '<h2 style="margin:0 0 8px">聊天入口匿名预览</h2>',
+    '<div style="margin:16px 0;padding:14px 16px;border:1px solid #ead9b8;border-radius:10px;background:#fff9ed">',
+    '<strong>当前页面不具有业务用户身份</strong>',
+    '<p style="margin:6px 0 0">它不会携带或继承中枢管理后台的登录状态，也没有独立的业务登录入口。请勿在对话中提供账号、Token 或用户 ID。</p>',
+    '</div>',
+    '<p>这里适合验证聊天组件、公开问答，以及不要求业务主体的工具。需要业务主体的查询或办理能力，应将助手嵌入已登录的业务系统页面，并由业务后端签发短期身份票据。</p>',
+    '<p>如果你是管理员，需要验证内置演示的完整链路，请在上手向导中运行 Smoke；Smoke 会使用受控的演示主体。</p>',
+    '<p style="color:#8a8378">右下角的气泡展示组件嵌入效果。把下面这行代码贴进你网站任意页面的 &lt;/body&gt; 前即可：</p>',
     `<pre style="background:#fff;border:1px solid #e8e4dd;border-radius:8px;padding:12px;overflow:auto;font-size:12px">&lt;script src="<span data-host></span>/widget.js" data-entry="${entryKey}" async&gt;&lt;/script&gt;</pre>`,
     '</div>',
     `<script>document.querySelector("[data-host]").textContent=location.origin+${JSON.stringify(safeMountPath)};</script>`,

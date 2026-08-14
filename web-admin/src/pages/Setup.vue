@@ -9,9 +9,11 @@
           </HelpTip></span>
           <div class="headActions">
             <el-button size="small" @click="openDocs">开发文档</el-button>
-            <el-button v-if="demoAvailable && demoCanManage" size="small" type="primary" :loading="demoLoading" @click="importDemo">导入演示数据</el-button>
+            <el-button v-if="demoAvailable && demoCanManage && !demoStatus?.imported" size="small" type="primary" :loading="demoLoading" @click="importDemo">导入演示数据</el-button>
+            <el-button v-if="demoAvailable && demoCanManage && demoStatus?.imported" size="small" :loading="demoLoading" @click="importDemo">刷新演示数据</el-button>
             <el-button v-if="demoCanManage && demoStatus?.imported" size="small" :loading="demoCleanupLoading" @click="clearDemo">清理演示数据</el-button>
-            <el-button size="small" :loading="smokeLoading" @click="runSmoke">运行 smoke</el-button>
+            <el-button v-if="demoStatus?.imported" size="small" type="primary" :loading="smokeLoading" @click="runSmoke">运行演示主体 Smoke</el-button>
+            <el-button v-else size="small" :loading="smokeLoading" @click="runSmoke">运行 Smoke</el-button>
             <el-button size="small" :loading="loading" @click="load">刷新</el-button>
           </div>
         </div>
@@ -39,14 +41,16 @@
       <div class="nextPanel">
         <div class="nextMain">
           <span class="muted">下一步</span>
-          <b>{{ demoStatus?.imported ? '演示数据已导入' : demoAvailable && demoStatus?.empty ? '导入演示数据' : (nextStep?.title || '基础链路已完成') }}</b>
-          <p>{{ demoStatus?.imported ? '演示目标、工具源、触发路由和接入方已就绪。接下来运行 smoke，由真实调用生成任务与 trace；导入过程不伪造运行账本。' : demoAvailable && demoStatus?.empty ? '当前实例还没有配置。先导入一套 Core 内置演示配置，再通过 smoke 看懂路由、工具与真实 trace 如何协同。' : (nextStep?.detail || '可以运行 smoke 或使用真实业务系统触发 /run，继续观察 trace、审批、送达和成本。') }}</p>
+          <b>{{ demoStatus?.imported ? '演示数据已导入，运行演示主体 Smoke' : demoAvailable && demoStatus?.empty ? '导入演示数据' : (nextStep?.title || '基础链路已完成') }}</b>
+          <p>{{ demoStatus?.imported ? '演示目标、工具源、触发路由和接入方已就绪。请手动运行演示主体 Smoke：它使用内置演示主体发起真实调用并生成任务与 trace，不会把中枢管理员当成业务主体；这与聊天入口不携带身份的“匿名预览”是两条不同的验证链路。导入过程不会自动运行 Smoke，也不伪造运行账本。' : demoAvailable && demoStatus?.empty ? '当前实例还没有配置。先导入一套 Core 内置演示配置；导入只写入演示配置，不会自动发起任务。导入后再手动运行演示主体 Smoke，观察路由、工具与真实 trace 如何协同。' : (nextStep?.detail || '可以手动运行 Smoke 或使用真实业务系统触发 /run，继续观察 trace、审批、送达和成本。') }}</p>
         </div>
         <div class="nextActions">
-          <el-button v-if="demoAvailable && demoCanManage" type="primary" :loading="demoLoading" @click="importDemo">{{ demoStatus?.imported ? '刷新演示数据' : '导入演示数据' }}</el-button>
+          <el-button v-if="demoAvailable && demoCanManage && !demoStatus?.imported" type="primary" :loading="demoLoading" @click="importDemo">导入演示数据</el-button>
+          <el-button v-if="demoAvailable && demoCanManage && demoStatus?.imported" :loading="demoLoading" @click="importDemo">刷新演示数据</el-button>
           <el-button v-if="demoCanManage && demoStatus?.imported" :loading="demoCleanupLoading" @click="clearDemo">清理演示数据</el-button>
-          <el-button v-if="nextStep" type="primary" @click="router.push(nextStep.path)">处理 {{ nextStep.title }}</el-button>
-          <el-button :loading="smokeLoading" @click="runSmoke">运行 smoke</el-button>
+          <el-button v-if="nextStep && nextStep.key !== 'smoke'" type="primary" @click="router.push(nextStep.path)">处理 {{ nextStep.title }}</el-button>
+          <el-button v-if="demoStatus?.imported" type="primary" :loading="smokeLoading" @click="runSmoke">运行演示主体 Smoke</el-button>
+          <el-button v-else :loading="smokeLoading" @click="runSmoke">运行 Smoke</el-button>
           <el-button @click="openDocs">开发文档</el-button>
         </div>
       </div>
@@ -78,7 +82,7 @@
             在中枢注册工具源、接入方和触发路由，把“谁能触发什么场景、能用哪些工具”装配清楚。
           </el-timeline-item>
           <el-timeline-item timestamp="3" type="primary">
-            使用 smoke 或真实 <code>/run</code> 发起任务，确认只读查询、trace、工具调用和结果回传都可观测。
+            手动运行 Smoke 或使用真实 <code>/run</code> 发起任务，确认只读查询、trace、工具调用和结果回传都可观测。内置 Smoke 显式使用演示主体；聊天入口的“匿名预览”始终不携带业务身份。
           </el-timeline-item>
         </el-timeline>
       </el-card>

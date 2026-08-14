@@ -84,6 +84,18 @@ The business system must verify the callback signature before consuming the payl
 
 ## Embedded Chat Streaming
 
+### Anonymous preview identity boundary
+
+The standalone preview link from the Chat Entries console is always anonymous.
+It carries no business ticket, does not inherit a BailingHub administrator
+session, and has no business-login surface of its own. Without a trusted acting
+subject, every tool declared with `subject.required: true` remains hidden,
+including read-only business queries. Administrators validate the built-in demo
+through the Getting Started smoke action. A real embedded page must obtain a
+short-lived visitor ticket from its own authenticated business backend. A
+BailingHub administrator identity must never be promoted to a business acting
+subject.
+
 The embedded widget creates a job with `POST /chat/{entry_key}` and consumes its result through:
 
 ```http

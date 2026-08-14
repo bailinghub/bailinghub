@@ -48,6 +48,12 @@ DEMO_PROFILE=stateless-readonly
 - `full-local` is the complete Docker demo with order lookup, ticket creation, refund approval, and failure tools.
 - `stateless-readonly` is for shared or embedded evaluation environments. Demo Business must bind to loopback, exposes only order lookup and failure observation, stores no request state, uses no Hub callback, and creates no public chat entry.
 
+Business tools in both profiles require the trusted demo subject. After import,
+run smoke from Getting Started so the server supplies that fixed demo subject
+and creates a real job and trace. A standalone chat preview does not inherit the
+BailingHub administrator identity; manually binding an entry to the demo route
+does not unlock those tools for an anonymous visitor.
+
 Core records the exact objects it owns, together with their fingerprints, in the durable `bz_demo_datasets` manifest. Refresh and clear fail with `409` if a name is already occupied, a managed object changed, or another configuration references it. Clearing removes only unchanged, unreferenced demo configuration; jobs, messages, traces, and audit history remain intact.
 
 The Admin API is:

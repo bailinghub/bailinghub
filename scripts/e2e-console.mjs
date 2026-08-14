@@ -60,6 +60,16 @@ const fixtures = {
   }],
   clients: [{ app_id: 'demo-app', name: 'Demo 业务系统', token: '****oken', allowed_routes: ['demo_support'], allowed_channels: [], rate_limit_per_min: 60, enabled: true }],
   routes: [{ route_key: 'demo_support', name: 'Demo 售后助手', target: 'demo-agent', enabled: true, tools: { sources: [{ provider: 'demo-business', allow: ['demo.*'] }], max_calls: 5 } }],
+  demoStatus: { available: true, imported: true, empty: false },
+  chatEntries: [{
+    entry_key: 'demo-chat',
+    name: 'Demo 在线助手',
+    route_key: 'demo_support',
+    allowed_origins: ['https://example.com'],
+    ticket_client: 'demo-app',
+    rate_limit_per_min: 20,
+    enabled: true,
+  }],
   runs: [{ job_id: '00000000-0000-4000-8000-000000000001', request_id: 'demo-e2e', status: 'done', route: 'demo_support', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }],
   threads: [{
     thread_id: 1,
@@ -73,6 +83,8 @@ const fixtures = {
     message_count: 2,
   }],
 };
+
+let smokeRequests = 0;
 
 function tracePayload() {
   return {
@@ -93,8 +105,9 @@ async function mockApi(context) {
   await context.route('**/health', (route) => route.fulfill({ json: { status: 'ok', paused: false, queue: { running: 0, waiting: 0 }, backend: 'mysql', configBackend: true } }));
   await context.route('**/admin/api/me', (route) => route.fulfill({ json: { username: 'admin', role: 'admin', perms: ['*'] } }));
   await context.route('**/admin/api/status', (route) => route.fulfill({ json: { executors: [{ executor_id: 'demo-exec', online: true, targets: ['demo-agent'] }] } }));
-  await context.route('**/admin/api/smoke', (route) => route.fulfill({
-    json: {
+  await context.route('**/admin/api/smoke', (route) => {
+    smokeRequests += 1;
+    return route.fulfill({ json: {
       hub: 'http://127.0.0.1',
       pass: 3,
       fail: 0,
@@ -105,16 +118,17 @@ async function mockApi(context) {
         { name: 'trace', status: 'pass', detail: 'trace ok' },
       ],
       run: { route: 'demo_support', request_id: 'demo-e2e', job_id: fixtures.runs[0].job_id, status: 'done' },
-    },
-  }));
+    } });
+  });
   await context.route('**/admin/api/config-schemas/*', (route) => route.fulfill({ json: { required: [], properties: {} } }));
   await context.route('**/admin/api/tool-providers/*/tools', (route) => route.fulfill({ json: { tools: [{ name: 'list_demo_orders', scope: 'demo.order.read' }] } }));
   await context.route('**/admin/api/runs/*/trace', (route) => route.fulfill({ json: tracePayload() }));
   await context.route('**/admin/api/**', (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === '/admin/api/me') return route.fulfill({ json: { username: 'admin', role: 'admin', perms: ['*'] } });
-    if (url.pathname === '/admin/api/smoke') return route.fulfill({
-      json: {
+    if (url.pathname === '/admin/api/smoke') {
+      smokeRequests += 1;
+      return route.fulfill({ json: {
         hub: 'http://127.0.0.1',
         pass: 3,
         fail: 0,
@@ -125,8 +139,8 @@ async function mockApi(context) {
           { name: 'trace', status: 'pass', detail: 'trace ok' },
         ],
         run: { route: 'demo_support', request_id: 'demo-e2e', job_id: fixtures.runs[0].job_id, status: 'done' },
-      },
-    });
+      } });
+    }
     if (url.pathname === '/admin/api/credentials') return route.fulfill({ json: fixtures.credentials });
     if (url.pathname === '/admin/api/targets') return route.fulfill({ json: fixtures.targets });
     if (url.pathname === '/admin/api/tool-providers') return route.fulfill({ json: fixtures.providers });
@@ -146,7 +160,8 @@ async function mockApi(context) {
     });
     if (url.pathname === '/admin/api/executors') return route.fulfill({ json: [{ executor_id: 'demo-exec', online: true, targets: ['demo-agent'] }] });
     if (url.pathname === '/admin/api/projects') return route.fulfill({ json: [] });
-    if (url.pathname === '/admin/api/chat-entries') return route.fulfill({ json: [] });
+    if (url.pathname === '/admin/api/demo-dataset/status') return route.fulfill({ json: fixtures.demoStatus });
+    if (url.pathname === '/admin/api/chat-entries') return route.fulfill({ json: fixtures.chatEntries });
     if (url.pathname === '/admin/api/channels') return route.fulfill({ json: [] });
     if (url.pathname === '/admin/api/kb') return route.fulfill({ json: [] });
     return route.fulfill({ status: 404, json: { error: `unmocked ${url.pathname}` } });
@@ -174,8 +189,21 @@ try {
   await expectVisible(page, '配置完成度');
   await expectVisible(page, '模型凭证');
   await expectVisible(page, '触发路由');
-  await page.getByRole('button', { name: '运行 smoke' }).first().click();
+  await expectVisible(page, '演示数据已导入，运行演示主体 Smoke');
+  if (smokeRequests !== 0) throw new Error('导入演示数据后不应自动运行 Smoke');
+  const demoSmokeButton = page.getByRole('button', { name: '运行演示主体 Smoke' }).first();
+  if (!(await demoSmokeButton.getAttribute('class'))?.includes('el-button--primary')) {
+    throw new Error('演示数据已导入时，运行演示主体 Smoke 应是主 CTA');
+  }
+  await demoSmokeButton.click();
+  if (smokeRequests !== 1) throw new Error('Smoke 应只在用户点击后运行一次');
   await expectVisible(page, '通过 3');
+
+  await page.getByRole('menuitem', { name: '聊天入口' }).click();
+  await expectVisible(page, '“匿名预览”不会继承中枢后台登录状态');
+  await expectVisible(page, '包括只读查询和写操作');
+  await expectVisible(page, '支持业务身份票据：demo-app');
+  await expectVisible(page, '匿名预览');
 
   await page.getByRole('menuitem', { name: '触发路由' }).click();
   await expectVisible(page, 'Demo 售后助手');

@@ -7,7 +7,7 @@
 ## 验证范围
 
 - 验证对象：BailingHub 开源版 Docker demo；
-- 稳定基线：`v0.3.3`；
+- 稳定基线：`v0.3.4`；
 - 数据范围：仓库自带的 demo 订单、工单、退款和故障工具；
 - 预计用时：镜像和依赖下载完成后约 20 分钟；
 - 不需要：真实大模型 Key、生产 API、生产凭据或真实业务数据。
@@ -32,7 +32,7 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 cd "$HOME/bailinghub"
 ```
 
-脚本默认拉取 `v0.3.3` 官方镜像，生成随机 Token 与后台密码，启动服务并自动运行基础体检。首次管理员只在数据库管理员表为空时创建；对同一持久化数据库进行重启、升级、容器重建或重新安装，不会覆盖已经修改的管理员密码。可选 `/metrics` 端点默认关闭，不影响基础验证。请保留终端输出中的版本、安装模式、耗时和“常用命令”，但不要把密码或 Token 写入反馈。新安装 Docker 后，当前非 root 会话通常仍需使用脚本打印的 `sudo docker compose ...` 命令；重新登录后 Docker 组权限才可能生效。
+脚本默认拉取 `v0.3.4` 官方镜像，生成随机 Token 与后台密码，启动服务并自动运行基础体检。首次管理员只在数据库管理员表为空时创建；对同一持久化数据库进行重启、升级、容器重建或重新安装，不会覆盖已经修改的管理员密码。可选 `/metrics` 端点默认关闭，不影响基础验证。请保留终端输出中的版本、安装模式、耗时和“常用命令”，但不要把密码或 Token 写入反馈。新安装 Docker 后，当前非 root 会话通常仍需使用脚本打印的 `sudo docker compose ...` 命令；重新登录后 Docker 组权限才可能生效。
 
 如果默认目录已被占用，请使用一个新的空目录，不要覆盖现有部署：
 
@@ -46,7 +46,7 @@ cd "$HOME/bailinghub-validation"
 ### 路径 B：本地源码复现
 
 ```bash
-git clone --depth 1 --branch v0.3.3 https://github.com/bailinghub/bailinghub.git
+git clone --depth 1 --branch v0.3.4 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 git rev-parse HEAD
 export BAILING_TOKEN="$(openssl rand -hex 32)"
@@ -79,6 +79,8 @@ curl -fsS http://localhost:18900/health
 
 - 路径 A 使用安装完成时打印的随机后台密码；密码也保存在安装目录的 `.env`，不得提交到 Issue；
 - 路径 B 使用默认 demo 账号 `admin / bailing-demo-admin`。
+
+进入“聊天入口”时，确认列表操作显示“匿名预览”，并且预览页明确说明它不继承中枢后台登录态、没有独立业务登录入口。不要用匿名预览验证需主体的 demo 工具；完整演示主体链路由下一步 Smoke 验证。
 
 ## 3. 运行基础体检
 
@@ -125,12 +127,13 @@ docker compose exec -T bailinghub npm run demo:e2e
 
 ## 5. 记录结果
 
-请记录以下四个检查点：
+请记录以下五个检查点：
 
 | 检查点 | PASS 标准 |
 |---|---|
 | 服务启动 | `docker compose ps` 中服务正常，`/health` 可访问 |
 | 控制台 | 可以登录并看到 demo 配置 |
+| 匿名预览边界 | 控制台和预览页均明确说明不继承后台登录态，需主体工具应改用 Smoke 验证 |
 | 基础体检 | `npm run smoke` 退出码为 0，失败数为 0 |
 | 业务闭环 | `npm run demo:e2e` 退出码为 0，并输出 `结果：demo e2e passed` |
 
@@ -138,7 +141,7 @@ docker compose exec -T bailinghub npm run demo:e2e
 
 - BailingHub 版本、安装路径，以及源码复现时的提交号；
 - 操作系统、CPU 架构、Docker 与 Compose 版本；
-- 四个检查点的结果；
+- 五个检查点的结果；
 - 镜像下载之外的实际耗时；
 - 第一个阻塞点和脱敏日志；
 - 是否只依赖公开文档，哪一步最不清楚。
@@ -164,7 +167,7 @@ docker compose exec -T bailinghub npm run demo:e2e
 - [可信富内容渲染与聊天可靠性](RELEASE_NOTES_v0.1.15.md)。
 - [工具运行时收敛与语义检索韧性](RELEASE_NOTES_v0.1.16.md)。
 - [可组合 Core 与 Kernel Host API v1](RELEASE_NOTES_v0.3.0.md)。
-- [当前稳定版发布说明](RELEASE_NOTES_v0.3.3.md)。
+- [当前稳定版发布说明](RELEASE_NOTES_v0.3.4.md)。
 
 扩展验证请在同一 Issue 模板中选择对应路径，并说明是否获得过维护者的直接帮助。
 
