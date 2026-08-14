@@ -24,6 +24,18 @@ Each public version should describe:
 
 There are no unreleased changes.
 
+## v0.3.4 - Anonymous Preview and Trusted Business Identity Guidance
+
+Released on 2026-08-14.
+
+- **Correct entry semantics**: the console and standalone page now label the former generic trial-chat action as **Anonymous Preview** and explain that it neither inherits the BailingHub administrator session nor provides a standalone business-login surface.
+- **No-subject guidance**: without a trusted ticket signed by the business backend, the Agent directs the user back to the real business system to sign in and reopen or refresh the assistant. It does not ask for an account, password, token, or user ID.
+- **Separate demo validation path**: after importing demo configuration, Getting Started presents a manual **Run Demo-Subject Smoke** action that creates a real job and trace. Import does not run tasks automatically, and the BailingHub administrator is not promoted into a business subject.
+- **Unchanged security boundary**: without a verified subject, all `subject.required:true` tools, including read-only queries and writes, remain hidden from the Agent. The business system continues to make final authorization decisions.
+- **Database and contracts**: there is no new migration, Schema, API, or protocol change. `054_demo_dataset_state.sql` remains the latest migration.
+- **Validation**: complete `npm run release:check`, no-subject tool-assembly tests, anonymous-preview page contracts, real-browser console E2E, and npm artifact verification.
+- **Related docs**: [RELEASE_NOTES_v0.3.4.en.md](RELEASE_NOTES_v0.3.4.en.md), [Quickstart](QUICKSTART.en.md), [Chat entry and identity contract](CONTRACT.en.md), and [Docker Demo](DEMO.en.md).
+
 ## v0.3.3 - npm Publication Metadata Correction
 
 Released on 2026-08-09.

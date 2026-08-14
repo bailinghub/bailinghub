@@ -27,6 +27,20 @@ Key objects:
 | Tool provider | A business system's agent-callable API catalog, usually OpenAPI with ACC `x-agent-capability` metadata or an SDK-generated spec. |
 | Runtime ledger | Jobs, messages, audit records, approvals, and trace events stored by the hub. |
 
+### Anonymous preview versus authenticated embedding
+
+The standalone link opened from the Chat Entries page is an **anonymous
+preview**. It does not inherit the BailingHub console login and it has no
+business-login surface of its own. It is suitable for checking the widget,
+public knowledge, and tools that do not require an acting subject. Tools with
+`subject.required: true`, including read-only business queries, remain hidden.
+
+Use the Getting Started smoke action to validate the built-in demo tools. For a
+real embedded assistant, the business backend must sign a short-lived visitor
+ticket from its own authenticated session and render it as `data-ticket`.
+BailingHub verifies that ticket before using its opaque uid as the acting
+subject; the integration token never belongs in browser code.
+
 ## Option A: Docker Demo
 
 ```bash

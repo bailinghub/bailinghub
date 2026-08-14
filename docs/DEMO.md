@@ -93,6 +93,8 @@ DEMO_PROFILE=stateless-readonly
 - `full-local`：Docker 本地完整演示，包含查单、工单、退款审批和故障工具；
 - `stateless-readonly`：共享或宿主式体验环境，`demo-business` 必须绑定本机回环地址，只声明订单查询与故障观测工具，不保存请求状态、不使用 Hub 回调，也不创建公开聊天入口。
 
+两种 profile 的业务工具都要求可信演示主体。导入后应从「上手向导」运行 smoke，由服务端携带固定演示主体生成真实 job 与 trace。聊天入口的独立预览不会继承中枢管理员身份；即使管理员手工把入口绑定到 demo 路由，匿名预览也不会解锁这些工具。
+
 Core 用 `bz_demo_datasets` 中的持久 ownership manifest 记录它实际创建的固定对象和指纹。再次导入只刷新已证明归属的对象；同名占用、指纹漂移或其他配置引用都会返回 `409`，不猜测所有权。清理只删除 manifest 能证明且未被修改的演示配置，任务、消息、trace 和审计账本会继续保留。
 
 对应的 Core 后台 API 为：

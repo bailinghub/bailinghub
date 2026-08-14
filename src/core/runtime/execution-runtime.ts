@@ -87,7 +87,7 @@ export async function prepareAdapterContext(input: PrepareAdapterContextInput): 
     await input.audit?.('tools_locked', { reason: 'no_subject' });
     targetConfig = appendSystemPrompt(
       targetConfig,
-      '【系统提示】本次会话的访客未携带登录身份，业务数据的查询/办理能力处于锁定状态。如用户需要查询或办理业务，请告知其先登录系统再使用对话助手（登录后自动携带身份）；不要虚构业务数据。',
+      '【可信业务身份缺失】本次会话未收到业务系统后端签发的可信身份票据，因此所有要求业务主体的工具均未向 Agent 暴露，不能查询或办理相关业务，也不得猜测或编造业务数据。不要声称当前对话框存在登录入口或能够自行完成登录，不要向用户索要账号、密码、Token、用户 ID 等凭据或身份标识。若助手嵌入真实业务系统，应引导用户返回该业务系统完成登录，再由业务系统后端签发身份票据并重新打开或刷新助手；独立匿名预览不能自行解锁这些能力。',
     );
   } else {
     tools = assembled;

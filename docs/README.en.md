@@ -97,6 +97,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.3.2.md](RELEASE_NOTES_v0.3.2.md) | Chinese `v0.3.2` release notes. |
 | [RELEASE_NOTES_v0.3.3.en.md](RELEASE_NOTES_v0.3.3.en.md) | `v0.3.3` npm publication provenance-metadata correction. |
 | [RELEASE_NOTES_v0.3.3.md](RELEASE_NOTES_v0.3.3.md) | Chinese `v0.3.3` release notes. |
+| [RELEASE_NOTES_v0.3.4.en.md](RELEASE_NOTES_v0.3.4.en.md) | `v0.3.4` anonymous-preview and trusted-business-identity guidance. |
+| [RELEASE_NOTES_v0.3.4.md](RELEASE_NOTES_v0.3.4.md) | Chinese `v0.3.4` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

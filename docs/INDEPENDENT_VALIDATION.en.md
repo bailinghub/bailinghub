@@ -7,7 +7,7 @@ It is not certification, a benchmark, or evidence of production adoption. Passin
 ## Scope
 
 - Target: the open-source BailingHub Docker demo;
-- Stable baseline: `v0.3.3`;
+- Stable baseline: `v0.3.4`;
 - Data: the bundled demo orders, tickets, refunds, and failure probe;
 - Expected time: about 20 minutes after images and dependencies are available;
 - Not required: a real model key, production API, production credential, or real business data.
@@ -32,7 +32,7 @@ curl -fsSL https://www.bailinghub.com/install.sh | sh
 cd "$HOME/bailinghub"
 ```
 
-The installer pulls the official `v0.3.3` images by default, generates random tokens and an admin password, starts the services, and runs the smoke test. The initial administrator is created only when the administrator table is empty; restarting, upgrading, recreating containers, or reinstalling against the same persistent database does not overwrite a changed password. The optional `/metrics` endpoint remains disabled and does not affect core validation. Keep the reported version, install mode, elapsed time, and the commands printed under `常用命令`, but never include passwords or tokens in your report. After Docker is installed, the current non-root login usually still needs the printed `sudo docker compose ...` commands; Docker group membership may not take effect until the next login.
+The installer pulls the official `v0.3.4` images by default, generates random tokens and an admin password, starts the services, and runs the smoke test. The initial administrator is created only when the administrator table is empty; restarting, upgrading, recreating containers, or reinstalling against the same persistent database does not overwrite a changed password. The optional `/metrics` endpoint remains disabled and does not affect core validation. Keep the reported version, install mode, elapsed time, and the commands printed under `常用命令`, but never include passwords or tokens in your report. After Docker is installed, the current non-root login usually still needs the printed `sudo docker compose ...` commands; Docker group membership may not take effect until the next login.
 
 If the default directory is already in use, choose a new empty directory instead of overwriting an existing deployment:
 
@@ -46,7 +46,7 @@ cd "$HOME/bailinghub-validation"
 ### Path B: local source reproduction
 
 ```bash
-git clone --depth 1 --branch v0.3.3 https://github.com/bailinghub/bailinghub.git
+git clone --depth 1 --branch v0.3.4 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 git rev-parse HEAD
 export BAILING_TOKEN="$(openssl rand -hex 32)"
@@ -79,6 +79,8 @@ The console is available at <http://localhost:18900/console/>:
 
 - Path A uses the random admin password printed when installation completes. It is also stored in the installation directory's `.env`; never attach that file to an Issue;
 - Path B uses the default demo account `admin / bailing-demo-admin`.
+
+In **Chat Entries**, confirm that the list action is labeled **Anonymous Preview** and that the preview page states that it neither inherits the BailingHub administrator session nor provides a standalone business-login surface. Do not use anonymous preview to validate subject-required demo tools; the complete demo-subject path is verified by Smoke in the next step.
 
 ## 3. Run the smoke test
 
@@ -125,12 +127,13 @@ Pass criteria: the process exits with code `0` and ends with:
 
 ## 5. Record the result
 
-Record all four checkpoints:
+Record all five checkpoints:
 
 | Checkpoint | PASS criteria |
 |---|---|
 | Services | Services are healthy in `docker compose ps`, and `/health` is reachable |
 | Console | You can log in and inspect the demo configuration |
+| Anonymous-preview boundary | The console and preview page state that no administrator session is inherited and direct subject-required demo validation belongs to Smoke |
 | Smoke | `npm run smoke` exits with code 0 and zero failures |
 | Business loop | `npm run demo:e2e` exits with code 0 and prints `结果：demo e2e passed` |
 
@@ -138,7 +141,7 @@ Whether the result is PASS, partial, or failed, please use the [independent vali
 
 - BailingHub version, installation path, and the commit SHA when using the source path;
 - operating system, CPU architecture, Docker, and Compose versions;
-- the four checkpoint results;
+- the five checkpoint results;
 - elapsed time excluding image downloads;
 - the first blocker and sanitized logs;
 - whether public docs were sufficient and which step was unclear.
@@ -164,7 +167,7 @@ After the core task passes, you may continue with:
 - [Trusted rich rendering and chat reliability](RELEASE_NOTES_v0.1.15.en.md).
 - [Bounded tool runtime and resilient semantic retrieval](RELEASE_NOTES_v0.1.16.en.md).
 - [Composable Core and Kernel Host API v1](RELEASE_NOTES_v0.3.0.en.md).
-- [Current stable release notes](RELEASE_NOTES_v0.3.3.en.md).
+- [Current stable release notes](RELEASE_NOTES_v0.3.4.en.md).
 
 Select the relevant track in the same Issue form and disclose whether you received direct maintainer assistance.
 

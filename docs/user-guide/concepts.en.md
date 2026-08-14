@@ -39,6 +39,14 @@ Knowledge bases provide retrievable documents such as manuals, policies, product
 
 A web chat entry binds a public widget to a route. A business backend may sign a visitor ticket so the hub can carry a trusted acting subject into business-tool calls.
 
+The standalone link opened from the console is only an anonymous preview. It
+does not inherit the BailingHub administrator session and has no business-login
+surface of its own. Every tool that requires an acting subject, including
+read-only queries and write operations, remains hidden. For authenticated use,
+the business backend signs the identity ticket from its own user session; the
+business system still makes the final authorization decision, and a BailingHub
+administrator is never promoted to a business acting subject.
+
 ## Inbound Channel
 
 An inbound channel adapts messages from systems such as WeCom, DingTalk, or Feishu into a route. Channel credentials and reply constraints stay in the channel adapter, not the route core.
@@ -66,4 +74,3 @@ For â€œlet logged-in users ask about their order and create a support request,â€
 - support knowledge;
 - the final reply or callback path;
 - approval only for operations that require it.
-

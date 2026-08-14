@@ -154,7 +154,7 @@ test('prepareAdapterContext: 仅为声明 bailing-chart 的 llm 客户端注入�
   assert.equal(String(nonLlmContext.targetConfig['system_prompt'] ?? ''), '基础提示');
 });
 
-test('prepareAdapterContext: subject_locked 时不暴露业务工具并追加登录提示', async () => {
+test('prepareAdapterContext: subject_locked 时保持工具锁定并注入可信身份边界提示', async () => {
   const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
   const ctx = await prepareAdapterContext({
     job: job({ dispatch: { target_config: { credential: 'file' } } }),
@@ -179,10 +179,18 @@ test('prepareAdapterContext: subject_locked 时不暴露业务工具并追加登
   });
 
   assert.equal(ctx.tools, undefined);
-  assert.match(String(ctx.targetConfig['system_prompt']), /基础提示/);
-  assert.match(String(ctx.targetConfig['system_prompt']), /未携带登录身份/);
+  const prompt = String(ctx.targetConfig['system_prompt']);
+  assert.match(prompt, /基础提示/);
+  assert.match(prompt, /未收到业务系统后端签发的可信身份票据/);
+  assert.match(prompt, /要求业务主体的工具均未向 Agent 暴露/);
+  assert.match(prompt, /不要声称当前对话框存在登录入口/);
+  assert.match(prompt, /不要向用户索要账号、密码、Token、用户 ID/);
+  assert.match(prompt, /返回该业务系统完成登录/);
+  assert.match(prompt, /独立匿名预览不能自行解锁/);
+  assert.doesNotMatch(prompt, /登录后自动携带身份/);
+  assert.doesNotMatch(prompt, /先登录系统再使用对话助手/);
   assert.equal(ctx.projectPath, '/tmp/project');
-  assert.equal(audits[0]?.event, 'tools_locked');
+  assert.deepEqual(audits, [{ event: 'tools_locked', detail: { reason: 'no_subject' } }]);
 });
 
 test('prepareAdapterContext: 工具装配失败审计后降级，send capability 按渠道白名单注入', async () => {

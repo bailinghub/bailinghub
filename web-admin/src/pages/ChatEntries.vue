@@ -6,6 +6,10 @@
         </HelpTip>
         <el-button type="primary" style="margin-left: auto" @click="openCreate">新建入口</el-button></div>
     </template>
+    <el-alert class="preview-boundary" type="info" show-icon :closable="false">
+      <template #title>“匿名预览”不会继承中枢后台登录状态，也不会自动携带业务身份票据。</template>
+      <p>所有标记为“需主体（subject.required）”的工具，包括只读查询和写操作，都不会向 Agent 暴露。业务身份应由已登录的业务系统后端签发；内置演示链路请在“上手向导”手动运行 Smoke。</p>
+    </el-alert>
     <el-empty v-if="!list.length" description="还没有聊天入口：绑一条触发路由即可生成可嵌入的网页聊天组件">
       <el-button type="primary" @click="openCreate">新建第一个</el-button>
     </el-empty>
@@ -41,7 +45,7 @@
               <el-tag v-else size="small" type="warning" effect="plain">不限 Origin</el-tag>
             </div>
             <div class="tagline">
-              <el-tag size="small" effect="plain" :type="row.ticket_client ? 'success' : 'info'">{{ row.ticket_client ? '登录票据:' + row.ticket_client : '匿名入口' }}</el-tag>
+              <el-tag size="small" effect="plain" :type="row.ticket_client ? 'success' : 'info'">{{ row.ticket_client ? '支持业务身份票据：' + row.ticket_client : '仅匿名访问' }}</el-tag>
               <el-tag size="small" effect="plain" type="success">媒体上传:{{ row.bucket || '本地' }}</el-tag>
             </div>
           </div>
@@ -61,7 +65,7 @@
         <template #default="{ row }">
           <div class="table-actions">
             <el-button link type="primary" @click="openEmbed(row)">嵌入代码</el-button>
-            <el-button link type="primary" @click="openDemo(row)">试聊</el-button>
+            <el-button link type="primary" @click="openDemo(row)">匿名预览</el-button>
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-dropdown trigger="click" @command="(cmd) => handleEntryCommand(String(cmd), row)">
               <el-button link type="primary">更多</el-button>
@@ -112,11 +116,12 @@
         <el-input v-model="form.origins_text" type="textarea" :rows="3" class="mono" placeholder="https://www.example.com" />
       </el-form-item>
       <el-form-item>
-        <template #label>票据签发方 <HelpTip title="票据签发方（登录身份怎么进来）">
-          <p>业务后端用该接入方的 token 给<b>登录用户</b>签短票（HMAC 算法或任意语言 SDK，默认 2 小时），组件带 <code>data-ticket</code> 即获可信身份——uid 进 <code>metadata.visitor_uid</code>，解锁标「需主体」的工具，并原样透传到业务侧 On-Behalf-Of。</p>
-          <p>同一把 token 也用于「送达 webhook」回调验签（一钥贯通）。留空 = 纯匿名入口；<b>token 永不进前端</b>，进前端的只有签好的短票。</p>
+        <template #label>业务身份票据签发方 <HelpTip title="支持业务身份票据">
+          <p>这里只是声明该入口<b>支持</b>哪个接入方签发的业务身份票据，不会把中枢后台管理员当成业务用户，也不会给“匿名预览”自动补身份。</p>
+          <p>业务后端用该接入方的 token 给<b>已登录业务用户</b>签短票（HMAC 算法或任意语言 SDK，默认 2 小时），组件带 <code>data-ticket</code> 即获可信身份——uid 进 <code>metadata.visitor_uid</code>，使标「需主体」的工具进入候选清单，并原样透传到业务侧 On-Behalf-Of；最终是否允许执行仍由业务系统按自身权限裁决。</p>
+          <p>同一把 token 也用于「送达 webhook」回调验签（一钥贯通）。留空 = 仅支持匿名访问；<b>token 永不进前端</b>，进前端的只有签好的短票。</p>
         </HelpTip></template>
-        <el-select v-model="form.ticket_client" clearable filterable style="width: 100%" placeholder="不启用票据">
+        <el-select v-model="form.ticket_client" clearable filterable style="width: 100%" placeholder="不支持业务身份票据（仅匿名访问）">
           <el-option v-for="c in clients" :key="c.app_id" :label="`${c.name}（${c.app_id}）`" :value="c.app_id" />
         </el-select>
       </el-form-item>
@@ -218,9 +223,13 @@
         <b>entry_key 可公开</b>
         <span>页面源码可见是预期行为；防滥用依靠 Origin 白名单、按 IP 限速和入口停用。</span>
       </div>
-      <div class="code-notice warning" v-if="!embedRow?.ticket_client">
-        <b>当前匿名入口</b>
-        <span>匿名访客没有业务操作主体，挂工具的路由里写操作会被业务侧拒绝。</span>
+      <div class="code-notice warning">
+        <b>匿名访问边界</b>
+        <span>不带 <code>data-ticket</code> 时（包括控制台“匿名预览”），不会继承中枢后台登录状态。所有需主体工具，包括只读查询和写操作，都不会向 Agent 暴露。</span>
+      </div>
+      <div class="code-notice info" v-if="embedRow?.ticket_client">
+        <b>支持业务身份票据</b>
+        <span>仅当已登录业务系统的后端签发短票，并在业务页面输出 <code>data-ticket</code> 时，组件才携带可信业务身份。</span>
       </div>
     </div>
 
@@ -242,8 +251,8 @@
       </div>
       <div>
         <span>访客身份</span>
-        <b>{{ embedRow.ticket_client ? '登录票据' : '匿名' }}</b>
-        <em>{{ embedRow.ticket_client || '无票据签发方' }}</em>
+        <b>{{ embedRow.ticket_client ? '支持业务身份票据' : '仅匿名访问' }}</b>
+        <em>{{ embedRow.ticket_client || '未配置业务身份票据签发方' }}</em>
       </div>
     </div>
 
@@ -261,12 +270,12 @@
         </section>
       </el-tab-pane>
 
-      <el-tab-pane label="演示链接" name="demo">
+      <el-tab-pane label="匿名预览链接" name="demo">
         <section class="snippet-card">
           <div class="snippet-head">
             <div>
-              <b>在线演示页</b>
-              <p>无需嵌入页面，适合发给业务方快速试聊。</p>
+              <b>在线匿名预览页</b>
+              <p>无需嵌入页面，仅验证聊天组件、公开问答和无需主体的工具；该页不携带业务身份。</p>
             </div>
             <el-button type="primary" @click="copy(demoUrl)">复制链接</el-button>
           </div>
@@ -290,12 +299,12 @@
         </section>
       </el-tab-pane>
 
-      <el-tab-pane v-if="embedRow?.ticket_client" label="访客票据" name="ticket">
+      <el-tab-pane v-if="embedRow?.ticket_client" label="业务身份票据" name="ticket">
         <section class="snippet-card">
           <div class="snippet-head">
             <div>
-              <b>登录访客票据生成</b>
-              <p>业务后端在登录态里执行，接入方 token 永不进入前端；任选一种语言实现同一签名算法。</p>
+              <b>业务身份票据生成</b>
+              <p>业务后端在自己的用户登录态里执行，接入方 token 永不进入前端；任选一种语言实现同一签名算法。</p>
             </div>
             <el-button type="primary" @click="copy(ticketCode)">复制代码</el-button>
           </div>
@@ -666,6 +675,8 @@ onMounted(load);
 
 <style scoped>
 .head { display: flex; align-items: center; gap: 10px; }
+.preview-boundary { margin-bottom: 14px; }
+.preview-boundary p { margin: 6px 0 0; line-height: 1.65; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .row2 { display: flex; gap: 12px; }
 .position-config {

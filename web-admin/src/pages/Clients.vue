@@ -64,8 +64,8 @@
       </el-table-column>
       <el-table-column width="136">
         <template #header>最近调用 <HelpTip title="最近调用怎么算">
-          <p>最近一次该接入方<b>凭证被实际使用</b>：① 业务后端带 token 调 <code>/run</code> / <code>/jobs/:id</code>；② 它作为聊天入口票据签发方、有登录访客带票据来验签。</p>
-          <p><b>聊天入口的匿名流量不算</b>（公开面、不带 token）——所以小程序匿名聊天再多这里也不动，属正常；接上登录票据后才会显示活跃。</p>
+          <p>最近一次该接入方<b>凭证被实际使用</b>：① 业务后端带 token 调 <code>/run</code> / <code>/jobs/:id</code>；② 它作为聊天入口票据签发方，由已登录业务用户携带后端签发的身份票据来验签。</p>
+          <p><b>聊天入口的匿名流量不算</b>（公开面、不带 token）——所以小程序匿名聊天再多这里也不动，属正常；真正验过业务身份票据后才会显示活跃。</p>
         </HelpTip></template>
         <template #default="{ row }"><span class="muted">{{ fmtTime(row.last_used_at) }}</span></template>
       </el-table-column>
