@@ -262,6 +262,8 @@ BailingHub 当前公开版本仍处于早期验证阶段。我们希望它经得
 
 我们欢迎社区创建独立发行版、行业适配、执行器、连接器和 ACC 独立实现。衍生项目可以保持自己的名称、方向与治理；通用改进欢迎回到上游，优秀的独立项目未来也可以申请在官方生态页面展示。展示不代表官方认证、服务担保或维护责任转移。完整原则见 [社区衍生与生态合作](docs/ECOSYSTEM.md)。
 
+DeepSeek Harness 用户可以安装独立社区插件 [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin)，直接从本机 Harness Web UI 向已接入 BailingHub 的业务 route 发起并跟踪受控任务。该插件复用公开 Client API 与独立 MCP Server，不进入 BailingHub Core 发行包，也不代表 DeepSeek 官方开发、认证或背书。
+
 ## 开源基础与第三方软件
 
 百灵中枢采用开放的 [ACC（Agent Capability Contract）](https://www.agentcapability.org) 能力声明契约，服务端基于 Node.js / TypeScript，控制台基于 Vue / Element Plus / Pinia，默认使用独立的 MySQL 服务持久化运行状态。

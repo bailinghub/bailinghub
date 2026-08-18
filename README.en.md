@@ -251,6 +251,8 @@ Useful reports include the business context, expected behavior, a minimal reprod
 
 We welcome independent distributions, industry adaptations, executors, connectors, and independent ACC implementations. Community projects may keep their own names, directions, and governance. Reusable improvements are welcome upstream, and strong independent projects may request a future listing on the official ecosystem surface. A listing is not certification, a service warranty, or a transfer of maintenance responsibility. See [Community Derivatives And Ecosystem Collaboration](docs/ECOSYSTEM.en.md).
 
+DeepSeek Harness users can install the independent community plugin [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin) to submit and track governed tasks from the local Harness Web UI against a business route already connected to BailingHub. The plugin reuses the public Client API and the independent MCP Server, does not enter the BailingHub Core distribution, and does not imply DeepSeek development, certification, or endorsement.
+
 ## Open-Source Foundations and Third-Party Software
 
 BailingHub adopts the open [Agent Capability Contract (ACC)](https://www.agentcapability.org), runs its service on Node.js and TypeScript, builds its console with Vue, Element Plus, and Pinia, and uses an independent MySQL service as the default persistent runtime.
