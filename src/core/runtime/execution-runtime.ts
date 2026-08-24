@@ -67,6 +67,19 @@ const BAILING_CHART_PROMPT = [
   '示例：```bailing-chart\n{"kind":"line","title":"近七日营业额","seriesName":"营业额","unit":"元","data":[{"label":"周一","value":12800}]}\n```',
 ].join('\n');
 
+const BAILING_FORM_PROMPT = [
+  '【可选交互能力】当前聊天客户端支持 bailing-form v1 声明式表单。',
+  '仅在需要一次收集 2–8 个结构化字段，或让用户从明确选项中选择时使用；只需问一个简单问题时使用普通文字。',
+  '一次回答最多输出一个完整的 bailing-form fenced code block，代码块前用一句话说明收集目的；代码块内必须是严格 JSON，不得包含 Markdown、HTML、JavaScript、CSS、远程脚本或数据源。',
+  '顶层只使用 version、form_id、title、description、schema、submit_label、cancel_label；version 固定为 1，form_id 和字段名使用小写字母开头的字母数字下划线/连字符，schema 是按字段名组织的对象。',
+  '字段 type 只允许 text、textarea、number、date、boolean、single_select、multi_select；公共字段只有 label、description、placeholder、required。',
+  'text/textarea 可使用 minLength/maxLength；number 可使用有限数值 min/max；date 可使用 YYYY-MM-DD 形式的 min/max；boolean 无额外字段。',
+  'single_select/multi_select 必须使用 options，选项每项只包含字符串 label 和唯一 value；不得输出额外字段、嵌套对象、文件或正则表达式。',
+  '不得通过表单索要密码、API Key、Token、私钥、银行卡号、CVV 或其他支付凭据；不得把表单当作审批、授权、确认副作用或绕过业务权限的手段。',
+  '表单提交会作为同一会话中新的用户消息继续处理；它不会暂停当前任务，也不代表已获得审批或业务授权。如果客户端未声明 bailing-form，应改用普通文字逐项提问。',
+  '示例：```bailing-form\n{"version":1,"form_id":"refund_info","title":"请补充退款信息","description":"这些信息将用于继续本次对话","schema":{"reason":{"type":"textarea","label":"退款原因","required":true,"maxLength":200},"method":{"type":"single_select","label":"退款方式","required":true,"options":[{"label":"原路退回","value":"original"},{"label":"余额退回","value":"balance"}]}},"submit_label":"提交信息","cancel_label":"取消"}\n```',
+].join('\n');
+
 export async function prepareAdapterContext(input: PrepareAdapterContextInput): Promise<AdapterContext> {
   const target = input.job.target ?? '';
   let targetConfig = normalizeTargetConfig(target, input.route?.target_config ?? input.job.dispatch?.target_config ?? {});
@@ -74,6 +87,9 @@ export async function prepareAdapterContext(input: PrepareAdapterContextInput): 
     targetConfig = await injectLlmRuntimeCredentials(targetConfig, input.cfg, input.credentialStore);
     if (supportsPresentationRenderer(input.job.metadata, 'bailing-chart')) {
       targetConfig = appendSystemPrompt(targetConfig, BAILING_CHART_PROMPT);
+    }
+    if (supportsPresentationRenderer(input.job.metadata, 'bailing-form')) {
+      targetConfig = appendSystemPrompt(targetConfig, BAILING_FORM_PROMPT);
     }
   }
   targetConfig = { ...targetConfig, _timeout_ms: input.targetTimeoutMs(target, targetConfig) };

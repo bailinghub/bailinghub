@@ -22,7 +22,35 @@ Each public version should describe:
 
 ## Unreleased
 
-There are no unreleased changes.
+- **Native conversational forms**: the dependency-free official widget adds
+  constrained `bailing-form` v1 controls for text, textarea, number, date,
+  boolean, single-select, and multi-select fields, with client/server
+  validation, read-only receipts, and history recovery.
+- **Non-blocking continuation contract**: `POST /chat/:entry` compatibly adds
+  `interaction_response`, translating submit or cancel into a new user message
+  and a new job in the same thread. The source job still reaches `done`; there
+  is no `input_required` or new SSE state.
+- **Correlation, idempotency, and security**: the server reloads the
+  authoritative form after matching source job, entry, identity, and thread,
+  then deduplicates by `submission_id`. Forms cannot request credential or
+  payment secrets and do not replace tool approval, business authorization, or
+  side-effect gates.
+- **Presentation negotiation**: the LLM receives constrained form-output
+  guidance only when the client explicitly advertises `bailing-form`. Other
+  clients continue with text questions, and `bailing-chart` remains an
+  independent compatible capability.
+- **Contract and integration impact**: the public boundary advances additively
+  to `bailing.contract.v2.14`; `WIDGET_API` and `rendererApiVersion` remain 1,
+  with no database migration. Client API v1, Kernel Host API v1, ACC, SDKs,
+  tool signatures, approval semantics, and final business authorization are
+  unchanged.
+- **Validation**: `npm run typecheck`, focused conversational-form contract and
+  route tests, `npm run widget:renderer:test`, `npm run web-admin:check`,
+  `npm run docs:check`, `npm test`, and a real local-browser form interaction
+  check.
+- **Related docs**: [HTTP contract](CONTRACT.en.md), [Widget renderer and form
+  contract](WIDGET_RENDERERS.en.md), [Streaming protocol](STREAMING.en.md), and
+  [Compatibility](COMPATIBILITY.en.md).
 
 ## v0.3.4 - Anonymous Preview and Trusted Business Identity Guidance
 

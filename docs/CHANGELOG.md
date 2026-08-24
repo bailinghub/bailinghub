@@ -15,7 +15,13 @@
 
 ## Unreleased
 
-当前无待发布变更。
+- **原生对话表单**：官方零依赖 Widget 新增受限 `bailing-form` v1，支持文本、多行文本、数字、日期、布尔、单选和多选，含客户端/服务端双校验、只读回执与历史恢复。
+- **非阻塞续聊契约**：`POST /chat/:entry` 兼容新增 `interaction_response`，把表单提交/取消规范化为同 thread 的新用户消息和新 job；源 job 仍正常 `done`，不新增 `input_required` 或 SSE 状态。
+- **关联、幂等与安全**：服务端按源 job/入口/身份/thread 重读权威表单验值，以 `submission_id` 去重；表单不能要求凭据或支付秘密，不替代工具审批、业务授权或副作用闸门。
+- **展示能力协商**：只在客户端明确声明 `bailing-form` 时向 LLM 注入受约束输出提示；无能力客户端继续使用文字提问，`bailing-chart` 能力保持独立兼容。
+- **契约与对接影响**：公开边界增量到 `bailing.contract.v2.14`；`WIDGET_API` / `rendererApiVersion` 仍为 1，无数据库迁移。Client API v1、Kernel Host API v1、ACC、SDK、工具签名、审批语义和最终业务授权不变。
+- **验证方式**：`npm run typecheck`、对话表单契约/路由测试、`npm run widget:renderer:test`、`npm run web-admin:check`、`npm run docs:check`、`npm test` 与本地真实浏览器表单交互检查。
+- **相关文档**：[公开运行时契约](CONTRACT.md)、[Widget 渲染与表单契约](WIDGET_RENDERERS.md)、[流式协议](STREAMING.md) 与[兼容性与升级](兼容性与升级.md)。
 
 ## v0.3.4 - 匿名预览与可信业务身份引导
 

@@ -154,6 +154,64 @@ test('prepareAdapterContext: 仅为声明 bailing-chart 的 llm 客户端注入�
   assert.equal(String(nonLlmContext.targetConfig['system_prompt'] ?? ''), '基础提示');
 });
 
+test('prepareAdapterContext: 仅为声明 bailing-form 的 llm 客户端注入非阻塞表单提示', async () => {
+  const common = {
+    fullInput: '最终输入',
+    session,
+    projectPath: null,
+    cfg,
+    credentialStore: {
+      async get() { return dbMain; },
+      async touch() { /* no-op */ },
+    },
+    targetTimeoutMs: () => 5000,
+    async assembleToolRuntime() { return undefined; },
+    async resolveSendChannels() { return []; },
+    makeSendToolDef,
+    async runSendMessage() { return { ok: true, text: 'sent' }; },
+    route: route(),
+  };
+
+  const formContext = await prepareAdapterContext({
+    ...common,
+    job: job({ metadata: { presentation_capabilities: { renderers: ['bailing-form'] } } }),
+  });
+  const formPrompt = String(formContext.targetConfig['system_prompt']);
+  assert.match(formPrompt, /bailing-form v1/);
+  assert.match(formPrompt, /2–8 个结构化字段/);
+  assert.match(formPrompt, /text、textarea、number、date、boolean、single_select、multi_select/);
+  assert.match(formPrompt, /密码、API Key、Token、私钥/);
+  assert.match(formPrompt, /不得把表单当作审批/);
+  assert.match(formPrompt, /一次回答最多输出一个/);
+  assert.match(formPrompt, /同一会话中新的用户消息/);
+  assert.match(formPrompt, /```bailing-form\n\{"version":1/);
+  assert.doesNotMatch(formPrompt, /当前聊天客户端支持 bailing-chart/);
+
+  const noFormContext = await prepareAdapterContext({
+    ...common,
+    job: job({ metadata: { presentation_capabilities: { renderers: ['bailing-chart'] } } }),
+  });
+  const noFormPrompt = String(noFormContext.targetConfig['system_prompt']);
+  assert.match(noFormPrompt, /当前聊天客户端支持 bailing-chart/);
+  assert.doesNotMatch(noFormPrompt, /bailing-form/);
+
+  const bothContext = await prepareAdapterContext({
+    ...common,
+    job: job({ metadata: { presentation_capabilities: { renderers: ['bailing-chart', 'bailing-form'] } } }),
+  });
+  const bothPrompt = String(bothContext.targetConfig['system_prompt']);
+  assert.match(bothPrompt, /当前聊天客户端支持 bailing-chart/);
+  assert.match(bothPrompt, /当前聊天客户端支持 bailing-form v1/);
+
+  const nonLlmContext = await prepareAdapterContext({
+    ...common,
+    credentialStore: null,
+    job: job({ target: 'custom-agent', dispatch: { target_config: {} }, metadata: { presentation_capabilities: { renderers: ['bailing-form'] } } }),
+    route: route({ target: 'custom-agent', target_config: { system_prompt: '基础提示' } }),
+  });
+  assert.equal(String(nonLlmContext.targetConfig['system_prompt'] ?? ''), '基础提示');
+});
+
 test('prepareAdapterContext: subject_locked 时保持工具锁定并注入可信身份边界提示', async () => {
   const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
   const ctx = await prepareAdapterContext({

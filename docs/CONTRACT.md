@@ -1,6 +1,6 @@
 # 百灵中枢 · 边界契约
 
-> 当前契约：`bailing.contract.v2.13`。这是业务系统与中枢之间唯一的网络边界。
+> 当前契约：`bailing.contract.v2.14`。这是业务系统与中枢之间唯一的网络边界。
 
 **冻结它，两边就能各自独立开发。** 任何字段变更都按兼容方式演进（只增不改语义、不删字段）。
 
@@ -121,11 +121,41 @@ POST /admin/api/routes/auto-preview
 
 | 端点 | 说明 |
 |---|---|
-| `POST /chat/:entry_key` | 体 `{message, visitor_id?, ticket?, thread_id?}`。`thread_id`（字母数字_-，≤32 字符）：同一身份下的平行会话切分键——开新会话=换新值，延续已有会话=复用，不带=单线程续聊；会话与对话总账同键切分，且写入 metadata.thread_id 供任务详情对账。返回 `{done:false, job_id, visitor_id}` 后，组件通过 SSE 结果流接收状态和最终回答 |
+| `POST /chat/:entry_key` | 请求体必须在普通消息 `{message, ...}` 与表单回传 `{interaction_response, ...}` 中**二选一**；其余既有可选字段（`visitor_id` / `ticket` / `thread_id` / `context` / `client_capabilities`）按原语义共用。`thread_id`（字母数字_-，≤32 字符）：同一身份下的平行会话切分键——开新会话=换新值，延续已有会话=复用，不带=单线程续聊；会话与对话总账同键切分，且写入 `metadata.thread_id` 供任务详情对账。返回 `{done:false, job_id, visitor_id}` 后，组件通过 SSE 结果流接收状态和最终回答 |
 | `GET /chat/:entry_key/events/:job_id` | **SSE 结果流**：只能订阅本入口发起的任务。基础事件为 `open/status/ping/done/failed/timeout`；支持增量输出时还会发送 `phase/reset/delta`。`done` 携带任务库中的权威最终结果 `{done:true, reply, job_id, visitor_id, references?, attachments?}`。完整语义见 [STREAMING.md](STREAMING.md) |
-| `GET /chat/:entry_key/thread?visitor_id=&thread_id=&ticket=` | **拉服务端会话总账**：组件重开、或异步迟到结果（如审批批准后重跑的回复落在另一条任务里）回灌用——按与提问一致的身份重建线索、只读返回正序消息。身份纪律同 `POST /chat`（带票按 uid、无票按 visitor，票坏=401） |
+| `GET /chat/:entry_key/thread?visitor_id=&thread_id=&ticket=` | **拉服务端会话总账**：组件重开、表单回执恢复，或异步迟到结果（如审批批准后重跑的回复落在另一条任务里）回灌用——按与提问一致的身份重建线索、只读返回正序消息。表单回传对应的用户消息可附带不含表单值的 `interaction` 关联摘要。身份纪律同 `POST /chat`（带票按 uid、无票按 visitor，票坏=401） |
 | `GET /chat/:entry_key/config` | 组件状态与配置：停用入口返回 `{enabled:false}`，组件静默不挂载；启用时返回标题/开场白/主色/品牌，**外观**（窗口尺寸/标题对齐/气泡位置与偏移/头像/自定义气泡图标/底部品牌标识）、`upload`。控制台改完后，业务页面无需改嵌入代码 |
 | `POST /chat/:entry_key/rate/:job_id` | **评价回答**：体 `{rating:"up"\|"down"\|"note", visitor_id, comment?}`；`note` 表示只提交文字反馈，此时 `comment` 必填。只能评自己问出来的那条（visitor_id 须与提问时一致）；一答一评，重评覆盖。运营在控制台「聊天入口 → 评价」看汇总 |
+
+### 1.1.1 `bailing-form` 非阻塞交互回传
+
+当最终 `done.reply` 含有符合 [WIDGET_RENDERERS.md](WIDGET_RENDERERS.md) 的 `bailing-form` fenced payload 时，官方 Widget 可把它渲染为受约束表单。当前助手任务在输出该回答后依然正常进入 `done`；用户提交或取消表单时，Widget 对**同一 `thread_id`** 再发一次 `POST /chat/:entry_key`，创建新的用户轮次和新 job。该机制不引入 `input_required` 或新的 SSE 任务状态。
+
+```json
+{
+  "visitor_id": "visitor_01HXYZ",
+  "thread_id": "support_1",
+  "interaction_response": {
+    "type": "bailing-form",
+    "version": 1,
+    "source_job_id": "job_that_rendered_the_form",
+    "form_id": "refund_info",
+    "submission_id": "01JFORMRESPONSE0001",
+    "action": "submit",
+    "values": {
+      "reason": "商品破损",
+      "method": "original"
+    }
+  }
+}
+```
+
+- `action` 只接受 `submit` 或 `cancel`。`submit` 必须带 `values` 对象；`cancel` 不得携带非空值。
+- 服务端不信任客户端回传的 schema。它会重新读取 `source_job_id` 的权威最终回复，校验该 job 已 `done`、属于同一入口、同一已验签 uid 或匿名 visitor、同一 thread，并依据其中同 `form_id` 的不可变表单声明验证字段、必填、长度、范围和选项。
+- `submission_id` 匹配 `[A-Za-z0-9_-]{8,64}`，是这次回传的幂等键。同一身份对同一 `source_job_id + form_id + submission_id` 重试时返回原 job，并可附带 `deduped:true`，不重复运行。客户端不得把同一 `submission_id` 复用给另一组值。`values` 序列化后最大 32 KiB。
+- 校验通过后，服务端按原声明的字段标签与选项生成自包含的用户消息，再进入普通聊天运行时。字段值会随该用户消息进入对话总账；job metadata 与历史 `interaction` 摘要只保留 `type/version/source_job_id/form_id/submission_id/action`，不重复存储值。
+- 规范化后的用户消息超过 4000 字时返回 400，不会静默截断表单值；客户端应保留原 `submission_id`、缩短填写内容后再提交。
+- 表单值仍是不可信用户数据，不能改变身份、路由、工具白名单、审批或业务授权。表单不得索要密码、API Key、Token、私钥或支付凭据；需要审批或产生业务副作用的动作仍须走 §2.4 的工具治理车道。
 
 **引用来源**：路由挂了知识库时，回答附 `references: [{seq, title, score, snippet}]`（本次检索命中），正文中模型按 `[n]` 标注实际引用的资料编号——消费方可据此展示"答案出处"。完整快照（含 doc_id）在 job 的 `dispatch.kb_refs`，`/run` 触发的任务同样携带。
 
@@ -593,7 +623,7 @@ AI 的回复是 **GitHub 风味 markdown**。为让没有 markdown 渲染器的�
 
 约束：图片/文件本体存放在业务自己的存储/CDN（中枢只透传 url，不代管二进制）；同一 url 在 attachments 内去重。
 
-> **聊天组件专用的图表/交互报告不是新的服务端 `attachments` 类型。** 它是宿主页面通过 `window.BailingChat.registerRenderer(...)` 注册的可选展示扩展，消费回复中的声明式 fenced payload；未知类型、无效 JSON、超限载荷或渲染失败必须降级为纯文本代码块。服务端契约保持 `reply/text + attachments` 不变，完整边界见 [WIDGET_RENDERERS.md](WIDGET_RENDERERS.md)。
+> **聊天组件专用的图表和表单不是新的服务端 `attachments` 类型。** 它们消费回复中的声明式 fenced payload；图表可由宿主通过 `window.BailingChat.registerRenderer(...)` 扩展，`bailing-form` 由官方 Widget 受限渲染并通过 §1.1.1 回传。未知类型、无效 JSON、超限载荷或渲染失败必须降级为纯文本代码块。回复契约保持 `reply/text + attachments` 不变，完整边界见 [WIDGET_RENDERERS.md](WIDGET_RENDERERS.md)。
 
 ## 2.6 入站渠道：外部平台消息进中枢
 

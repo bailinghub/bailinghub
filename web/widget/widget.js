@@ -21,6 +21,7 @@
   const RENDERER_TYPE_RE = /^[a-z][a-z0-9._+-]{0,63}$/;
   const DEFAULT_RENDERER_PAYLOAD_BYTES = 64 * 1024;
   const MAX_RENDERER_PAYLOAD_BYTES = 256 * 1024;
+  const FORM_RENDERER_TYPE = 'bailing-form';
   const script = document.currentScript;
   if (!script) return;
   const ENTRY = script.dataset.entry;
@@ -76,6 +77,16 @@
   bailingChatApi.rendererApiVersion = RENDERER_API;
   bailingChatApi.registerRenderer = registerRenderer;
   bailingChatApi.setContext = (o) => { try { bailingChatApi._ctx = (o && typeof o === 'object') ? o : null; } catch { /* 忽略 */ } };
+  // 官方表单也通过同一个可扩展 registry 工作：先注册零依赖内置实现，再装载宿主预注册项。
+  // 因此同名的宿主 renderer 会明确覆盖内置实现；它仍只拿到受限 mount context，拿不到 ticket/visitor。
+  registerRenderer({
+    type: FORM_RENDERER_TYPE,
+    version: 1,
+    label: '交互表单',
+    contentType: 'application/json',
+    maxPayloadBytes: 32 * 1024,
+    mount: mountBailingForm,
+  });
   for (const definition of preloadedRenderers) {
     try { registerRenderer(definition); }
     catch (e) { console.warn('[百灵聊天组件] 忽略不合法的预注册渲染器', e); }
@@ -125,6 +136,27 @@
 
   function saveHistory() {
     try { localStorage.setItem(LS_HISTORY, JSON.stringify(history.slice(-50))); } catch { /* 容量/隐私模式 */ }
+  }
+  function normalizeInteractionMeta(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const type = String(value.type || '').trim().toLowerCase();
+    const sourceJobId = String(value.source_job_id || '').trim();
+    const formId = String(value.form_id || '').trim();
+    const submissionId = String(value.submission_id || '').trim();
+    const action = String(value.action || '').trim().toLowerCase();
+    if (type !== FORM_RENDERER_TYPE || Number(value.version) !== 1 || !sourceJobId || !formId || !submissionId) return null;
+    if (action !== 'submit' && action !== 'cancel') return null;
+    return Object.freeze({ type, version: 1, source_job_id: sourceJobId, form_id: formId, submission_id: submissionId, action });
+  }
+  function formResponsesForJob(jobId) {
+    const sourceJobId = String(jobId || '');
+    if (!sourceJobId) return Object.freeze([]);
+    const responses = [];
+    for (const item of history) {
+      const interaction = normalizeInteractionMeta(item && (item.i || item.interaction));
+      if (interaction && interaction.source_job_id === sourceJobId) responses.push(interaction);
+    }
+    return Object.freeze(responses);
   }
   // 生成新会话线程 id（[a-z0-9]，≤32，与后端清洗规则一致）；crypto 不可用时退回时间戳+随机
   function newThreadId() {
@@ -306,6 +338,34 @@
     .attchip button { background: none; border: none; color: #b8b0a4; cursor: pointer; font-size: 15px;
       line-height: 1; padding: 0 2px; }
     .attchip button:hover { color: #b3554a; }
+    .bailing-form { display: flex; flex-direction: column; gap: 12px; min-width: min(420px, 100%); color: #3d372f; }
+    .bailing-form .bf-head { display: flex; flex-direction: column; gap: 3px; }
+    .bailing-form .bf-title { font-size: 16px; line-height: 1.45; font-weight: 700; }
+    .bailing-form .bf-description { color: #756e63; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+    .bailing-form .bf-fields { display: flex; flex-direction: column; gap: 11px; border: 0; min-width: 0; }
+    .bailing-form .bf-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+    .bailing-form .bf-label { color: #4a443c; font-size: 13px; line-height: 1.45; font-weight: 600; }
+    .bailing-form .bf-required { color: #b3554a; margin-left: 3px; }
+    .bailing-form .bf-help { color: #8f877b; font-size: 11px; line-height: 1.45; white-space: pre-wrap; }
+    .bailing-form input[type="text"], .bailing-form input[type="number"], .bailing-form input[type="date"],
+    .bailing-form textarea, .bailing-form select { width: 100%; min-width: 0; border: 1px solid #ddd7cd; border-radius: 8px;
+      background: #fff; color: #3d372f; padding: 8px 10px; font-size: 13px; line-height: 1.45; outline: none; }
+    .bailing-form textarea { min-height: 76px; resize: vertical; }
+    .bailing-form input:focus, .bailing-form textarea:focus, .bailing-form select:focus { border-color: var(--accent); }
+    .bailing-form .bf-choices { display: flex; flex-wrap: wrap; gap: 7px 14px; }
+    .bailing-form .bf-choice { display: inline-flex; align-items: center; gap: 6px; color: #514b42; font-size: 13px; line-height: 1.45; }
+    .bailing-form .bf-choice input { accent-color: var(--accent); }
+    .bailing-form .bf-field-error { display: none; color: #b3554a; font-size: 11px; line-height: 1.4; }
+    .bailing-form .bf-field-error.on { display: block; }
+    .bailing-form .bf-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 2px; }
+    .bailing-form .bf-actions button { border: 1px solid #ddd7cd; border-radius: 8px; background: #fff; color: #6f685c;
+      padding: 7px 14px; font-size: 12px; line-height: 1.4; cursor: pointer; }
+    .bailing-form .bf-actions button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+    .bailing-form .bf-actions button:disabled { opacity: .55; cursor: default; }
+    .bailing-form .bf-status { min-height: 17px; color: #7b7368; font-size: 12px; line-height: 1.45; }
+    .bailing-form .bf-status.error { color: #b3554a; }
+    .bailing-form .bf-status.receipt { border: 1px solid #dde8dc; border-radius: 8px; background: #f4f8f3; color: #537052; padding: 8px 10px; }
+    .bailing-form.is-complete .bf-fields { opacity: .72; }
     /* 移动端自适应：小屏面板接近全屏，沟通不憋屈（!important 压过位置/尺寸变量与 .pos-left 高优先级规则）*/
     @media (max-width: 480px) {
       .panel { width: calc(100vw - 16px) !important; height: calc(100dvh - 92px) !important;
@@ -495,6 +555,287 @@
     pre.appendChild(code);
     return pre;
   }
+  const FORM_ID_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+  const FORM_FIELD_RE = /^[a-z][a-z0-9_-]{0,63}$/;
+  const FORM_SENSITIVE_RE = /(?:password|passwd|\bpwd\b|secret|token|api[ _-]?key|access[ _-]?key|private[ _-]?key|credit[ _-]?card|card[ _-]?(?:number|no)|\bcvv\b|\bcvc\b|密码|口令|密钥|私钥|令牌|银行卡|信用卡|卡号)/i;
+  const FORM_TEXT_CONTROL_RE = /[\u0000-\u001f\u007f]/;
+  const FORM_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const FORM_FIELD_TYPES = new Set(['text', 'textarea', 'number', 'date', 'boolean', 'single_select', 'multi_select']);
+  const FORM_TOP_KEYS = new Set(['version', 'form_id', 'title', 'description', 'schema', 'submit_label', 'cancel_label']);
+  const FORM_COMMON_FIELD_KEYS = ['type', 'label', 'description', 'placeholder', 'required'];
+  const FORM_FIELD_KEYS = {
+    text: new Set([...FORM_COMMON_FIELD_KEYS, 'minLength', 'maxLength']),
+    textarea: new Set([...FORM_COMMON_FIELD_KEYS, 'minLength', 'maxLength']),
+    number: new Set([...FORM_COMMON_FIELD_KEYS, 'min', 'max']),
+    date: new Set([...FORM_COMMON_FIELD_KEYS, 'min', 'max']),
+    boolean: new Set(FORM_COMMON_FIELD_KEYS),
+    single_select: new Set([...FORM_COMMON_FIELD_KEYS, 'options']),
+    multi_select: new Set([...FORM_COMMON_FIELD_KEYS, 'options']),
+  };
+  let formControlSeq = 0;
+  function isPlainRecord(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const proto = Object.getPrototypeOf(value);
+    return proto === Object.prototype || proto === null;
+  }
+  function strictFormText(value, max, required) {
+    if (value === undefined && !required) return undefined;
+    if (typeof value !== 'string') throw new TypeError('invalid bailing-form text');
+    const text = value.trim();
+    if (!text || text.length > max || FORM_TEXT_CONTROL_RE.test(text) || text.includes('```')) throw new TypeError('invalid bailing-form text');
+    return text;
+  }
+  function rejectFormUnknownKeys(value, allowed) {
+    if (Object.keys(value).some((key) => !allowed.has(key))) throw new TypeError('unknown bailing-form property');
+  }
+  function isRealFormDate(value) {
+    if (typeof value !== 'string' || !FORM_DATE_RE.test(value)) return false;
+    const parts = value.split('-').map(Number);
+    const date = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+    return date.getUTCFullYear() === parts[0] && date.getUTCMonth() === parts[1] - 1 && date.getUTCDate() === parts[2];
+  }
+  function normalizeFormPayload(payload) {
+    if (!isPlainRecord(payload) || payload.version !== 1) throw new TypeError('unsupported bailing-form version');
+    rejectFormUnknownKeys(payload, FORM_TOP_KEYS);
+    const formId = strictFormText(payload.form_id, 64, true);
+    const title = strictFormText(payload.title, 80, true);
+    const description = strictFormText(payload.description, 300, false);
+    const submitLabel = strictFormText(payload.submit_label, 32, false) || '提交';
+    const cancelLabel = strictFormText(payload.cancel_label, 32, false) || '取消';
+    if (!FORM_ID_RE.test(formId) || !isPlainRecord(payload.schema) || FORM_SENSITIVE_RE.test([formId, title, description || ''].join(' '))) {
+      throw new TypeError('invalid bailing-form payload');
+    }
+    const entries = Object.entries(payload.schema);
+    if (!entries.length || entries.length > 12) throw new TypeError('invalid bailing-form field count');
+    const fields = entries.map(([name, raw]) => {
+      if (!FORM_FIELD_RE.test(name) || !isPlainRecord(raw)) throw new TypeError('invalid bailing-form field');
+      const type = raw.type;
+      if (typeof type !== 'string' || !FORM_FIELD_TYPES.has(type)) throw new TypeError('invalid bailing-form field');
+      rejectFormUnknownKeys(raw, FORM_FIELD_KEYS[type]);
+      const label = strictFormText(raw.label, 80, true);
+      const help = strictFormText(raw.description, 200, false);
+      const placeholder = strictFormText(raw.placeholder, 120, false);
+      if (raw.required !== undefined && typeof raw.required !== 'boolean') throw new TypeError('invalid bailing-form required');
+      if (FORM_SENSITIVE_RE.test([name, label, help || '', placeholder || ''].join(' '))) throw new TypeError('invalid bailing-form field');
+      const field = { name, type, label, help, placeholder, required: raw.required === true };
+      if (type === 'text' || type === 'textarea') {
+        const cap = type === 'textarea' ? 2000 : 500;
+        const minLength = raw.minLength === undefined ? 0 : raw.minLength;
+        const maxLength = raw.maxLength === undefined ? cap : raw.maxLength;
+        if (!Number.isInteger(minLength) || !Number.isInteger(maxLength) || minLength < 0 || maxLength < 1 || maxLength > cap || minLength > maxLength) {
+          throw new TypeError('invalid bailing-form text limits');
+        }
+        field.minLength = minLength;
+        field.maxLength = maxLength;
+      }
+      if (type === 'number') {
+        const min = raw.min === undefined ? null : raw.min;
+        const max = raw.max === undefined ? null : raw.max;
+        if ((min !== null && (typeof min !== 'number' || !Number.isFinite(min))) || (max !== null && (typeof max !== 'number' || !Number.isFinite(max))) || (min !== null && max !== null && min > max)) {
+          throw new TypeError('invalid bailing-form number limits');
+        }
+        field.min = min;
+        field.max = max;
+      }
+      if (type === 'date') {
+        const min = raw.min === undefined ? null : raw.min;
+        const max = raw.max === undefined ? null : raw.max;
+        if ((min !== null && !isRealFormDate(min)) || (max !== null && !isRealFormDate(max)) || (min !== null && max !== null && min > max)) {
+          throw new TypeError('invalid bailing-form date limits');
+        }
+        field.min = min;
+        field.max = max;
+      }
+      if (type === 'single_select' || type === 'multi_select') {
+        if (!Array.isArray(raw.options) || !raw.options.length || raw.options.length > 50) throw new TypeError('invalid bailing-form options');
+        const seen = new Set();
+        field.options = raw.options.map((option) => {
+          if (!isPlainRecord(option)) throw new TypeError('invalid bailing-form option');
+          rejectFormUnknownKeys(option, new Set(['label', 'value']));
+          const optionLabel = strictFormText(option.label, 80, true);
+          const optionValue = strictFormText(option.value, 120, true);
+          if (seen.has(optionValue)) throw new TypeError('invalid bailing-form option');
+          seen.add(optionValue);
+          return Object.freeze({ label: optionLabel, value: optionValue });
+        });
+      }
+      return Object.freeze(field);
+    });
+    return Object.freeze({ version: 1, form_id: formId, title, description, submit_label: submitLabel, cancel_label: cancelLabel, fields: Object.freeze(fields) });
+  }
+  function newSubmissionId() {
+    let random = '';
+    try { random = (crypto.randomUUID && crypto.randomUUID().replace(/-/g, '')) || ''; } catch { /* 非安全上下文 */ }
+    if (!random) random = Date.now().toString(36) + Math.random().toString(36).slice(2, 14);
+    return ('sub_' + random).slice(0, 64);
+  }
+  function formDisplayText(form, action, rows) {
+    if (action === 'cancel') return `已取消填写：${form.title}`;
+    const lines = [`已提交：${form.title}`];
+    for (const row of rows) lines.push(`${row.label}：${row.text}`);
+    return lines.join('\n').slice(0, 4000);
+  }
+  function mountBailingForm({ container, payload, message, respond, signal }) {
+    const formSpec = normalizeFormPayload(payload);
+    if (typeof respond !== 'function') throw new TypeError('bailing-form respond unavailable');
+    if (!message || !message.jobId || message.jobId.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(message.jobId)) {
+      throw new TypeError('bailing-form requires an authoritative source job');
+    }
+    container.replaceChildren();
+    container.dataset.formId = formSpec.form_id;
+    const form = document.createElement('form');
+    form.className = 'bailing-form';
+    const head = document.createElement('div'); head.className = 'bf-head';
+    const title = document.createElement('div'); title.className = 'bf-title'; title.textContent = formSpec.title;
+    head.appendChild(title);
+    if (formSpec.description) { const desc = document.createElement('div'); desc.className = 'bf-description'; desc.textContent = formSpec.description; head.appendChild(desc); }
+    const fieldsEl = document.createElement('fieldset'); fieldsEl.className = 'bf-fields';
+    const controls = [];
+    for (const field of formSpec.fields) {
+      const row = document.createElement('div'); row.className = 'bf-field';
+      const controlId = `bf-${++formControlSeq}`;
+      const label = document.createElement('label'); label.className = 'bf-label'; label.textContent = field.label;
+      if (field.required) { const required = document.createElement('span'); required.className = 'bf-required'; required.textContent = '*'; label.appendChild(required); }
+      const error = document.createElement('div'); error.className = 'bf-field-error';
+      let focusNode = null;
+      let nodes = [];
+      let readValue;
+      if (field.type === 'text' || field.type === 'textarea' || field.type === 'number' || field.type === 'date') {
+        const input = document.createElement(field.type === 'textarea' ? 'textarea' : 'input');
+        if (field.type !== 'textarea') input.type = field.type;
+        input.id = controlId; input.name = field.name; input.required = field.required;
+        if (field.placeholder) input.placeholder = field.placeholder;
+        if (field.type === 'text' || field.type === 'textarea') {
+          input.minLength = field.minLength; input.maxLength = field.maxLength;
+        }
+        if (field.type === 'number') {
+          input.step = 'any';
+          if (field.min !== null) input.min = String(field.min);
+          if (field.max !== null) input.max = String(field.max);
+        }
+        if (field.type === 'date') {
+          if (field.min !== null) input.min = field.min;
+          if (field.max !== null) input.max = field.max;
+        }
+        label.htmlFor = controlId; row.append(label, input); focusNode = input; nodes = [input];
+        readValue = () => {
+          const raw = input.value.trim();
+          if (!raw) return { omitted: !field.required, value: '', text: '（未填写）' };
+          if ((field.type === 'text' || field.type === 'textarea') && raw.length < field.minLength) return { error: `至少输入 ${field.minLength} 个字符` };
+          if ((field.type === 'text' || field.type === 'textarea') && raw.length > field.maxLength) return { error: `不能超过 ${field.maxLength} 个字符` };
+          if (field.type === 'number') {
+            const number = Number(raw);
+            if (!Number.isFinite(number)) return { error: '请输入有效数字' };
+            if (field.min !== null && number < field.min) return { error: `不能小于 ${field.min}` };
+            if (field.max !== null && number > field.max) return { error: `不能大于 ${field.max}` };
+            return { value: number, text: String(number) };
+          }
+          if (field.type === 'date') {
+            if (!isRealFormDate(raw)) return { error: '请输入有效日期' };
+            if (field.min !== null && raw < field.min) return { error: `不能早于 ${field.min}` };
+            if (field.max !== null && raw > field.max) return { error: `不能晚于 ${field.max}` };
+          }
+          return { value: raw, text: raw };
+        };
+      } else if (field.type === 'boolean') {
+        const choice = document.createElement('label'); choice.className = 'bf-choice'; choice.htmlFor = controlId;
+        const input = document.createElement('input'); input.type = 'checkbox'; input.id = controlId; input.name = field.name;
+        const copy = document.createElement('span'); copy.textContent = field.label;
+        if (field.required) { const required = document.createElement('span'); required.className = 'bf-required'; required.textContent = '*'; copy.appendChild(required); }
+        choice.append(input, copy); row.appendChild(choice); focusNode = input; nodes = [input];
+        readValue = () => ({ value: input.checked, text: input.checked ? '是' : '否' });
+      } else if (field.type === 'single_select') {
+        const select = document.createElement('select'); select.id = controlId; select.name = field.name; select.required = field.required;
+        const empty = document.createElement('option'); empty.value = ''; empty.textContent = field.placeholder || '请选择'; select.appendChild(empty);
+        for (const option of field.options) { const el = document.createElement('option'); el.value = option.value; el.textContent = option.label; select.appendChild(el); }
+        label.htmlFor = controlId; row.append(label, select); focusNode = select; nodes = [select];
+        readValue = () => {
+          if (!select.value) return { omitted: !field.required, value: '', text: '（未选择）' };
+          const option = field.options.find((item) => item.value === select.value);
+          return { value: select.value, text: option ? option.label : select.value };
+        };
+      } else {
+        row.appendChild(label);
+        const choices = document.createElement('div'); choices.className = 'bf-choices'; choices.setAttribute('role', 'group'); choices.setAttribute('aria-label', field.label);
+        nodes = field.options.map((option, optionIndex) => {
+          const choice = document.createElement('label'); choice.className = 'bf-choice';
+          const input = document.createElement('input'); input.type = 'checkbox'; input.name = field.name; input.value = option.value; input.id = `${controlId}-${optionIndex}`;
+          const copy = document.createElement('span'); copy.textContent = option.label;
+          choice.htmlFor = input.id; choice.append(input, copy); choices.appendChild(choice);
+          return input;
+        });
+        row.appendChild(choices); focusNode = nodes[0];
+        readValue = () => {
+          const selected = nodes.filter((node) => node.checked).map((node) => node.value);
+          if (field.required && !selected.length) return { error: '请至少选择一项' };
+          if (!field.required && !selected.length) return { omitted: true, value: [], text: '（未选择）' };
+          return { value: selected, text: selected.map((value) => field.options.find((option) => option.value === value)?.label || value).join('、') || '（未选择）' };
+        };
+      }
+      if (field.help) { const help = document.createElement('div'); help.className = 'bf-help'; help.textContent = field.help; row.appendChild(help); }
+      row.appendChild(error); fieldsEl.appendChild(row);
+      controls.push({ field, nodes, focusNode, error, readValue });
+    }
+    const actions = document.createElement('div'); actions.className = 'bf-actions';
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.textContent = formSpec.cancel_label;
+    const submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'primary'; submit.textContent = formSpec.submit_label;
+    actions.append(cancel, submit);
+    const status = document.createElement('div'); status.className = 'bf-status'; status.setAttribute('aria-live', 'polite');
+    form.append(head, fieldsEl, actions, status); container.appendChild(form);
+    let destroyed = false;
+    let processing = false;
+    const submissionId = newSubmissionId();
+    const setDisabled = (disabled) => {
+      for (const control of controls) for (const node of control.nodes) node.disabled = disabled;
+      submit.disabled = disabled; cancel.disabled = disabled;
+    };
+    const showReceipt = (action) => {
+      processing = false; setDisabled(true); form.classList.add('is-complete');
+      status.className = 'bf-status receipt';
+      status.textContent = action === 'cancel' ? '已取消，表单不会再提交。' : '已提交，内容已作为新一轮消息发送。';
+    };
+    const clearErrors = () => {
+      for (const control of controls) { control.error.textContent = ''; control.error.classList.remove('on'); }
+      status.className = 'bf-status'; status.textContent = '';
+    };
+    const submitAction = async (action) => {
+      if (destroyed || processing || form.classList.contains('is-complete')) return;
+      clearErrors();
+      const values = {};
+      const rows = [];
+      if (action === 'submit') {
+        if (!form.reportValidity()) return;
+        for (const control of controls) {
+          const result = control.readValue();
+          if (result.error) {
+            control.error.textContent = result.error; control.error.classList.add('on');
+            if (control.focusNode) control.focusNode.focus();
+            return;
+          }
+          if (!result.omitted) values[control.field.name] = result.value;
+          if (!result.omitted) rows.push({ label: control.field.label, text: result.text });
+        }
+      }
+      processing = true; setDisabled(true); status.textContent = '正在提交…';
+      try {
+        await respond({ form_id: formSpec.form_id, submission_id: submissionId, action, values }, { displayText: formDisplayText(formSpec, action, rows) });
+        if (!destroyed && !(signal && signal.aborted)) showReceipt(action);
+      } catch (error) {
+        if (destroyed || (signal && signal.aborted)) return;
+        processing = false; setDisabled(false); status.className = 'bf-status error';
+        status.textContent = (error && error.message) || '提交失败，请重试。';
+      }
+    };
+    form.addEventListener('submit', (event) => { event.preventDefault(); void submitAction('submit'); });
+    cancel.addEventListener('click', () => { void submitAction('cancel'); });
+    const previous = Array.isArray(message && message.responses)
+      ? message.responses.find((item) => item && item.form_id === formSpec.form_id)
+      : null;
+    if (previous) showReceipt(previous.action);
+    const onAbort = () => { destroyed = true; setDisabled(true); };
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    return () => { destroyed = true; if (signal) signal.removeEventListener('abort', onAbort); };
+  }
   function cleanupHandle(handle) {
     if (typeof handle === 'function') return handle;
     if (handle && typeof handle.destroy === 'function') return () => handle.destroy();
@@ -516,7 +857,7 @@
     disposeRichContent(el);
     el.replaceChildren();
   }
-  function renderRegisteredBlock(el, type, source) {
+  function renderRegisteredBlock(el, type, source, options = {}) {
     const definition = rendererRegistry.get(type);
     if (!definition || payloadByteLength(source) > definition.maxPayloadBytes) return false;
     let payload = source;
@@ -550,6 +891,10 @@
 
     let result;
     try {
+      const messageJobId = String(options.messageJobId || '');
+      const message = Object.freeze({ jobId: messageJobId, responses: formResponsesForJob(messageJobId) });
+      // source_job_id/type/version 由组件闭包强制，renderer 无法冒用其他消息；认证信息也不进入 mount context。
+      const respond = (response, presentation) => respondToRenderer(definition, message, response, presentation);
       result = definition.mount(Object.freeze({
         container,
         payload,
@@ -558,6 +903,8 @@
         version: definition.version,
         theme: Object.freeze({ accent: String(cfg.color || '#7a5b3a') }),
         signal: state.controller.signal,
+        message,
+        respond,
       }));
     } catch (e) {
       console.warn('[百灵聊天组件] 富内容渲染失败，已降级为代码块', e);
@@ -593,7 +940,7 @@
         const closed = i < lines.length;
         if (closed) i++;
         const source = buf.join('\n');
-        if (!(closed && allowRich && language && renderRegisteredBlock(el, language, source))) {
+        if (!(closed && allowRich && language && renderRegisteredBlock(el, language, source, options))) {
           el.appendChild(createCodeBlock(source, language));
         }
         continue;
@@ -628,7 +975,7 @@
 
   // 打字机逐字显示（仅新到的 AI 回复）：按当前子串重渲 markdown（短文重渲成本可忽略），完成后回调追加来源/评价。
   // 历史回灌、服务端总账、错误气泡都走即时渲染——只有 send() 里刚到的回复带 typing 标志。
-  function typeReply(el, text, onDone) {
+  function typeReply(el, text, onDone, renderOptions = {}) {
     el.classList.add('md');
     const full = String(text || ''), total = full.length;
     if (!total) { if (onDone) onDone(); return; }
@@ -639,7 +986,7 @@
     const timer = setInterval(() => {
       i = Math.min(total, i + step);
       clearRenderedReply(el);
-      renderReply(el, full.slice(0, i), { allowRich: i >= total });
+      renderReply(el, full.slice(0, i), { ...renderOptions, allowRich: i >= total });
       msgsEl.scrollTop = msgsEl.scrollHeight;
       if (i >= total) { clearInterval(timer); if (onDone) onDone(); }
     }, 24);
@@ -710,8 +1057,11 @@
       msgsEl.appendChild(el);
       if (role === 'a' && !isErr) {
         // 新到的回复打字机逐字铺开，铺完再追加来源/评价；其余（历史/错误）即时渲染
-        if (extra && extra.typing) { typeReply(el, disp, () => appendExtras(role, isErr, { ...extra, copyText: disp }, el)); return el; }
-        renderReply(el, disp);
+        if (extra && extra.typing) {
+          typeReply(el, disp, () => appendExtras(role, isErr, { ...extra, copyText: disp }, el), { messageJobId: extra.jobId });
+          return el;
+        }
+        renderReply(el, disp, { messageJobId: extra && extra.jobId });
       } else { el.textContent = disp; }
     }
     appendExtras(role, isErr, extra ? { ...extra, copyText: disp } : extra, el);
@@ -875,7 +1225,7 @@
     msgsEl.replaceChildren();
     typingEl = null;
     if (!history.length && cfg.greeting) addMsg('a', cfg.greeting);
-    for (const m of history) addMsg(m.r, m.t, m.e, { refs: m.refs, jobId: m.j, voted: m.v, comment: m.c, atts: m.atts });
+    for (const m of history) addMsg(m.r, m.t, m.e, { refs: m.refs, jobId: m.j, voted: m.v, comment: m.c, atts: m.atts, interaction: m.i || m.interaction });
   }
 
   async function api(path, opts) {
@@ -912,9 +1262,15 @@
   function mergeServerMessages(msgs) {
     const byJob = {};
     for (const m of history) { if (m.j) byJob[m.j] = { v: m.v, c: m.c, refs: m.refs }; }
+    const localInteractions = {};
+    for (const m of history) {
+      const interaction = normalizeInteractionMeta(m && (m.i || m.interaction));
+      if (m && m.j && interaction) localInteractions[m.j] = interaction;
+    }
     history = msgs.map((m) => ({
       r: m.r, t: m.t, e: false, j: m.j || undefined, atts: m.atts,
       ...(m.j && byJob[m.j] ? { v: byJob[m.j].v, c: byJob[m.j].c, refs: byJob[m.j].refs } : {}),
+      ...((normalizeInteractionMeta(m.interaction) || (m.j && localInteractions[m.j])) ? { i: normalizeInteractionMeta(m.interaction) || localInteractions[m.j] } : {}),
     }));
     saveHistory();
     renderHistory();
@@ -946,11 +1302,11 @@
     let progressCopyEl = null;
     let progressStatusEl = null;
 
-    function flush(allowRich = false) {
+    function flush(allowRich = false, messageJobId = '') {
       if (renderTimer) { clearTimeout(renderTimer); renderTimer = null; }
       if (!bubble) return;
       clearRenderedReply(bubble);
-      renderReply(bubble, text, { allowRich });
+      renderReply(bubble, text, { allowRich, messageJobId });
       msgsEl.scrollTop = msgsEl.scrollHeight;
     }
     function scheduleRender() {
@@ -1066,7 +1422,7 @@
         removeProgress();
         if (!bubble) return false;
         text = String(resp.reply || '（无内容）');
-        flush(true);
+        flush(true, resp.job_id);
         const refs = Array.isArray(resp.references) ? resp.references : undefined;
         const atts = Array.isArray(resp.attachments) ? resp.attachments : undefined;
         appendExtras('a', false, { refs, jobId: resp.job_id, atts, copyText: text }, bubble);
@@ -1286,6 +1642,129 @@
       pendingAtt = { error: true, name: '无法访问麦克风', type: 'audio' };
       renderAttChip();
     }
+  }
+
+  function normalizeRendererResponse(definition, message, response) {
+    if (definition.type !== FORM_RENDERER_TYPE || definition.version !== 1) throw new Error('当前交互提交仅支持 bailing-form v1。');
+    if (!message.jobId || message.jobId.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(message.jobId)) throw new Error('当前表单缺少有效来源消息，无法提交。');
+    if (!isPlainRecord(response)) throw new Error('表单提交内容不合法。');
+    rejectFormUnknownKeys(response, new Set(['form_id', 'submission_id', 'action', 'values']));
+    const formId = strictFormText(response.form_id, 64, true);
+    const submissionId = strictFormText(response.submission_id, 64, true);
+    const action = String(response.action || '').trim().toLowerCase();
+    if (!FORM_ID_RE.test(formId) || !/^[a-zA-Z0-9_-]{8,64}$/.test(submissionId)) throw new Error('表单提交标识不合法。');
+    if (action !== 'submit' && action !== 'cancel') throw new Error('表单操作不合法。');
+    const rawValues = action === 'cancel' ? {} : response.values;
+    if (!isPlainRecord(rawValues) || Object.keys(rawValues).length > 12) throw new Error('表单提交值不合法。');
+    const values = {};
+    for (const [key, value] of Object.entries(rawValues)) {
+      if (!FORM_FIELD_RE.test(key)) throw new Error('表单字段不合法。');
+      if (typeof value === 'string') values[key] = value;
+      else if (typeof value === 'number' && Number.isFinite(value)) values[key] = value;
+      else if (typeof value === 'boolean') values[key] = value;
+      else if (Array.isArray(value) && value.length <= 50 && value.every((item) => typeof item === 'string')) values[key] = [...value];
+      else throw new Error('表单字段值不合法。');
+    }
+    let valuesJson = '';
+    try { valuesJson = JSON.stringify(values); } catch { throw new Error('表单提交值无法序列化。'); }
+    if (payloadByteLength(valuesJson) > 32 * 1024) throw new Error('表单提交值过大。');
+    return Object.freeze({
+      type: definition.type,
+      version: definition.version,
+      source_job_id: message.jobId,
+      form_id: formId,
+      submission_id: submissionId,
+      action,
+      values: Object.freeze(values),
+    });
+  }
+  function respondToRenderer(definition, message, response, presentation) {
+    const interaction = normalizeRendererResponse(definition, message, response);
+    const displayText = String((presentation && presentation.displayText) || (interaction.action === 'cancel' ? '已取消填写表单。' : '已提交表单。')).slice(0, 4000);
+    return submitInteractionResponse(interaction, displayText);
+  }
+  function submitInteractionResponse(interaction, displayText) {
+    if (pending) return Promise.reject(new Error('当前还有一条消息正在处理，请稍后再提交。'));
+    pending = true; sendBtn.disabled = true;
+    if (attachBtn) attachBtn.disabled = true;
+    if (voiceBtn) voiceBtn.disabled = true;
+    const temporaryUser = addMsg('u', displayText, false);
+    setTyping(true);
+    const live = createLiveAssistant();
+    const beforeAssistantCount = history.filter((item) => item.r === 'a').length;
+    let resolveAccepted;
+    let rejectAccepted;
+    let acknowledgementSettled = false;
+    const acceptedPromise = new Promise((resolve, reject) => { resolveAccepted = resolve; rejectAccepted = reject; });
+    const acknowledge = (value) => {
+      if (acknowledgementSettled) return;
+      acknowledgementSettled = true;
+      resolveAccepted(value);
+    };
+    const rejectAcknowledgement = (error) => {
+      if (acknowledgementSettled) return;
+      acknowledgementSettled = true;
+      rejectAccepted(error);
+    };
+    // respond() 只等到 POST 被权威服务端接受，便立即让表单显示只读回执；
+    // 后续 SSE/断线恢复在受控后台链路收口，全局 pending 仍保持到下一轮回答完成。
+    void (async () => {
+      let accepted = false;
+      try {
+        const clientCapabilities = collectClientCapabilities();
+        let resp = await api(`/chat/${ENTRY}`, {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            interaction_response: interaction,
+            visitor_id: visitorId,
+            context: collectPageContext(),
+            ...(clientCapabilities ? { client_capabilities: clientCapabilities } : {}),
+            ...(threadId ? { thread_id: threadId } : {}),
+            ...(TICKET ? { ticket: TICKET } : {}),
+          }),
+        });
+        accepted = true;
+        if (resp.visitor_id && resp.visitor_id !== visitorId) {
+          visitorId = resp.visitor_id;
+          try { localStorage.setItem(LS_VISITOR, visitorId); } catch { /* 忽略 */ }
+        }
+        history.push({ r: 'u', t: displayText, j: resp.job_id || undefined, i: normalizeInteractionMeta(interaction) }); saveHistory();
+        acknowledge({ accepted: true, job_id: resp.job_id || '' });
+        const deadline = Date.now() + 5 * 60 * 1000;
+        if (!resp.done && resp.job_id) {
+          const streamed = await waitForEventStream(resp.job_id, deadline, live);
+          if (streamed) resp = streamed;
+        }
+        setTyping(false);
+        if (!resp.done) live.discard('任务仍在后台处理中');
+        appendAssistantResponse(resp, live);
+      } catch (error) {
+        setTyping(false);
+        live.discard('处理未完成', true);
+        if (isNetworkError(error) && await recoverFromServerHistory(beforeAssistantCount)) {
+          acknowledge({ accepted: true, recovered: true });
+          return;
+        }
+        if (accepted) {
+          const messageText = publicErrorMessage(error);
+          addMsg('a', messageText, true);
+          history.push({ r: 'a', t: messageText, e: true }); saveHistory();
+          // POST 已被服务端接受时不再开放重复提交；后续可由 thread 历史补齐回答。
+          acknowledge({ accepted: true, pending_reply: true });
+        } else {
+          if (temporaryUser && temporaryUser.isConnected) temporaryUser.remove();
+          rejectAcknowledgement(new Error(publicErrorMessage(error)));
+        }
+      } finally {
+        pending = false; sendBtn.disabled = false;
+        if (attachBtn && cfg.upload) attachBtn.disabled = false;
+        if (voiceBtn && cfg.upload && canRecordAudio()) voiceBtn.disabled = false;
+      }
+    })().catch((error) => {
+      console.warn('[百灵聊天组件] 表单后续链路异常', error);
+      rejectAcknowledgement(new Error(publicErrorMessage(error)));
+    });
+    return acceptedPromise;
   }
 
   async function send() {

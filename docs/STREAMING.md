@@ -87,12 +87,18 @@
 ```json
 {
   "client_capabilities": {
-    "renderers": ["bailing-chart"]
+    "renderers": ["bailing-chart", "bailing-form"]
   }
 }
 ```
 
-该字段只影响模型收到的可选展示提示，不进入 SSE 事件，不构成身份、授权、审批或工具权限。富内容仍属于 `done.reply` 的一部分；客户端不得在 `delta` 阶段挂载图表，应在 `done` 后按 [`WIDGET_RENDERERS.md`](WIDGET_RENDERERS.md) 的白名单与失败降级规则处理完整 fenced code block。
+该字段只影响模型收到的可选展示提示，不进入 SSE 事件，不构成身份、授权、审批或工具权限。富内容仍属于 `done.reply` 的一部分；客户端不得在 `delta` 阶段挂载图表或表单，应在 `done` 后按 [`WIDGET_RENDERERS.md`](WIDGET_RENDERERS.md) 的白名单与失败降级规则处理完整 fenced code block。
+
+### 7.2 表单回传不改变流式状态机
+
+`bailing-form` 是 `done.reply` 中的最终声明式内容。源 job 输出表单后已经终态 `done`，不会进入“等待填写”或 `input_required`。用户提交/取消表单时，客户端向同一聊天入口发起新 `POST /chat/:entry_key`；服务端在同 thread 创建新 job，该 job 仍使用本文现有的 `open/status/phase/reset/delta/ping/done/failed/timeout` 集合。
+
+因此客户端要保留源 `done.job_id` 作为回传的 `source_job_id`，另外订阅新 job 的 SSE；不得继续占用或恢复源 job 的已关闭连接。表单回执的跨设备恢复来自 `/thread` 权威总账，不来自增量回放窗口。
 
 ## 8. 验证
 

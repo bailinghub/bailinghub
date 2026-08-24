@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const CONTRACT_VERSIONS = {
-  boundary: 'bailing.contract.v2.13',
+  boundary: 'bailing.contract.v2.14',
   clientApi: 'bailing.client-api.v1',
   toolDefinition: 'bailing.tool-definition.v1',
   approvalIntent: 'bailing.approval-intent.v1',
