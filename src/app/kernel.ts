@@ -82,6 +82,7 @@ function kernelLaunchRequestV1(spec: LaunchSpec): KernelLaunchRequestV1 {
     threadScope: spec.threadScope,
     principalId: spec.principalId,
     channel: spec.channel,
+    ...(spec.agentAttribution ? { agentAttribution: Object.freeze({ ...spec.agentAttribution }) } : {}),
   });
 }
 

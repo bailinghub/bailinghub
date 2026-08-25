@@ -98,6 +98,9 @@ final class HubClient
             'header' => implode("\r\n", $headers),
             'timeout' => $this->timeoutSeconds,
             'ignore_errors' => true,
+            // Bearer 凭证绝不跟随重定向，避免被跨主机 30x 带走。
+            'follow_location' => 0,
+            'max_redirects' => 0,
         ];
         if ($body !== null) {
             $http['content'] = $content;

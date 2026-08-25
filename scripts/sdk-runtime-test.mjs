@@ -62,9 +62,11 @@ ok('Python HubClient is exported', py.status === 0 && py.stdout.split('\n')[1] =
 const php = run('php', ['-r', `
 require '${root}/sdk/php/src/Ticket.php';
 require '${root}/sdk/php/src/HubClient.php';
+require '${root}/sdk/php/src/AgentAuth.php';
 require '${root}/sdk/php/src/SpecServer.php';
 echo Bailing\\Connect\\Ticket::sign('secret', 'tenant:user', 7200, 2000000000), "\\n";
 echo class_exists('Bailing\\\\Connect\\\\HubClient') ? 'HubClient' : 'missing', "\\n";
+echo class_exists('Bailing\\\\Connect\\\\AgentAuth') ? 'AgentAuth' : 'missing', "\\n";
 $protectedHeaders = Bailing\\Connect\\SpecServer::responseHeaders('tool-secret');
 echo isset($protectedHeaders['Cache-Control']) ? $protectedHeaders['Cache-Control'] : 'missing', "\\n";
 list($publicStatus, $publicBody) = Bailing\\Connect\\SpecServer::handlePublic('{"ok":true}', 'GET', '/tools.json');
@@ -74,9 +76,10 @@ echo ($legacyStatus === 200 && $legacyBody === '{"ok":true}') ? 'legacy-null' : 
 `]);
 ok('PHP sign ticket deterministic vector', php.status === 0 && php.stdout.split('\n')[0] === expectedTicket, php.stderr || php.stdout);
 ok('PHP HubClient is exported', php.status === 0 && php.stdout.split('\n')[1] === 'HubClient', php.stderr || php.stdout);
-ok('PHP protected spec response is private/no-store', php.status === 0 && php.stdout.split('\n')[2] === 'private, no-store', php.stderr || php.stdout);
-ok('PHP explicit public spec helper works', php.status === 0 && php.stdout.split('\n')[3] === 'public-helper', php.stderr || php.stdout);
-ok('PHP legacy null-public signature remains compatible', php.status === 0 && php.stdout.split('\n')[4] === 'legacy-null', php.stderr || php.stdout);
+ok('PHP AgentAuth is exported', php.status === 0 && php.stdout.split('\n')[2] === 'AgentAuth', php.stderr || php.stdout);
+ok('PHP protected spec response is private/no-store', php.status === 0 && php.stdout.split('\n')[3] === 'private, no-store', php.stderr || php.stdout);
+ok('PHP explicit public spec helper works', php.status === 0 && php.stdout.split('\n')[4] === 'public-helper', php.stderr || php.stdout);
+ok('PHP legacy null-public signature remains compatible', php.status === 0 && php.stdout.split('\n')[5] === 'legacy-null', php.stderr || php.stdout);
 
 const php7 = run('php', ['-r', `
 require '${root}/sdk/php7/src/Ticket.php';

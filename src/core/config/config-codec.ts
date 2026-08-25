@@ -42,6 +42,7 @@ export function rowClient(r: any): Client {
   const budget = r.budget ? (typeof r.budget === 'string' ? JSON.parse(r.budget) : r.budget) : undefined;
   return {
     app_id: r.app_id, name: r.name, token: r.token,
+    agent_authorize_url: r.agent_authorize_url ?? undefined,
     allowed_routes: ar ? (typeof ar === 'string' ? JSON.parse(ar) : ar) : [],
     allowed_channels: ac ? (typeof ac === 'string' ? JSON.parse(ac) : ac) : [],
     rate_limit_per_min: Number(r.rate_limit_per_min ?? 60),

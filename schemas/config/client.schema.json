@@ -17,6 +17,13 @@
       "title": "名称",
       "description": "后台展示的人类可读名称。"
     },
+    "agent_authorize_url": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 2048,
+      "title": "Agent 授权页",
+      "description": "可选。本地 Agent 发起登录时打开的业务系统授权页 URL；未配置时不开放 Agent Auth。"
+    },
     "allowed_routes": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 },

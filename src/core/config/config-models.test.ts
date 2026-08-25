@@ -45,6 +45,16 @@ test('prepareClientConfig: 规范化接入方并校验预算', () => {
   const badBudget = prepareClientConfig({ app_id: 'app-main', name: 'x', allowed_routes: ['*'], budget: { hard_tokens: 1.2 } });
   assert.equal(badBudget.ok, false);
   assert.match(badBudget.ok ? '' : badBudget.error, /client\.budget\.hard_tokens/);
+
+  const agent = prepareClientConfig({ app_id: 'app-main', name: 'x', allowed_routes: ['orders'], agent_authorize_url: 'https://business.example.com/agent-authorize' });
+  assert.equal(agent.ok, true);
+  if (agent.ok) assert.equal(agent.value.agent_authorize_url, 'https://business.example.com/agent-authorize');
+  for (const invalidUrl of ['http://business.example.com/agent-authorize', 'http://localhost:8080/agent-authorize', 'http://127.0.0.1/agent-authorize', 'http://2130706433:8080/agent-authorize', 'http://0x7f000001:8080/agent-authorize']) {
+    const invalid = prepareClientConfig({ app_id: 'app-main', name: 'x', allowed_routes: ['orders'], agent_authorize_url: invalidUrl });
+    assert.equal(invalid.ok, false, invalidUrl);
+  }
+  const localAgent = prepareClientConfig({ app_id: 'app-main', name: 'x', allowed_routes: ['orders'], agent_authorize_url: 'http://127.0.0.1:8080/agent-authorize' });
+  assert.equal(localAgent.ok, true);
 });
 
 test('prepareExecutorTokenConfig: target 白名单不能为空', () => {

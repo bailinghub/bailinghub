@@ -29,6 +29,13 @@ function object(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {};
 }
 
+function hasStrictLoopbackHttpAuthority(value: string): boolean {
+  const match = /^http:\/\/(?:127\.0\.0\.1|\[::1\]):([0-9]{1,5})(?:[/?#]|$)/i.exec(value);
+  if (!match) return false;
+  const port = Number(match[1]);
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
 function resourceName(v: unknown, label: string): PrepareResult<string> {
   const name = str(v);
   if (!RESOURCE_NAME_RE.test(name)) return fail(`${label} 仅限小写字母/数字/中划线/下划线，且长度 2..64`);
@@ -45,11 +52,25 @@ export function prepareClientConfig(input: Partial<Client> & { rotate_token?: bo
   const budgetErr = validateBudgetPolicy(input.budget, 'client.budget');
   if (budgetErr) return fail(budgetErr);
   const budget = object(input.budget);
+  const agentAuthorizeUrl = optionalStr(input.agent_authorize_url);
+  if (agentAuthorizeUrl) {
+    try {
+      const parsed = new URL(agentAuthorizeUrl);
+      const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+      const loopbackDev = hasStrictLoopbackHttpAuthority(agentAuthorizeUrl) && (hostname === '127.0.0.1' || hostname === '::1');
+      if ((parsed.protocol !== 'https:' && !loopbackDev) || parsed.username || parsed.password || parsed.hash || agentAuthorizeUrl.length > 2048) {
+        return fail('agent_authorize_url 只允许 HTTPS；本机开发可使用带显式端口的 127.0.0.1/::1 HTTP URL');
+      }
+    } catch {
+      return fail('agent_authorize_url 必须是有效的 HTTP(S) URL');
+    }
+  }
   return {
     ok: true,
     value: {
       app_id: appId,
       name,
+      ...(agentAuthorizeUrl ? { agent_authorize_url: agentAuthorizeUrl } : {}),
       allowed_routes: allowedRoutes,
       allowed_channels: stringList(input.allowed_channels),
       rate_limit_per_min: Math.max(Number(input.rate_limit_per_min ?? 60) || 0, 0),

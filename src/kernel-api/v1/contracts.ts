@@ -42,6 +42,14 @@ export interface KernelLaunchRequestV1 {
   readonly threadScope: string;
   readonly principalId: string | null;
   readonly channel: string;
+  /** Trusted local-Agent identity attribution. No plan, payment, entitlement, or usage semantics. */
+  readonly agentAttribution?: Readonly<{
+    agentSessionId: string;
+    clientAppId: string;
+    subjectId: string;
+    businessTenantRef?: string;
+    onBehalfOf: string;
+  }>;
 }
 
 export interface KernelLaunchGuardDecisionV1 {

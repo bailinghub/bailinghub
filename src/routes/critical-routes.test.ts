@@ -5,7 +5,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Principal } from '../app/auth';
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeContext } from '../core/edition';
-import type { Client, Job, Route, ToolApproval } from '../core/contracts/types';
+import type { AgentSession, Client, Job, Route, ToolApproval } from '../core/contracts/types';
+import type { LaunchSpec } from '../core/runtime/launch-runtime';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { handleRunFor, type RunApiDeps } from './run';
@@ -181,6 +182,184 @@ test('POST /run: request_id 不能跨接入方碰撞', async () => {
 
   assert.equal(res.statusCode, 409);
   assert.match(String(res.json()['error']), /其他接入方冲突/);
+});
+
+test('POST /agent-api/v1/run: 业务主体和 Agent Session 由服务端注入，metadata 不能劫持', async () => {
+  const route: Route = {
+    route_key: 'orders',
+    name: 'Orders',
+    enabled: true,
+    target: 'llm',
+    target_config: {},
+    profile: 'general',
+    session_policy: 'per_key',
+    session_key_field: 'arbitrary_user_key',
+  };
+  const session: AgentSession = {
+    session_id: '123e4567-e89b-42d3-a456-426614174000',
+    client_app_id: client.app_id,
+    device_label: 'Mac mini',
+    principal: { id: 'user-7', tenant: 'tenant-2', roles: ['manager'], audience: 'employee' },
+    on_behalf_of: 'tenant-2:user-7',
+    allowed_routes: ['orders'],
+    created_at: '2026-01-01T00:00:00.000Z',
+    access_expires_at: '2026-01-01T01:00:00.000Z',
+    refresh_expires_at: '2026-02-01T00:00:00.000Z',
+  };
+  const agentPrincipal: Principal = { kind: 'agent', client, session };
+  let trustedScope: string | null = null;
+  let launch: LaunchSpec | null = null;
+  const config = {
+    routes: { get: async () => route },
+    conversations: {
+      resolveSession: async () => { throw new Error('Agent per_key must not resolve from metadata'); },
+      sessionForScope: async (routeKey: string, scopeKey: string) => {
+        assert.equal(routeKey, route.route_key);
+        trustedScope = scopeKey;
+        return { sessionId: 'brain-session-1', isContinue: true, scopeKey };
+      },
+    },
+    targets: { list: async () => [] },
+    clients: { touch: async () => undefined },
+    rateLimits: { consume: async () => false },
+  } as unknown as ConfigStoreContract;
+  const state = { findByRequestId: async () => null } as unknown as RuntimeStateStore;
+  const deps: RunApiDeps = {
+    cfg: { defaultProfile: 'general' },
+    isPaused: () => false,
+    runtimeContextFor: async ({ requestId }) => runtimeContext(requestId, 'run'),
+    runtimeStoresFor: () => ({ state, config }),
+    resolveProjectPathFor: async () => null,
+    engineForContext: () => ({
+      launchJob: async (spec) => {
+        launch = spec;
+        return job({
+          job_id: 'job-agent',
+          request_id: spec.requestId,
+          client_app_id: client.app_id,
+          agent_session_id: spec.agentAttribution?.agentSessionId,
+          on_behalf_of: spec.agentAttribution?.onBehalfOf,
+          metadata: spec.metadata,
+        });
+      },
+    }),
+  };
+  const res = new FakeResponse();
+  await handleRunFor(
+    deps,
+    jsonRequest({
+      request_id: 'agent-request-1',
+      route: 'orders',
+      input: 'query orders',
+      metadata: {
+        custom_hint: 'keep-me',
+        principal: { id: 'attacker', roles: ['admin'] },
+        subject: { id: 'attacker-2' },
+        visitor_uid: 'attacker',
+        operator_uid: 'attacker',
+        tenant: 'other-tenant',
+        roles: ['admin'],
+        session_id: 'hijacked-brain-session',
+        arbitrary_user_key: 'victim-history-scope',
+        on_behalf_of: 'attacker',
+        agent_session_id: 'attacker-session',
+        source: 'forged',
+      },
+    }),
+    res as unknown as ServerResponse,
+    agentPrincipal,
+  );
+
+  assert.equal(res.statusCode, 202);
+  assert.match(trustedScope ?? '', /^agent-subject:[a-f0-9]{64}$/);
+  assert.notEqual(trustedScope, 'victim-history-scope');
+  const firstClientScope = trustedScope ?? '';
+  assert.ok(launch);
+  const launchSpec = launch as unknown as LaunchSpec;
+  assert.equal(launchSpec.metadata['visitor_uid'], session.on_behalf_of);
+  assert.equal(launchSpec.metadata['operator_uid'], session.on_behalf_of);
+  assert.equal(launchSpec.metadata['session_id'], undefined);
+  assert.equal(launchSpec.metadata['tenant'], undefined);
+  assert.equal((launchSpec.metadata['principal'] as Record<string, unknown>)['id'], session.principal.id);
+  assert.equal((launchSpec.metadata['principal'] as Record<string, unknown>)['tenant'], session.principal.tenant);
+  assert.deepEqual((launchSpec.metadata['principal'] as Record<string, unknown>)['roles'], session.principal.roles);
+  assert.equal(launchSpec.metadata['custom_hint'], 'keep-me');
+  assert.equal(launchSpec.source, `agent:${client.app_id}`);
+  assert.equal(launchSpec.callbackUrl, undefined);
+  assert.deepEqual(launchSpec.agentAttribution, {
+    agentSessionId: session.session_id,
+    clientAppId: client.app_id,
+    subjectId: 'user-7',
+    businessTenantRef: 'tenant-2',
+    onBehalfOf: session.on_behalf_of,
+  });
+
+  const otherClient: Client = { ...client, app_id: 'client-b', name: 'Client B', token: 'other-client-token' };
+  const otherSession: AgentSession = {
+    ...session,
+    session_id: '223e4567-e89b-42d3-a456-426614174000',
+    client_app_id: otherClient.app_id,
+  };
+  const otherRes = new FakeResponse();
+  await handleRunFor(
+    deps,
+    jsonRequest({
+      request_id: 'agent-request-other-client',
+      route: 'orders',
+      input: 'same subject, another client',
+      metadata: { arbitrary_user_key: 'victim-history-scope' },
+    }),
+    otherRes as unknown as ServerResponse,
+    { kind: 'agent', client: otherClient, session: otherSession },
+  );
+  assert.equal(otherRes.statusCode, 202);
+  assert.match(trustedScope ?? '', /^agent-subject:[a-f0-9]{64}$/);
+  assert.notEqual(trustedScope, firstClientScope, '同 route 下不同 Client 的同名主体不得共用会话 scope');
+});
+
+test('POST /agent-api/v1/run: fixed 与 passthrough 会话策略对 Agent 失败关闭', async (t) => {
+  const session: AgentSession = {
+    session_id: '123e4567-e89b-42d3-a456-426614174000',
+    client_app_id: client.app_id,
+    device_label: 'Mac mini',
+    principal: { id: 'user-7', tenant: 'tenant-2', roles: ['manager'] },
+    on_behalf_of: 'tenant-2:user-7',
+    allowed_routes: ['orders'],
+    created_at: '2026-01-01T00:00:00.000Z',
+    access_expires_at: '2026-01-01T01:00:00.000Z',
+    refresh_expires_at: '2026-02-01T00:00:00.000Z',
+  };
+  const agentPrincipal: Principal = { kind: 'agent', client, session };
+  for (const policy of ['fixed', 'passthrough'] as const) {
+    await t.test(policy, async () => {
+      const route: Route = {
+        route_key: 'orders', name: 'Orders', enabled: true, target: 'llm', target_config: {}, profile: 'general',
+        session_policy: policy,
+        ...(policy === 'fixed' ? { session_fixed_id: 'shared-session' } : { session_key_field: 'session_id' }),
+      };
+      const config = {
+        routes: { get: async () => route },
+        conversations: { resolveSession: async () => { throw new Error('unsafe session resolver must not run'); } },
+        targets: { list: async () => [] },
+        clients: { touch: async () => undefined },
+        rateLimits: { consume: async () => false },
+      } as unknown as ConfigStoreContract;
+      const res = new FakeResponse();
+      await handleRunFor(
+        runDeps({ findByRequestId: async () => null } as unknown as RuntimeStateStore, config),
+        jsonRequest({
+          request_id: `agent-${policy}`,
+          route: 'orders',
+          input: 'query orders',
+          metadata: { session_id: 'victim-session' },
+        }),
+        res as unknown as ServerResponse,
+        agentPrincipal,
+      );
+      assert.equal(res.statusCode, 403);
+      assert.match(String(res.json()['error']), new RegExp(`session_policy=${policy}`));
+    });
+  }
 });
 
 function approval(status: ToolApproval['status'] = 'pending'): ToolApproval {

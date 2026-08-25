@@ -4,7 +4,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { ipOf, readBody, send } from './http';
 import { verifyPassword } from '../core/platform/password';
-import type { Client, ExecutorToken } from '../core/contracts/types';
+import type { AgentSession, Client, ExecutorToken } from '../core/contracts/types';
 import type { AppConfig } from '../core/config/config';
 import { allowsUnauthenticatedLocalDevelopment } from '../core/platform/server-token';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
@@ -19,6 +19,7 @@ export type Principal =
       permissions?: string[];
     }
   | { kind: 'client'; client: Client }
+  | { kind: 'agent'; session: AgentSession; client: Client }
   | { kind: 'executor'; token: ExecutorToken };
 
 export interface AuthRuntimeDeps {

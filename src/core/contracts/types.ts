@@ -20,6 +20,8 @@ export interface Job {
   project: string;
   source: string;
   client_app_id?: string; // 触发方 app_id（admin token 触发为空）
+  agent_session_id?: string; // 本地 Agent 受信会话归属（非套餐/付费字段）
+  on_behalf_of?: string; // 业务侧批准的实际操作主体
   thread_id?: number;     // 对话线索（总账），finish 时回写 out 消息
   session_id?: string;
   input_preview: string;
@@ -124,6 +126,8 @@ export interface Client {
   app_id: string;
   name: string;
   token: string;
+  /** 本地 Agent 登录时打开的业务侧授权页；未配置时不开放 Agent Auth。 */
+  agent_authorize_url?: string;
   allowed_routes: string[]; // 路由白名单（触发 /run），['*'] = 全部
   allowed_channels: string[]; // 主动出站渠道白名单（POST /send），['*'] = 全部，空 = 禁止（fail-closed）
   rate_limit_per_min: number; // 0 = 不限
@@ -131,6 +135,32 @@ export interface Client {
   enabled: boolean;
   description?: string;
   last_used_at?: string;
+}
+
+/** 业务后端在 Agent 授权时提交的可信业务主体。 */
+export interface AgentBusinessPrincipal {
+  id: string;
+  tenant?: string;
+  roles: string[];
+  audience?: string;
+  channel?: string;
+}
+
+/**
+ * 可撤销的本地 Agent 会话。这是身份与审计归属，不是套餐、付费或用量归属。
+ * 令牌及其摘要不进入公开合同。
+ */
+export interface AgentSession {
+  session_id: string;
+  client_app_id: string;
+  device_label: string;
+  principal: AgentBusinessPrincipal;
+  on_behalf_of: string;
+  allowed_routes: string[];
+  created_at: string;
+  access_expires_at: string;
+  refresh_expires_at: string;
+  revoked_at?: string;
 }
 
 /** 模型凭证（后台可配，不硬编码）：llm 对话与知识库 embedding 共用，按名引用。key 入库不回显。 */

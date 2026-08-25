@@ -24,6 +24,7 @@ import type { ToolEmbeddingRepository } from '../../services/tool-index-reposito
 import { MysqlKbDatasourceRepository, MysqlKnowledgeRepository } from './config-knowledge-repository';
 import { InstanceBrandingRepository } from './config-instance-branding-repository';
 import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
+import { AgentAuthRepository, type AgentAuthRepositoryContract } from './config-agent-auth-repository';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 export type RouteRepositoryContract = Pick<RouteRepository, keyof RouteRepository>;
@@ -80,6 +81,8 @@ export interface ConfigStoreContract {
   readonly instanceBranding: InstanceBrandingRepositoryContract;
   readonly deliveryDlq: DeliveryDlqLedgerContract;
   readonly observability: ObservabilityLedgerContract;
+  /** 新 Agent Auth 能力对旧宿主仓储保持可选；缺失时 HTTP 面 fail closed。 */
+  readonly agentAuth?: AgentAuthRepositoryContract;
   init(): Promise<void>;
   close?(): Promise<void>;
   readonly db: Pool;
@@ -112,6 +115,7 @@ export class ConfigStore implements ConfigStoreContract {
   readonly instanceBranding = new InstanceBrandingRepository(() => this.pool);
   readonly deliveryDlq = new DeliveryDlqLedger(() => this.pool);
   readonly observability = new ObservabilityLedger(() => this.pool);
+  readonly agentAuth = new AgentAuthRepository(() => this.pool);
 
   constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);

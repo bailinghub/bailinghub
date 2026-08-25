@@ -56,6 +56,7 @@
           <div class="protection-stack">
             <div>
               <el-tag size="small" effect="plain" :type="row.enabled ? 'success' : 'info'">{{ row.enabled ? '已启用' : '已停用' }}</el-tag>
+              <el-tag v-if="row.agent_authorize_url" size="small" effect="plain" type="primary">Agent 登录</el-tag>
               <el-tag v-if="hasBudget(row)" size="small" effect="plain" type="danger">预算闸</el-tag>
             </div>
             <span class="muted">限速 {{ row.rate_limit_per_min ? row.rate_limit_per_min + '/分' : '不限' }}</span>
@@ -96,6 +97,13 @@
           <p>{{ fieldDesc('name', '后台展示的人类可读名称。') }}</p>
         </HelpTip></template>
         <el-input v-model="form.name" placeholder="如 业务系统" />
+      </el-form-item>
+      <el-form-item>
+        <template #label>{{ fieldTitle('agent_authorize_url', 'Agent 授权页') }} <HelpTip :title="fieldTitle('agent_authorize_url', 'Agent 授权页')">
+          <p>{{ fieldDesc('agent_authorize_url', '本地 Agent 发起登录时打开的业务系统网页。') }}</p>
+          <p>留空表示不开放 Agent 登录。生产必须使用 HTTPS；本机联调可使用带端口的 <code>127.0.0.1</code> / <code>::1</code> HTTP URL。</p>
+        </HelpTip></template>
+        <el-input v-model="form.agent_authorize_url" placeholder="https://business.example.com/agent-authorize" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('allowed_routes', '可调路由') }} <span v-if="fieldRequired('allowed_routes')" class="field-required">*</span> <HelpTip :title="fieldTitle('allowed_routes', '可调路由')">
@@ -188,7 +196,7 @@ const ticketOf = ref<Record<string, string[]>>({});
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
-const form = reactive({ app_id: '', name: '', allowed_routes: [] as string[], allowed_channels: [] as string[], rate_limit_per_min: 60, description: '', enabled: true });
+const form = reactive({ app_id: '', name: '', agent_authorize_url: '', allowed_routes: [] as string[], allowed_channels: [] as string[], rate_limit_per_min: 60, description: '', enabled: true });
 const budget = reactive<{ enabled: boolean; window: 'hour' | 'day' | 'month'; hard_cost_usd?: number; hard_tokens?: number }>({ enabled: false, window: 'day', hard_cost_usd: undefined, hard_tokens: undefined });
 let budgetRest: Record<string, unknown> = {};
 
@@ -254,13 +262,13 @@ function budgetPayload(): Record<string, unknown> | undefined {
 }
 function openCreate(): void {
   editing.value = false;
-  Object.assign(form, { app_id: '', name: '', allowed_routes: [], allowed_channels: [], rate_limit_per_min: 60, description: '', enabled: true });
+  Object.assign(form, { app_id: '', name: '', agent_authorize_url: '', allowed_routes: [], allowed_channels: [], rate_limit_per_min: 60, description: '', enabled: true });
   resetBudget();
   open.value = true;
 }
 function openEdit(row: any): void {
   editing.value = true;
-  Object.assign(form, { app_id: row.app_id, name: row.name, allowed_routes: [...(row.allowed_routes || [])], allowed_channels: [...(row.allowed_channels || [])], rate_limit_per_min: row.rate_limit_per_min ?? 60, description: row.description || '', enabled: !!row.enabled });
+  Object.assign(form, { app_id: row.app_id, name: row.name, agent_authorize_url: row.agent_authorize_url || '', allowed_routes: [...(row.allowed_routes || [])], allowed_channels: [...(row.allowed_channels || [])], rate_limit_per_min: row.rate_limit_per_min ?? 60, description: row.description || '', enabled: !!row.enabled });
   hydrateBudget(row.budget);
   open.value = true;
 }
