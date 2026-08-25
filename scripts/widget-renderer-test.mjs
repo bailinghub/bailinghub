@@ -86,7 +86,17 @@ const server = createServer((req, res) => {
   }
   if (req.url === '/chat/pub_test/config') {
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({ enabled: true, title: 'Renderer Test', greeting: '', powered_by_visible: false }));
+    res.end(JSON.stringify({ enabled: true, title: 'Renderer Test', greeting: '', default_open: false, powered_by_visible: false }));
+    return;
+  }
+  if (req.url === '/chat/pub_default_open/config') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ enabled: true, title: 'Default Open Test', greeting: '', default_open: true, powered_by_visible: false }));
+    return;
+  }
+  if (req.url === '/chat/pub_default_closed/config') {
+    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ enabled: true, title: 'Default Closed Test', greeting: '', default_open: false, powered_by_visible: false }));
     return;
   }
   if (req.url?.startsWith('/chat/pub_test/thread')) {
@@ -126,6 +136,14 @@ const server = createServer((req, res) => {
     return;
   }
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  if (req.url === '/default-open.html') {
+    res.end('<!doctype html><html><body><script src="/widget.js" data-entry="pub_default_open"></script></body></html>');
+    return;
+  }
+  if (req.url === '/default-closed.html') {
+    res.end('<!doctype html><html><body><script src="/widget.js" data-entry="pub_default_closed"></script></body></html>');
+    return;
+  }
   res.end('<!doctype html><html><body><script src="/widget.js" data-entry="pub_test" data-open="1"></script></body></html>');
 });
 
@@ -150,6 +168,18 @@ const executablePath = existsSync(bundledExecutable)
   : systemExecutables.find((candidate) => existsSync(candidate));
 const browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) });
 try {
+  const defaultOpenPage = await browser.newPage();
+  await defaultOpenPage.goto(`http://127.0.0.1:${address.port}/default-open.html`);
+  await defaultOpenPage.locator('.panel').waitFor();
+  assert.equal(await defaultOpenPage.locator('.panel').evaluate((panel) => panel.classList.contains('open')), true);
+  await defaultOpenPage.close();
+
+  const defaultClosedPage = await browser.newPage();
+  await defaultClosedPage.goto(`http://127.0.0.1:${address.port}/default-closed.html`);
+  await defaultClosedPage.locator('.panel').waitFor({ state: 'attached' });
+  assert.equal(await defaultClosedPage.locator('.panel').evaluate((panel) => panel.classList.contains('open')), false);
+  await defaultClosedPage.close();
+
   const page = await browser.newPage();
   await page.addInitScript(({ seededHistory }) => {
     window.__rendererMounts = 0;

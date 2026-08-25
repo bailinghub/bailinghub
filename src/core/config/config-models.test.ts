@@ -177,7 +177,7 @@ test('prepareChatEntryConfig: 生成入口、校验引用并收紧外观', async
   const ok = await prepareChatEntryConfig({
     name: ' 官网客服 ',
     route_key: ' chat.main ',
-    allowed_origins: [' https://example.com/// ', ''],
+    allowed_origins: [' https://EXAMPLE.com:443/ ', 'https://example.com', ''],
     ticket_client: 'app-main',
     bucket: 'chat-cos',
     rate_limit_per_min: 9999,
@@ -185,6 +185,7 @@ test('prepareChatEntryConfig: 生成入口、校验引用并收紧外观', async
     greeting: 'G'.repeat(300),
     color: '#12abef',
     appearance: {
+      default_open: true,
       width: 9999,
       height: 100,
       title_align: 'left',
@@ -212,6 +213,7 @@ test('prepareChatEntryConfig: 生成入口、校验引用并收紧外观', async
   assert.equal(ok.value.title?.length, 64);
   assert.equal(ok.value.greeting?.length, 255);
   assert.deepEqual(ok.value.appearance, {
+    default_open: true,
     width: 720,
     height: 360,
     title_align: 'left',
@@ -233,6 +235,21 @@ test('prepareChatEntryConfig: 生成入口、校验引用并收紧外观', async
   });
   assert.equal(missingRoute.ok, false);
   assert.match(missingRoute.ok ? '' : missingRoute.error, /路由 missing 不存在/);
+
+  const originDeps = {
+    routeExists: async () => true,
+    entryExists: async () => false,
+    clientExists: async () => true,
+    bucketExists: async () => true,
+  };
+  const missingOrigins = await prepareChatEntryConfig({ name: 'x', route_key: 'chat.main' }, originDeps);
+  assert.equal(missingOrigins.ok, false);
+  assert.match(missingOrigins.ok ? '' : missingOrigins.error, /allowed_origins 必须是数组/);
+  for (const invalidOrigin of ['example.com', 'ftp://example.com', 'https://example.com/path', 'https://example.com///', 'https://example.com?', 'https://example.com#', 'https://example.com?q=1', 'https://user@example.com', `https://${'a'.repeat(250)}.com`]) {
+    const invalid = await prepareChatEntryConfig({ name: 'x', route_key: 'chat.main', allowed_origins: [invalidOrigin] }, originDeps);
+    assert.equal(invalid.ok, false, invalidOrigin);
+    assert.match(invalid.ok ? '' : invalid.error, /Origin/);
+  }
 });
 
 test('preparePageContextConfig: 页面上下文只接受寻址字段，不开放 kb_tag 写入', async () => {

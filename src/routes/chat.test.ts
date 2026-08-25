@@ -40,8 +40,8 @@ class FakeResponse {
   }
 }
 
-function request(origin = 'https://shop.example.com', headers: Record<string, string> = {}): IncomingMessage {
-  return Object.assign(new EventEmitter(), { headers: { origin, ...headers } }) as IncomingMessage;
+function request(origin: string | null = 'https://shop.example.com', headers: Record<string, string> = {}): IncomingMessage {
+  return Object.assign(new EventEmitter(), { headers: { ...(origin === null ? {} : { origin }), ...headers } }) as IncomingMessage;
 }
 
 function jsonRequest(body: Record<string, unknown>, origin = 'https://shop.example.com'): IncomingMessage {
@@ -126,9 +126,9 @@ function streamDeps(job: Job, broker: InMemoryJobStreamBroker): ChatApiDeps {
   };
 }
 
-async function configBody(value: ChatEntry | null): Promise<{ status: number; body: Record<string, unknown> }> {
+async function configBody(value: ChatEntry | null, origin: string | null = 'https://shop.example.com'): Promise<{ status: number; body: Record<string, unknown> }> {
   const res = new FakeResponse();
-  await handleChatConfigFor(deps(value), request(), res as unknown as ServerResponse, 'pub_demo1234');
+  await handleChatConfigFor(deps(value), request(origin), res as unknown as ServerResponse, 'pub_demo1234');
   return {
     status: res.statusCode,
     body: JSON.parse(Buffer.from(res.body).toString('utf8')) as Record<string, unknown>,
@@ -137,12 +137,13 @@ async function configBody(value: ChatEntry | null): Promise<{ status: number; bo
 
 test('chat config: 启用入口下发品牌控制且保留部署品牌兼容字段', async () => {
   const result = await configBody(entry({
-    appearance: { powered_by_visible: true, powered_by_text: '由示例业务驱动' },
+    appearance: { default_open: true, powered_by_visible: true, powered_by_text: '由示例业务驱动' },
   }));
 
   assert.equal(result.status, 200);
   assert.equal(result.body.enabled, true);
   assert.equal(result.body.brand, '百灵中枢');
+  assert.equal(result.body.default_open, true);
   assert.equal(result.body.powered_by_visible, true);
   assert.equal(result.body.powered_by_text, '由示例业务驱动');
 });
@@ -151,6 +152,7 @@ test('chat config: 老入口生成默认品牌文案', async () => {
   const result = await configBody(entry());
 
   assert.equal(result.status, 200);
+  assert.equal(result.body.default_open, false);
   assert.equal(result.body.powered_by_visible, true);
   assert.equal(result.body.powered_by_text, '由 百灵中枢 驱动');
 });
@@ -163,6 +165,32 @@ test('chat config: 停用入口返回静默隐藏状态，不存在入口仍返�
   const missing = await configBody(null);
   assert.equal(missing.status, 404);
   assert.deepEqual(missing.body, { error: '聊天入口不存在' });
+});
+
+test('chat Origin 白名单: 浏览器来源规范化后精确匹配，错误来源在业务逻辑前拒绝', async () => {
+  const normalized = await configBody(entry(), 'https://SHOP.example.com:443/');
+  assert.equal(normalized.status, 200);
+
+  for (const deniedOrigin of ['https://other.example.com', 'https://shop.example.com/path', 'null']) {
+    const denied = await configBody(entry(), deniedOrigin);
+    assert.equal(denied.status, 403, deniedOrigin);
+    assert.deepEqual(denied.body, { error: '该站点未被允许嵌入此聊天入口' });
+  }
+
+  const unrestricted = await configBody(entry({ allowed_origins: [] }), 'https://other.example.com');
+  assert.equal(unrestricted.status, 200);
+
+  const noBrowserOrigin = await configBody(entry(), null);
+  assert.equal(noBrowserOrigin.status, 200);
+
+  const deniedMessage = new FakeResponse();
+  await handleChatFor(
+    deps(entry()),
+    jsonRequest({ message: '不应进入任务链路', visitor_id: 'visitor-12345678' }, 'https://other.example.com'),
+    deniedMessage as unknown as ServerResponse,
+    'pub_demo1234',
+  );
+  assert.equal(deniedMessage.statusCode, 403);
 });
 
 test('chat events: 增量事件可回放，done 仍以任务库最终结果为权威值', async () => {

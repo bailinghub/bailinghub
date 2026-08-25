@@ -2,7 +2,7 @@
  * 用法：<script src="https://你的中枢/widget.js" data-entry="pub_xxx" async></script>
  * 可选：data-open="1" 加载即展开（演示页用）；
  *       data-ticket="v1.xxx.yyy" 签名访客票据（业务后端在登录态里签发后输出到页面，让登录用户带可信身份；游客不带照常匿名聊）。
- * 标题/开场白/主色在控制台「聊天入口」配置，改完即生效（组件每次加载拉取 /chat/:entry/config）。
+ * 标题/开场白/主色/默认展开在控制台「聊天入口」配置，改完即生效（组件每次加载拉取 /chat/:entry/config）。
  * 安全边界：entry_key 可公开；消息走 POST /chat/:entry（Origin 白名单+IP 限速在中枢侧）；
  * 组件只持有 visitor_id（会话连续性用的随机串）与服务端签好的票据，自己造不出任何业务身份。
  *
@@ -29,7 +29,7 @@
   const scriptUrl = new URL(script.src);
   const HUB = scriptUrl.origin + scriptUrl.pathname.replace(/\/widget\.js$/, '');
   const hubAsset = (value) => typeof value === 'string' && value.startsWith('/') ? HUB + value : value;
-  const AUTO_OPEN = script.dataset.open === '1';
+  const SCRIPT_AUTO_OPEN = script.dataset.open === '1';
   const TICKET = script.dataset.ticket || '';
   const LS_VISITOR = `bailing_visitor_${ENTRY}`;
   const LS_HISTORY = `bailing_chat_${ENTRY}`;
@@ -130,7 +130,7 @@
   if (!Array.isArray(history)) history = [];
   let pending = false;
   let pendingAtt = null; // 待发送的媒体附件 {type,url,name,uploading?,error?}（单个，再选/录会替换）
-  let cfg = { enabled: true, title: '在线咨询', greeting: '', color: '#7a5b3a', brand: '',
+  let cfg = { enabled: true, title: '在线咨询', greeting: '', color: '#7a5b3a', brand: '', default_open: false,
     width: 400, height: 600, title_align: 'center', position: 'right', offset_x: 24, offset_y: 24, avatar: '', launcher_icon: '', resizable: false, ai_notice: true,
     powered_by_visible: true, powered_by_text: '' };
 
@@ -1964,6 +1964,6 @@
     renderHistory();
     void syncServerHistory();   // 本地先即时上屏，再用服务端总账补齐迟到（审批后等）的回复
     host.style.visibility = 'visible';
-    if (AUTO_OPEN) { panel.classList.add('open'); inputEl.focus(); }
+    if (SCRIPT_AUTO_OPEN || cfg.default_open === true) { panel.classList.add('open'); inputEl.focus(); }
   })();
 })();

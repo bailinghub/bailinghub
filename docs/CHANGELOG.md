@@ -15,6 +15,8 @@
 
 ## Unreleased
 
+- **Origin 白名单防误配**：聊天入口保存时仅接受 `scheme://host[:port]`，统一规范化、去重并在控制台回显实际限制数；非白名单浏览器 Origin 在进入对话任务前返回 403。
+- **聊天入口默认展开**：外观配置新增默认关闭的 `default_open`；开启后已嵌入的官方 Widget 加载即展开，业务页面无需改脚本。既有 `data-open="1"` 强制展开行为保持兼容。
 - **原生对话表单**：官方零依赖 Widget 新增受限 `bailing-form` v1，支持文本、多行文本、数字、日期、布尔、单选和多选，含客户端/服务端双校验、只读回执与历史恢复。
 - **非阻塞续聊契约**：`POST /chat/:entry` 兼容新增 `interaction_response`，把表单提交/取消规范化为同 thread 的新用户消息和新 job；源 job 仍正常 `done`，不新增 `input_required` 或 SSE 状态。
 - **关联、幂等与安全**：服务端按源 job/入口/身份/thread 重读权威表单验值，以 `submission_id` 去重；表单不能要求凭据或支付秘密，不替代工具审批、业务授权或副作用闸门。

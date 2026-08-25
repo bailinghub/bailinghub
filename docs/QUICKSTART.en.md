@@ -41,6 +41,12 @@ ticket from its own authenticated session and render it as `data-ticket`.
 BailingHub verifies that ticket before using its opaque uid as the acting
 subject; the integration token never belongs in browser code.
 
+Chat Entry appearance settings can optionally open the official widget as soon
+as an embedded page loads. This setting is off by default, and existing
+`data-open="1"` embeds continue to force the same behavior. Since the widget
+loads entry configuration at startup, changing the setting does not require a
+host-page code change.
+
 ## Option A: Docker Demo
 
 ```bash

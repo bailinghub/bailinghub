@@ -142,9 +142,11 @@ test('Config JSON Schemas: 接入方、渠道、存储桶和工具源契约对�
   assert.equal(alertRule.properties.cooldown_min.maximum, 1440);
 
   assert.deepEqual(chatEntry.required, ['name', 'route_key', 'allowed_origins', 'rate_limit_per_min', 'enabled']);
+  assert.equal(chatEntry.properties.allowed_origins.items.pattern, '^[Hh][Tt][Tt][Pp][Ss]?://[^/?#@]+/?$');
   assert.equal(chatEntry.properties.rate_limit_per_min.maximum, 600);
   assert.deepEqual(chatEntry.properties.appearance.properties.title_align.enum, ['center', 'left']);
   assert.deepEqual(chatEntry.properties.appearance.properties.position.enum, ['right', 'left']);
+  assert.equal(chatEntry.properties.appearance.properties.default_open.default, false);
   assert.equal(chatEntry.properties.appearance.properties.ai_notice.type, 'boolean');
 
   assert.deepEqual(pageContext.required, ['entry_key', 'url_pattern', 'enabled']);

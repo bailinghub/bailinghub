@@ -22,6 +22,14 @@ Each public version should describe:
 
 ## Unreleased
 
+- **Origin allowlist guardrails**: chat-entry saves now accept only
+  `scheme://host[:port]`, canonicalize and deduplicate entries, and report the
+  persisted restriction count in the console. A non-allowlisted browser Origin
+  is rejected with 403 before a conversation job can start.
+- **Default-open chat entries**: appearance configuration adds an opt-in,
+  default-false `default_open` setting. When enabled, existing official widget
+  embeds open on load without changing page markup. The existing
+  `data-open="1"` force-open behavior remains compatible.
 - **Native conversational forms**: the dependency-free official widget adds
   constrained `bailing-form` v1 controls for text, textarea, number, date,
   boolean, single-select, and multi-select fields, with client/server

@@ -96,6 +96,21 @@ short-lived visitor ticket from its own authenticated business backend. A
 BailingHub administrator identity must never be promoted to a business acting
 subject.
 
+The public entry configuration includes optional appearance settings. The
+`default_open` flag defaults to `false`; when it is `true`, the official widget
+opens its panel after loading. Existing embeds with `data-open="1"` also keep
+forcing the panel open, independently of this entry setting. Because the
+widget fetches entry configuration on every page load, changing this option in
+the console does not require changing host-page markup.
+
+Each Origin allowlist item must be an HTTP(S) `scheme://host[:port]` value.
+Chat-entry saves canonicalize and deduplicate origins and reject paths, query
+strings, user information, and fragments. When a browser sends an Origin that
+is not allowlisted, public chat endpoints return 403 before starting a job. An
+empty list remains unrestricted, and requests without a browser Origin remain
+compatible with mini-program and server-side callers. The Origin allowlist is
+therefore a browser anti-embedding boundary, not server-side authentication.
+
 The embedded widget creates a job with `POST /chat/{entry_key}` and consumes its result through:
 
 ```http

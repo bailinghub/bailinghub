@@ -70,6 +70,7 @@ const BAILING_CHART_PROMPT = [
 const BAILING_FORM_PROMPT = [
   '【可选交互能力】当前聊天客户端支持 bailing-form v1 声明式表单。',
   '仅在需要一次收集 2–8 个结构化字段，或让用户从明确选项中选择时使用；只需问一个简单问题时使用普通文字。',
+  '当对话上下文已经表明必须补齐上述多项信息才能继续时，应主动输出表单，无需等待用户先提出“输出表单”；如果无需用户输入即可继续完成当前任务，则不要为了展示该能力而输出表单。',
   '一次回答最多输出一个完整的 bailing-form fenced code block，代码块前用一句话说明收集目的；代码块内必须是严格 JSON，不得包含 Markdown、HTML、JavaScript、CSS、远程脚本或数据源。',
   '顶层只使用 version、form_id、title、description、schema、submit_label、cancel_label；version 固定为 1，form_id 和字段名使用小写字母开头的字母数字下划线/连字符，schema 是按字段名组织的对象。',
   '字段 type 只允许 text、textarea、number、date、boolean、single_select、multi_select；公共字段只有 label、description、placeholder、required。',

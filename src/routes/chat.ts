@@ -84,11 +84,26 @@ interface RuntimeContextInput {
   actor?: RuntimeActor;
 }
 
+function canonicalHttpOrigin(value: unknown): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    if (raw.includes('?') || raw.includes('#')
+      || (url.protocol !== 'http:' && url.protocol !== 'https:')
+      || url.username || url.password || url.search || url.hash
+      || url.pathname !== '/' || url.origin === 'null') return undefined;
+    return url.origin;
+  } catch { return undefined; }
+}
+
 function chatOriginAllowed(entry: ChatEntry, req: IncomingMessage): boolean {
   if (!entry.allowed_origins.length) return true; // 未配=不限，控制台建议上线前配白名单
-  const o = (req.headers['origin'] ?? '').toString().replace(/\/+$/, '');
-  if (!o) return true; // 无 Origin = 非浏览器调用（curl 等），白名单管不到也不必管——它防的是别家网页盗嵌
-  return entry.allowed_origins.some((a) => a.replace(/\/+$/, '') === o);
+  const rawOrigin = (req.headers['origin'] ?? '').toString().trim();
+  if (!rawOrigin) return true; // 无 Origin = 非浏览器调用（curl 等），白名单管不到也不必管——它防的是别家网页盗嵌
+  const origin = canonicalHttpOrigin(rawOrigin);
+  if (!origin) return false;
+  return entry.allowed_origins.some((allowed) => canonicalHttpOrigin(allowed) === origin);
 }
 
 async function chatRateLimited(config: ConfigStoreContract | null, entry: ChatEntry, ip: string): Promise<boolean> {
@@ -569,6 +584,7 @@ export async function handleChatConfigFor(deps: ChatApiDeps, req: IncomingMessag
   send(res, 200, {
     enabled: true,
     title: entry.title || entry.name, greeting: entry.greeting ?? '', color: entry.color || '#7a5b3a', brand: deps.cfg.brand.name, upload,
+    default_open: ap.default_open === true,
     width: ap.width ?? 400, height: ap.height ?? 600,
     title_align: ap.title_align === 'left' ? 'left' : 'center',
     position: ap.position === 'left' ? 'left' : 'right',

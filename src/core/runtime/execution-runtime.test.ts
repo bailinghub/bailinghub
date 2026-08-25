@@ -179,6 +179,9 @@ test('prepareAdapterContext: 仅为声明 bailing-form 的 llm 客户端注入�
   const formPrompt = String(formContext.targetConfig['system_prompt']);
   assert.match(formPrompt, /bailing-form v1/);
   assert.match(formPrompt, /2–8 个结构化字段/);
+  assert.match(formPrompt, /应主动输出表单/);
+  assert.match(formPrompt, /无需等待用户先提出“输出表单”/);
+  assert.match(formPrompt, /不要为了展示该能力而输出表单/);
   assert.match(formPrompt, /text、textarea、number、date、boolean、single_select、multi_select/);
   assert.match(formPrompt, /密码、API Key、Token、私钥/);
   assert.match(formPrompt, /不得把表单当作审批/);

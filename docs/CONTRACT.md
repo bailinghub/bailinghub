@@ -124,7 +124,7 @@ POST /admin/api/routes/auto-preview
 | `POST /chat/:entry_key` | 请求体必须在普通消息 `{message, ...}` 与表单回传 `{interaction_response, ...}` 中**二选一**；其余既有可选字段（`visitor_id` / `ticket` / `thread_id` / `context` / `client_capabilities`）按原语义共用。`thread_id`（字母数字_-，≤32 字符）：同一身份下的平行会话切分键——开新会话=换新值，延续已有会话=复用，不带=单线程续聊；会话与对话总账同键切分，且写入 `metadata.thread_id` 供任务详情对账。返回 `{done:false, job_id, visitor_id}` 后，组件通过 SSE 结果流接收状态和最终回答 |
 | `GET /chat/:entry_key/events/:job_id` | **SSE 结果流**：只能订阅本入口发起的任务。基础事件为 `open/status/ping/done/failed/timeout`；支持增量输出时还会发送 `phase/reset/delta`。`done` 携带任务库中的权威最终结果 `{done:true, reply, job_id, visitor_id, references?, attachments?}`。完整语义见 [STREAMING.md](STREAMING.md) |
 | `GET /chat/:entry_key/thread?visitor_id=&thread_id=&ticket=` | **拉服务端会话总账**：组件重开、表单回执恢复，或异步迟到结果（如审批批准后重跑的回复落在另一条任务里）回灌用——按与提问一致的身份重建线索、只读返回正序消息。表单回传对应的用户消息可附带不含表单值的 `interaction` 关联摘要。身份纪律同 `POST /chat`（带票按 uid、无票按 visitor，票坏=401） |
-| `GET /chat/:entry_key/config` | 组件状态与配置：停用入口返回 `{enabled:false}`，组件静默不挂载；启用时返回标题/开场白/主色/品牌，**外观**（窗口尺寸/标题对齐/气泡位置与偏移/头像/自定义气泡图标/底部品牌标识）、`upload`。控制台改完后，业务页面无需改嵌入代码 |
+| `GET /chat/:entry_key/config` | 组件状态与配置：停用入口返回 `{enabled:false}`，组件静默不挂载；启用时返回标题/开场白/主色/品牌，**外观**（默认展开/窗口尺寸/标题对齐/气泡位置与偏移/头像/自定义气泡图标/底部品牌标识）、`upload`。`default_open` 缺省为 `false`；设为 `true` 或脚本带 `data-open="1"` 都会在加载后展开。控制台改完后，业务页面无需改嵌入代码 |
 | `POST /chat/:entry_key/rate/:job_id` | **评价回答**：体 `{rating:"up"\|"down"\|"note", visitor_id, comment?}`；`note` 表示只提交文字反馈，此时 `comment` 必填。只能评自己问出来的那条（visitor_id 须与提问时一致）；一答一评，重评覆盖。运营在控制台「聊天入口 → 评价」看汇总 |
 
 ### 1.1.1 `bailing-form` 非阻塞交互回传
@@ -161,7 +161,7 @@ POST /admin/api/routes/auto-preview
 
 **富内容**：`reply` 为 markdown；同时附 `attachments`（图片/文件的结构化数组），无 markdown 渲染器的端据此渲染——见 §2.5。
 
-防滥用三件套：站点 **Origin 白名单**（浏览器 Origin 不可伪造；空=未限制）、**按 IP 限速**（默认 20/分钟）、入口可停用/删除。CORS 全放开（公开面无 Cookie）。
+防滥用三件套：站点 **Origin 白名单**（浏览器 Origin 不可伪造；空=未限制）、**按 IP 限速**（默认 20/分钟）、入口可停用/删除。白名单每项只接受 `scheme://host[:port]`，保存时按 URL origin 规范化并去重；带路径、参数、用户信息或片段的值会拒绝保存。浏览器携带的 Origin 不在白名单时，公开聊天端点在进入任务链路前返回 403。无 Origin 的小程序/服务端请求按既有契约保持兼容；因此 Origin 白名单是浏览器防盗嵌边界，不是服务端身份鉴权。CORS 全放开（公开面无 Cookie），最终是否放行以服务端白名单裁决为准。
 
 **身份纪律（与总纲一致）**：网页访客默认是**匿名主体**。`visitor_id` 是组件存 localStorage 的随机串，只用于会话/线索连续性（同访客自动续聊），**不是身份凭证**；metadata 由中枢服务端构造，组件带不进业务操作主体——只有不要求主体的公开能力可用于匿名访问；声明需要主体的查询和写操作均保持不可见，业务侧仍须依据空或有效的 On-Behalf-Of 做最终授权。
 

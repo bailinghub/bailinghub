@@ -111,6 +111,7 @@
       <el-form-item>
         <template #label>站点 Origin <HelpTip title="Origin 白名单">
           <p>一行一个，如 <code>https://www.example.com</code>。留空 = 不限（试用模式），<b>正式上线建议配置</b>。</p>
+          <p>只填 <code>scheme://host[:port]</code>，不要带业务路径、查询参数或 <code>#</code> 片段；保存时会规范化并去重。</p>
           <p>它只防"别家网页盗嵌"——<b>小程序 / 服务端调用不带浏览器 Origin 头，不会被白名单拦截</b>，可放心配。</p>
         </HelpTip></template>
         <el-input v-model="form.origins_text" type="textarea" :rows="3" class="mono" placeholder="https://www.example.com" />
@@ -161,6 +162,14 @@
           <p>开启后，访客可把鼠标放在展开面板的<b>上边框</b>拖动改高、<b>靠内一侧的边框</b>（贴右下角时为左边、贴左下角时为右边）拖动改宽，夹在上面的宽高上下限内，按访客本地记住。</p>
           <p class="muted">适合当工作台用、要读长回答/表格的场景；轻量问答可保持关闭。手机端面板本就接近全屏，此开关自动不生效。</p></HelpTip></template>
         <el-switch v-model="form.resizable" />
+      </el-form-item>
+      <el-form-item>
+        <template #label>默认展开 <HelpTip title="嵌入后默认展开">
+          <p>开启后，业务页面加载嵌入脚本时会直接展开聊天窗口，访客仍可手动最小化。</p>
+          <p class="muted">关闭时默认只显示气泡按钮；已显式使用 <code>data-open="1"</code> 的嵌入代码仍会展开。</p>
+        </HelpTip></template>
+        <el-switch v-model="form.default_open" />
+        <span class="state-copy">{{ form.default_open ? '加载即展开' : '默认显示气泡' }}</span>
       </el-form-item>
       <el-form-item>
         <template #label>AI 内容提示 <HelpTip title="AI 内容提示">
@@ -409,7 +418,7 @@ const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
 const chatFormTab = ref<'basic' | 'appearance' | 'publish'>('basic');
-const APPEARANCE_DEFAULTS = { title_align: 'center', width: 400, height: 600, position: 'right', offset_x: 24, offset_y: 24, avatar: '', launcher_icon: '', resizable: false, ai_notice: true, powered_by_visible: true, powered_by_text: '' };
+const APPEARANCE_DEFAULTS = { title_align: 'center', width: 400, height: 600, position: 'right', offset_x: 24, offset_y: 24, avatar: '', launcher_icon: '', default_open: false, resizable: false, ai_notice: true, powered_by_visible: true, powered_by_text: '' };
 const form = reactive({ entry_key: '', name: '', route_key: '', origins_text: '', ticket_client: '', bucket: '', title: '', greeting: '', color: '#3fb950', ...APPEARANCE_DEFAULTS, rate_limit_per_min: 20, description: '', enabled: true });
 const entryToggleKey = ref('');
 
@@ -556,7 +565,7 @@ function openEdit(row: any): void {
     position: ap.position === 'left' ? 'left' : 'right',
     offset_x: Number.isFinite(Number(ap.offset_x)) ? Number(ap.offset_x) : 24,
     offset_y: Number.isFinite(Number(ap.offset_y)) ? Number(ap.offset_y) : 24,
-    avatar: ap.avatar || '', launcher_icon: ap.launcher_icon || '', resizable: !!ap.resizable, ai_notice: ap.ai_notice !== false,
+    avatar: ap.avatar || '', launcher_icon: ap.launcher_icon || '', default_open: !!ap.default_open, resizable: !!ap.resizable, ai_notice: ap.ai_notice !== false,
     powered_by_visible: ap.powered_by_visible !== false, powered_by_text: ap.powered_by_text || '',
     rate_limit_per_min: row.rate_limit_per_min, description: row.description || '', enabled: !!row.enabled,
   });
@@ -596,9 +605,10 @@ async function delPageRule(id: number): Promise<void> {
 async function save(): Promise<void> {
   saving.value = true;
   try {
+    const origins = form.origins_text.split('\n').map((s) => s.trim()).filter(Boolean);
     const body = {
       entry_key: form.entry_key || undefined, name: form.name.trim(), route_key: form.route_key,
-      allowed_origins: form.origins_text.split('\n').map((s) => s.trim()).filter(Boolean),
+      allowed_origins: origins,
       ticket_client: form.ticket_client || undefined, bucket: form.bucket || undefined,
       title: form.title.trim() || undefined, greeting: form.greeting.trim() || undefined,
       color: form.color || undefined, rate_limit_per_min: form.rate_limit_per_min,
@@ -607,6 +617,7 @@ async function save(): Promise<void> {
         position: form.position, offset_x: form.offset_x, offset_y: form.offset_y,
         ...(form.avatar.trim() ? { avatar: form.avatar.trim() } : {}),
         ...(form.launcher_icon.trim() ? { launcher_icon: form.launcher_icon.trim() } : {}),
+        ...(form.default_open ? { default_open: true } : {}),
         ...(form.resizable ? { resizable: true } : {}),
         ...(form.ai_notice === false ? { ai_notice: false } : {}),
         ...(form.powered_by_visible === false ? { powered_by_visible: false } : {}),
@@ -615,12 +626,13 @@ async function save(): Promise<void> {
       description: form.description.trim() || undefined, enabled: form.enabled,
     };
     const r = await api<{ entry_key: string }>('/admin/api/chat-entries', { method: 'POST', body: JSON.stringify(body) });
-    ElMessage.success('已保存');
     open.value = false;
     await load();
+    const savedRow = list.value.find((x) => x.entry_key === r.entry_key);
+    const savedOriginCount = Array.isArray(savedRow?.allowed_origins) ? savedRow.allowed_origins.filter(Boolean).length : 0;
+    ElMessage.success(savedOriginCount ? `已保存，Origin 白名单已限制 ${savedOriginCount} 个站点` : '已保存，当前未限制 Origin');
     if (!editing.value) { // 新建后直接亮嵌入代码，少一次寻找
-      const row = list.value.find((x) => x.entry_key === r.entry_key);
-      if (row) openEmbed(row);
+      if (savedRow) openEmbed(savedRow);
     }
   } catch (e) { ElMessage.error((e as Error).message); }
   finally { saving.value = false; }
