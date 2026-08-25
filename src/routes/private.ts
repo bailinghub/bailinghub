@@ -18,6 +18,7 @@ import { handleAgentApiHttpFor } from './agent-api';
 export interface PrivateHttpDeps extends AuthRuntimeDeps {
   cfg: AppConfig;
   stateStore: RuntimeStateStore;
+  isPaused: () => boolean;
   kbService: KbService | null;
   toolIndex: ToolIndexService | null;
   handleAdminApi(method: string, path: string, req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<boolean>;
@@ -113,7 +114,13 @@ export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingM
 
   // 本地 Agent 的网页授权与独立 API 使用专用 bearer，不复用旧 /run Client Token 入口。
   if (await handleAgentAuthHttpFor({ configStore: deps.configStore }, req, res, url)) return;
-  if (await handleAgentApiHttpFor({ configStore: deps.configStore, stateStore: deps.stateStore, handleRun: deps.handleRun }, req, res, url)) return;
+  if (await handleAgentApiHttpFor({
+    configStore: deps.configStore,
+    stateStore: deps.stateStore,
+    isPaused: deps.isPaused,
+    handleRun: deps.handleRun,
+    toolProxyDeps: toolProxyDeps(deps),
+  }, req, res, url)) return;
 
   if (method === 'POST' && path === '/admin/login') {
     if (deps.identityProvider?.handleLogin) await deps.identityProvider.handleLogin(req, res);

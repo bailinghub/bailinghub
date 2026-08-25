@@ -18,6 +18,18 @@ export interface ToolApprovalConfig {
   [key: string]: unknown;
 }
 
+/**
+ * 本地 Agent 直调工具面是独立的明示授权，不从 route.permission 或 scope allow
+ * 推导。只读工具在 enabled=true 时可见；写工具必须按 operationId 精确列出。
+ * 默认所有直调写工具都提级到审批，只有再次精确列入 unattended_write_tools
+ * 才可按 ACC 原风险声明执行；不接受通配符。
+ */
+export interface AgentDirectToolsConfig {
+  enabled: boolean;
+  write_tools?: string[];
+  unattended_write_tools?: string[];
+}
+
 export interface RouteToolsConfig {
   sources?: ToolSourceConfig[];
   max_calls?: number;
@@ -26,6 +38,7 @@ export interface RouteToolsConfig {
     [key: string]: unknown;
   };
   approval?: ToolApprovalConfig;
+  agent_direct?: AgentDirectToolsConfig;
   [key: string]: unknown;
 }
 
@@ -69,6 +82,20 @@ export function approvalConfig(v: unknown): ToolApprovalConfig | null {
   const ap = record(cfg?.approval);
   const type = String(ap?.type ?? '').trim();
   return type ? { ...ap, type } as ToolApprovalConfig : null;
+}
+
+export function agentDirectToolsConfig(v: unknown): AgentDirectToolsConfig | null {
+  const cfg = routeToolsConfig(v);
+  const direct = record(cfg?.agent_direct);
+  if (!direct || direct.enabled !== true) return null;
+  const names = (value: unknown): string[] => Array.isArray(value)
+    ? [...new Set(value.map((item) => String(item).trim()).filter(Boolean))]
+    : [];
+  return {
+    enabled: true,
+    write_tools: names(direct.write_tools),
+    unattended_write_tools: names(direct.unattended_write_tools),
+  };
 }
 
 export async function validateRouteToolsConfig(v: unknown, toolProviderExists?: ToolProviderExists): Promise<string | null> {
@@ -120,6 +147,35 @@ export async function validateRouteToolsConfig(v: unknown, toolProviderExists?: 
     if ((type === 'business_webhook' || type === 'approval_webhook' || type === 'webhook') && !String(approval.url ?? '').trim()) {
       return `tools.approval.type=${type} 时 url 必填`;
     }
+  }
+
+
+  if (toolsCfg.agent_direct !== undefined) {
+    const direct = record(toolsCfg.agent_direct);
+    if (!direct) return 'tools.agent_direct 必须是对象';
+    const known = new Set(['enabled', 'write_tools', 'unattended_write_tools']);
+    const unknown = Object.keys(direct).filter((key) => !known.has(key));
+    if (unknown.length) return `tools.agent_direct 包含未声明字段: ${unknown.join(',')}`;
+    if (typeof direct.enabled !== 'boolean') return 'tools.agent_direct.enabled 必须是布尔值';
+    const operationId = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+    const parseNames = (field: 'write_tools' | 'unattended_write_tools'): string[] | string => {
+      const raw = direct[field];
+      if (raw === undefined) return [];
+      if (!Array.isArray(raw)) return `tools.agent_direct.${field} 必须是 operationId 数组`;
+      const values = raw.map((item) => typeof item === 'string' ? item.trim() : '');
+      if (!values.length || values.some((item) => !operationId.test(item))) {
+        return `tools.agent_direct.${field} 只允许非空的精确 operationId，不允许通配符`;
+      }
+      if (new Set(values).size !== values.length) return `tools.agent_direct.${field} 不允许重复值`;
+      return values;
+    };
+    const writes = parseNames('write_tools');
+    if (typeof writes === 'string') return writes;
+    const unattended = parseNames('unattended_write_tools');
+    if (typeof unattended === 'string') return unattended;
+    const allowedWrites = new Set(writes);
+    const outside = unattended.filter((name) => !allowedWrites.has(name));
+    if (outside.length) return `tools.agent_direct.unattended_write_tools 必须是 write_tools 的子集: ${outside.join(',')}`;
   }
 
   return null;

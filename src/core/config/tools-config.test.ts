@@ -2,7 +2,7 @@
 // 顶层扁平字段不是公共契约，必须显式拒绝。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { approvalConfig, maxToolCalls, routeToolsConfig, sendMessageConfig, toolSourceConfigs, validateRouteToolsConfig } from './tools-config';
+import { agentDirectToolsConfig, approvalConfig, maxToolCalls, routeToolsConfig, sendMessageConfig, toolSourceConfigs, validateRouteToolsConfig } from './tools-config';
 
 test('toolSourceConfigs: 读取 tools.sources，清洗 provider / allow 并去重 scope', () => {
   const cfg = {
@@ -121,4 +121,29 @@ test('validateRouteToolsConfig: 业务 webhook 审批必须配置 url', async ()
   });
 
   assert.equal(err, 'tools.approval.type=business_webhook 时 url 必填');
+});
+
+test('agentDirectToolsConfig: 只在明示启用时返回精确写工具策略', () => {
+  assert.equal(agentDirectToolsConfig({}), null);
+  assert.equal(agentDirectToolsConfig({ agent_direct: { enabled: false } }), null);
+  assert.deepEqual(agentDirectToolsConfig({
+    agent_direct: {
+      enabled: true,
+      write_tools: ['staff_edit', 'staff_edit'],
+      unattended_write_tools: ['ticket_draft'],
+    },
+  }), {
+    enabled: true,
+    write_tools: ['staff_edit'],
+    unattended_write_tools: ['ticket_draft'],
+  });
+});
+
+test('validateRouteToolsConfig: Agent 直调写工具只允许精确 operationId，无人值守集必须是子集', async () => {
+  assert.equal(await validateRouteToolsConfig({ agent_direct: { enabled: true } }), null);
+  assert.match(await validateRouteToolsConfig({ agent_direct: { enabled: true, write_tools: ['*'] } }) ?? '', /不允许通配符/);
+  assert.match(await validateRouteToolsConfig({
+    agent_direct: { enabled: true, write_tools: ['staff_edit'], unattended_write_tools: ['staff_delete'] },
+  }) ?? '', /write_tools 的子集/);
+  assert.match(await validateRouteToolsConfig({ agent_direct: { enabled: true, future: true } }) ?? '', /未声明字段/);
 });

@@ -309,6 +309,7 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     cfg,
     configStore: composition.cfgStore,
     stateStore: composition.store,
+    isPaused,
     kbService: composition.kbService,
     toolIndex: composition.toolIndex,
     identityProvider: input.identityProvider,

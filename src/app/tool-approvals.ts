@@ -8,6 +8,7 @@ import { subjectOf } from './tool-context';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { AppConfig } from '../core/config/config';
+import { isAgentToolInvocationJob } from './agent-tool-job';
 
 /** 重跑时的"已批准调用清单"提示：审批车道 B 的另一半。 */
 export async function approvedNoteForJobFor(config: ConfigStoreContract | null, jobId: string): Promise<string | undefined> {
@@ -36,6 +37,7 @@ export function approvalDepsForStores(
   if (!config) return undefined;
   const cs = config;
   return {
+    continuationMode: isAgentToolInvocationJob(job) ? 'resume' : 'rerun',
     async consumeApproved(tool, hash) {
       const a = await cs.approvals.find(job.job_id, tool, hash, 'approved', true);
       if (!a) return null;
@@ -126,7 +128,9 @@ async function notifyApprovalFor(
     `任务：${job.dispatch?.route_name || job.request_id}（job ${job.job_id}）`,
     `工具：${snap.tool}（scope ${snap.scope}，风险 ${snap.risk}）`,
     `参数：${snap.args_json}`,
-    '请到控制台「工具审批」页处理；批准后任务将自动重跑完成该操作。',
+    isAgentToolInvocationJob(job)
+      ? '请到控制台「工具审批」页处理；批准后由原本地 Agent 用 invocation_id 续执行，中枢不启动模型重跑。'
+      : '请到控制台「工具审批」页处理；批准后任务将自动重跑完成该操作。',
     '', `—— ${appConfig.brand.name}`,
   ].join('\n');
   const ap = approvalConfig(toolsCfg)

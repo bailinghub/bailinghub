@@ -10,6 +10,7 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { Principal } from '../app/auth';
 import type { ChannelMessage, ChannelSendResult } from '../app/channels';
+import { isAgentToolInvocationJob } from '../app/agent-tool-job';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
 
@@ -362,6 +363,10 @@ export async function handleAdminRuntimeApiFor(
       return true;
     }
     if (method === 'POST' && mRun[2] === '/rerun') {
+      if (isAgentToolInvocationJob(job)) {
+        send(res, 409, { error: 'Agent 直调记录不能进入中枢模型重跑；请由原本地 Agent 用 invocation_id 续执行' });
+        return true;
+      }
       if (job.status === 'queued' || job.status === 'running' || job.status === 'dispatched') {
         send(res, 400, { error: `任务在途（${job.status}），无需重跑` });
         return true;
@@ -399,7 +404,7 @@ export async function handleAdminRuntimeApiFor(
     let rerun = false;
     if (action === 'approve') {
       const job = await stateStore.getJob(appr.job_id);
-      if (job && (job.status === 'done' || job.status === 'error' || job.status === 'rejected')) {
+      if (job && !isAgentToolInvocationJob(job) && (job.status === 'done' || job.status === 'error' || job.status === 'rejected')) {
         await deps.engineRuntime.requeueForRerun(job, by, `approval_${id}`);
         rerun = true;
       }
