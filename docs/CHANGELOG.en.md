@@ -22,6 +22,10 @@ Each public version should describe:
 
 ## Unreleased
 
+## v0.4.0 - Native Conversational Forms and Chat-Entry Controls
+
+Released on 2026-08-25.
+
 - **Origin allowlist guardrails**: chat-entry saves now accept only
   `scheme://host[:port]`, canonicalize and deduplicate entries, and report the
   persisted restriction count in the console. A non-allowlisted browser Origin
@@ -47,6 +51,10 @@ Each public version should describe:
   guidance only when the client explicitly advertises `bailing-form`. Other
   clients continue with text questions, and `bailing-chart` remains an
   independent compatible capability.
+- **Ecosystem documentation discovery**: the README links to an independently
+  maintained community plugin for DeepSeek Harness. It is not part of
+  BailingHub Core and does not imply official DeepSeek development,
+  certification, endorsement, or adoption.
 - **Contract and integration impact**: the public boundary advances additively
   to `bailing.contract.v2.14`; `WIDGET_API` and `rendererApiVersion` remain 1,
   with no database migration. Client API v1, Kernel Host API v1, ACC, SDKs,
@@ -56,7 +64,8 @@ Each public version should describe:
   route tests, `npm run widget:renderer:test`, `npm run web-admin:check`,
   `npm run docs:check`, `npm test`, and a real local-browser form interaction
   check.
-- **Related docs**: [HTTP contract](CONTRACT.en.md), [Widget renderer and form
+- **Related docs**: [RELEASE_NOTES_v0.4.0.en.md](RELEASE_NOTES_v0.4.0.en.md),
+  [HTTP contract](CONTRACT.en.md), [Widget renderer and form
   contract](WIDGET_RENDERERS.en.md), [Streaming protocol](STREAMING.en.md), and
   [Compatibility](COMPATIBILITY.en.md).
 
