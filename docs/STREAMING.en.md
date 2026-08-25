@@ -63,6 +63,38 @@ Reverse proxies and CDNs must disable response buffering, preserve `text/event-s
 - Existing clients may ignore `phase`, `reset`, and `delta` and wait for `done`.
 - New clients must treat `done`, not accumulated fragments, as the final authoritative value.
 
+### 7.1 Presentation capability negotiation
+
+A custom client may advertise only the declarative renderers it has actually
+installed and validated:
+
+```json
+{
+  "client_capabilities": {
+    "renderers": ["bailing-chart", "bailing-form"]
+  }
+}
+```
+
+This affects optional model presentation guidance only. It is not an SSE
+field and cannot change identity, authorization, approval, or tool access.
+Charts and forms remain fenced content inside `done.reply`; never mount either
+from provisional `delta` text. Apply the allowlist and fallback rules in
+[WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) only after `done`.
+
+### 7.2 A form response does not add stream states
+
+A `bailing-form` is final declarative content in `done.reply`. Its source job
+is already terminal; it never enters a waiting-for-input or `input_required`
+state. Submit or cancel makes a new `POST /chat/:entry_key`, creating a new job
+in the same thread. That new job uses the existing
+`open/status/phase/reset/delta/ping/done/failed/timeout` event set.
+
+Retain the source `done.job_id` as `source_job_id` and subscribe separately to
+the new job. Do not keep or resume the closed source-job stream. Cross-device
+receipt recovery comes from the durable `/thread` ledger, not the incremental
+replay window.
+
 ## 8. Validation
 
 ```bash

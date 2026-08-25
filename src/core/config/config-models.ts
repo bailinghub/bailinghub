@@ -215,9 +215,31 @@ function safeHttpUrl(v: unknown): string | undefined {
   return /^https?:\/\/.{3,}/.test(s) ? s.slice(0, 255) : undefined;
 }
 
+function allowedOrigins(v: unknown): PrepareResult<string[]> {
+  if (!Array.isArray(v)) return fail('allowed_origins 必须是数组（不限站点时请传空数组 []）');
+  const origins = new Set<string>();
+  for (const raw of v) {
+    const candidate = String(raw).trim();
+    if (!candidate) continue;
+    if (candidate.length > 255) return fail('Origin 长度不能超过 255 个字符');
+    let url: URL;
+    try { url = new URL(candidate); }
+    catch { return fail(`Origin 格式无效：${candidate}（请填 scheme://host[:port]）`); }
+    if (candidate.includes('?') || candidate.includes('#')
+      || (url.protocol !== 'http:' && url.protocol !== 'https:')
+      || url.username || url.password || url.search || url.hash
+      || url.pathname !== '/' || url.origin === 'null') {
+      return fail(`Origin 只能填 scheme://host[:port]，不能带路径、参数、用户信息或片段：${candidate}`);
+    }
+    origins.add(url.origin);
+  }
+  return { ok: true, value: [...origins] };
+}
+
 function chatAppearance(v: unknown): ChatEntry['appearance'] | undefined {
   const apIn = object(v);
   const appearance: ChatEntry['appearance'] = {};
+  if (apIn.default_open === true) appearance.default_open = true;
   const width = clampNum(apIn.width, 280, 720); if (width !== undefined) appearance.width = width;
   const height = clampNum(apIn.height, 360, 900); if (height !== undefined) appearance.height = height;
   if (apIn.title_align === 'left' || apIn.title_align === 'center') appearance.title_align = apIn.title_align;
@@ -253,6 +275,8 @@ export async function prepareChatEntryConfig(
   if (ticketClient && !(await deps.clientExists(ticketClient))) return fail(`票据签发方 ${ticketClient} 不是已登记的接入方`);
   const bucketName = str(input.bucket);
   if (bucketName && !(await deps.bucketExists(bucketName))) return fail(`存储桶 ${bucketName} 未登记（先在「对象存储」建）`);
+  const origins = allowedOrigins(input.allowed_origins);
+  if (!origins.ok) return origins;
 
   return {
     ok: true,
@@ -261,9 +285,7 @@ export async function prepareChatEntryConfig(
       name,
       route_key: routeKey,
       enabled: input.enabled !== false,
-      allowed_origins: Array.isArray(input.allowed_origins)
-        ? input.allowed_origins.map((x) => String(x).trim().replace(/\/+$/, '')).filter(Boolean)
-        : [],
+      allowed_origins: origins.value,
       rate_limit_per_min: Math.min(Math.max(Number(input.rate_limit_per_min ?? 20) || 20, 1), 600),
       ticket_client: ticketClient || undefined,
       bucket: bucketName || undefined,

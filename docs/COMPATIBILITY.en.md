@@ -82,6 +82,31 @@ transition window. The widget core remains dependency-free; see
 [WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) for registration, cleanup, and
 fallback rules.
 
+The `bailing-form` v1 addition under `bailing.contract.v2.14` follows that
+compatibility rule:
+
+- Existing `{message,...}` chat requests are unchanged.
+  `interaction_response` is an optional alternative input to
+  `POST /chat/:entry`. This public Chat addition is outside
+  `bailing.client-api.v1` and does not change Client API, Kernel Host API, ACC,
+  or SDK versions.
+- The official widget adds the built-in `bailing-form` type. Older or custom
+  clients still fall back to its safe fenced code block. A custom client should
+  advertise `client_capabilities.renderers:["bailing-form"]` only after it
+  implements the complete validation and response lifecycle.
+- The renderer `mount` context gains optional `message` and `respond`
+  properties. Existing JavaScript destructuring ignores additional properties,
+  so both `WIDGET_API` and `rendererApiVersion` remain 1.
+- A form response creates a new job in the same thread. It changes neither the
+  source job's terminal state, the `bailing.chat.stream.v1` event set, nor the
+  database schema. Existing proxies, SSE clients, and upgrade flows need no new
+  waiting state.
+
+The official `widget.js` and Chat endpoints ship from the same Hub artifact, so
+a normal upgrade obtains both rendering and response handling. Clear any
+separately cached legacy widget during rollout, and do not advertise the new
+capability from a custom client against an older Hub.
+
 ## URL Tool Catalog Access Policy Upgrade
 
 The release that introduces `053_tool_spec_access_policy.sql` adds two nullable columns to `bz_tool_providers`. Keep the normal backup, `db:init`, and restart order. The public configuration surface always has exactly two values, `signed_required` and `public_allowed`; new URL providers default to the former.

@@ -112,6 +112,8 @@
 | [RELEASE_NOTES_v0.3.3.en.md](RELEASE_NOTES_v0.3.3.en.md) | English `v0.3.3` npm publication provenance-metadata correction. |
 | [RELEASE_NOTES_v0.3.4.md](RELEASE_NOTES_v0.3.4.md) | `v0.3.4` 匿名预览与可信业务身份引导说明。 |
 | [RELEASE_NOTES_v0.3.4.en.md](RELEASE_NOTES_v0.3.4.en.md) | English `v0.3.4` anonymous-preview and trusted-business-identity guidance. |
+| [RELEASE_NOTES_v0.4.0.md](RELEASE_NOTES_v0.4.0.md) | `v0.4.0` 原生对话表单与聊天入口控制说明。 |
+| [RELEASE_NOTES_v0.4.0.en.md](RELEASE_NOTES_v0.4.0.en.md) | English `v0.4.0` native conversational forms and chat-entry controls. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

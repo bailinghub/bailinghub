@@ -1,7 +1,7 @@
 // 聊天入口（公开面）：网页组件 → POST /chat/:entry → 同一条路由/总账/知识/工具链路。
 // entry_key 可公开；防滥用 = Origin 白名单 + 按 IP 限速 + 可停用。访客=匿名主体；签名访客票据(verifyVisitorTicket)验签后写 metadata.visitor_uid。
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { ipOf, normalizeHttpMountPath, readBody, readBodyCapped, send } from '../app/http';
 import type { EngineRuntime } from '../app/engine';
 import { resolveTargetDef } from '../core/targets/resolve';
@@ -16,6 +16,16 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { CHAT_STREAM_PROTOCOL, type JobStreamBroker } from '../core/runtime/job-stream';
 import type { TargetRegistry } from '../core/targets/registry';
+import {
+  BailingFormValidationError,
+  bailingFormHistoryInteraction,
+  buildBailingFormCanonicalInput,
+  findBailingFormDefinition,
+  parseBailingFormInteraction,
+  validateBailingFormValues,
+  type BailingFormHistoryInteraction,
+  type BailingFormInteraction,
+} from '../core/platform/chat-form';
 
 // ---- 聊天入口（公开面）：网页组件 → POST /chat/:entry → 同一条路由/总账/知识/工具链路 ----
 // entry_key 设计为可公开（页面源码可见）；防滥用 = Origin 白名单 + 按 IP 限速 + 可停用/删除。
@@ -74,11 +84,26 @@ interface RuntimeContextInput {
   actor?: RuntimeActor;
 }
 
+function canonicalHttpOrigin(value: unknown): string | undefined {
+  const raw = String(value ?? '').trim();
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    if (raw.includes('?') || raw.includes('#')
+      || (url.protocol !== 'http:' && url.protocol !== 'https:')
+      || url.username || url.password || url.search || url.hash
+      || url.pathname !== '/' || url.origin === 'null') return undefined;
+    return url.origin;
+  } catch { return undefined; }
+}
+
 function chatOriginAllowed(entry: ChatEntry, req: IncomingMessage): boolean {
   if (!entry.allowed_origins.length) return true; // 未配=不限，控制台建议上线前配白名单
-  const o = (req.headers['origin'] ?? '').toString().replace(/\/+$/, '');
-  if (!o) return true; // 无 Origin = 非浏览器调用（curl 等），白名单管不到也不必管——它防的是别家网页盗嵌
-  return entry.allowed_origins.some((a) => a.replace(/\/+$/, '') === o);
+  const rawOrigin = (req.headers['origin'] ?? '').toString().trim();
+  if (!rawOrigin) return true; // 无 Origin = 非浏览器调用（curl 等），白名单管不到也不必管——它防的是别家网页盗嵌
+  const origin = canonicalHttpOrigin(rawOrigin);
+  if (!origin) return false;
+  return entry.allowed_origins.some((allowed) => canonicalHttpOrigin(allowed) === origin);
 }
 
 async function chatRateLimited(config: ConfigStoreContract | null, entry: ChatEntry, ip: string): Promise<boolean> {
@@ -109,6 +134,58 @@ export function normalizePresentationCapabilities(value: unknown): { renderers: 
   return normalized.length ? { renderers: normalized } : undefined;
 }
 
+function chatJobReply(job: Job): string {
+  const result = (job.result ?? {}) as Record<string, unknown>;
+  if (typeof result['text'] === 'string' && result['text']) return result['text'];
+  if (result['report']) return JSON.stringify(result['report']);
+  return job.raw_result ?? '';
+}
+
+function chatInteractionRequestId(
+  entryKey: string,
+  visitor: string,
+  visitorUid: string,
+  thread: string,
+  interaction: BailingFormInteraction,
+): string {
+  const identity = visitorUid ? 'uid:' + visitorUid : 'visitor:' + visitor;
+  const digest = createHash('sha256').update(JSON.stringify([
+    entryKey, identity, thread, interaction.source_job_id, interaction.form_id, interaction.submission_id,
+  ])).digest('hex');
+  return 'chat_form_' + digest.slice(0, 48);
+}
+
+function sourceJobBelongsToChat(
+  job: Job,
+  entryKey: string,
+  visitor: string,
+  visitorUid: string,
+  thread: string,
+): boolean {
+  const metadata = job.metadata ?? {};
+  if (job.source !== 'chat:' + entryKey || metadata['chat_entry'] !== entryKey) return false;
+  if (String(metadata['thread_id'] ?? '') !== thread) return false;
+  if (visitorUid) return metadata['visitor_uid'] === visitorUid;
+  return !metadata['visitor_uid'] && metadata['visitor_id'] === visitor;
+}
+
+function interactionMetadataMatches(
+  job: Job,
+  entryKey: string,
+  visitor: string,
+  visitorUid: string,
+  thread: string,
+  expected: BailingFormHistoryInteraction,
+): boolean {
+  if (!sourceJobBelongsToChat(job, entryKey, visitor, visitorUid, thread)) return false;
+  const actual = bailingFormHistoryInteraction((job.metadata ?? {})['interaction']);
+  return !!actual
+    && actual.source_job_id === expected.source_job_id
+    && actual.form_id === expected.form_id
+    && actual.submission_id === expected.submission_id
+    && actual.action === expected.action;
+}
+
 
 /** job → 聊天响应形态。错误不暴露内部细节（公开面）。references=知识检索命中（doc_id 留在中枢侧，不外露）。 */
 function chatShape(job: Job, visitorId: string): Record<string, unknown> {
@@ -132,7 +209,7 @@ function chatShape(job: Job, visitorId: string): Record<string, unknown> {
 
 
 export async function handleChatFor(deps: ChatApiDeps, req: IncomingMessage, res: ServerResponse, entryKey: string): Promise<void> {
-  const { ctx, config: cfgStore } = await chatRuntime(deps, `chat:${entryKey}`);
+  const { ctx, state: store, config: cfgStore } = await chatRuntime(deps, `chat:${entryKey}`);
   if (!cfgStore) { send(res, 400, { error: '聊天入口需要 mysql 后端' }); return; }
   const engine = deps.engineForContext(ctx);
   const entry = await cfgStore.chatEntries.get(entryKey);
@@ -142,8 +219,19 @@ export async function handleChatFor(deps: ChatApiDeps, req: IncomingMessage, res
   if (await chatRateLimited(cfgStore, entry, ipOf(req))) { send(res, 429, { done: true, error: true, reply: '提问太频繁了，请稍候片刻再试。' }); return; }
 
   const body = (await readBody(req).catch(() => ({} as Record<string, unknown>)));
-  const message = String(body['message'] ?? '').trim().slice(0, 4000);
-  if (!message) { send(res, 400, { error: 'message 必填' }); return; }
+  const rawMessage = String(body['message'] ?? '').trim();
+  const hasInteraction = Object.prototype.hasOwnProperty.call(body, 'interaction_response');
+  if (rawMessage && hasInteraction) { send(res, 400, { error: 'message 与 interaction_response 只能提交一个' }); return; }
+  let interaction: BailingFormInteraction | undefined;
+  if (hasInteraction) {
+    try { interaction = parseBailingFormInteraction(body['interaction_response']); }
+    catch (e) {
+      send(res, 400, { error: e instanceof BailingFormValidationError ? e.message : 'interaction_response 无效' });
+      return;
+    }
+  }
+  let message = rawMessage.slice(0, 4000);
+  if (!message && !interaction) { send(res, 400, { error: 'message 或 interaction_response 必填' }); return; }
   // visitor_id：组件生成存 localStorage，只用于会话连续性，不是身份凭证；不合规直接服务端换发
   let visitor = String(body['visitor_id'] ?? '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
   if (visitor.length < 8) visitor = randomUUID().replace(/-/g, '').slice(0, 16);
@@ -178,6 +266,43 @@ export async function handleChatFor(deps: ChatApiDeps, req: IncomingMessage, res
   // 可选 thread_id：同一身份下按它切分平行线程（业务多会话 UI 映射）——开新会话=换 thread_id，继续当前会话=复用。
   // 它只是已验身份内部的分区键，不跨权限边界；清洗限长防滥用。会话与对话总账同键切分，连续性一致。
   const thread = String(body['thread_id'] ?? '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+  let interactionMeta: BailingFormHistoryInteraction | undefined;
+  let interactionRequestId = '';
+  if (interaction) {
+    const sourceJob = await store.getJob(interaction.source_job_id);
+    // 来源不存在/跨入口/跨身份/跨线程一律按 not found 收口，避免公开面成为任务探针。
+    if (!sourceJob || !sourceJobBelongsToChat(sourceJob, entry.entry_key, visitor, visitorUid, thread)) {
+      send(res, 404, { error: 'not found' }); return;
+    }
+    if (sourceJob.status !== 'done') { send(res, 409, { error: '来源回答尚未完成，暂不能提交表单' }); return; }
+    try {
+      const form = findBailingFormDefinition(chatJobReply(sourceJob), interaction.form_id);
+      if (!form) { send(res, 400, { error: '来源回答中没有可提交的对应表单' }); return; }
+      const values = interaction.action === 'submit' ? validateBailingFormValues(form, interaction.values) : {};
+      message = buildBailingFormCanonicalInput(form, interaction, values);
+    } catch (e) {
+      send(res, 400, { error: e instanceof BailingFormValidationError ? e.message : '表单提交无效' });
+      return;
+    }
+    if (message.length > 4000) { send(res, 400, { error: '表单提交生成的用户消息超过 4000 字上限，请缩短填写内容' }); return; }
+    interactionMeta = {
+      type: interaction.type,
+      version: interaction.version,
+      source_job_id: interaction.source_job_id,
+      form_id: interaction.form_id,
+      submission_id: interaction.submission_id,
+      action: interaction.action,
+    };
+    interactionRequestId = chatInteractionRequestId(entry.entry_key, visitor, visitorUid, thread, interaction);
+    const existing = await store.findByRequestId(interactionRequestId);
+    if (existing) {
+      if (!interactionMetadataMatches(existing, entry.entry_key, visitor, visitorUid, thread, interactionMeta)) {
+        send(res, 409, { error: 'submission_id 冲突，请重新提交' }); return;
+      }
+      send(res, 200, { ...chatShape(existing, visitor), deduped: true });
+      return;
+    }
+  }
   const scopeKey = chatScopeKey(entry.entry_key, visitor, visitorUid, thread);
   const sess = await cfgStore.conversations.sessionForScope(route.route_key, scopeKey);
   // 页面上下文（寻址）：组件抓的 url/title(+可选 page_key) → 按本入口登记表模式匹配 → 解析出页面说明。
@@ -193,16 +318,29 @@ export async function handleChatFor(deps: ChatApiDeps, req: IncomingMessage, res
   }
   // 展示能力由客户端自报，只用于回答呈现提示，绝不能参与身份、权限、审批或工具放行。
   const presentationCapabilities = normalizePresentationCapabilities(body['client_capabilities']);
-  const job = await engine.launchJob({
-    requestId: `chat_${randomUUID()}`, fullInput: message,
-    route, routeKey: route.route_key,
-    target: route.target, project: route.project ?? null, projectPath,
-    profileName: route.profile, permission: route.permission, source: `chat:${entry.entry_key}`,
-    // 服务端构造：visitor_uid 只可能来自验签通过的票据，组件/访客无法伪造（鉴权总纲）
-    metadata: { chat_entry: entry.entry_key, visitor_id: visitor, no_delivery: true, ...(visitorUid ? { visitor_uid: visitorUid } : {}), ...(thread ? { thread_id: thread } : {}), ...(pageContext ? { page_context: pageContext } : {}), ...(presentationCapabilities ? { presentation_capabilities: presentationCapabilities } : {}) },
-    session: { sessionId: sess.sessionId, isContinue: sess.isContinue },
-    threadScope: scopeKey, principalId: (visitorUid ? `uid:${visitorUid}` : `visitor:${visitor}`).slice(0, 64), channel: `chat:${entry.entry_key}`,
-  });
+  let job: Job;
+  try {
+    job = await engine.launchJob({
+      requestId: interactionRequestId || `chat_${randomUUID()}`, fullInput: message,
+      route, routeKey: route.route_key,
+      target: route.target, project: route.project ?? null, projectPath,
+      profileName: route.profile, permission: route.permission, source: `chat:${entry.entry_key}`,
+      // 服务端构造：visitor_uid 只可能来自验签通过的票据，组件/访客无法伪造（鉴权总纲）
+      metadata: { chat_entry: entry.entry_key, visitor_id: visitor, no_delivery: true, ...(visitorUid ? { visitor_uid: visitorUid } : {}), ...(thread ? { thread_id: thread } : {}), ...(pageContext ? { page_context: pageContext } : {}), ...(presentationCapabilities ? { presentation_capabilities: presentationCapabilities } : {}), ...(interactionMeta ? { interaction: interactionMeta } : {}) },
+      session: { sessionId: sess.sessionId, isContinue: sess.isContinue },
+      threadScope: scopeKey, principalId: (visitorUid ? `uid:${visitorUid}` : `visitor:${visitor}`).slice(0, 64), channel: `chat:${entry.entry_key}`,
+    });
+  } catch (error) {
+    // 并发双击可能同时通过前置查询；唯一 request_id 由状态库裁决，失败方回查并复用赢家。
+    if (interactionRequestId && interactionMeta) {
+      const raced = await store.findByRequestId(interactionRequestId).catch(() => null);
+      if (raced && interactionMetadataMatches(raced, entry.entry_key, visitor, visitorUid, thread, interactionMeta)) {
+        send(res, 200, { ...chatShape(raced, visitor), deduped: true });
+        return;
+      }
+    }
+    throw error;
+  }
 
   // 聊天主链路：创建任务后立即返回 job_id，回答统一由 SSE 事件流输出。
   send(res, 200, chatShape(job, visitor));
@@ -303,7 +441,7 @@ function chatScopeKey(entryKey: string, visitor: string, visitorUid: string, thr
  * 身份纪律：带票按 uid 线索、无票按 visitor 线索；票坏=401（与 handleChat 同，组件可据此提示重登）。
  */
 export async function handleChatThreadFor(deps: ChatApiDeps, req: IncomingMessage, res: ServerResponse, entryKey: string, url: URL): Promise<void> {
-  const { config: cfgStore } = await chatRuntime(deps, `chat_thread:${entryKey}`);
+  const { state: store, config: cfgStore } = await chatRuntime(deps, `chat_thread:${entryKey}`);
   if (!cfgStore) { send(res, 400, { error: '聊天入口需要 mysql 后端' }); return; }
   const entry = await cfgStore.chatEntries.get(entryKey);
   if (!entry || !entry.enabled) { send(res, 404, { error: '聊天入口不存在或已停用' }); return; }
@@ -328,11 +466,17 @@ export async function handleChatThreadFor(deps: ChatApiDeps, req: IncomingMessag
   if (!threadId) { send(res, 200, { visitor_id: visitor, messages: [] }); return; }
   const rows = await cfgStore.conversations.threadMessages(threadId, 50);
   // 出站消息现算富内容（图片/文件附件），与实时 chatShape 渲染口径一致；入站只回文本
-  const messages = rows.map((m) => {
+  const messages = await Promise.all(rows.map(async (m) => {
     const atts = extractAttachments(m.content); // 入站也解析：用户上传的图片以 ![](url) 进消息，回灌后同样渲染成缩略图
-    if (m.direction === 'in') return { r: 'u', t: m.content, j: m.job_id, ts: m.created_at, ...(atts.length ? { atts } : {}) };
+    if (m.direction === 'in') {
+      const job = m.job_id ? await store.getJob(m.job_id).catch(() => null) : null;
+      const interaction = job && job.thread_id === threadId && (job.metadata ?? {})['chat_entry'] === entryKey
+        ? bailingFormHistoryInteraction((job.metadata ?? {})['interaction'])
+        : undefined;
+      return { r: 'u', t: m.content, j: m.job_id, ts: m.created_at, ...(atts.length ? { atts } : {}), ...(interaction ? { interaction } : {}) };
+    }
     return { r: 'a', t: m.content, j: m.job_id, ts: m.created_at, ...(atts.length ? { atts } : {}) };
-  });
+  }));
   send(res, 200, { visitor_id: visitor, messages });
 }
 
@@ -440,6 +584,7 @@ export async function handleChatConfigFor(deps: ChatApiDeps, req: IncomingMessag
   send(res, 200, {
     enabled: true,
     title: entry.title || entry.name, greeting: entry.greeting ?? '', color: entry.color || '#7a5b3a', brand: deps.cfg.brand.name, upload,
+    default_open: ap.default_open === true,
     width: ap.width ?? 400, height: ap.height ?? 600,
     title_align: ap.title_align === 'left' ? 'left' : 'center',
     position: ap.position === 'left' ? 'left' : 'right',

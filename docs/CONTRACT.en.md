@@ -1,6 +1,6 @@
 # HTTP Contract
 
-> Current contract: `bailing.contract.v2.13`. This is the only network boundary between a business system and BailingHub.
+> Current contract: `bailing.contract.v2.14`. This is the only network boundary between a business system and BailingHub.
 
 This document summarizes the public wire contract between a business system and BailingHub.
 
@@ -96,6 +96,21 @@ short-lived visitor ticket from its own authenticated business backend. A
 BailingHub administrator identity must never be promoted to a business acting
 subject.
 
+The public entry configuration includes optional appearance settings. The
+`default_open` flag defaults to `false`; when it is `true`, the official widget
+opens its panel after loading. Existing embeds with `data-open="1"` also keep
+forcing the panel open, independently of this entry setting. Because the
+widget fetches entry configuration on every page load, changing this option in
+the console does not require changing host-page markup.
+
+Each Origin allowlist item must be an HTTP(S) `scheme://host[:port]` value.
+Chat-entry saves canonicalize and deduplicate origins and reject paths, query
+strings, user information, and fragments. When a browser sends an Origin that
+is not allowlisted, public chat endpoints return 403 before starting a job. An
+empty list remains unrestricted, and requests without a browser Origin remain
+compatible with mini-program and server-side callers. The Origin allowlist is
+therefore a browser anti-embedding boundary, not server-side authentication.
+
 The embedded widget creates a job with `POST /chat/{entry_key}` and consumes its result through:
 
 ```http
@@ -109,15 +124,71 @@ Incremental text is provisional transport data. It is not a durable conversation
 
 See [STREAMING.en.md](STREAMING.en.md) for event payloads, reconnect rules, provider fallback, audit boundaries, and multi-replica deployment requirements.
 
+### Non-blocking `bailing-form` responses
+
+`POST /chat/{entry_key}` accepts exactly one user input shape: a normal non-empty
+`message`, or an `interaction_response` to a form rendered by an earlier final
+reply. Both shapes keep the existing optional `visitor_id`, `ticket`,
+`thread_id`, `context`, and `client_capabilities` fields.
+
+```json
+{
+  "visitor_id": "visitor_01HXYZ",
+  "thread_id": "support_1",
+  "interaction_response": {
+    "type": "bailing-form",
+    "version": 1,
+    "source_job_id": "job_that_rendered_the_form",
+    "form_id": "refund_info",
+    "submission_id": "01JFORMRESPONSE0001",
+    "action": "submit",
+    "values": {
+      "reason": "The item arrived damaged",
+      "method": "original"
+    }
+  }
+}
+```
+
+The source job has already reached `done`. Submitting or cancelling the form
+creates a new user turn and a new job in the same thread; it does not pause or
+resume the source job and adds no `input_required` or SSE status. `action` is
+`submit` or `cancel`; submit requires a values object, while cancel cannot carry
+non-empty values.
+
+The server reloads the immutable final reply from `source_job_id` and validates
+that the source job is done and belongs to the same entry, verified uid or
+anonymous visitor, and thread. Values are validated against the matching source
+form declaration, never against a client-supplied schema. A stable
+`submission_id` matches `[A-Za-z0-9_-]{8,64}`. It makes retries for the same
+source job and form return the original job, optionally with `deduped:true`,
+instead of running twice, and must not be reused for different values. The
+serialized `values` object is capped at 32 KiB.
+
+After validation, the server builds a self-contained user message from the
+original field labels and choices. Values are therefore durable conversation
+ledger content. Job metadata and the optional history `interaction` summary
+retain only `type`, `version`, `source_job_id`, `form_id`, `submission_id`, and
+`action`, without duplicating values. Form data remains untrusted user data and
+cannot change identity, routing, tool allowlists, approval, or final business
+authorization. A form must not request passwords, API keys, tokens, private
+keys, or payment credentials, and it is not a substitute for the governed tool
+approval path.
+
+If the canonical user message would exceed 4,000 characters, the server returns
+400 instead of silently truncating form values. Keep the same `submission_id`,
+shorten the entered content, and retry.
+
 ### Optional Widget Renderers
 
-Charts and interactive reports do not add a new server-side attachment type or
-change the canonical `reply` payload. A host page may register a trusted
-renderer through `window.BailingChat.registerRenderer(...)` and consume a
-declarative fenced payload. Unknown types, invalid JSON, oversized payloads, or
-renderer failures fall back to a text code block. See
-[WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) for the full trust and lifecycle
-contract.
+Charts and forms do not add a new server-side attachment type or change the
+canonical `reply` payload. Both consume declarative fenced payloads. A host page
+may register a trusted chart renderer through
+`window.BailingChat.registerRenderer(...)`; the official widget provides the
+constrained `bailing-form` and posts its response through the contract above.
+Unknown types, invalid JSON, oversized payloads, or renderer failures fall back
+to a text code block. See [WIDGET_RENDERERS.en.md](WIDGET_RENDERERS.en.md) for
+the full trust and lifecycle contract.
 
 ## Tool Provider Spec
 

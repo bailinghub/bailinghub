@@ -30,7 +30,7 @@ Create a base, select an embedding credential, ingest documents or data sources,
 
 ## Web Chat Entries
 
-Bind a widget to a route, configure origins, appearance, welcome text, identity ticket behavior, AI disclosure, and embed code.
+Bind a widget to a route, configure exact HTTP(S) origins in `scheme://host[:port]` form, appearance (including optional default-open behavior), welcome text, identity ticket behavior, AI disclosure, and embed code.
 
 ## Inbound Channels
 
@@ -55,4 +55,3 @@ Review build version, contract versions, migration state, runtime backend, and c
 ## Accounts And Change Audit
 
 Accounts control console RBAC. Change Audit records who changed configuration and when. These are administrative controls for the single organization operating the open-source instance.
-

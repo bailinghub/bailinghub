@@ -268,12 +268,13 @@ export interface ChatEntry {
   title?: string;
   greeting?: string;
   color?: string;
-  appearance?: ChatAppearance;  // 外观（窗口尺寸/标题对齐/气泡位置偏移/头像/自定义气泡图标/AI 提示）；缺省走组件内置默认
+  appearance?: ChatAppearance;  // 外观（默认展开/窗口尺寸/标题对齐/气泡位置偏移/头像/自定义气泡图标/AI 提示）；缺省走组件内置默认
   description?: string;
 }
 
 /** 聊天组件外观：全可选，缺省走 widget.js 内置默认值。落 bz_chat_entries.appearance(JSON)。 */
 export interface ChatAppearance {
+  default_open?: boolean;     // 嵌入页加载后默认展开面板（默认 false；script data-open="1" 仍可强制展开）
   width?: number;             // 展开面板宽度 px（默认 400，受视口封顶）
   height?: number;            // 展开面板高度 px（默认 600，受视口封顶）
   title_align?: 'center' | 'left';  // 标题对齐（默认 center）

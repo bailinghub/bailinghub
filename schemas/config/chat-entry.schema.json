@@ -15,7 +15,7 @@
     "enabled": { "type": "boolean" },
     "allowed_origins": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 },
+      "items": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://[^/?#@]+/?$" },
       "uniqueItems": true
     },
     "rate_limit_per_min": { "type": "integer", "minimum": 1, "maximum": 600 },
@@ -28,6 +28,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "default_open": { "type": "boolean", "default": false },
         "width": { "type": "integer", "minimum": 280, "maximum": 720 },
         "height": { "type": "integer", "minimum": 360, "maximum": 900 },
         "title_align": { "type": "string", "enum": ["center", "left"] },
