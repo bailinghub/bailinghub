@@ -281,6 +281,12 @@ export interface Route {
   tools?: Record<string, unknown>;    // 工具治理层：{sources:[{provider,allow[],subject_field?,retrieval?}],max_calls?,builtin:{send_message:{channels[]}},approval:{type,url?}}，见 docs/TOOLS_DESIGN.md
   audience?: AudiencePolicy;          // 身份/Audience 策略：谁能进本路由，route=auto 如何把意图分到本路由
   memory?: Record<string, unknown>;   // 记忆层：{recent_messages, recent_budget_chars, summary_enabled, summary_trigger_chars, summary_keep_recent, summary_model, ...}，见 src/core/runtime/memory.ts
+  /** 本地 Agent Runtime 覆盖项。缺省且 tools.agent_direct.enabled=true 时按兼容默认启用。 */
+  agent_client?: {
+    enabled?: boolean;
+    instructions?: string;
+    active_tool_limit?: number;
+  };
   budget?: Record<string, unknown>;   // 成本预算闸：{window/window_hours, hard_cost_usd?, hard_tokens?, ...}
   description?: string;
 }

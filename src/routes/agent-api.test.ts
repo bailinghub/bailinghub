@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import test from 'node:test';
-import type { AgentSession, Client, Job } from '../core/contracts/types';
+import type { AgentSession, Client, Job, Route, ToolProvider } from '../core/contracts/types';
+import type { AppConfig } from '../core/config/config';
+import type { AgentClientRunRecord } from '../infrastructure/config/config-agent-client-runtime-repository';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import { tokenHash } from './agent-auth';
@@ -23,7 +25,7 @@ class FakeResponse {
 }
 
 function request(method: string, headers: Record<string, string> = {}, body?: unknown): IncomingMessage {
-  const req = Readable.from(body === undefined ? [] : [JSON.stringify(body)]) as unknown as IncomingMessage;
+  const req = Readable.from(body === undefined ? [] : [Buffer.from(JSON.stringify(body))]) as unknown as IncomingMessage;
   req.method = method;
   req.headers = headers;
   return req;
@@ -187,4 +189,191 @@ test('Agent Tool API: pause 在读取请求与工具治理链前拦截 invoke/re
   assert.equal(resume.statusCode, 503);
   assert.equal(resume.json()['status'], 'paused');
   assert.equal(resume.json()['error'], 'hub_paused');
+});
+
+function runtimeHttpFixture() {
+  const token = `bha_${'r'.repeat(43)}`;
+  const client: Client = {
+    app_id: 'digital-cloud', name: 'Digital Cloud', token: 'client-token',
+    agent_authorize_url: 'https://tenant.example.com/agent-authorize',
+    allowed_routes: ['allowed', 'audience-denied', 'agent-off', 'session-denied'], allowed_channels: [], rate_limit_per_min: 0, enabled: true,
+  };
+  const session: AgentSession = {
+    session_id: '923e4567-e89b-42d3-a456-426614174000', client_app_id: client.app_id, device_label: 'Mac mini',
+    principal: { id: 'user-7', roles: ['admin'] }, on_behalf_of: 'tenant-2:user-7',
+    allowed_routes: ['allowed', 'audience-denied', 'agent-off', 'client-denied'],
+    created_at: '2026-01-01T00:00:00.000Z', access_expires_at: '2099-01-01T00:00:00.000Z', refresh_expires_at: '2099-01-30T00:00:00.000Z',
+  };
+  const baseRoute = (route_key: string): Route => ({
+    route_key, name: route_key, enabled: true, target: 'llm', target_config: { credential: 'hidden', system_prompt: 'safe system' },
+    profile: 'general', permission: 'full', session_policy: 'new', agent_client: { enabled: true, active_tool_limit: 1 },
+    audience: { enabled: true, roles: ['admin'], clients: ['digital-cloud'] },
+    tools: { sources: [{ provider: 'business', allow: ['*'] }], agent_direct: { enabled: true } },
+  });
+  const routes = [
+    baseRoute('allowed'),
+    { ...baseRoute('audience-denied'), audience: { enabled: true, roles: ['owner'] } },
+    { ...baseRoute('agent-off'), agent_client: { enabled: false } },
+    baseRoute('session-denied'),
+    baseRoute('client-denied'),
+  ];
+  const provider: ToolProvider = {
+    name: 'business', base_url: 'https://business.invalid', secret: 'secret', spec_source: 'inline', enabled: true,
+    log_payload: false, timeout_ms: 1000, rate_limit_per_min: 0, auto_refresh_min: 0,
+    spec_json: JSON.stringify({ openapi: '3.0.0', info: { title: 'test', version: '1' }, paths: {
+      '/staff': { get: { operationId: 'staff_list', summary: '查询员工', 'x-agent-capability': { version: 1, enabled: true, scope: 'staff.read', subject: { required: true } } } },
+    } }),
+  };
+  let run: AgentClientRunRecord | null = null;
+  let completeCalls = 0;
+  const runtimeRepo = {
+    resolveConversation: async () => 9,
+    reserveRun: async (input: any) => {
+      if (!run) run = {
+        run_id: 'a23e4567-e89b-42d3-a456-426614174000', ...input, context: null, status: 'preparing',
+        completion_hash: null, assistant_message_id: null, final_content: null, model: null, runtime: null, usage: null,
+        created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z', completed_at: null,
+      } as AgentClientRunRecord;
+      return { run, created: !run.context };
+    },
+    finalizeTurn: async (input: any) => { run = { ...run!, context: input.context, status: 'context_ready' }; return run; },
+    getRun: async () => run,
+    findRunForInvocation: async () => run,
+    completeRun: async (input: any) => {
+      completeCalls++;
+      if (!run?.context) throw new Error('turn context is not ready');
+      if (run.completion_hash) return { run, created: false };
+      run = {
+        ...run,
+        completion_hash: input.completion_hash,
+        assistant_message_id: input.assistant_message_id,
+        final_content: input.assistant_output,
+        status: input.status,
+        model: input.model ?? null,
+        runtime: input.runtime ?? null,
+        usage: input.usage ?? null,
+        completed_at: '2026-01-01T00:01:00.000Z',
+      };
+      return { run, created: true };
+    },
+  };
+  const configStore = {
+    agentAuth: { getSessionByAccessHash: async (value: string) => value === tokenHash(token) ? session : null },
+    clients: { get: async () => client },
+    routes: { list: async () => routes, get: async (key: string) => routes.find((route) => route.route_key === key) ?? null },
+    toolProviders: { get: async () => provider },
+    conversations: { getThreadMemory: async () => ({ summary: null, summary_upto_id: 0 }), recentMessagesAfter: async () => [] },
+    agentClientRuntime: runtimeRepo,
+  } as unknown as ConfigStoreContract;
+  const stateStore = { appendAudit: async () => undefined } as unknown as RuntimeStateStore;
+  const toolProxyDeps: ToolProxyDeps = {
+    cfg: {} as AppConfig, configStore, stateStore, toolIndex: null, now: () => '2026-01-01T00:00:00.000Z', sleep: async () => undefined,
+  };
+  return {
+    token,
+    deps: { configStore, stateStore, isPaused: () => false, handleRun: async () => undefined, toolProxyDeps, kbService: null },
+    completeCalls: () => completeCalls,
+  };
+}
+
+test('Agent Runtime HTTP: workspace 只列授权交集，turn 可省 page_context/renderers 且拒绝未知字段', async () => {
+  const fx = runtimeHttpFixture();
+  const headers = { authorization: `Bearer ${fx.token}` };
+  const workspaces = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('GET', headers), workspaces as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces'));
+  assert.equal(workspaces.statusCode, 200);
+  assert.deepEqual((workspaces.json()['workspaces'] as Array<{ route: string }>).map((item) => item.route), ['allowed']);
+
+  const turn = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('POST', headers, {
+    client_conversation_id: 'c1', client_turn_id: 't1', user_message_id: 'm1', user_input: '查询员工',
+  }), turn as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces/allowed/turns'));
+  assert.equal(turn.statusCode, 200, JSON.stringify(turn.json()));
+  assert.equal(turn.json()['schema_version'], 'bailing.agent-turn-context.v1');
+
+  const unknown = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('POST', headers, {
+    client_conversation_id: 'c2', client_turn_id: 't2', user_message_id: 'm2', user_input: '查询员工', future: true,
+  }), unknown as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces/allowed/turns'));
+  assert.equal(unknown.statusCode, 400);
+  assert.equal(unknown.json()['error'], 'invalid_request');
+});
+
+test('Agent Runtime HTTP: complete 拒绝 hidden reasoning 且不触达 repository', async () => {
+  const fx = runtimeHttpFixture();
+  const res = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('POST', { authorization: `Bearer ${fx.token}` }, {
+    assistant_message_id: 'a1', status: 'completed', content: 'done', hidden_reasoning: 'secret chain of thought',
+  }), res as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/runs/a23e4567-e89b-42d3-a456-426614174000/complete'));
+  assert.equal(res.statusCode, 400);
+  assert.equal(fx.completeCalls(), 0);
+});
+
+test('Agent Runtime HTTP: 64000 个中文字符可穿过字节上限完成 turn 与 complete', async () => {
+  const fx = runtimeHttpFixture();
+  const headers = { authorization: `Bearer ${fx.token}` };
+  const boundaryText = '中'.repeat(64_000);
+  const turnBody = {
+    client_conversation_id: 'c-boundary', client_turn_id: 't-boundary', user_message_id: 'm-boundary', user_input: boundaryText,
+    page_context: { title: '中文边界' }, renderers: ['markdown'],
+  };
+  assert.ok(Buffer.byteLength(JSON.stringify(turnBody), 'utf8') > 96 * 1024);
+  const turn = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('POST', headers, turnBody), turn as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces/allowed/turns'));
+  assert.equal(turn.statusCode, 200, JSON.stringify(turn.json()));
+
+  const completionBody = { assistant_message_id: 'a-boundary', status: 'completed', content: boundaryText };
+  assert.ok(Buffer.byteLength(JSON.stringify(completionBody), 'utf8') > 80 * 1024);
+  const complete = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('POST', headers, completionBody), complete as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/runs/a23e4567-e89b-42d3-a456-426614174000/complete'));
+  assert.equal(complete.statusCode, 200, JSON.stringify(complete.json()));
+  assert.equal(fx.completeCalls(), 1);
+});
+
+test('Agent Runtime HTTP: 客户端文本与 renderers 非法时 400，空搜索仅可通过 run 回退', async () => {
+  const fx = runtimeHttpFixture();
+  const headers = { authorization: `Bearer ${fx.token}` };
+  const turnBase = { client_conversation_id: 'c1', client_turn_id: 't1', user_message_id: 'm1', user_input: '查询员工' };
+  const invalidTurns = [
+    { ...turnBase, user_input: '中'.repeat(64_001) },
+    { ...turnBase, user_input: '查询\u0000员工' },
+    { ...turnBase, renderers: Array.from({ length: 21 }, (_, index) => `renderer.${index}`) },
+    { ...turnBase, renderers: ['markdown', 'markdown'] },
+    { ...turnBase, renderers: ['invalid renderer'] },
+  ];
+  for (const body of invalidTurns) {
+    const res = new FakeResponse();
+    await handleAgentApiHttpFor(fx.deps, request('POST', headers, body), res as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces/allowed/turns'));
+    assert.equal(res.statusCode, 400, JSON.stringify(res.json()));
+  }
+
+  const completionBase = { assistant_message_id: 'a1', status: 'completed', content: 'done' };
+  const invalidCompletions = [
+    { ...completionBase, content: '中'.repeat(64_001) },
+    { ...completionBase, content: 'done\u0001' },
+    { ...completionBase, model: 'm'.repeat(192) },
+    { ...completionBase, model: 'model\u007f' },
+    { ...completionBase, runtime: 'r'.repeat(192) },
+    { ...completionBase, runtime: 'runtime\u0002' },
+  ];
+  for (const body of invalidCompletions) {
+    const res = new FakeResponse();
+    await handleAgentApiHttpFor(fx.deps, request('POST', headers, body), res as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/runs/a23e4567-e89b-42d3-a456-426614174000/complete'));
+    assert.equal(res.statusCode, 400, JSON.stringify(res.json()));
+  }
+  assert.equal(fx.completeCalls(), 0);
+
+  for (const body of [{}, { query: ' \n\t ' }]) {
+    const res = new FakeResponse();
+    await handleAgentApiHttpFor(fx.deps, request('POST', headers, body), res as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces/allowed/capabilities/search'));
+    assert.equal(res.statusCode, 400, JSON.stringify(res.json()));
+  }
+
+  const turn = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('POST', headers, turnBase), turn as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces/allowed/turns'));
+  assert.equal(turn.statusCode, 200, JSON.stringify(turn.json()));
+  const search = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('POST', headers, { run_id: 'a23e4567-e89b-42d3-a456-426614174000' }), search as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces/allowed/capabilities/search'));
+  assert.equal(search.statusCode, 200, JSON.stringify(search.json()));
+  assert.equal(search.json()['query'], '查询员工');
 });

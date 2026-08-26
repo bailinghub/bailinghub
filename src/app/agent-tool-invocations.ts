@@ -7,7 +7,8 @@ import { audienceAllows } from '../core/runtime/identity-runtime';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { clientAllowsRoute, rateLimitedFor } from './auth';
 import { assembleResolvedToolRuntimeFor } from './tool-assembly';
-import { resolveAllowedToolsFor, type AllowedToolContext } from './tool-context';
+import { embedConfigOf, resolveAllowedToolsFor, retrievalOptsOf, type AllowedToolContext } from './tool-context';
+import type { AgentClientRunRecord } from '../infrastructure/config/config-agent-client-runtime-repository';
 import type { ToolProxyDeps } from './tool-proxy';
 import {
   AGENT_TOOL_JOB_MARKER,
@@ -56,6 +57,15 @@ export interface AgentToolCatalog {
   schema_version: typeof AGENT_TOOL_CATALOG_SCHEMA;
   route: string;
   capability_revision: string;
+  tools: AgentToolCatalogItem[];
+}
+
+export const AGENT_TOOL_SEARCH_SCHEMA = 'bailing.agent-capability-search.v1';
+export interface AgentToolSearchResult {
+  schema_version: typeof AGENT_TOOL_SEARCH_SCHEMA;
+  route: string;
+  capability_revision: string;
+  query: string;
   tools: AgentToolCatalogItem[];
 }
 
@@ -337,6 +347,82 @@ export async function listAgentToolsFor(deps: ToolProxyDeps, auth: AgentToolAuth
   };
 }
 
+function lexicalToolOrder(tools: AgentToolCatalogItem[], query: string): AgentToolCatalogItem[] {
+  const normalized = query.toLowerCase().replace(/[^\p{L}\p{N}_]+/gu, ' ').trim();
+  const words = [...new Set(normalized.split(/\s+/).filter(Boolean))];
+  const grams = normalized.replace(/\s+/g, '').length > 1
+    ? [...new Set(Array.from({ length: normalized.replace(/\s+/g, '').length - 1 }, (_, i) => normalized.replace(/\s+/g, '').slice(i, i + 2)))]
+    : [];
+  const score = (tool: AgentToolCatalogItem): number => {
+    const name = tool.name.toLowerCase();
+    const scope = tool.scope.toLowerCase();
+    const description = tool.description.toLowerCase();
+    const haystack = `${name} ${scope} ${description}`;
+    let value = normalized && name === normalized ? 10_000 : normalized && name.includes(normalized) ? 2_000 : 0;
+    if (normalized && haystack.includes(normalized)) value += 1_000;
+    for (const word of words) {
+      if (name.includes(word)) value += 240;
+      if (scope.includes(word)) value += 120;
+      if (description.includes(word)) value += 60;
+    }
+    for (const gram of grams) if (haystack.includes(gram)) value += 2;
+    return value;
+  };
+  return [...tools].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
+}
+
+/** 授权面内的渐进发现：所有 provider 的向量检索都可用才采用语义排序，否则整体确定性 lexical 回退。 */
+export async function searchAgentToolsFor(
+  deps: ToolProxyDeps,
+  auth: AgentToolAuthContext,
+  route: string,
+  query: string,
+  requestedLimit = 8,
+): Promise<AgentToolSearchResult> {
+  const surface = await resolveSurface(deps, auth, route);
+  const limit = Math.min(Math.max(Math.round(Number(requestedLimit) || 8), 1), 12);
+  const cleanQuery = safeText(query, 2000);
+  let ordered = lexicalToolOrder(surface.tools, cleanQuery);
+  if (cleanQuery && deps.toolIndex && surface.context.sources.length) {
+    const semantic = new Map<string, number>();
+    let allSourcesAvailable = true;
+    for (const source of surface.context.sources) {
+      const ec = embedConfigOf(source.provider);
+      const opts = retrievalOptsOf(source.sourceCfg);
+      if (!ec || !opts.enabled) { allSourcesAvailable = false; break; }
+      try {
+        const hits = await deps.toolIndex.retrieve(
+          source.provider.name,
+          new Set(source.allowed.map((tool) => tool.name)),
+          cleanQuery,
+          ec,
+          { minScore: opts.minScore, maxTools: Math.min(limit, opts.maxTools) },
+        );
+        if (!hits) { allSourcesAvailable = false; break; }
+        for (const hit of hits) semantic.set(hit.name, Math.max(semantic.get(hit.name) ?? -Infinity, hit.score));
+      } catch {
+        allSourcesAvailable = false;
+        break;
+      }
+    }
+    if (allSourcesAvailable && semantic.size) {
+      const lexical = lexicalToolOrder(surface.tools, cleanQuery);
+      const fallbackOrder = new Map(lexical.map((tool, index) => [tool.name, index]));
+      ordered = [...surface.tools].sort((a, b) =>
+        (semantic.get(b.name) ?? -Infinity) - (semantic.get(a.name) ?? -Infinity)
+        || (fallbackOrder.get(a.name) ?? 0) - (fallbackOrder.get(b.name) ?? 0)
+        || a.name.localeCompare(b.name));
+    }
+  }
+  return {
+    schema_version: AGENT_TOOL_SEARCH_SCHEMA,
+    route: surface.route.route_key,
+    capability_revision: surface.revision,
+    query: cleanQuery,
+    tools: ordered.slice(0, limit),
+  };
+}
+
 function parseInvocationResult(job: Job): AgentToolInvocationResult | null {
   const value = job.result;
   if (!isRecord(value) || value['schema_version'] !== AGENT_TOOL_INVOCATION_SCHEMA) return null;
@@ -445,6 +531,7 @@ function syntheticJob(
   input: InvokeAgentToolInput,
   hash: string,
   toolFingerprint: string,
+  runtimeRun: AgentClientRunRecord | null,
   now: string,
 ): Job {
   const initial = publicResult({
@@ -467,6 +554,7 @@ function syntheticJob(
     agent_session_id: auth.session.session_id,
     on_behalf_of: auth.session.on_behalf_of,
     session_id: input.agent_run_id,
+    ...(runtimeRun ? { thread_id: runtimeRun.thread_id } : {}),
     input_preview: `Agent tool ${input.tool}`.slice(0, 200),
     result: { ...initial },
     metadata: {
@@ -479,6 +567,7 @@ function syntheticJob(
       agent_args_hash: hash,
       agent_capability_revision: input.capability_revision,
       agent_execution_fingerprint: toolFingerprint,
+      ...(runtimeRun ? { agent_thread_id: runtimeRun.thread_id, agent_client_runtime_v1: true } : {}),
       principal: { ...auth.session.principal },
     },
     dispatch: { route_key: surface.route.route_key, route_name: surface.route.name, tools: surface.route.tools },
@@ -601,6 +690,14 @@ async function invokeExisting(
 
 export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAuthContext, input: InvokeAgentToolInput): Promise<AgentToolInvocationResult> {
   assertInvocationInput(input);
+  const runtimeRun = await deps.configStore?.agentClientRuntime?.findRunForInvocation(input.agent_run_id) ?? null;
+  if (runtimeRun && (
+    runtimeRun.session_id !== auth.session.session_id
+    || runtimeRun.client_app_id !== auth.client.app_id
+    || runtimeRun.route_key !== input.route
+  )) {
+    throw new AgentToolApiError(409, 'agent_run_conflict', 'The agent_run_id belongs to a different Agent Session or route.');
+  }
   const hash = argsHash(input.arguments);
   const requestId = invocationRequestId(auth.session.session_id, input.invocation_id);
   const lockKey = `agent-tool:${requestId}`;
@@ -634,11 +731,11 @@ export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
       if (!definition || !toolFingerprint) {
         throw new AgentToolApiError(404, 'tool_not_found', 'The tool is not available in the current capability catalog.');
       }
-      job = syntheticJob(auth, surface, input, hash, toolFingerprint, deps.now());
+      job = syntheticJob(auth, surface, input, hash, toolFingerprint, runtimeRun, deps.now());
       await deps.stateStore.createJob(job);
       await deps.stateStore.appendAudit({
         ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event: 'agent_tool_invocation_created',
-        detail: { invocation_id: input.invocation_id, agent_run_id: input.agent_run_id, route: input.route, tool: input.tool, args_hash: hash, execution_fingerprint: toolFingerprint, client_app_id: auth.client.app_id, agent_session_id: auth.session.session_id },
+        detail: { invocation_id: input.invocation_id, agent_run_id: input.agent_run_id, agent_thread_id: runtimeRun?.thread_id ?? null, route: input.route, tool: input.tool, args_hash: hash, execution_fingerprint: toolFingerprint, client_app_id: auth.client.app_id, agent_session_id: auth.session.session_id },
       });
     } else {
       assertCurrentToolExecution(job, surface, input.tool);

@@ -189,7 +189,7 @@ export class ConversationLedger {
       'SELECT t.thread_id,t.route_key,t.scope_key,t.principal_id,t.message_count,t.created_at,t.last_active_at,' +
         'r.name AS route_name,' +
         "(SELECT m.channel FROM bz_messages m WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS channel," +
-        "(SELECT c.name FROM bz_clients c JOIN bz_messages m ON m.channel=c.app_id WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS client_name," +
+        "(SELECT c.name FROM bz_clients c JOIN bz_messages m ON (m.channel=c.app_id OR m.channel=CONCAT('agent:',c.app_id)) WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS client_name," +
         "(SELECT e.name FROM bz_chat_entries e JOIN bz_messages m ON m.channel=CONCAT('chat:',e.entry_key) WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS entry_name," +
         '(SELECT LEFT(m.content,140) FROM bz_messages m WHERE m.thread_id=t.thread_id ORDER BY m.id DESC LIMIT 1) AS last_preview ' +
         `FROM bz_threads t LEFT JOIN bz_routes r ON r.route_key=t.route_key ORDER BY t.last_active_at DESC LIMIT ${n} OFFSET ${off}`,
@@ -202,7 +202,7 @@ export class ConversationLedger {
       'SELECT t.thread_id,t.route_key,t.scope_key,t.principal_id,t.message_count,t.created_at,t.last_active_at,t.summary,' +
         'r.name AS route_name,' +
         "(SELECT m.channel FROM bz_messages m WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS channel," +
-        "(SELECT c.name FROM bz_clients c JOIN bz_messages m ON m.channel=c.app_id WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS client_name," +
+        "(SELECT c.name FROM bz_clients c JOIN bz_messages m ON (m.channel=c.app_id OR m.channel=CONCAT('agent:',c.app_id)) WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS client_name," +
         "(SELECT e.name FROM bz_chat_entries e JOIN bz_messages m ON m.channel=CONCAT('chat:',e.entry_key) WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS entry_name " +
         'FROM bz_threads t LEFT JOIN bz_routes r ON r.route_key=t.route_key WHERE t.thread_id=? LIMIT 1',
       [threadId],

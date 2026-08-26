@@ -6,6 +6,7 @@ import type { ToolExecutionJournalEntry } from '../core/contracts/tools';
 import type { AgentSession, Client, Job, Route, ToolApproval, ToolProvider } from '../core/contracts/types';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import type { AgentClientRunRecord } from '../infrastructure/config/config-agent-client-runtime-repository';
 import {
   AgentToolApiError,
   invokeAgentToolFor,
@@ -118,6 +119,7 @@ function fixture(baseUrl: string) {
   let currentRoute = route();
   let currentSpec = spec();
   let toolRateLimited = false;
+  let runtimeRun: AgentClientRunRecord | null = null;
   const approvals: ToolApproval[] = [];
   const calls = new Map<string, ToolExecutionJournalEntry>();
   const key = (jobId: string, tool: string, hash: string) => `${jobId}\0${tool}\0${hash}`;
@@ -157,6 +159,7 @@ function fixture(baseUrl: string) {
       markUncertain: async (jobId: string, tool: string, hash: string, error: string) => { const k = key(jobId, tool, hash); const old = calls.get(k); if (old) calls.set(k, { ...old, state: 'uncertain', error }); },
       markEvidenceDegraded: async (jobId: string, tool: string, hash: string, error: string) => { const k = key(jobId, tool, hash); const old = calls.get(k); if (old) calls.set(k, { ...old, state: 'evidence_degraded', error }); },
     },
+    agentClientRuntime: { findRunForInvocation: async () => runtimeRun },
   } as unknown as ConfigStoreContract;
   const deps: ToolProxyDeps = {
     cfg: { brand: { name: 'BailingHub' }, server: { token: 'server-token' } } as AppConfig,
@@ -170,6 +173,18 @@ function fixture(baseUrl: string) {
     setRoute: (value: Route) => { currentRoute = value; },
     setSpec: (value: string) => { currentSpec = value; },
     setToolRateLimited: (value: boolean) => { toolRateLimited = value; },
+    setRuntimeRun: (value: AgentClientRunRecord | null) => { runtimeRun = value; },
+  };
+}
+
+function runtimeRun(overrides: Partial<AgentClientRunRecord> = {}): AgentClientRunRecord {
+  return {
+    run_id: AGENT_RUN_ID, session_id: SESSION_ID, client_app_id: 'digital-cloud', route_key: 'tenant-agent', thread_id: 42,
+    client_conversation_id: 'c1', client_turn_id: 't1', user_message_id: 'm1', request_hash: 'a'.repeat(64), user_input: 'query',
+    context: { schema_version: 'bailing.agent-turn-context.v1' }, status: 'context_ready', completion_hash: null,
+    assistant_message_id: null, final_content: null, model: null, runtime: null, usage: null,
+    created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z', completed_at: null,
+    ...overrides,
   };
 }
 
@@ -259,6 +274,31 @@ test('Agent direct: invocation 与 agent_run_id/参数不可变绑定', async (t
     (error) => error instanceof AgentToolApiError && error.code === 'route_not_allowed',
   );
   assert.equal(businessCalls, 1);
+});
+
+test('Agent direct: Runtime run 重验 session/route，合法 run 把 thread 关联到 job 与审计', async (t) => {
+  const business = createServer((_req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}'); });
+  const port = await listen(business);
+  t.after(() => close(business));
+  const fx = fixture(`http://127.0.0.1:${port}`);
+  const authorized = auth();
+  const catalog = await listAgentToolsFor(fx.deps, authorized, 'tenant-agent');
+  const input = {
+    invocation_id: invocationId('7'), route: 'tenant-agent', capability_revision: catalog.capability_revision,
+    agent_run_id: AGENT_RUN_ID, tool: 'staff_list', arguments: {},
+  };
+  fx.setRuntimeRun(runtimeRun({ session_id: '99999999-9999-4999-8999-999999999999' }));
+  await assert.rejects(
+    invokeAgentToolFor(fx.deps, authorized, input),
+    (error) => error instanceof AgentToolApiError && error.code === 'agent_run_conflict',
+  );
+
+  fx.setRuntimeRun(runtimeRun());
+  assert.equal((await invokeAgentToolFor(fx.deps, authorized, input)).state, 'executed');
+  const job = [...fx.state.jobs.values()].find((candidate) => candidate.metadata?.['agent_invocation_id'] === input.invocation_id);
+  assert.equal(job?.thread_id, 42);
+  const created = fx.state.audits.find((entry) => entry['event'] === 'agent_tool_invocation_created') as any;
+  assert.equal(created?.detail?.agent_thread_id, 42);
 });
 
 test('Agent direct: 终态回放仍重验当前具体工具授权', async (t) => {

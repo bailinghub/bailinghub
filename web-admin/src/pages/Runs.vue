@@ -680,9 +680,10 @@ function detailGroupType(g: DetailTraceGroup): 'success' | 'danger' | 'info' | '
 // ---- 会话标签：把内部的 channel / principal_id / scope_key 翻成人可读的通用主体 ----
 // 接入方：业务接入方名 > 网页入口名 > 渠道解析（企微/控制台）
 function partyLabel(t: any): string {
+  const ch = String(t.channel || '');
+  if (ch.startsWith('agent:')) return `智能体客户端 · ${t.client_name || ch.slice(6) || '未知接入方'}`;
   if (t.client_name) return t.client_name;
   if (t.entry_name) return t.entry_name;
-  const ch = String(t.channel || '');
   if (ch.startsWith('chat:')) return '网页聊天';
   if (ch.startsWith('wecom:')) return '企微·' + ch.slice(6);
   if (ch === 'admin') return '控制台/自测';
@@ -694,6 +695,7 @@ function partyVisible(t: any): boolean {
 }
 function partyType(t: any): 'success' | 'warning' | 'primary' | 'info' | 'danger' {
   const ch = String(t.channel || '');
+  if (ch.startsWith('agent:')) return 'primary';
   if (t.client_name) return 'success';
   if (ch.startsWith('wecom:')) return 'primary';
   if (ch.startsWith('chat:')) return 'warning';

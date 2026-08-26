@@ -41,6 +41,12 @@ export interface RouteRetryConfig {
   backoff_ms: number;
 }
 
+export interface RouteAgentClientConfig {
+  enabled: boolean;
+  instructions?: string;
+  active_tool_limit: number;
+}
+
 const SESSION_POLICIES: SessionPolicy[] = ['new', 'fixed', 'per_key', 'passthrough'];
 const KNOWLEDGE_INJECT_MODES = ['chunk', 'doc'];
 
@@ -152,6 +158,20 @@ function validateMemoryConfig(v: unknown): string | null {
     ?? intInRange(m.summary_max_chars, 'memory.summary_max_chars', 200, 8000);
 }
 
+function validateAgentClientConfig(v: unknown): string | null {
+  if (v === undefined || v === null) return null;
+  const cfg = record(v);
+  if (!cfg) return 'agent_client 必须是对象';
+  const known = new Set(['enabled', 'instructions', 'active_tool_limit']);
+  const unknown = Object.keys(cfg).filter((key) => !known.has(key));
+  if (unknown.length) return `agent_client 包含未声明字段: ${unknown.join(',')}`;
+  if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean') return 'agent_client.enabled 必须是布尔值';
+  if (cfg.instructions !== undefined && (typeof cfg.instructions !== 'string' || cfg.instructions.length > 20_000)) {
+    return 'agent_client.instructions 必须是最长 20000 字符的字符串';
+  }
+  return intInRange(cfg.active_tool_limit, 'agent_client.active_tool_limit', 1, 12);
+}
+
 export async function validateRouteConfig(input: Partial<Route>, deps: RouteConfigDeps, defaults: RouteConfigDefaults): Promise<string | null> {
   const routeKey = cleanString(input.route_key);
   if (!routeKey) return 'route_key 必填';
@@ -173,6 +193,7 @@ export async function validateRouteConfig(input: Partial<Route>, deps: RouteConf
     ?? validateKnowledgeConfig(input.knowledge)
     ?? validateRetryConfig(input.retry)
     ?? validateMemoryConfig(input.memory)
+    ?? validateAgentClientConfig(input.agent_client)
     ?? validateAudiencePolicy(input.audience)
     ?? validateBudgetPolicy(input.budget)
     ?? await validateRouteToolsConfig(input.tools, deps.toolProviderExists);
@@ -203,8 +224,23 @@ export function normalizeRouteConfig(input: Partial<Route>, defaults: RouteConfi
     tools,
     audience: normalizeAudiencePolicy(input.audience),
     memory: nonEmptyRecord(input.memory),
+    agent_client: nonEmptyRecord(input.agent_client) as Route['agent_client'],
     budget: nonEmptyRecord(input.budget),
     description: input.description,
+  };
+}
+
+/** 缺省配置兼容既有 tools.agent_direct.enabled；显式 enabled=false 始终关闭。 */
+export function routeAgentClientConfig(route: Pick<Route, 'agent_client' | 'tools'>): RouteAgentClientConfig | null {
+  const raw = record(route.agent_client);
+  const direct = record(record(route.tools)?.agent_direct);
+  const enabled = raw?.enabled === false ? false : raw?.enabled === true || direct?.enabled === true;
+  if (!enabled) return null;
+  const instructions = typeof raw?.instructions === 'string' ? raw.instructions.trim().slice(0, 20_000) : '';
+  return {
+    enabled: true,
+    ...(instructions ? { instructions } : {}),
+    active_tool_limit: intValue(raw?.active_tool_limit, 8, 1, 12),
   };
 }
 

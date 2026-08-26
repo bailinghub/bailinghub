@@ -25,6 +25,7 @@ import { MysqlKbDatasourceRepository, MysqlKnowledgeRepository } from './config-
 import { InstanceBrandingRepository } from './config-instance-branding-repository';
 import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
 import { AgentAuthRepository, type AgentAuthRepositoryContract } from './config-agent-auth-repository';
+import { AgentClientRuntimeRepository } from './config-agent-client-runtime-repository';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 export type RouteRepositoryContract = Pick<RouteRepository, keyof RouteRepository>;
@@ -56,6 +57,7 @@ export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, keyof DeliveryDl
 export type ObservabilityLedgerContract =
   Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot'>
   & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot'>>;
+export type AgentClientRuntimeRepositoryContract = Pick<AgentClientRuntimeRepository, keyof AgentClientRuntimeRepository>;
 
 export interface ConfigStoreContract {
   readonly routes: RouteRepositoryContract;
@@ -83,6 +85,8 @@ export interface ConfigStoreContract {
   readonly observability: ObservabilityLedgerContract;
   /** 新 Agent Auth 能力对旧宿主仓储保持可选；缺失时 HTTP 面 fail closed。 */
   readonly agentAuth?: AgentAuthRepositoryContract;
+  /** Agent Client Runtime v1 对旧宿主保持可选；缺失时新 API fail closed。 */
+  readonly agentClientRuntime?: AgentClientRuntimeRepositoryContract;
   init(): Promise<void>;
   close?(): Promise<void>;
   readonly db: Pool;
@@ -116,6 +120,7 @@ export class ConfigStore implements ConfigStoreContract {
   readonly deliveryDlq = new DeliveryDlqLedger(() => this.pool);
   readonly observability = new ObservabilityLedger(() => this.pool);
   readonly agentAuth = new AgentAuthRepository(() => this.pool);
+  readonly agentClientRuntime = new AgentClientRuntimeRepository(() => this.pool);
 
   constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);

@@ -128,6 +128,17 @@
       "title": "对话记忆",
       "description": "路由会话历史装配、逐字窗口和滚动摘要配置。"
     },
+    "agent_client": {
+      "type": "object",
+      "title": "本地 Agent Runtime",
+      "description": "本地 Agent 编排的显式开关、补充指令和每轮主动工具上限；缺省时兼容 tools.agent_direct.enabled。",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "instructions": { "type": "string", "maxLength": 20000 },
+        "active_tool_limit": { "type": "integer", "minimum": 1, "maximum": 12 }
+      }
+    },
     "budget": {
       "$ref": "common.schema.json#/$defs/budgetPolicy",
       "title": "成本预算闸",

@@ -120,6 +120,7 @@ export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingM
     isPaused: deps.isPaused,
     handleRun: deps.handleRun,
     toolProxyDeps: toolProxyDeps(deps),
+    kbService: deps.kbService,
   }, req, res, url)) return;
 
   if (method === 'POST' && path === '/admin/login') {

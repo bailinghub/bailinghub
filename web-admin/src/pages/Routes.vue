@@ -375,6 +375,23 @@
         <el-input v-model="mem.summary_model" placeholder="留空=用本路由凭证默认模型" class="mono" />
       </el-form-item>
       <el-form-item>
+        <template #label>本地 Agent Runtime <HelpTip title="本地 Agent Runtime">
+          <p>开启后，已通过业务网页授权的本地 Agent 可以读取本路由的安全运行档、会话记忆和按需工具定义，并在本地完成编排。</p>
+          <p>它仍复用 <code>tools.agent_direct</code> 的工具授权与审批治理；这里只配置本地编排补充指令和每轮主动披露数量，不会返回模型凭证或工具源密钥。</p>
+        </HelpTip></template>
+        <el-switch v-model="agentClient.enabled" @change="agentClient.configured = true" />
+      </el-form-item>
+      <template v-if="agentClient.enabled">
+        <el-form-item label="本地编排补充指令">
+          <el-input v-model="agentClient.instructions" type="textarea" :rows="4" maxlength="20000" show-word-limit
+            placeholder="可选：仅给本地 Agent 的补充规则；路由系统提示词会安全抽取并一并下发" @input="agentClient.configured = true" />
+        </el-form-item>
+        <el-form-item label="每轮主动工具数">
+          <el-input-number v-model="agentClient.active_tool_limit" :min="1" :max="12" @change="agentClient.configured = true" />
+          <div class="muted hint">每轮只返回最相关的完整 typed tools；其余授权能力可通过搜索按需发现，避免全量 schema 撑大上下文。</div>
+        </el-form-item>
+      </template>
+      <el-form-item>
         <template #label>成本预算闸 <HelpTip title="成本预算闸">
           <p>按本路由在指定窗口内的历史用量做入口硬限。达到成本或 token 上限后，新任务会直接记为 <code>rejected</code>，不会再进入模型、执行器或工具链路。</p>
           <p>这里是场景级预算；接入方页还可以配置调用方级预算。两边任一命中都会拒绝。</p>
@@ -859,8 +876,9 @@ const au = reactive({
   tenants: [] as string[], roles: [] as string[], principals: [] as string[], audiences: [] as string[],
 });
 const mem = reactive({ recent_messages: 12, recent_budget_chars: 3500, summary_enabled: false, summary_trigger_chars: 4000, summary_keep_recent: 6, summary_model: '' });
+const agentClient = reactive({ configured: false, inherited: false, enabled: false, instructions: '', active_tool_limit: 8 });
 const budget = reactive<{ enabled: boolean; window: 'hour' | 'day' | 'month'; hard_cost_usd?: number; hard_tokens?: number }>({ enabled: false, window: 'day', hard_cost_usd: undefined, hard_tokens: undefined });
-let llmRest: Record<string, unknown> = {}, inputRest: Record<string, unknown> = {}, knRest: Record<string, unknown> = {}, dvRest: Record<string, unknown> = {}, rtRest: Record<string, unknown> = {}, tlRest: Record<string, unknown> = {}, builtinRest: Record<string, unknown> = {}, sendRest: Record<string, unknown> = {}, apRest: Record<string, unknown> = {}, audienceRest: Record<string, unknown> = {}, memRest: Record<string, unknown> = {}, budgetRest: Record<string, unknown> = {};
+let llmRest: Record<string, unknown> = {}, inputRest: Record<string, unknown> = {}, knRest: Record<string, unknown> = {}, dvRest: Record<string, unknown> = {}, rtRest: Record<string, unknown> = {}, tlRest: Record<string, unknown> = {}, builtinRest: Record<string, unknown> = {}, sendRest: Record<string, unknown> = {}, apRest: Record<string, unknown> = {}, audienceRest: Record<string, unknown> = {}, memRest: Record<string, unknown> = {}, agentClientRest: Record<string, unknown> = {}, budgetRest: Record<string, unknown> = {};
 
 // 会话策略只对 /run API 触发生效；聊天入口与渠道入站走自己的 scope 自动续聊、不读此项。
 // 算出当前编辑路由被哪些入口/渠道使用，据此提示用户「本项在这条路由下到底有没有用」。
@@ -1024,6 +1042,7 @@ function featureTags(row: any): RouteFeatureTag[] {
   if (row.audience?.auto || row.audience?.keywords?.length) tags.push({ label: '自动分诊', type: 'warning' });
   else if (row.audience) tags.push({ label: '受众闸', type: 'warning' });
   if (row.memory?.summary_enabled) tags.push({ label: '摘要记忆', type: 'info' });
+  if (row.agent_client?.enabled === true || (!row.agent_client && row.tools?.agent_direct?.enabled === true)) tags.push({ label: '本地 Agent', type: 'primary' });
   return tags.length ? tags : [{ label: '基础路由', type: 'info' }];
 }
 // 可执行性：只看「有没有在线执行器认领这个 target」（权限是提示词、不再依赖执行器能力上报）。inhub 目标在中枢内跑、恒可执行。
@@ -1048,8 +1067,9 @@ function resetSubForms(): void {
   Object.assign(ap, { type: '', url: '' }); builtinRest = {}; sendRest = {}; apRest = {};
   Object.assign(au, { enabled: false, auto: false, anonymous: false, priority: 0, keywords: [], clients: [], channels: [], tenants: [], roles: [], principals: [], audiences: [] });
   Object.assign(mem, { recent_messages: 12, recent_budget_chars: 3500, summary_enabled: false, summary_trigger_chars: 4000, summary_keep_recent: 6, summary_model: '' });
+  Object.assign(agentClient, { configured: false, inherited: false, enabled: false, instructions: '', active_tool_limit: 8 });
   Object.assign(budget, { enabled: false, window: 'day', hard_cost_usd: undefined, hard_tokens: undefined });
-  llmRest = {}; inputRest = {}; knRest = {}; dvRest = {}; rtRest = {}; tlRest = {}; audienceRest = {}; memRest = {}; budgetRest = {};
+  llmRest = {}; inputRest = {}; knRest = {}; dvRest = {}; rtRest = {}; tlRest = {}; audienceRest = {}; memRest = {}; agentClientRest = {}; budgetRest = {};
 }
 function openCreate(): void {
   editing.value = false;
@@ -1176,6 +1196,16 @@ function openEdit(row: any): void {
     summary_enabled: me['summary_enabled'] === true, summary_trigger_chars: Number(me['summary_trigger_chars'] ?? 4000),
     summary_keep_recent: Number(me['summary_keep_recent'] ?? 6), summary_model: String(me['summary_model'] ?? ''),
   }); memRest = mr;
+  const [ac, acr] = splitKnown(row.agent_client, ['enabled', 'instructions', 'active_tool_limit']);
+  const directAgentClientDefault = row.tools?.agent_direct?.enabled === true;
+  const inheritedAgentClient = !row.agent_client && directAgentClientDefault;
+  Object.assign(agentClient, {
+    configured: !!row.agent_client,
+    inherited: inheritedAgentClient,
+    enabled: ac['enabled'] === false ? false : ac['enabled'] === true || directAgentClientDefault,
+    instructions: String(ac['instructions'] ?? ''),
+    active_tool_limit: Number(ac['active_tool_limit'] ?? 8),
+  }); agentClientRest = acr;
   const [bu, bur] = splitKnown(row.budget, ['enabled', 'window', 'window_hours', 'hard_cost_usd', 'hard_tokens', 'soft_cost_usd', 'soft_tokens']);
   const windowFromHours = Number(bu['window_hours']) === 1 ? 'hour' : Number(bu['window_hours']) === 720 ? 'month' : 'day';
   const win = ['hour', 'day', 'month'].includes(String(bu['window'])) ? String(bu['window']) as 'hour' | 'day' | 'month' : windowFromHours;
@@ -1293,6 +1323,14 @@ async function save(): Promise<void> {
           recent_messages: mem.recent_messages, recent_budget_chars: mem.recent_budget_chars, summary_enabled: mem.summary_enabled,
           ...(mem.summary_enabled ? { summary_trigger_chars: mem.summary_trigger_chars, summary_keep_recent: mem.summary_keep_recent, ...(mem.summary_model.trim() ? { summary_model: mem.summary_model.trim() } : {}) } : {}),
           ...memRest,
+        }
+        : undefined,
+      agent_client: (agentClient.configured || agentClient.inherited || agentClient.enabled || agentClient.instructions.trim() || agentClient.active_tool_limit !== 8 || Object.keys(agentClientRest).length)
+        ? {
+          enabled: agentClient.enabled,
+          ...(agentClient.instructions.trim() ? { instructions: agentClient.instructions.trim() } : {}),
+          ...(agentClient.active_tool_limit !== 8 ? { active_tool_limit: agentClient.active_tool_limit } : {}),
+          ...agentClientRest,
         }
         : undefined,
       budget: (budget.enabled && (Number(budget.hard_cost_usd) > 0 || Number(budget.hard_tokens) > 0 || Object.keys(budgetRest).length))
