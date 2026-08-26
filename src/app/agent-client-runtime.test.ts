@@ -26,7 +26,7 @@ function route(): Route {
     target: 'llm', target_config: { credential: 'never-return-this', model: 'never-return-model', system_prompt: '只按业务规则回答' },
     profile: 'general', permission: 'full', session_policy: 'new',
     agent_client: { enabled: true, instructions: '先确认再执行', active_tool_limit: 2 },
-    audience: { enabled: true, clients: ['digital-cloud'], roles: ['admin'] },
+    audience: { enabled: true, clients: ['example-business'], roles: ['admin'] },
     memory: { recent_messages: 5 },
     tools: { sources: [{ provider: 'business', allow: ['*'] }], max_calls: 4, agent_direct: { enabled: true } },
   };
@@ -34,9 +34,9 @@ function route(): Route {
 
 function auth(): { client: Client; session: AgentSession } {
   return {
-    client: { app_id: 'digital-cloud', name: 'Digital Cloud', token: 'hidden', allowed_routes: ['tenant-agent'], allowed_channels: [], rate_limit_per_min: 0, enabled: true },
+    client: { app_id: 'example-business', name: 'Example Business', token: 'hidden', allowed_routes: ['tenant-agent'], allowed_channels: [], rate_limit_per_min: 0, enabled: true },
     session: {
-      session_id: SESSION_ID, client_app_id: 'digital-cloud', device_label: 'test', principal: { id: 'u1', roles: ['admin'] },
+      session_id: SESSION_ID, client_app_id: 'example-business', device_label: 'test', principal: { id: 'u1', roles: ['admin'] },
       on_behalf_of: 'tenant:u1', allowed_routes: ['tenant-agent'], created_at: '2026-01-01T00:00:00.000Z',
       access_expires_at: '2099-01-01T00:00:00.000Z', refresh_expires_at: '2099-02-01T00:00:00.000Z',
     },

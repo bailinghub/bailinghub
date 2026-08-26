@@ -199,6 +199,10 @@ $hub->send('notice_1001', 'team-im', 'user_001', '任务已完成');
 
 `AgentAuth` 是现有 SDK 的可选模块，不是第二套 SDK。业务网页先用自己的登录态确定当前操作人，后端再用接入方 Client Token 调中枢：
 
+完整的组件关系、配置归属与非 PHP HTTP 契约分别见
+[Agent Client v1 接入指南](../../docs/AGENT_CLIENT_QUICKSTART.md) 和
+[Agent Auth v1](../../docs/AGENT_AUTH_API.md)。
+
 ```php
 $agentAuth = new \Bailing\Connect\AgentAuth('https://hub.example.com', $clientToken);
 $context = $agentAuth->context($authorizationId);

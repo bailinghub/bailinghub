@@ -13,8 +13,8 @@ function directJob(): Job {
     target: 'agent-tool-v1',
     profile: 'general',
     project: '',
-    source: 'agent-tool:digital-cloud',
-    client_app_id: 'digital-cloud',
+    source: 'agent-tool:example-business',
+    client_app_id: 'example-business',
     agent_session_id: '33333333-3333-4333-8333-333333333333',
     on_behalf_of: 'tenant-1:user-7',
     session_id: runId,
@@ -41,7 +41,7 @@ test('Agent direct synthetic job: 必须同时命中服务端 target/source/sess
 
   const spoofedRun = directJob();
   spoofedRun.target = 'llm';
-  spoofedRun.source = 'agent:digital-cloud';
+  spoofedRun.source = 'agent:example-business';
   assert.equal(isAgentToolInvocationJob(spoofedRun), false, '/run metadata 不能单独伪造 direct job');
 
   const wrongRequest = directJob();

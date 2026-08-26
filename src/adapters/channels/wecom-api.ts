@@ -1,6 +1,6 @@
 // 企业微信主动发消息（qyapi）：corpid+secret 换 access_token（缓存）→ message/send 推文本给成员。
 // 用于"异步主动推"：llm/执行器回答超过企微回调 5s 被动窗口时，任务完成后由中枢主动把回复推回用户。
-// ⚠ 调用来源 IP 必须在该应用的「企业可信IP」名单里，否则报 60020。中枢出口 IP=121.5.162.127。
+// ⚠ 调用来源 IP 必须在该应用的「企业可信IP」名单里，否则报 60020；请将实际部署环境的出口 IP 加入名单。
 // 用全局 fetch（Node ≥18），无第三方依赖。
 import { createHash } from 'node:crypto';
 

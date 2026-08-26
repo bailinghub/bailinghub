@@ -10,6 +10,12 @@ This directory contains public documentation for the open-source BailingHub proj
 | [DEMO.en.md](DEMO.en.md) | Docker demo walkthrough: hub, MySQL, demo business system, tool provider, audit, and trace. |
 | [INDEPENDENT_VALIDATION.en.md](INDEPENDENT_VALIDATION.en.md) | Independent Docker demo task with objective pass criteria and a standard report path. |
 | [INDEPENDENT_VALIDATION.md](INDEPENDENT_VALIDATION.md) | Chinese independent validation task. |
+| [AGENT_CLIENT_QUICKSTART.en.md](AGENT_CLIENT_QUICKSTART.en.md) | End-to-end Agent Client setup and configuration ownership. |
+| [AGENT_CLIENT_QUICKSTART.md](AGENT_CLIENT_QUICKSTART.md) | Chinese Agent Client integration guide. |
+| [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | Agent Auth v1, PKCE, trusted business identity, and revocation. |
+| [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Chinese Agent Auth v1 protocol. |
+| [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | Agent Client Runtime v1 workspaces, turns, tools, and completion contract. |
+| [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Chinese Agent Client Runtime v1 contract. |
 | [user-guide/README.en.md](user-guide/README.en.md) | User and product-owner guide: business goals, console concepts, and scenario-based setup. |
 | [CONTRACT.en.md](CONTRACT.en.md) | Stable HTTP and wire contract between business systems and the hub. |
 | [INTEGRATION.en.md](INTEGRATION.en.md) | Third-party integration guide for tools, signatures, authorization, and callback handling. |
@@ -99,8 +105,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.3.3.md](RELEASE_NOTES_v0.3.3.md) | Chinese `v0.3.3` release notes. |
 | [RELEASE_NOTES_v0.3.4.en.md](RELEASE_NOTES_v0.3.4.en.md) | `v0.3.4` anonymous-preview and trusted-business-identity guidance. |
 | [RELEASE_NOTES_v0.3.4.md](RELEASE_NOTES_v0.3.4.md) | Chinese `v0.3.4` release notes. |
-| [RELEASE_NOTES_v0.4.0.en.md](RELEASE_NOTES_v0.4.0.en.md) | `v0.4.0` native conversational forms and chat-entry controls. |
-| [RELEASE_NOTES_v0.4.0.md](RELEASE_NOTES_v0.4.0.md) | Chinese `v0.4.0` release notes. |
+| [RELEASE_NOTES_v0.5.0.en.md](RELEASE_NOTES_v0.5.0.en.md) | `v0.5.0` revocable local-Agent authorization and governed local planning. |
+| [RELEASE_NOTES_v0.5.0.md](RELEASE_NOTES_v0.5.0.md) | Chinese `v0.5.0` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |
 | [COMPATIBILITY.en.md](COMPATIBILITY.en.md) | Versioning, compatibility, migration, and schema discipline. |

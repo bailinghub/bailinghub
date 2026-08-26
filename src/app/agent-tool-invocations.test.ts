@@ -43,7 +43,7 @@ function acc(scope: string, extra: Record<string, unknown> = {}): Record<string,
 function spec(): string {
   return JSON.stringify({
     openapi: '3.0.0',
-    info: { title: 'Digital Cloud', version: '1' },
+    info: { title: 'Example Business', version: '1' },
     paths: {
       '/staff/list': {
         get: {
@@ -91,9 +91,9 @@ function route(): Route {
   return {
     route_key: 'tenant-agent', name: '门店助手', enabled: true, target: 'llm', target_config: {},
     profile: 'general', permission: 'full', session_policy: 'new',
-    audience: { enabled: true, roles: ['admin'], clients: ['digital-cloud'] },
+    audience: { enabled: true, roles: ['admin'], clients: ['example-business'] },
     tools: {
-      sources: [{ provider: 'digital-cloud', allow: ['*'], subject_field: 'operator_uid' }],
+      sources: [{ provider: 'example-business', allow: ['*'], subject_field: 'operator_uid' }],
       max_calls: 5,
       agent_direct: { enabled: true, write_tools: ['staff_edit'] },
     },
@@ -111,7 +111,7 @@ function routeWithForcedApproval(tool = 'staff_edit'): Route {
 
 function auth(): AgentToolAuthContext {
   const client: Client = {
-    app_id: 'digital-cloud', name: 'Digital Cloud', token: 'hidden', agent_authorize_url: 'https://biz.example.com/agent',
+    app_id: 'example-business', name: 'Example Business', token: 'hidden', agent_authorize_url: 'https://biz.example.com/agent',
     allowed_routes: ['tenant-agent'], allowed_channels: [], rate_limit_per_min: 0, enabled: true,
   };
   const session: AgentSession = {
@@ -133,7 +133,7 @@ function fixture(baseUrl: string) {
   const calls = new Map<string, ToolExecutionJournalEntry>();
   const key = (jobId: string, tool: string, hash: string) => `${jobId}\0${tool}\0${hash}`;
   const provider: ToolProvider = {
-    name: 'digital-cloud', base_url: baseUrl, secret: 'provider-secret', enabled: true,
+    name: 'example-business', base_url: baseUrl, secret: 'provider-secret', enabled: true,
     spec_source: 'inline', get spec_json() { return currentSpec; },
     log_payload: false, timeout_ms: 10_000, rate_limit_per_min: 0,
   } as ToolProvider;
@@ -188,7 +188,7 @@ function fixture(baseUrl: string) {
 
 function runtimeRun(overrides: Partial<AgentClientRunRecord> = {}): AgentClientRunRecord {
   return {
-    run_id: AGENT_RUN_ID, session_id: SESSION_ID, client_app_id: 'digital-cloud', route_key: 'tenant-agent', thread_id: 42,
+    run_id: AGENT_RUN_ID, session_id: SESSION_ID, client_app_id: 'example-business', route_key: 'tenant-agent', thread_id: 42,
     client_conversation_id: 'c1', client_turn_id: 't1', user_message_id: 'm1', request_hash: 'a'.repeat(64), user_input: 'query',
     context: { schema_version: 'bailing.agent-turn-context.v1' }, status: 'context_ready', completion_hash: null,
     assistant_message_id: null, final_content: null, model: null, runtime: null, usage: null,
@@ -368,7 +368,7 @@ test('Agent direct: 终态回放仍重验当前具体工具授权', async (t) =>
   const narrowed = route();
   narrowed.tools = {
     ...narrowed.tools,
-    sources: [{ provider: 'digital-cloud', allow: ['staff_edit'], subject_field: 'operator_uid' }],
+    sources: [{ provider: 'example-business', allow: ['staff_edit'], subject_field: 'operator_uid' }],
   };
   fx.setRoute(narrowed);
   await assert.rejects(

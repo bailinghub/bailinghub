@@ -2,7 +2,10 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { findPublicContentDenylistMatches, loadPrivateExactTextDenylist } from './public-content-denylist.mjs';
+
 const root = process.cwd();
+const privateExactTextDenylist = loadPrivateExactTextDenylist({ root });
 const requiredFiles = ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'SECURITY.md', 'CONTRIBUTING.md', '.env.example', 'config.example.json'];
 const allowedLiteralValues = new Set([
   'demo-tool-secret-change-me',
@@ -27,7 +30,6 @@ const skipPath = (file) => (
   || file.startsWith('.git/')
 );
 const isTestFixture = (file) => /\.(test|spec)\.(ts|js|mjs)$/.test(file) || file.includes('/__tests__/');
-const rx = (parts, flags = '') => new RegExp(parts.join(''), flags);
 
 const patterns = [
   { name: 'private key', re: /-----BEGIN (?:RSA |DSA |EC |OPENSSH |)PRIVATE KEY-----/ },
@@ -35,8 +37,6 @@ const patterns = [
   { name: 'GitHub token', re: /\bgh[pousr]_[A-Za-z0-9_]{30,}\b/ },
   { name: 'AWS access key', re: /\bAKIA[0-9A-Z]{16}\b/ },
   { name: 'Tencent Cloud secret id', re: /\bAKID[A-Za-z0-9]{13,}\b/ },
-  { name: 'known leaked password', re: rx(['Nie', '0712', '\\.\\.']) },
-  { name: 'known managed MySQL host in source', re: rx(['sh-', 'cynosdb', 'mysql', '-[A-Za-z0-9.-]+', 'tencent', 'cdb\\.com']) },
   { name: 'legacy fixed server token fallback', re: /server(?:Token|\.token)\s*\|\|\s*['"]bailing['"]/ },
   { name: 'predictable Compose admin token', re: /BAILING_TOKEN:\s*\$\{BAILING_TOKEN:-[^}]+\}/ },
 ];
@@ -61,7 +61,7 @@ function scanSecretAssignments(file, text, findings) {
     if (allowedLiteralValues.has(value)) continue;
     if (/^(change-me|example|placeholder|your-|<.+>|xxx+|\*+|demo-|bailing-)/i.test(value)) continue;
     if (file.includes('/README') || file.startsWith('docs/') || file.startsWith('sdk/')) continue;
-    findings.push({ file, name: `suspicious ${m[1]} assignment`, sample: value.slice(0, 12) + '...' });
+    findings.push({ file, name: `suspicious ${m[1]} assignment`, sample: '[redacted]' });
   }
 }
 
@@ -80,7 +80,10 @@ for (const file of trackedAndUntrackedFiles()) {
   for (const p of patterns) {
     if (isTestFixture(file) && p.name === 'OpenAI API key') continue;
     const m = text.match(p.re);
-    if (m) findings.push({ file, name: p.name, sample: m[0].slice(0, 80) });
+    if (m) findings.push({ file, name: p.name, sample: '[redacted]' });
+  }
+  for (const match of findPublicContentDenylistMatches(text, privateExactTextDenylist, { generic: false })) {
+    findings.push({ file, name: match, sample: '[redacted]' });
   }
   scanSecretAssignments(file, text, findings);
 }

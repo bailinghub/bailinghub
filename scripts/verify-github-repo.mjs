@@ -3,9 +3,12 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { findPublicContentDenylistMatches, loadPrivateExactTextDenylist } from './public-content-denylist.mjs';
+
 const root = process.cwd();
 const exportDir = join(root, '.oss-dist', 'bailinghub');
 const expectedRepo = 'git+https://github.com/bailinghub/bailinghub.git';
+const privateExactTextDenylist = loadPrivateExactTextDenylist({ root });
 
 function run(cmd, args, cwd = root) {
   console.log(`> ${[cmd, ...args].join(' ')}`);
@@ -124,7 +127,7 @@ const requiredFiles = [
   'docs/RELEASE_NOTES_v0.3.2.md',
   'docs/RELEASE_NOTES_v0.3.3.md',
   'docs/RELEASE_NOTES_v0.3.4.md',
-  'docs/RELEASE_NOTES_v0.4.0.md',
+  'docs/RELEASE_NOTES_v0.5.0.md',
   'docs/CHANGELOG.md',
 ];
 for (const file of requiredFiles) requireFile(file);
@@ -173,21 +176,13 @@ try {
   assertNotTracked(files, (file) => file.includes('.bak.'), 'GitHub rehearsal must not track backup files');
   assertNoInstallerEnvPrefix(files);
 
-  const bannedParts = [
-    String.raw`/Users/` + 'macmini',
-    '项目' + String.raw`/www`,
-    'Nie' + '0712',
-    'github' + '_pat_',
-    String.raw`pt-[A-Za-z0-9_-]{20,}`,
-    'sh-' + 'cynosdb' + 'mysql' + String.raw`-[A-Za-z0-9.-]+` + 'tencent' + String.raw`cdb\.com`,
-    'bnopen' + String.raw`\.cn`,
-  ];
-  const bannedText = new RegExp(`(${bannedParts.join('|')})`);
   const textFiles = files.filter((file) => /\.(?:md|ts|tsx|js|mjs|json|sql|php|py|vue|html|css|sh|yml|yaml|txt|gitignore|npmignore|dockerignore)$/.test(file));
   const findings = [];
   for (const file of textFiles) {
     const text = output('git', ['show', `:${file}`], repoDir);
-    if (bannedText.test(text)) findings.push(file);
+    for (const match of findPublicContentDenylistMatches(text, privateExactTextDenylist)) {
+      findings.push(`${file}: ${match}`);
+    }
   }
   if (findings.length) {
     throw new Error(`GitHub rehearsal found private text in: ${findings.slice(0, 20).join(', ')}`);

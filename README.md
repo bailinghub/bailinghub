@@ -192,6 +192,9 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/user-guide/` | 使用者指南：面向业务负责人、产品经理、系统管理员和实施顾问，按业务场景说明为什么需要中枢、后台怎么配、配完交给开发者什么 |
 | `docs/CONTRACT.md` | **边界契约**：`/run`、聊天入口、工具调用/签名、回送、降级、鉴权——业务与中枢唯一的「缝」 |
 | `docs/CLIENT_API.md` | **生态接入稳定面**：版本化 Client API、机器契约、兼容规则与 Dify/n8n 跨仓门禁 |
+| `docs/AGENT_CLIENT_QUICKSTART.md` | **智能体客户端接入**：Core、业务授权页、通用 SDK 与本地宿主插件如何从零串起来 |
+| `docs/AGENT_AUTH_API.md` | **Agent Auth v1**：业务登录态、PKCE、Client Token 与可撤销 Agent Session 的语言无关契约 |
+| `docs/AGENT_CLIENT_RUNTIME_API.md` | **Agent Client Runtime v1**：本地编排所需的工作区、上下文、能力搜索、工具调用与可见结果回传契约 |
 | `docs/QUICKSTART.md` | 从零部署到第一条路由跑通的操作手册 |
 | `docs/QUICKSTART.en.md` | English quickstart for Docker demo, first route, and first business tool |
 | `docs/DEMO.md` | Docker Demo：20 分钟跑通 Agent 调业务工具闭环 |
@@ -230,7 +233,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/RELEASE_NOTES_v0.3.2.md` | `v0.3.2` 受管演示数据引导说明 |
 | `docs/RELEASE_NOTES_v0.3.3.md` | `v0.3.3` npm 发布来源元数据纠偏说明 |
 | `docs/RELEASE_NOTES_v0.3.4.md` | `v0.3.4` 匿名预览与可信业务身份引导说明 |
-| `docs/RELEASE_NOTES_v0.4.0.md` | `v0.4.0` 原生对话表单与聊天入口控制说明 |
+| `docs/RELEASE_NOTES_v0.5.0.md` | `v0.5.0` 可撤销本地 Agent 授权与受治理本地编排说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |
@@ -263,7 +266,7 @@ BailingHub 当前公开版本仍处于早期验证阶段。我们希望它经得
 
 我们欢迎社区创建独立发行版、行业适配、执行器、连接器和 ACC 独立实现。衍生项目可以保持自己的名称、方向与治理；通用改进欢迎回到上游，优秀的独立项目未来也可以申请在官方生态页面展示。展示不代表官方认证、服务担保或维护责任转移。完整原则见 [社区衍生与生态合作](docs/ECOSYSTEM.md)。
 
-DeepSeek Harness 用户可以安装独立社区插件 [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin)，直接从本机 Harness Web UI 向已接入 BailingHub 的业务 route 发起并跟踪受控任务。该插件复用公开 Client API 与独立 MCP Server，不进入 BailingHub Core 发行包，也不代表 DeepSeek 官方开发、认证或背书。
+DeepSeek Harness 用户可以安装独立社区插件 [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin)，让本地 Agent 负责理解、规划和多步工具选择，同时继续由 BailingHub 负责可信业务身份、能力裁剪、审批、执行与审计。该插件通过宿主无关的 `bailinghub-mcp-server/sdk` 接入，不进入 BailingHub Core 发行包，也不代表 DeepSeek 官方开发、认证或背书。部署者、业务开发者和最终用户分别需要配置什么，见 [Agent Client v1 接入指南](docs/AGENT_CLIENT_QUICKSTART.md)。
 
 ## 开源基础与第三方软件
 

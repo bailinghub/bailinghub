@@ -15,6 +15,19 @@
 
 ## Unreleased
 
+## v0.5.0 - 可撤销本地 Agent 授权与受治理本地编排
+
+发布日期：2026-08-26。
+
+- **Agent Auth v1**：新增浏览器 + PKCE 授权，由业务系统复用现有登录态批准可信主体和 route；access token 短期有效，refresh token 轮换并对重放失败关闭，会话可由本地或业务后端撤销。
+- **Agent Client Runtime v1**：本地 Agent 负责规划与多步选择；Core 继续提供受限的提示词、记忆、知识和工具面，并负责身份重验、审批、幂等、业务调用、恢复和审计。
+- **能力与审批收敛**：路由页新增 `tools.agent_direct` 结构化配置。可写工具按精确 operationId 开放；审批默认继承业务侧 ACC，`force_approval_tools` 只能额外收紧。
+- **会话和轨迹可见**：本地编排的用户消息、可见最终回复、工具申请和治理结果进入 Core 总账；不接收、不同步也不持久化 hidden reasoning。
+- **业务侧 SDK**：PHP 8.1+ 与 PHP 7.3 兼容 SDK 都增加同语义的服务端 `AgentAuth` 薄客户端。Client Token 仍只存业务后端，不进入浏览器、本地插件或公开配置。
+- **数据库结构**：新增 `055_agent_auth.sql` 和 `056_agent_client_runtime.sql`。升级时必须通过正式迁移器执行全部未应用 migration，不得修改已应用文件或复制其他实例的状态库。
+- **兼容性**：新能力为可选增量接口；现有 `/run`、聊天入口、Client API v1、Kernel Host API v1、Executor Protocol、ACC、工具签名和业务最终授权语义保持兼容。
+- **相关文档**：[RELEASE_NOTES_v0.5.0.md](RELEASE_NOTES_v0.5.0.md)、[Agent Client v1 接入指南](AGENT_CLIENT_QUICKSTART.md)、[Agent Auth v1](AGENT_AUTH_API.md)、[Agent Client Runtime v1](AGENT_CLIENT_RUNTIME_API.md) 与[兼容性与升级](兼容性与升级.md)。
+
 ## v0.4.0 - 原生对话表单与聊天入口控制
 
 发布日期：2026-08-25。

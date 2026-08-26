@@ -2,11 +2,14 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
+import { findPublicContentDenylistMatches, loadPrivateExactTextDenylist } from './public-content-denylist.mjs';
+
 const root = process.cwd();
 const outRoot = join(root, '.oss-dist');
 const exportDir = join(outRoot, 'bailinghub');
 const tarball = join(outRoot, 'bailinghub-oss-source.tgz');
 const findings = [];
+const privateExactTextDenylist = loadPrivateExactTextDenylist({ root });
 const tarEnv = { ...process.env, COPYFILE_DISABLE: '1' };
 const tarNoMetadataArgs = ['--no-xattrs'];
 
@@ -52,16 +55,6 @@ const forbiddenFiles = new Set([
   'config.json',
   '.env',
 ]);
-const rx = (parts, flags = '') => new RegExp(parts.join(''), flags);
-
-const bannedText = [
-  { name: 'local machine path', re: rx(['/Users/', 'macmini', '|', '项目', '\\/www']) },
-  { name: 'known leaked password', re: rx(['Nie', '0712', '\\.\\.']) },
-  { name: 'known managed MySQL host', re: rx(['sh-', 'cynosdb', 'mysql', '-[A-Za-z0-9.-]+', 'tencent', 'cdb\\.com']) },
-  { name: 'known internal git token', re: rx(['pt', '-[A-Za-z0-9_-]{20,}']) },
-  { name: 'GitHub PAT', re: rx(['github', '_pat', '_[A-Za-z0-9_]+']) },
-  { name: 'old official domain', re: rx(['bailing\\.', 'bnopen', '\\.cn', '|', 'bnopen', '\\.cn']) },
-];
 const forbiddenPublicWording = new RegExp([
   '商业' + '版',
   '商业' + '扩展',
@@ -122,8 +115,8 @@ function scanExport() {
   const textFiles = files.filter((file) => /\.(?:md|ts|tsx|js|mjs|json|sql|php|py|vue|html|css|sh|yml|yaml|txt|gitignore|npmignore|dockerignore)$/.test(file));
   for (const file of textFiles) {
     const text = readFileSync(join(exportDir, file), 'utf8');
-    for (const rule of bannedText) {
-      if (rule.re.test(text)) findings.push(`${file}: ${rule.name}`);
+    for (const match of findPublicContentDenylistMatches(text, privateExactTextDenylist)) {
+      findings.push(`${file}: ${match}`);
     }
     if (file !== 'LICENSE' && forbiddenPublicWording.test(text)) {
       findings.push(`${file}: use neutral public wording for private extension boundaries`);

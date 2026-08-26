@@ -56,8 +56,8 @@ test('Agent Auth loopback redirect only accepts explicit-port IP literals', () =
 
 test('Agent Auth v1: context is redacted, PKCE binds client/redirect, query tokens fail, and business can revoke', async () => {
   const client: Client = {
-    app_id: 'digital-cloud',
-    name: 'Digital Cloud',
+    app_id: 'example-business',
+    name: 'Example Business',
     token: 'business-client-token-0001',
     agent_authorize_url: 'https://tenant.example.com/agent-authorize?from=hub',
     allowed_routes: ['orders'],

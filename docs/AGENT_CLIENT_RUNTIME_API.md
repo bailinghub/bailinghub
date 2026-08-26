@@ -1,6 +1,6 @@
-# Agent Client Runtime v1（私有候选）
+# Agent Client Runtime v1
 
-本接口让已完成 Agent Auth 网页授权的本地智能体在本地承担规划，同时继续复用 BailingHub 的身份重验、工具治理、审批、审计与对话总账。它不替代现有 `/run`、聊天入口或执行器协议，也不是公开稳定 API。
+本版本化接口让已完成 Agent Auth 网页授权的本地智能体在本地承担规划，同时继续复用 BailingHub 的身份重验、工具治理、审批、审计与对话总账。它不替代现有 `/run`、聊天入口或执行器协议。配套的部署、业务授权页和宿主接入步骤见 [Agent Client v1 接入指南](AGENT_CLIENT_QUICKSTART.md)，身份授权契约见 [Agent Auth v1](AGENT_AUTH_API.md)。
 
 所有接口只接受 `Authorization: Bearer <Agent access token>`，响应均 `Cache-Control: no-store`。工作区授权面始终取以下交集：Client `allowed_routes` ∩ Agent Session `allowed_routes` ∩ 启用且 audience 允许的 route ∩ `tools.agent_direct`。`agent_client.enabled=false` 只关闭本页接口，不关闭旧 `/agent-api/v1/tools`。
 

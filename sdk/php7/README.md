@@ -3,7 +3,7 @@
 和 8.x 注解版**功能完全等价**，区别只在「怎么声明工具」：8.x 用 `#[AiTool]` 属性注解（PHP 8.0+ 语法），本版用 **fluent builder**（纯 PHP，**PHP ≥ 7.3** 即可），产出的 spec 与注解版**逐字段一致**。
 
 > 用哪个版本：业务跑 **PHP 8.0+** 用注解版（`sdk/php`，更简洁）；跑 **PHP 7.3 / 7.4** 用本版。**不要为了对接去迁 PHP 版本**。
-> 验签 `Verify`、票据 `Ticket`、spec 托管 `SpecServer` 三个运行时类两版 API 完全相同，签名公式逐字一致。
+> 验签 `Verify`、票据 `Ticket`、spec 托管 `SpecServer`、中枢调用 `HubClient` 和本地 Agent 授权 `AgentAuth` 两版 API 与语义完全相同。
 
 零依赖。能力声明遵循 ACC，验签与中枢接入约定见 `docs/CONTRACT.md §2.4`。
 
@@ -22,7 +22,7 @@ curl -O https://<中枢域名>/connect/bailing-connect-php7.tgz && tar -xzf bail
 }
 ```
 
-或 ③ 直接拷贝 `src/` 目录进项目——共 **5 个文件**（`ToolSpec`/`ToolDef`/`Verify`/`Ticket`/`SpecServer`）。零依赖，怎么引都行。命名空间同为 `Bailing\Connect`。
+或 ③ 直接拷贝 `src/` 目录进项目——共 **7 个文件**（`ToolSpec`/`ToolDef`/`Verify`/`Ticket`/`SpecServer`/`HubClient`/`AgentAuth`）。零依赖，怎么引都行。命名空间同为 `Bailing\Connect`。
 
 ## 第一步：声明工具（builder，不动你的控制器）
 
@@ -184,6 +184,36 @@ $job = $hub->run('crm_1001', 'order-support', '查询订单处理建议', array(
 $result = $hub->getJob($job['job_id']);
 $hub->send('notice_1001', 'team-im', 'user_001', '任务已完成');
 ```
+
+## 本地 Agent 网页授权（可选）
+
+`AgentAuth` 是现有 PHP 7.3 SDK 的可选模块，不是第二套 SDK。业务网页先用自己的登录态确定当前操作人，后端再用接入方 Client Token 调中枢：
+
+```php
+use Bailing\Connect\AgentAuth;
+
+$agentAuth = new AgentAuth('https://hub.example.com', $clientToken);
+$context = $agentAuth->context($authorizationId);
+
+$result = $agentAuth->approve(
+    $authorizationId,
+    array(
+        'id' => (string) $user->id,
+        'tenant' => (string) $tenantId,
+        'roles' => $user->roles,
+    ),
+    'tenant_' . $tenantId . ':user_' . $user->id,
+    $context['requested_routes']
+);
+
+// 浏览器只跳转 $result['redirect_uri'] 完成 loopback 回调。
+// 用户取消时：$agentAuth->deny($authorizationId);
+// 员工离职/设备丢失：$agentAuth->revokeSession($sessionId);
+```
+
+`principal`、`on_behalf_of` 和 `allowed_routes` 必须由业务后端根据当前登录态与自身权限生成，不得从前端表单原样透传。Client Token 只存业务服务端，不得写进网页 JavaScript、URL、本地 Agent 或插件配置。授权协议只绑定业务身份、路由和设备会话，不承载套餐、付费或权益字段。
+
+完整关系与 HTTP 契约见中枢文档 `docs/AGENT_CLIENT_QUICKSTART.md` 和 `docs/AGENT_AUTH_API.md`。
 
 ## 范例
 

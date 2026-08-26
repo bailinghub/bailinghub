@@ -6,7 +6,7 @@ import { AgentAuthRepository } from './config-agent-auth-repository';
 function sessionRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     session_id: '123e4567-e89b-42d3-a456-426614174000',
-    client_app_id: 'digital-cloud',
+    client_app_id: 'example-business',
     device_label: 'Mac mini',
     principal_json: JSON.stringify({ id: 'user-7', tenant: 'tenant-2', roles: ['manager'] }),
     on_behalf_of: 'tenant-2:user-7',
@@ -56,7 +56,7 @@ test('AgentAuthRepository refresh rotation keeps the original absolute refresh e
   const repo = new AgentAuthRepository(() => pool);
   const result = await repo.rotateRefreshToken({
     refreshTokenHash: 'r'.repeat(64),
-    clientAppId: 'digital-cloud',
+    clientAppId: 'example-business',
     accessTokenHash: 'b'.repeat(64),
     nextRefreshTokenHash: 'n'.repeat(64),
     accessExpiresAt: '2099-01-01T00:30:00.000Z',
@@ -92,7 +92,7 @@ test('AgentAuthRepository refresh replay revokes the whole session fail closed',
   const repo = new AgentAuthRepository(() => pool);
   const result = await repo.rotateRefreshToken({
     refreshTokenHash: 'r'.repeat(64),
-    clientAppId: 'digital-cloud',
+    clientAppId: 'example-business',
     accessTokenHash: 'b'.repeat(64),
     nextRefreshTokenHash: 'n'.repeat(64),
     accessExpiresAt: '2099-01-01T00:30:00.000Z',
@@ -114,7 +114,7 @@ test('AgentAuthRepository rejects an approved authorization after its short code
       if (sql.startsWith('SELECT * FROM bz_agent_authorizations')) {
         return [[{
           authorization_id: '123e4567-e89b-42d3-a456-426614174000',
-          client_app_id: 'digital-cloud',
+          client_app_id: 'example-business',
           redirect_uri: 'http://127.0.0.1:43123/callback',
           code_challenge: 'c'.repeat(43),
           code_expires_at: '2000-01-01 00:00:00',
@@ -132,7 +132,7 @@ test('AgentAuthRepository rejects an approved authorization after its short code
   const repo = new AgentAuthRepository(() => pool);
   const result = await repo.exchangeAuthorizationCode({
     codeHash: 'c'.repeat(64),
-    clientAppId: 'digital-cloud',
+    clientAppId: 'example-business',
     redirectUri: 'http://127.0.0.1:43123/callback',
     codeChallenge: 'c'.repeat(43),
     sessionId: '223e4567-e89b-42d3-a456-426614174000',

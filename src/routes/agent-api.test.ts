@@ -34,7 +34,7 @@ function request(method: string, headers: Record<string, string> = {}, body?: un
 test('Agent API job reads are isolated to the originating Agent Session', async () => {
   const token = `bha_${'a'.repeat(43)}`;
   const client: Client = {
-    app_id: 'digital-cloud', name: 'Digital Cloud', token: 'client-token',
+    app_id: 'example-business', name: 'Example Business', token: 'client-token',
     agent_authorize_url: 'https://tenant.example.com/agent-authorize',
     allowed_routes: ['orders'], allowed_channels: [], rate_limit_per_min: 0, enabled: true,
   };
@@ -51,7 +51,7 @@ test('Agent API job reads are isolated to the originating Agent Session', async 
   };
   const ownJob: Job = {
     job_id: '223e4567-e89b-42d3-a456-426614174000', request_id: 'request-1', status: 'done',
-    profile: 'general', project: '', source: 'agent:digital-cloud', client_app_id: client.app_id,
+    profile: 'general', project: '', source: 'agent:example-business', client_app_id: client.app_id,
     agent_session_id: session.session_id, on_behalf_of: session.on_behalf_of,
     input_preview: 'hello', metadata: {}, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:01.000Z',
   };
@@ -87,7 +87,7 @@ test('Agent API job reads are isolated to the originating Agent Session', async 
 test('Agent Tool API: envelope 严格拒绝非对象 arguments 与字段漂移', async () => {
   const token = `bha_${'b'.repeat(43)}`;
   const client: Client = {
-    app_id: 'digital-cloud', name: 'Digital Cloud', token: 'client-token',
+    app_id: 'example-business', name: 'Example Business', token: 'client-token',
     agent_authorize_url: 'https://tenant.example.com/agent-authorize',
     allowed_routes: ['orders'], allowed_channels: [], rate_limit_per_min: 0, enabled: true,
   };
@@ -155,7 +155,7 @@ test('Agent Tool API: envelope 严格拒绝非对象 arguments 与字段漂移',
 test('Agent Tool API: pause 在读取请求与工具治理链前拦截 invoke/resume', async () => {
   const token = `bha_${'c'.repeat(43)}`;
   const client: Client = {
-    app_id: 'digital-cloud', name: 'Digital Cloud', token: 'client-token',
+    app_id: 'example-business', name: 'Example Business', token: 'client-token',
     agent_authorize_url: 'https://tenant.example.com/agent-authorize',
     allowed_routes: ['orders'], allowed_channels: [], rate_limit_per_min: 0, enabled: true,
   };
@@ -194,7 +194,7 @@ test('Agent Tool API: pause 在读取请求与工具治理链前拦截 invoke/re
 function runtimeHttpFixture() {
   const token = `bha_${'r'.repeat(43)}`;
   const client: Client = {
-    app_id: 'digital-cloud', name: 'Digital Cloud', token: 'client-token',
+    app_id: 'example-business', name: 'Example Business', token: 'client-token',
     agent_authorize_url: 'https://tenant.example.com/agent-authorize',
     allowed_routes: ['allowed', 'audience-denied', 'agent-off', 'session-denied'], allowed_channels: [], rate_limit_per_min: 0, enabled: true,
   };
@@ -207,7 +207,7 @@ function runtimeHttpFixture() {
   const baseRoute = (route_key: string): Route => ({
     route_key, name: route_key, enabled: true, target: 'llm', target_config: { credential: 'hidden', system_prompt: 'safe system' },
     profile: 'general', permission: 'full', session_policy: 'new', agent_client: { enabled: true, active_tool_limit: 1 },
-    audience: { enabled: true, roles: ['admin'], clients: ['digital-cloud'] },
+    audience: { enabled: true, roles: ['admin'], clients: ['example-business'] },
     tools: { sources: [{ provider: 'business', allow: ['*'] }], agent_direct: { enabled: true } },
   });
   const routes = [

@@ -45,7 +45,7 @@ test('ConversationLedger 会话详情分别保留旧 job_id 与 Agent Client age
           content: '旧任务回复', created_at: '2026-08-26T00:00:10.000Z',
         },
         {
-          id: 2, direction: 'in', channel: 'agent:digital-cloud', principal_id: 'user-7',
+          id: 2, direction: 'in', channel: 'agent:example-business', principal_id: 'user-7',
           job_id: null, agent_run_id: '223e4567-e89b-42d3-a456-426614174000',
           content: '修改员工资料', created_at: '2026-08-26T00:00:20.000Z',
         },
