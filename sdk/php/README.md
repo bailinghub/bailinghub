@@ -20,7 +20,7 @@ curl -O https://<中枢域名>/connect/bailing-connect-php.tgz && tar -xzf baili
 }
 ```
 
-或 ③ 直接拷贝 `src/` 目录进项目——共 **6 个文件**（根下 4 个类 + `Attributes/` 下 2 个注解类，少拷会 class not found）。零依赖，怎么引都行。
+或 ③ 直接拷贝 `src/` 目录进项目。零依赖，怎么引都行；请保留完整目录结构，避免可选模块 class not found。
 
 ## 第一步：标注解
 
@@ -194,6 +194,32 @@ $job = $hub->run('crm_1001', 'order-support', '查询订单处理建议', [
 $result = $hub->getJob($job['job_id']);
 $hub->send('notice_1001', 'team-im', 'user_001', '任务已完成');
 ```
+
+## 附：本地 Agent 网页授权（可选）
+
+`AgentAuth` 是现有 SDK 的可选模块，不是第二套 SDK。业务网页先用自己的登录态确定当前操作人，后端再用接入方 Client Token 调中枢：
+
+完整的组件关系、配置归属与非 PHP HTTP 契约分别见
+[Agent Client v1 接入指南](../../docs/AGENT_CLIENT_QUICKSTART.md) 和
+[Agent Auth v1](../../docs/AGENT_AUTH_API.md)。
+
+```php
+$agentAuth = new \Bailing\Connect\AgentAuth('https://hub.example.com', $clientToken);
+$context = $agentAuth->context($authorizationId);
+
+$result = $agentAuth->approve(
+    $authorizationId,
+    ['id' => (string) $user->id, 'tenant' => (string) $tenantId, 'roles' => $user->roles],
+    "tenant_{$tenantId}:user_{$user->id}",
+    $context['requested_routes']
+);
+
+// 浏览器跳转 $result['redirect_uri'] 完成 loopback 回调。
+// 用户取消时：$agentAuth->deny($authorizationId);
+// 员工离职/设备丢失：$agentAuth->revokeSession($sessionId);
+```
+
+`principal` 和 `on_behalf_of` 必须由业务后端从当前登录态生成，不得从前端表单原样透传。该协议只绑定业务身份、路由与设备会话，不承载套餐、付费或权益字段。
 
 ## CI 集成
 

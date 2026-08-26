@@ -23,9 +23,10 @@ export interface AllowedToolContext {
 
 /** 主体取数：显式 subject_field 优先，取不到时回落中枢标准字段 visitor_uid，再取不到由渠道派生。 */
 export function subjectOf(job: Job, sourceCfg: ToolSourceConfig): string {
+  if (job.on_behalf_of) return job.on_behalf_of;
   const f = String(sourceCfg.subject_field ?? '');
   const meta = (job.metadata ?? {}) as Record<string, unknown>;
-  const explicit = String((f ? meta[f] ?? meta['visitor_uid'] : meta['visitor_uid']) ?? '');
+  const explicit = String((f ? meta[f] ?? meta['on_behalf_of'] ?? meta['visitor_uid'] : meta['on_behalf_of'] ?? meta['visitor_uid']) ?? '');
   return explicit || channelSubject(job);
 }
 

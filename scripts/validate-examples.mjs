@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { checkReleaseConsistency } from './check-release-consistency.mjs';
+import { findPublicContentDenylistMatches, loadPrivateExactTextDenylist } from './public-content-denylist.mjs';
 
 const findings = [];
+const privateExactTextDenylist = loadPrivateExactTextDenylist();
 
 function read(file) {
   if (!existsSync(file)) {
@@ -65,7 +67,7 @@ for (const [file, text] of [
   requireIncludes(file, text, 'BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS: ${BAILING_TOOL_INDEX_LOAD_TIMEOUT_MS:-5000}');
   requireIncludes(file, text, 'BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS: ${BAILING_TOOL_QUERY_EMBEDDING_TIMEOUT_MS:-15000}');
   requireIncludes(file, text, 'BAILING_SEED_DEMO: "1"');
-  if (/bailing\.bnopen\.cn/.test(text)) findings.push(`${file}: must not reference self-hosted internal instance`);
+  for (const match of findPublicContentDenylistMatches(text, privateExactTextDenylist)) findings.push(`${file}: ${match}`);
 }
 
 if (stableVersion && !composeImages.includes(`bailinghub:${stableVersion}`)) {

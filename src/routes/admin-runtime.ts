@@ -6,12 +6,28 @@ import { send } from '../app/http';
 import { redactValue, redactionSummary } from '../core/runtime/redaction-runtime';
 import { renderDebugReport } from '../core/runtime/debug-report';
 import { buildJobTrace } from '../core/runtime/trace-runtime';
+import { buildAgentClientTrace } from '../core/runtime/agent-client-trace';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import type { AgentClientRunRecord } from '../infrastructure/config/config-agent-client-runtime-repository';
 import type { Principal } from '../app/auth';
 import type { ChannelMessage, ChannelSendResult } from '../app/channels';
+import { isAgentToolInvocationJob } from '../app/agent-tool-job';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
+
+function isToolJobForAgentRun(job: any, run: AgentClientRunRecord): boolean {
+  const metadata = job?.metadata ?? {};
+  return isAgentToolInvocationJob(job)
+    && Number(job.thread_id) === run.thread_id
+    && job.session_id === run.run_id
+    && job.client_app_id === run.client_app_id
+    && job.agent_session_id === run.session_id
+    && metadata['agent_run_id'] === run.run_id
+    && Number(metadata['agent_thread_id']) === run.thread_id
+    && metadata['agent_route'] === run.route_key
+    && job.dispatch?.route_key === run.route_key;
+}
 
 function textPreview(v: unknown, limit = 2000): string | null {
   if (v == null) return null;
@@ -326,7 +342,7 @@ export async function handleAdminRuntimeApiFor(
     return true;
   }
 
-  // 会话视图（调度台「会话」Tab）：列线索 / 取单会话全量（消息总账+对齐的 job_id，执行轨迹复用 /runs/:job 接口懒拉）
+  // 会话视图（调度台「会话」Tab）：旧中枢轮次按 job_id，Agent Client 轮次按 agent_run_id 懒加载轨迹。
   if (path === '/admin/api/threads' && method === 'GET') {
     const q = new URL(req.url ?? '/', 'http://x').searchParams;
     send(res, 200, await configStore.conversations.listRecentThreads(Number(q.get('limit')) || 80, Number(q.get('offset')) || 0));
@@ -337,6 +353,66 @@ export async function handleAdminRuntimeApiFor(
     const d = await configStore.conversations.threadDetail(Number(mThread[1]));
     if (!d) { send(res, 404, { error: '会话不存在' }); return true; }
     send(res, 200, d);
+    return true;
+  }
+
+  // Agent Client 一轮轨迹：本地负责规划，中枢只聚合安全的运行边界、ACC 工具治理、审批与结果。
+  // 使用 thread + run 双键防止串线；工具 Job 还要通过服务端 marker 和身份/路由不变量复核。
+  const mAgentRunTrace = path.match(/^\/admin\/api\/threads\/(\d+)\/agent-runs\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/trace$/i);
+  if (mAgentRunTrace && method === 'GET') {
+    const threadId = Number(mAgentRunTrace[1]);
+    const runId = mAgentRunTrace[2]!;
+    const runtimeRepo = configStore.agentClientRuntime;
+    const candidateLookup = configStore.observability.agentToolJobCandidatesForRun;
+    if (!runtimeRepo || !candidateLookup) {
+      send(res, 503, { error: '智能体客户端执行轨迹在当前配置仓储中不可用' });
+      return true;
+    }
+    const run = await runtimeRepo.findRunForInvocation(runId);
+    if (!run || run.thread_id !== threadId) {
+      send(res, 404, { error: '智能体客户端运行不存在' });
+      return true;
+    }
+    const [runAudit, candidates] = await Promise.all([
+      configStore.observability.auditForJob(runId),
+      configStore.observability.agentToolJobCandidatesForRun!(runId, threadId),
+    ]);
+    const jobs = candidates.jobs
+      .filter((job) => isToolJobForAgentRun(job, run))
+      .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.job_id.localeCompare(b.job_id));
+    const jobIds = jobs.map((job) => job.job_id);
+    const auditPromise = configStore.observability.auditsForJobs
+      ? configStore.observability.auditsForJobs(jobIds)
+      : Promise.all(jobIds.map((jobId) => configStore.observability.auditForJob(jobId)))
+        .then((rows) => Object.fromEntries(jobIds.map((jobId, index) => [jobId, rows[index] ?? []])));
+    const approvalPromise = configStore.approvals.forJobs
+      ? configStore.approvals.forJobs(jobIds)
+      : Promise.all(jobIds.map((jobId) => configStore.approvals.forJob(jobId)))
+        .then((rows) => Object.fromEntries(jobIds.map((jobId, index) => [jobId, rows[index] ?? []])));
+    const [auditByJob, approvalsByJob] = await Promise.all([auditPromise, approvalPromise]);
+    const tools = jobs.map((job) => ({
+      job,
+      audit: auditByJob[job.job_id] ?? [],
+      approvals: approvalsByJob[job.job_id] ?? [],
+    }));
+    send(res, 200, buildAgentClientTrace({
+      run: {
+        run_id: run.run_id,
+        thread_id: run.thread_id,
+        client_app_id: run.client_app_id,
+        route_key: run.route_key,
+        status: run.status,
+        model: run.model,
+        runtime: run.runtime,
+        usage: run.usage,
+        created_at: run.created_at,
+        updated_at: run.updated_at,
+        completed_at: run.completed_at,
+      },
+      runAudit,
+      tools,
+      candidatesTruncated: candidates.truncated,
+    }));
     return true;
   }
 
@@ -362,6 +438,10 @@ export async function handleAdminRuntimeApiFor(
       return true;
     }
     if (method === 'POST' && mRun[2] === '/rerun') {
+      if (isAgentToolInvocationJob(job)) {
+        send(res, 409, { error: 'Agent 直调记录不能进入中枢模型重跑；请由原本地 Agent 用 invocation_id 续执行' });
+        return true;
+      }
       if (job.status === 'queued' || job.status === 'running' || job.status === 'dispatched') {
         send(res, 400, { error: `任务在途（${job.status}），无需重跑` });
         return true;
@@ -399,7 +479,7 @@ export async function handleAdminRuntimeApiFor(
     let rerun = false;
     if (action === 'approve') {
       const job = await stateStore.getJob(appr.job_id);
-      if (job && (job.status === 'done' || job.status === 'error' || job.status === 'rejected')) {
+      if (job && !isAgentToolInvocationJob(job) && (job.status === 'done' || job.status === 'error' || job.status === 'rejected')) {
         await deps.engineRuntime.requeueForRerun(job, by, `approval_${id}`);
         rerun = true;
       }

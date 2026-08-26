@@ -1,7 +1,7 @@
 import { TOOL_INLINE_MAX, type ToolRuntime, buildToolRuntime, composeToolRuntimes } from '../core/contracts/tools';
 import type { Job, Route } from '../core/contracts/types';
 import { approvedNoteForJobFor, approvalDepsForStores } from './tool-approvals';
-import { conversationAddrOf, embedConfigOf, maxCallsOf, resolveAllowedToolsFor, retrievalOptsOf } from './tool-context';
+import { conversationAddrOf, embedConfigOf, maxCallsOf, resolveAllowedToolsFor, retrievalOptsOf, type AllowedToolContext } from './tool-context';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ToolIndexService } from '../services/tools-index';
@@ -25,6 +25,24 @@ export async function assembleToolRuntimeFor(
 ): Promise<ToolRuntime | 'subject_locked' | undefined> {
   const r = await resolveAllowedToolsFor(config, job, route);
   if (!r) return undefined;
+  return assembleResolvedToolRuntimeFor(config, state, index, job, r, appConfig, nowFn, sleepFn, targetRegistry);
+}
+
+/**
+ * 已解析工具面 → 受治理运行时。Agent 直调会先按独立 direct policy 裁剪并对
+ * 写工具提级审批，再从这个入口组装；避免调用时重新组装出一份不同的清单。
+ */
+export async function assembleResolvedToolRuntimeFor(
+  config: ConfigStoreContract | null,
+  state: RuntimeStateStore,
+  index: ToolIndexService | null,
+  job: Job,
+  r: AllowedToolContext,
+  appConfig: AppConfig,
+  nowFn: () => string,
+  sleepFn: (ms: number) => Promise<void>,
+  targetRegistry: TargetRegistry = defaultTargetRegistry,
+): Promise<ToolRuntime | 'subject_locked' | undefined> {
   if (!r.allowed.length) return 'subject_locked';
   const maxCalls = maxCallsOf(r.toolsCfg);
   const retrievalMode = r.allowed.length > TOOL_INLINE_MAX;

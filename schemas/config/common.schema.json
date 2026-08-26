@@ -198,6 +198,36 @@
             "url": { "type": "string" },
             "to": { "type": "string" }
           }
+        },
+        "agent_direct": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled"],
+          "not": { "required": ["force_approval_tools", "unattended_write_tools"] },
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "write_tools": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" }
+            },
+            "force_approval_tools": {
+              "description": "Route-level exact operationIds that require approval in addition to the ACC declaration. Omit to inherit ACC approval semantics.",
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" }
+            },
+            "unattended_write_tools": {
+              "description": "Deprecated private-candidate compatibility field. When present, every write_tools entry not listed here is forced to approval. Remove it to inherit ACC, or migrate its complement within write_tools to force_approval_tools.",
+              "deprecated": true,
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$" }
+            }
+          }
         }
       },
       "not": {

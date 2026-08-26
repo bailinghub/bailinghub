@@ -22,6 +22,14 @@ export function actorForPrincipal(principal: Principal | null | undefined): Runt
       displayName: principal.client.name,
     };
   }
+  if (principal.kind === 'agent') {
+    return {
+      kind: 'agent',
+      id: principal.session.principal.id,
+      roles: principal.session.principal.roles,
+      displayName: principal.session.principal.id,
+    };
+  }
   return {
     kind: 'executor',
     id: principal.token.name,

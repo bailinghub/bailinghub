@@ -19,6 +19,8 @@ export function rowToJob(r: any): Job {
     project: r.project,
     source: r.source,
     client_app_id: r.client_app_id ?? undefined,
+    agent_session_id: r.agent_session_id ?? undefined,
+    on_behalf_of: r.on_behalf_of ?? undefined,
     thread_id: r.thread_id != null ? Number(r.thread_id) : undefined,
     session_id: r.session_id ?? undefined,
     input_preview: r.input_preview ?? '',

@@ -7,6 +7,15 @@ import { resolveMemoryConfig } from './memory';
 import { type MemoryStoreLike } from './memory-runtime';
 import type { AuditEntry, Job, Route, SessionTarget } from '../contracts/types';
 
+/** 由受信 Agent API 构造的中性身份归属；不承载付费或权益语义。 */
+export interface AgentAttribution {
+  agentSessionId: string;
+  clientAppId: string;
+  subjectId: string;
+  businessTenantRef?: string;
+  onBehalfOf: string;
+}
+
 /** launchJob 的入参：触发面（/run、/chat）各自做完闸门与会话解析后交到这里。 */
 export interface LaunchSpec {
   requestId: string;
@@ -26,6 +35,8 @@ export interface LaunchSpec {
   threadScope: string;                // ''=不记总账
   principalId: string | null;
   channel: string;                    // 总账入站消息的渠道标识（接入方 app_id / 'admin' / 'chat:<entry>'）
+  /** 只有独立 Agent API 可填；普通 /run 永不从请求体构造。 */
+  agentAttribution?: AgentAttribution;
 }
 
 export interface LaunchStateStoreLike {
@@ -79,6 +90,7 @@ export async function rejectLaunchJob(
     job_id: randomUUID(), request_id: s.requestId, status: 'rejected',
     target: s.target, profile: s.profileName, project: s.project ?? '', source: s.source,
     client_app_id: s.clientAppId, thread_id: input.threadId, session_id: s.session.sessionId,
+    agent_session_id: s.agentAttribution?.agentSessionId, on_behalf_of: s.agentAttribution?.onBehalfOf,
     input_preview: s.fullInput.slice(0, 200), input: sanitizeUserInput(s.fullInput),
     dispatch: { target_config: s.route?.target_config ?? {}, is_continue: s.session.isContinue, route_key: s.routeKey ?? undefined, route_name: s.route?.name },
     error: input.error, metadata: s.metadata, callback_url: s.callbackUrl, created_at: deps.now(), updated_at: deps.now(),
@@ -150,6 +162,7 @@ export async function launchJobRecord(s: LaunchSpec, deps: LaunchRuntimeDeps): P
     job_id: randomUUID(), request_id: s.requestId, status: 'queued',
     target: s.target, profile: s.profileName, project: s.project ?? '', source: s.source,
     client_app_id: s.clientAppId, thread_id: threadId, session_id: s.session.sessionId,
+    agent_session_id: s.agentAttribution?.agentSessionId, on_behalf_of: s.agentAttribution?.onBehalfOf,
     input_preview: s.fullInput.slice(0, 200),
     input: initial ? initial.dispatchInput : safeUserInput,
     dispatch: baseDispatch as Job['dispatch'],

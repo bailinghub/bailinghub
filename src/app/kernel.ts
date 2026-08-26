@@ -82,6 +82,7 @@ function kernelLaunchRequestV1(spec: LaunchSpec): KernelLaunchRequestV1 {
     threadScope: spec.threadScope,
     principalId: spec.principalId,
     channel: spec.channel,
+    ...(spec.agentAttribution ? { agentAttribution: Object.freeze({ ...spec.agentAttribution }) } : {}),
   });
 }
 
@@ -308,6 +309,7 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     cfg,
     configStore: composition.cfgStore,
     stateStore: composition.store,
+    isPaused,
     kbService: composition.kbService,
     toolIndex: composition.toolIndex,
     identityProvider: input.identityProvider,

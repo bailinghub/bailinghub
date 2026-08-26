@@ -40,11 +40,11 @@ export class ClientRepository {
 
   private async write(c: Omit<Client, 'token'>, token: string, updateExisting: boolean): Promise<void> {
     await this.pool.query(
-      'INSERT INTO bz_clients (app_id,name,token,allowed_routes,allowed_channels,rate_limit_per_min,budget,enabled,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ' +
+      'INSERT INTO bz_clients (app_id,name,token,agent_authorize_url,allowed_routes,allowed_channels,rate_limit_per_min,budget,enabled,description,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ' +
         (updateExisting
-          ? 'ON DUPLICATE KEY UPDATE name=VALUES(name),token=VALUES(token),allowed_routes=VALUES(allowed_routes),allowed_channels=VALUES(allowed_channels),rate_limit_per_min=VALUES(rate_limit_per_min),budget=VALUES(budget),enabled=VALUES(enabled),description=VALUES(description),updated_at=VALUES(updated_at)'
+          ? 'ON DUPLICATE KEY UPDATE name=VALUES(name),token=VALUES(token),agent_authorize_url=VALUES(agent_authorize_url),allowed_routes=VALUES(allowed_routes),allowed_channels=VALUES(allowed_channels),rate_limit_per_min=VALUES(rate_limit_per_min),budget=VALUES(budget),enabled=VALUES(enabled),description=VALUES(description),updated_at=VALUES(updated_at)'
           : ''),
-      [c.app_id, c.name, token, JSON.stringify(c.allowed_routes ?? []), JSON.stringify(c.allowed_channels ?? []), c.rate_limit_per_min ?? 60,
+      [c.app_id, c.name, token, c.agent_authorize_url ?? null, JSON.stringify(c.allowed_routes ?? []), JSON.stringify(c.allowed_channels ?? []), c.rate_limit_per_min ?? 60,
        c.budget && Object.keys(c.budget).length ? JSON.stringify(c.budget) : null,
        c.enabled ? 1 : 0, c.description ?? null, dt(), dt()],
     );

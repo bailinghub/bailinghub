@@ -1,7 +1,7 @@
 // OSS 默认私有 HTTP 分发：这里才绑定 app/runtime 单组织单例和默认业务 handler。
 // 自定义部署应 import private.ts 的 handlePrivateHttpFor(deps) 并传入自己的 deps。
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { cfg, cfgStore, kbService, store, targetRegistry, toolIndex } from '../app/runtime';
+import { cfg, cfgStore, isPaused, kbService, store, targetRegistry, toolIndex } from '../app/runtime';
 import { handleAdminApi } from './admin-default';
 import { handleApprovalDecision } from './approvals-default';
 import { handleExecutorClaim, handleExecutorHeartbeat, handleExecutorResult } from './executor-default';
@@ -16,6 +16,7 @@ export function defaultPrivateHttpDeps(): PrivateHttpDeps {
     cfg,
     configStore: cfgStore,
     stateStore: store,
+    isPaused,
     kbService,
     toolIndex,
     targetRegistry,

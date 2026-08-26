@@ -1,7 +1,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
+import { findPublicContentDenylistMatches, loadPrivateExactTextDenylist } from './public-content-denylist.mjs';
+
 const findings = [];
+const privateExactTextDenylist = loadPrivateExactTextDenylist();
 const requiredRepoFiles = [
   'README.md',
   'LICENSE',
@@ -32,7 +35,7 @@ const requiredRepoFiles = [
   'docs/RELEASE_NOTES_v0.3.2.md',
   'docs/RELEASE_NOTES_v0.3.3.md',
   'docs/RELEASE_NOTES_v0.3.4.md',
-  'docs/RELEASE_NOTES_v0.4.0.md',
+  'docs/RELEASE_NOTES_v0.5.0.md',
   'docs/CHANGELOG.md',
   'docs/CLIENT_API.md',
   'config.example.json',
@@ -201,7 +204,9 @@ function assertSdkMetadata() {
     'sdk/node/src/index.mjs',
     'sdk/python/bailing_connect/__init__.py',
     'sdk/php/src/HubClient.php',
+    'sdk/php/src/AgentAuth.php',
     'sdk/php7/src/HubClient.php',
+    'sdk/php7/src/AgentAuth.php',
     'sdk/java/src/main/java/com/bailing/connect/BailingConnect.java',
     'sdk/go/bailingconnect/connect.go',
     'sdk/dotnet/Bailing.Connect/BailingConnect.cs',
@@ -247,7 +252,6 @@ function packageFiles() {
   return dryRunPackageManifest.files.map((file) => String(file.path ?? ''));
 }
 
-const rx = (parts, flags = '') => new RegExp(parts.join(''), flags);
 
 assertPackageMetadata();
 assertRepoEntrance();
@@ -294,15 +298,6 @@ try {
   }
 
   const textFiles = files.filter((file) => /\.(?:md|ts|tsx|js|mjs|json|sql|php|py|vue|html|css|sh|yml|yaml|txt)$/.test(file));
-  const banned = [
-    { name: 'local machine path', re: rx(['/Users/', 'macmini', '|', '项目', '\\/www']) },
-    { name: 'known leaked password', re: rx(['Nie', '0712', '\\.\\.']) },
-    { name: 'known managed MySQL host', re: rx(['sh-', 'cynosdb', 'mysql', '-[A-Za-z0-9.-]+', 'tencent', 'cdb\\.com']) },
-    { name: 'known internal git token', re: rx(['pt', '-[A-Za-z0-9_-]{20,}']) },
-    { name: 'GitHub PAT', re: rx(['github', '_pat', '_[A-Za-z0-9_]+']) },
-    { name: 'old official domain', re: rx(['bailing\\.', 'bnopen', '\\.cn', '|', 'bnopen', '\\.cn']) },
-    { name: 'legacy internal bucket example', re: /bainiancloud-\d+/ },
-  ];
   const forbiddenPublicWording = new RegExp([
     '商业' + '版',
     '商业' + '扩展',
@@ -327,8 +322,8 @@ try {
     } catch {
       continue;
     }
-    for (const rule of banned) {
-      if (rule.re.test(text)) findings.push(`${file}: ${rule.name}`);
+    for (const match of findPublicContentDenylistMatches(text, privateExactTextDenylist)) {
+      findings.push(`${file}: ${match}`);
     }
     if (file !== 'LICENSE' && forbiddenPublicWording.test(text)) {
       findings.push(`${file}: use neutral public wording for private extension boundaries`);

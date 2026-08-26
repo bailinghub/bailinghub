@@ -33,10 +33,10 @@ export class MysqlStore implements RuntimeStateStore {
 
   async createJob(job: Job): Promise<void> {
     await this.pool.query(
-      'INSERT INTO bz_jobs (job_id,request_id,status,target,profile,project,source,client_app_id,thread_id,session_id,input_preview,input,dispatch,attempts,run_after,claimed_at,lease_until,report,result,raw_result,`usage`,error,metadata,callback_url,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO bz_jobs (job_id,request_id,status,target,profile,project,source,client_app_id,agent_session_id,on_behalf_of,thread_id,session_id,input_preview,input,dispatch,attempts,run_after,claimed_at,lease_until,report,result,raw_result,`usage`,error,metadata,callback_url,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       [
         job.job_id, job.request_id, job.status, job.target ?? null, job.profile, job.project, job.source,
-        job.client_app_id ?? null, job.thread_id ?? null,
+        job.client_app_id ?? null, job.agent_session_id ?? null, job.on_behalf_of ?? null, job.thread_id ?? null,
         job.session_id ?? null, job.input_preview, job.input ?? null, json(job.dispatch), job.attempts ?? 0,
         job.run_after ? dt(job.run_after) : null, job.claimed_at ? dt(job.claimed_at) : null, job.lease_until ? dt(job.lease_until) : null,
         json(job.report), json(job.result), job.raw_result ?? null,

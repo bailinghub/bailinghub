@@ -10,6 +10,7 @@ import { parseApprovalDecisionEnvelope } from '../core/contracts/approval-decisi
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import { isAgentToolInvocationJob } from '../app/agent-tool-job';
 
 export interface ApprovalDecisionDeps {
   cfg: AppConfig;
@@ -111,7 +112,9 @@ export async function handleApprovalDecisionFor(deps: ApprovalDecisionDeps, req:
   let rerun = false;
   if (decision.decision === 'approved') {
     const latest = await deps.stateStore.getJob(approval.job_id);
-    if (latest && (latest.status === 'done' || latest.status === 'error' || latest.status === 'rejected')) {
+    // Agent 直调没有中枢模型这一层；批准后由原本地 Agent 持 invocation_id
+    // 续执行冻结快照。绝不得把 synthetic Job 重排进 LLM 调度器。
+    if (latest && !isAgentToolInvocationJob(latest) && (latest.status === 'done' || latest.status === 'error' || latest.status === 'rejected')) {
       await deps.engineRuntime.requeueForRerun(latest, decision.approver, `approval_${approvalId}`);
       rerun = true;
     }

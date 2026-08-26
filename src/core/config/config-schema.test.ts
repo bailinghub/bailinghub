@@ -100,6 +100,12 @@ test('Config JSON Schemas: 路由、目标和工具治理关键契约对齐', ()
   assert.equal(common.$defs.routeToolsConfig.properties.max_calls.maximum, 50);
   assert.deepEqual(common.$defs.routeToolsConfig.properties.builtin.properties.send_message.required, ['channels']);
   assert.deepEqual(common.$defs.routeToolsConfig.properties.approval.required, ['type']);
+  assert.deepEqual(common.$defs.routeToolsConfig.properties.agent_direct.required, ['enabled']);
+  assert.equal(common.$defs.routeToolsConfig.properties.agent_direct.additionalProperties, false);
+  assert.deepEqual(common.$defs.routeToolsConfig.properties.agent_direct.not.required, ['force_approval_tools', 'unattended_write_tools']);
+  assert.equal(common.$defs.routeToolsConfig.properties.agent_direct.properties.write_tools.items.pattern, '^[A-Za-z_][A-Za-z0-9_]{0,63}$');
+  assert.equal(common.$defs.routeToolsConfig.properties.agent_direct.properties.force_approval_tools.items.pattern, '^[A-Za-z_][A-Za-z0-9_]{0,63}$');
+  assert.equal(common.$defs.routeToolsConfig.properties.agent_direct.properties.unattended_write_tools.deprecated, true);
 });
 
 test('Config JSON Schemas: 接入方、渠道、存储桶和工具源契约对齐', () => {

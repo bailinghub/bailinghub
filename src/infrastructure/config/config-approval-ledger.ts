@@ -71,4 +71,20 @@ export class ApprovalLedger {
     const [rows] = await this.pool.query('SELECT * FROM bz_tool_approvals WHERE job_id=? ORDER BY id', [jobId]);
     return (rows as any[]).map(rowToolApproval);
   }
+
+  async forJobs(jobIds: string[]): Promise<Record<string, ToolApproval[]>> {
+    const ids = [...new Set(jobIds.map(String).filter(Boolean))].slice(0, 100);
+    const grouped: Record<string, ToolApproval[]> = Object.fromEntries(ids.map((id) => [id, []]));
+    if (!ids.length) return grouped;
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await this.pool.query(
+      `SELECT * FROM bz_tool_approvals WHERE job_id IN (${placeholders}) ORDER BY id`,
+      ids,
+    );
+    for (const row of rows as any[]) {
+      const jobId = String(row.job_id);
+      if (grouped[jobId]) grouped[jobId]!.push(rowToolApproval(row));
+    }
+    return grouped;
+  }
 }

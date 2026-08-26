@@ -1,7 +1,7 @@
 // 覆盖：trace 解释层。audit 是事实账本，本模块负责把散装事件稳定映射为阶段、级别、摘要和统计。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildJobTrace, completeTraceEntry, normalizeTraceEvent, traceSeverityOf, traceStageOf } from './trace-runtime';
+import { buildJobTrace, completeTraceEntry, normalizeTraceEvent, traceSeverityOf, traceStageOf, traceSummaryOf } from './trace-runtime';
 import type { Job } from '../contracts/types';
 
 function job(extra: Partial<Job> = {}): Job {
@@ -135,6 +135,23 @@ test('traceSeverityOf: 错误、降级、跳过和正常事件分级', () => {
   assert.equal(traceSeverityOf('delivery_skipped'), 'warning');
   assert.equal(traceSeverityOf('retry_scheduled'), 'warning');
   assert.equal(traceSeverityOf('tool_result', { ok: true, status: 200 }), 'info');
+  assert.equal(traceSeverityOf('agent_tool_invocation_state', { state: 'in_progress', ok: false }), 'info');
+  assert.equal(traceSeverityOf('agent_tool_invocation_state', { state: 'awaiting_approval', ok: false }), 'warning');
+  assert.equal(traceSeverityOf('agent_tool_invocation_state', { state: 'reconciliation_required', ok: false }), 'error');
+});
+
+test('Agent Client 生命周期与直调工具事件使用明确的展示阶段和标题', () => {
+  assert.equal(traceStageOf('agent_client_run_started'), 'launch');
+  assert.equal(traceStageOf('agent_client_turn_context_ready'), 'context');
+  assert.equal(traceStageOf('agent_tool_invocation_created'), 'tool');
+  assert.equal(traceStageOf('agent_client_run_completed'), 'delivery');
+  assert.equal(completeTraceEntry({
+    ts: '2026-08-26T00:00:00.000Z', job_id: 'run', request_id: 'turn',
+    event: 'agent_client_turn_context_ready', detail: { route: 'tenant-agent', active_tools: 3 },
+  }).title, '运行上下文已就绪');
+  assert.equal(traceSummaryOf('agent_tool_invocation_state', {
+    tool: 'staff_edit', state: 'executed', business_status: 200,
+  }), 'staff_edit · executed · business=200');
 });
 
 test('completeTraceEntry + normalizeTraceEvent: 写入时固化结构化 trace 字段并保留对象 detail', () => {

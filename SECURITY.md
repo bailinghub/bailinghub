@@ -28,3 +28,14 @@ We aim to acknowledge reports within 3 business days.
 - Docker Compose intentionally has no default `BAILING_TOKEN`. Generate one with `openssl rand -hex 32`, persist it in a local `.env` or secret manager, and rotate it if it may have been exposed.
 - Business tools must verify `X-Bailing-Signature` and must perform their own authorization using `X-Bailing-On-Behalf-Of`.
 - High-risk tools should use `risk=high`, `x-agent-capability.approval.required`, or parameter-level confirmation rules.
+
+## Private release denylist
+
+Public source audits include generic checks for private keys, personal access tokens, and local user paths. Deployment-specific exact text must not be added to repository scripts, tests, comments, or examples.
+
+Maintainers can supply deployment-specific markers at audit time through either:
+
+- `BAILING_PUBLIC_DENYLIST_JSON`: a JSON array of exact strings, intended for a protected CI secret;
+- `BAILING_PUBLIC_DENYLIST_FILE`: an absolute path to a JSON array stored outside the repository, preferred for local release rehearsals.
+
+For example, a protected test environment may set `BAILING_PUBLIC_DENYLIST_JSON='["DEPLOYMENT_ONLY_MARKER_ALPHA_42"]'`. Audit failures report only the marker index and never echo its value. The external file path is rejected when it resolves inside the repository.

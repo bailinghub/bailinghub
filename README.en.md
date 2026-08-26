@@ -217,6 +217,9 @@ export default buildOpenApiSpec({
 - [Docker Demo](docs/DEMO.en.md)
 - [Independent Validation Task](docs/INDEPENDENT_VALIDATION.en.md)
 - [HTTP Contract](docs/CONTRACT.en.md)
+- [Agent Client v1 Integration Guide](docs/AGENT_CLIENT_QUICKSTART.en.md)
+- [Agent Auth v1](docs/AGENT_AUTH_API.en.md)
+- [Agent Client Runtime v1](docs/AGENT_CLIENT_RUNTIME_API.en.md)
 - [Kernel Host API v1](docs/KERNEL_HOST_API.en.md)
 - [Business Tools and Governance](docs/TOOLS.en.md)
 - [SDK Guide](docs/SDK.en.md)
@@ -229,7 +232,7 @@ export default buildOpenApiSpec({
 - [Tool Governance](docs/TOOLS_DESIGN.en.md)
 - [AI-Friendly Tool Design](docs/AI_FRIENDLY_TOOLS.en.md)
 - [Third-Party Integration](docs/INTEGRATION.en.md)
-- [Latest Release Notes](docs/RELEASE_NOTES_v0.4.0.en.md)
+- [Latest Release Notes](docs/RELEASE_NOTES_v0.5.0.en.md)
 - [v0.1.7 Release Notes](docs/RELEASE_NOTES_v0.1.7.en.md)
 - [v0.1.6 Release Notes](docs/RELEASE_NOTES_v0.1.6.en.md)
 - [v0.1.5 Release Notes](docs/RELEASE_NOTES_v0.1.5.en.md)
@@ -251,7 +254,7 @@ Useful reports include the business context, expected behavior, a minimal reprod
 
 We welcome independent distributions, industry adaptations, executors, connectors, and independent ACC implementations. Community projects may keep their own names, directions, and governance. Reusable improvements are welcome upstream, and strong independent projects may request a future listing on the official ecosystem surface. A listing is not certification, a service warranty, or a transfer of maintenance responsibility. See [Community Derivatives And Ecosystem Collaboration](docs/ECOSYSTEM.en.md).
 
-DeepSeek Harness users can install the independent community plugin [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin) to submit and track governed tasks from the local Harness Web UI against a business route already connected to BailingHub. The plugin reuses the public Client API and the independent MCP Server, does not enter the BailingHub Core distribution, and does not imply DeepSeek development, certification, or endorsement.
+DeepSeek Harness users can install the independent community plugin [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin) so the local Agent performs reasoning, planning, and multi-step tool selection while BailingHub continues to own trusted business identity, capability filtering, approvals, execution, and audit. The plugin consumes the host-neutral `bailinghub-mcp-server/sdk`, does not enter the BailingHub Core distribution, and does not imply DeepSeek development, certification, or endorsement. See the [Agent Client v1 Integration Guide](docs/AGENT_CLIENT_QUICKSTART.en.md) for deployer, business-developer, and end-user configuration ownership.
 
 ## Open-Source Foundations and Third-Party Software
 

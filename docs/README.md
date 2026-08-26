@@ -14,6 +14,12 @@
 | [DEMO.en.md](DEMO.en.md) | English Docker demo walkthrough. |
 | [INDEPENDENT_VALIDATION.md](INDEPENDENT_VALIDATION.md) | 陌生开发者仅凭公开资料验证 Docker demo 的任务卡、通过标准与反馈方式。 |
 | [INDEPENDENT_VALIDATION.en.md](INDEPENDENT_VALIDATION.en.md) | English independent validation task, pass criteria, and report path. |
+| [AGENT_CLIENT_QUICKSTART.md](AGENT_CLIENT_QUICKSTART.md) | 智能体客户端从 Core、业务授权页、通用 SDK 到本地宿主插件的完整接入路径。 |
+| [AGENT_CLIENT_QUICKSTART.en.md](AGENT_CLIENT_QUICKSTART.en.md) | English end-to-end Agent Client integration guide and configuration ownership. |
+| [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Agent Auth v1：业务登录态绑定、PKCE、Token 交换与会话撤销的语言无关契约。 |
+| [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | English Agent Auth v1 protocol and trusted business-identity boundary. |
+| [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Agent Client Runtime v1：工作区、turn、能力搜索、工具执行与完成回传。 |
+| [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | English Agent Client Runtime v1 contract. |
 | [user-guide/README.md](user-guide/README.md) | 使用者/产品经理视角：从业务需求出发，理解为什么需要中枢、后台菜单怎么配、配完交给开发者什么。 |
 | [CONTRACT.md](CONTRACT.md) | 业务系统和中枢之间的稳定网络契约，接入前应先读。 |
 | [CONTRACT.en.md](CONTRACT.en.md) | English HTTP and wire contract summary. |
@@ -112,8 +118,8 @@
 | [RELEASE_NOTES_v0.3.3.en.md](RELEASE_NOTES_v0.3.3.en.md) | English `v0.3.3` npm publication provenance-metadata correction. |
 | [RELEASE_NOTES_v0.3.4.md](RELEASE_NOTES_v0.3.4.md) | `v0.3.4` 匿名预览与可信业务身份引导说明。 |
 | [RELEASE_NOTES_v0.3.4.en.md](RELEASE_NOTES_v0.3.4.en.md) | English `v0.3.4` anonymous-preview and trusted-business-identity guidance. |
-| [RELEASE_NOTES_v0.4.0.md](RELEASE_NOTES_v0.4.0.md) | `v0.4.0` 原生对话表单与聊天入口控制说明。 |
-| [RELEASE_NOTES_v0.4.0.en.md](RELEASE_NOTES_v0.4.0.en.md) | English `v0.4.0` native conversational forms and chat-entry controls. |
+| [RELEASE_NOTES_v0.5.0.md](RELEASE_NOTES_v0.5.0.md) | `v0.5.0` 可撤销本地 Agent 授权与受治理本地编排说明。 |
+| [RELEASE_NOTES_v0.5.0.en.md](RELEASE_NOTES_v0.5.0.en.md) | English `v0.5.0` revocable local-Agent authorization and governed local planning release notes. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |

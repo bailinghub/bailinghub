@@ -375,6 +375,23 @@
         <el-input v-model="mem.summary_model" placeholder="留空=用本路由凭证默认模型" class="mono" />
       </el-form-item>
       <el-form-item>
+        <template #label>本地 Agent Runtime <HelpTip title="本地 Agent Runtime">
+          <p>开启后，已通过业务网页授权的本地 Agent 可以读取本路由的安全运行档、会话记忆和按需工具定义，并在本地完成编排。</p>
+          <p>它仍复用 <code>tools.agent_direct</code> 的工具授权与审批治理；这里只配置本地编排补充指令和每轮主动披露数量，不会返回模型凭证或工具源密钥。</p>
+        </HelpTip></template>
+        <el-switch v-model="agentClient.enabled" @change="agentClient.configured = true" />
+      </el-form-item>
+      <template v-if="agentClient.enabled">
+        <el-form-item label="本地编排补充指令">
+          <el-input v-model="agentClient.instructions" type="textarea" :rows="4" maxlength="20000" show-word-limit
+            placeholder="可选：仅给本地 Agent 的补充规则；路由系统提示词会安全抽取并一并下发" @input="agentClient.configured = true" />
+        </el-form-item>
+        <el-form-item label="每轮主动工具数">
+          <el-input-number v-model="agentClient.active_tool_limit" :min="1" :max="12" @change="agentClient.configured = true" />
+          <div class="muted hint">每轮只返回最相关的完整 typed tools；其余授权能力可通过搜索按需发现，避免全量 schema 撑大上下文。</div>
+        </el-form-item>
+      </template>
+      <el-form-item>
         <template #label>成本预算闸 <HelpTip title="成本预算闸">
           <p>按本路由在指定窗口内的历史用量做入口硬限。达到成本或 token 上限后，新任务会直接记为 <code>rejected</code>，不会再进入模型、执行器或工具链路。</p>
           <p>这里是场景级预算；接入方页还可以配置调用方级预算。两边任一命中都会拒绝。</p>
@@ -577,6 +594,65 @@
           </el-select>
         </el-form-item>
       </div>
+      <template v-if="agentClient.enabled || agentDirect.configured || agentDirect.enabled">
+      <div class="form-section-title agent-direct-title">
+        <span>本地 Agent 直连工具</span>
+        <HelpTip title="本地 Agent 直连工具">
+          <p>仅用于已通过业务身份授权的本地 Agent Runtime。本地 Agent 负责编排，中枢仍在每次调用时执行路由、主体、ACC 风险与审批治理。</p>
+          <p>开启后只读工具按上方 scope 白名单自动可见；写工具还必须在下方按精确 <code>operationId</code> 再授权，不接受 <code>*</code>。</p>
+        </HelpTip>
+      </div>
+      <el-form-item label="允许本地 Agent 直调">
+        <el-switch v-model="agentDirect.enabled" @change="agentDirect.configured = true" />
+      </el-form-item>
+      <el-alert v-if="agentClient.enabled && !agentDirect.enabled" class="agent-direct-alert" type="warning" :closable="false" show-icon
+        title="本地 Agent Runtime 已开启，但直连工具面未开启；本地 Agent 不会获得这条路由的业务工具。" />
+      <template v-if="agentDirect.enabled">
+        <el-alert class="agent-direct-alert" type="info" :closable="false" show-icon
+          title="这里只放行本地 Agent 工具面，不会把工具源密钥或模型凭证下发到本地。" />
+        <el-alert v-if="form.permission === 'readonly'" class="agent-direct-alert" type="warning" :closable="false" show-icon
+          title="当前路由权限档为只读；即使列出写 operationId，运行时也不会暴露写工具。" />
+        <div v-if="agentDirectToolOptions.length" class="agent-direct-catalog-summary">
+          已从当前工具源读取 {{ agentDirectToolOptions.length }} 个 operationId：{{ agentDirectReadonlyCount }} 个只读自动继承，{{ agentDirectWriteOptions.length }} 个写操作可精确授权。
+        </div>
+        <el-form-item>
+          <template #label>允许的写操作 <HelpTip title="本地 Agent 写操作白名单">
+            <p>只有精确列入的写工具才会暴露给本地 Agent。候选项来自已选工具源的 <code>/tools</code> 编译结果，并且必须已被上方 scope 放行。</p>
+            <p>可手动填写尚未拉取到的 operationId，但不允许 <code>*</code> 或其他通配符。</p>
+          </HelpTip></template>
+          <el-select v-model="agentDirect.write_tools" multiple filterable allow-create default-first-option
+            style="width: 100%" placeholder="选择写操作，或手填精确 operationId" @change="onAgentDirectNamesChange('write_tools')">
+            <el-option v-for="tool in agentDirectWriteOptions" :key="tool.name" :value="tool.name" :label="tool.name">
+              <div class="agent-tool-option">
+                <code>{{ tool.name }}</code>
+                <span class="agent-tool-option__meta">{{ tool.providers.join(' / ') }} · {{ tool.scope }}</span>
+                <el-tag size="small" type="warning" effect="plain">写入</el-tag>
+                <el-tag size="small" :type="agentToolRiskType(tool.risk)" effect="plain">{{ tool.risk }} 风险</el-tag>
+                <el-tag v-if="tool.confirm_required || tool.risk === 'high'" size="small" type="danger" effect="plain">ACC 已需审批</el-tag>
+              </div>
+            </el-option>
+          </el-select>
+          <div class="field-hint">只读工具不需逐个列出；开启直调后会按工具源 scope 与业务主体权限自动暴露。</div>
+        </el-form-item>
+        <el-form-item>
+          <template #label>额外强制审批 <HelpTip title="额外强制审批">
+            <p>默认完全继承工具 ACC 声明的风险和审批要求。只在路由希望比 ACC 更严格时，才把已允许的写 operationId 加入这个子集。</p>
+            <p>这个列表只能从“允许的写操作”中选，不会放宽 ACC 原有治理。</p>
+          </HelpTip></template>
+          <el-select v-model="agentDirect.force_approval_tools" multiple filterable allow-create default-first-option
+            style="width: 100%" placeholder="留空 = 完全继承 ACC 审批声明" @change="onAgentDirectNamesChange('force_approval_tools')">
+            <el-option v-for="tool in agentDirectApprovalOptions" :key="tool.name" :value="tool.name" :label="tool.name">
+              <div class="agent-tool-option">
+                <code>{{ tool.name }}</code>
+                <span v-if="tool.providers.length" class="agent-tool-option__meta">{{ tool.providers.join(' / ') }}<template v-if="tool.scope"> · {{ tool.scope }}</template></span>
+                <span v-else class="agent-tool-option__meta">手动 operationId</span>
+                <el-tag size="small" :type="agentToolRiskType(tool.risk)" effect="plain">{{ tool.risk }} 风险</el-tag>
+              </div>
+            </el-option>
+          </el-select>
+        </el-form-item>
+      </template>
+      </template>
       <template v-if="tl.sources.length">
         <el-form-item label="单任务业务工具调用上限">
           <el-input-number v-model="tl.max_calls" :min="1" :max="50" />
@@ -844,14 +920,28 @@ interface ToolSourceForm {
   allow: string[];
   subject_field: string;
   scopeOptions: Array<{ scope: string; names: string[] }>;
+  toolOptions: ProviderToolOption[];
   scopesLoading: boolean;
   rest: Record<string, unknown>;
 }
+interface ProviderToolOption {
+  name: string;
+  scope: string;
+  readonly: boolean;
+  risk: string;
+  confirm_required: boolean;
+  provider: string;
+}
+interface AgentDirectToolOption extends Omit<ProviderToolOption, 'provider'> {
+  providers: string[];
+  allowed: boolean;
+}
 let toolSourceSeq = 0;
 function newToolSource(over: Partial<ToolSourceForm> = {}): ToolSourceForm {
-  return { form_key: `tool-source-${++toolSourceSeq}`, provider: '', allow: [], subject_field: '', scopeOptions: [], scopesLoading: false, rest: {}, ...over };
+  return { form_key: `tool-source-${++toolSourceSeq}`, provider: '', allow: [], subject_field: '', scopeOptions: [], toolOptions: [], scopesLoading: false, rest: {}, ...over };
 }
 const tl = reactive({ sources: [] as ToolSourceForm[], max_calls: 5, send_channels: [] as string[] });
+const agentDirect = reactive({ configured: false, enabled: false, write_tools: [] as string[], force_approval_tools: [] as string[] });
 const ap = reactive({ type: '', url: '' });
 const au = reactive({
   enabled: false, auto: false, anonymous: false, priority: 0,
@@ -859,8 +949,9 @@ const au = reactive({
   tenants: [] as string[], roles: [] as string[], principals: [] as string[], audiences: [] as string[],
 });
 const mem = reactive({ recent_messages: 12, recent_budget_chars: 3500, summary_enabled: false, summary_trigger_chars: 4000, summary_keep_recent: 6, summary_model: '' });
+const agentClient = reactive({ configured: false, inherited: false, enabled: false, instructions: '', active_tool_limit: 8 });
 const budget = reactive<{ enabled: boolean; window: 'hour' | 'day' | 'month'; hard_cost_usd?: number; hard_tokens?: number }>({ enabled: false, window: 'day', hard_cost_usd: undefined, hard_tokens: undefined });
-let llmRest: Record<string, unknown> = {}, inputRest: Record<string, unknown> = {}, knRest: Record<string, unknown> = {}, dvRest: Record<string, unknown> = {}, rtRest: Record<string, unknown> = {}, tlRest: Record<string, unknown> = {}, builtinRest: Record<string, unknown> = {}, sendRest: Record<string, unknown> = {}, apRest: Record<string, unknown> = {}, audienceRest: Record<string, unknown> = {}, memRest: Record<string, unknown> = {}, budgetRest: Record<string, unknown> = {};
+let llmRest: Record<string, unknown> = {}, inputRest: Record<string, unknown> = {}, knRest: Record<string, unknown> = {}, dvRest: Record<string, unknown> = {}, rtRest: Record<string, unknown> = {}, tlRest: Record<string, unknown> = {}, agentDirectRest: Record<string, unknown> = {}, builtinRest: Record<string, unknown> = {}, sendRest: Record<string, unknown> = {}, apRest: Record<string, unknown> = {}, audienceRest: Record<string, unknown> = {}, memRest: Record<string, unknown> = {}, agentClientRest: Record<string, unknown> = {}, budgetRest: Record<string, unknown> = {};
 
 // 会话策略只对 /run API 触发生效；聊天入口与渠道入站走自己的 scope 自动续聊、不读此项。
 // 算出当前编辑路由被哪些入口/渠道使用，据此提示用户「本项在这条路由下到底有没有用」。
@@ -877,6 +968,11 @@ function splitKnown(obj: unknown, keys: string[]): [Record<string, unknown>, Rec
   const known: Record<string, unknown> = {}, rest: Record<string, unknown> = {};
   for (const [k, v] of Object.entries((obj ?? {}) as Record<string, unknown>)) (keys.includes(k) ? known : rest)[k] = v;
   return [known, rest];
+}
+function stringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean);
+  if (typeof value === 'string' && value) return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return [];
 }
 
 // ---- 关联注册表的下拉数据（无权限时静默退化为手输——下拉都带 allow-create） ----
@@ -958,12 +1054,23 @@ const notifyChannels = computed(() => notifyTargetsRaw.value.map((t) => {
 }));
 
 async function loadScopes(source: ToolSourceForm): Promise<void> {
-  source.scopesLoading = true; source.scopeOptions = [];
+  source.scopesLoading = true; source.scopeOptions = []; source.toolOptions = [];
   try {
-    const d = await api<{ tools: Array<{ name: string; scope: string }> }>('/admin/api/tool-providers/' + encodeURIComponent(source.provider) + '/tools');
+    const d = await api<{ tools: Array<{ name: string; scope: string; readonly: boolean; risk: string; confirm_required: boolean }> }>('/admin/api/tool-providers/' + encodeURIComponent(source.provider) + '/tools');
     const m = new Map<string, string[]>();
-    for (const t of d.tools) { if (!m.has(t.scope)) m.set(t.scope, []); m.get(t.scope)!.push(t.name); }
+    for (const t of d.tools) {
+      if (!m.has(t.scope)) m.set(t.scope, []);
+      m.get(t.scope)!.push(t.name);
+    }
     source.scopeOptions = Array.from(m, ([scope, names]) => ({ scope, names }));
+    source.toolOptions = d.tools.map((tool) => ({
+      name: tool.name,
+      scope: tool.scope,
+      readonly: tool.readonly === true,
+      risk: String(tool.risk || 'unknown'),
+      confirm_required: tool.confirm_required === true,
+      provider: source.provider,
+    }));
   } catch { /* 无权限/源异常 → 手输 scope（allow-create） */ }
   finally { source.scopesLoading = false; }
 }
@@ -973,6 +1080,80 @@ function onProviderChange(source: ToolSourceForm): void {
 }
 function addToolSource(): void { tl.sources.push(newToolSource()); }
 function removeToolSource(index: number): void { tl.sources.splice(index, 1); }
+
+const agentDirectToolOptions = computed<AgentDirectToolOption[]>(() => {
+  const merged = new Map<string, AgentDirectToolOption>();
+  for (const source of tl.sources) {
+    for (const tool of source.toolOptions) {
+      const allowed = source.allow.includes('*') || source.allow.includes(tool.scope);
+      const current = merged.get(tool.name);
+      if (current) {
+        if (!current.providers.includes(tool.provider)) current.providers.push(tool.provider);
+        current.allowed ||= allowed;
+        current.readonly &&= tool.readonly;
+        current.confirm_required ||= tool.confirm_required;
+        if (['unknown', 'low', 'medium', 'high'].indexOf(tool.risk) > ['unknown', 'low', 'medium', 'high'].indexOf(current.risk)) current.risk = tool.risk;
+        continue;
+      }
+      merged.set(tool.name, { ...tool, providers: [tool.provider], allowed });
+    }
+  }
+  return Array.from(merged.values()).sort((a, b) => a.name.localeCompare(b.name));
+});
+const agentDirectWriteOptions = computed(() => agentDirectToolOptions.value.filter((tool) => !tool.readonly && tool.allowed));
+const agentDirectReadonlyCount = computed(() => agentDirectToolOptions.value.filter((tool) => tool.readonly && tool.allowed).length);
+const agentDirectApprovalOptions = computed<AgentDirectToolOption[]>(() => {
+  const catalog = new Map(agentDirectToolOptions.value.map((tool) => [tool.name, tool]));
+  return agentDirect.write_tools.map((name) => catalog.get(name) ?? {
+    name,
+    scope: '',
+    readonly: false,
+    risk: 'unknown',
+    confirm_required: false,
+    providers: [],
+    allowed: false,
+  });
+});
+
+const OPERATION_ID_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+type AgentDirectListField = 'write_tools' | 'force_approval_tools';
+function onAgentDirectNamesChange(field: AgentDirectListField): void {
+  agentDirect.configured = true;
+  const values = agentDirect[field].map((value) => String(value).trim()).filter(Boolean);
+  const invalid = values.filter((value) => !OPERATION_ID_RE.test(value));
+  if (invalid.length) {
+    agentDirect[field] = [...new Set(values.filter((value) => OPERATION_ID_RE.test(value)))];
+    ElMessage.warning(invalid.includes('*') ? '本地 Agent 工具不允许 *，请选择或填写精确 operationId' : 'operationId 只允许字母、数字和下划线，且以字母或下划线开头');
+  } else {
+    agentDirect[field] = [...new Set(values)];
+  }
+  if (field === 'write_tools') {
+    const writes = new Set(agentDirect.write_tools);
+    const removed = agentDirect.force_approval_tools.filter((name) => !writes.has(name));
+    if (removed.length) {
+      agentDirect.force_approval_tools = agentDirect.force_approval_tools.filter((name) => writes.has(name));
+      ElMessage.info('已同步移除不再允许写入的强制审批项');
+    }
+  } else {
+    const writes = new Set(agentDirect.write_tools);
+    const outside = agentDirect.force_approval_tools.filter((name) => !writes.has(name));
+    if (outside.length) {
+      agentDirect.force_approval_tools = agentDirect.force_approval_tools.filter((name) => writes.has(name));
+      ElMessage.warning('额外强制审批只能选已允许的写 operationId');
+    }
+  }
+}
+function agentToolRiskType(risk: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (risk === 'high') return 'danger';
+  if (risk === 'medium') return 'warning';
+  if (risk === 'low') return 'success';
+  return 'info';
+}
+function validateAgentDirectNames(field: AgentDirectListField, label: string): string[] {
+  const names = agentDirect[field].map((value) => String(value).trim()).filter(Boolean);
+  if (names.some((name) => !OPERATION_ID_RE.test(name))) throw new Error(`${label}只允许精确 operationId，不允许 * 或其他通配符`);
+  return [...new Set(names)];
+}
 
 // 调度目标插座：下拉来自注册表（无权限时退化为唯一内置目标）
 const targetOptions = ref<Array<{ name: string; kind: string; needs_project: boolean; enabled: boolean; description?: string }>>([
@@ -1024,6 +1205,7 @@ function featureTags(row: any): RouteFeatureTag[] {
   if (row.audience?.auto || row.audience?.keywords?.length) tags.push({ label: '自动分诊', type: 'warning' });
   else if (row.audience) tags.push({ label: '受众闸', type: 'warning' });
   if (row.memory?.summary_enabled) tags.push({ label: '摘要记忆', type: 'info' });
+  if (row.agent_client?.enabled === true || (!row.agent_client && row.tools?.agent_direct?.enabled === true)) tags.push({ label: '本地 Agent', type: 'primary' });
   return tags.length ? tags : [{ label: '基础路由', type: 'info' }];
 }
 // 可执行性：只看「有没有在线执行器认领这个 target」（权限是提示词、不再依赖执行器能力上报）。inhub 目标在中枢内跑、恒可执行。
@@ -1045,11 +1227,13 @@ function resetSubForms(): void {
   Object.assign(dv, { type: '', url: '', channel: '', to_field: '', to: '' });
   Object.assign(rt, { max: 0, backoff_ms: 5000 });
   Object.assign(tl, { sources: [], max_calls: 5, send_channels: [] });
+  Object.assign(agentDirect, { configured: false, enabled: false, write_tools: [], force_approval_tools: [] });
   Object.assign(ap, { type: '', url: '' }); builtinRest = {}; sendRest = {}; apRest = {};
   Object.assign(au, { enabled: false, auto: false, anonymous: false, priority: 0, keywords: [], clients: [], channels: [], tenants: [], roles: [], principals: [], audiences: [] });
   Object.assign(mem, { recent_messages: 12, recent_budget_chars: 3500, summary_enabled: false, summary_trigger_chars: 4000, summary_keep_recent: 6, summary_model: '' });
+  Object.assign(agentClient, { configured: false, inherited: false, enabled: false, instructions: '', active_tool_limit: 8 });
   Object.assign(budget, { enabled: false, window: 'day', hard_cost_usd: undefined, hard_tokens: undefined });
-  llmRest = {}; inputRest = {}; knRest = {}; dvRest = {}; rtRest = {}; tlRest = {}; audienceRest = {}; memRest = {}; budgetRest = {};
+  llmRest = {}; inputRest = {}; knRest = {}; dvRest = {}; rtRest = {}; tlRest = {}; agentDirectRest = {}; audienceRest = {}; memRest = {}; agentClientRest = {}; budgetRest = {};
 }
 function openCreate(): void {
   editing.value = false;
@@ -1124,23 +1308,22 @@ function openEdit(row: any): void {
   Object.assign(dv, { type: String(d['type'] ?? ''), url: String(d['url'] ?? ''), channel: String(d['channel'] ?? ''), to_field: String(d['to_field'] ?? ''), to: String(d['to'] ?? '') }); dvRest = dr;
   const [t, tr] = splitKnown(row.retry, ['max', 'backoff_ms']);
   Object.assign(rt, { max: Number(t['max'] ?? 0), backoff_ms: Number(t['backoff_ms'] ?? 5000) }); rtRest = tr;
-  const [w, wr] = splitKnown(row.tools, ['sources', 'max_calls', 'builtin', 'approval']);
+  const [w, wr] = splitKnown(row.tools, ['sources', 'max_calls', 'builtin', 'approval', 'agent_direct']);
   tlRest = wr;
   tl.max_calls = Number(w['max_calls'] ?? 5);
   const [aud, audRest] = splitKnown(row.audience, ['enabled', 'auto', 'anonymous', 'priority', 'keywords', 'clients', 'channels', 'tenants', 'roles', 'principals', 'audiences']);
-  const arr = (v: unknown): string[] => Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : (typeof v === 'string' && v ? v.split(',').map((x) => x.trim()).filter(Boolean) : []);
   Object.assign(au, {
     enabled: row.audience ? aud['enabled'] !== false : false,
     auto: aud['auto'] === true,
     anonymous: aud['anonymous'] === true,
     priority: Number(aud['priority'] ?? 0),
-    keywords: arr(aud['keywords']),
-    clients: arr(aud['clients']),
-    channels: arr(aud['channels']),
-    tenants: arr(aud['tenants']),
-    roles: arr(aud['roles']),
-    principals: arr(aud['principals']),
-    audiences: arr(aud['audiences']),
+    keywords: stringArray(aud['keywords']),
+    clients: stringArray(aud['clients']),
+    channels: stringArray(aud['channels']),
+    tenants: stringArray(aud['tenants']),
+    roles: stringArray(aud['roles']),
+    principals: stringArray(aud['principals']),
+    audiences: stringArray(aud['audiences']),
   });
   audienceRest = audRest;
   if (Array.isArray(w['sources'])) {
@@ -1154,6 +1337,26 @@ function openEdit(row: any): void {
         rest,
       })];
     });
+  }
+  const directRaw = w['agent_direct'];
+  if (directRaw && typeof directRaw === 'object' && !Array.isArray(directRaw)) {
+    const [direct, directRest] = splitKnown(directRaw, ['enabled', 'write_tools', 'force_approval_tools', 'unattended_write_tools']);
+    const writeTools = stringArray(direct['write_tools']);
+    const forceApprovalTools = Object.prototype.hasOwnProperty.call(direct, 'force_approval_tools')
+      ? stringArray(direct['force_approval_tools'])
+      : Object.prototype.hasOwnProperty.call(direct, 'unattended_write_tools')
+        ? writeTools.filter((name) => !new Set(stringArray(direct['unattended_write_tools'])).has(name))
+        : [];
+    Object.assign(agentDirect, {
+      configured: true,
+      enabled: direct['enabled'] === true,
+      write_tools: writeTools,
+      force_approval_tools: forceApprovalTools,
+    });
+    agentDirectRest = directRest;
+  } else if (directRaw !== undefined) {
+    // 旧数据若不是对象，不能结构化编辑，但仍按原值 round-trip，不静默丢失。
+    tlRest = { ...tlRest, agent_direct: directRaw };
   }
   if (w['builtin'] && typeof w['builtin'] === 'object') {
     const [bi, br] = splitKnown(w['builtin'], ['send_message']);
@@ -1176,6 +1379,16 @@ function openEdit(row: any): void {
     summary_enabled: me['summary_enabled'] === true, summary_trigger_chars: Number(me['summary_trigger_chars'] ?? 4000),
     summary_keep_recent: Number(me['summary_keep_recent'] ?? 6), summary_model: String(me['summary_model'] ?? ''),
   }); memRest = mr;
+  const [ac, acr] = splitKnown(row.agent_client, ['enabled', 'instructions', 'active_tool_limit']);
+  const directAgentClientDefault = row.tools?.agent_direct?.enabled === true;
+  const inheritedAgentClient = !row.agent_client && directAgentClientDefault;
+  Object.assign(agentClient, {
+    configured: !!row.agent_client,
+    inherited: inheritedAgentClient,
+    enabled: ac['enabled'] === false ? false : ac['enabled'] === true || directAgentClientDefault,
+    instructions: String(ac['instructions'] ?? ''),
+    active_tool_limit: Number(ac['active_tool_limit'] ?? 8),
+  }); agentClientRest = acr;
   const [bu, bur] = splitKnown(row.budget, ['enabled', 'window', 'window_hours', 'hard_cost_usd', 'hard_tokens', 'soft_cost_usd', 'soft_tokens']);
   const windowFromHours = Number(bu['window_hours']) === 1 ? 'hour' : Number(bu['window_hours']) === 720 ? 'month' : 'day';
   const win = ['hour', 'day', 'month'].includes(String(bu['window'])) ? String(bu['window']) as 'hour' | 'day' | 'month' : windowFromHours;
@@ -1216,6 +1429,19 @@ async function save(): Promise<void> {
       ? drop({ ...(tl.send_channels.length || Object.keys(sendRest).length ? { send_message: { channels: tl.send_channels, ...sendRest } } : {}), ...builtinRest })
       : undefined;
     const approvalCfg = ap.type ? drop({ type: ap.type, ...(ap.type === 'business_webhook' ? { url: TR(ap.url) } : {}), ...apRest }) : undefined;
+    const directWriteTools = validateAgentDirectNames('write_tools', '本地 Agent 允许的写操作');
+    const directForceApprovalTools = validateAgentDirectNames('force_approval_tools', '本地 Agent 额外强制审批');
+    const directWrites = new Set(directWriteTools);
+    const directForceOutsideWrites = directForceApprovalTools.filter((name) => !directWrites.has(name));
+    if (directForceOutsideWrites.length) throw new Error(`额外强制审批必须是已允许写操作的子集：${directForceOutsideWrites.join(', ')}`);
+    const agentDirectCfg = (agentDirect.configured || agentDirect.enabled || directWriteTools.length || directForceApprovalTools.length || Object.keys(agentDirectRest).length)
+      ? {
+        enabled: agentDirect.enabled,
+        ...(directWriteTools.length ? { write_tools: directWriteTools } : {}),
+        ...(directForceApprovalTools.length ? { force_approval_tools: directForceApprovalTools } : {}),
+        ...agentDirectRest,
+      }
+      : undefined;
     const hasAudienceFilters = au.keywords.length || au.clients.length || au.channels.length || au.tenants.length || au.roles.length || au.principals.length || au.audiences.length;
     const audienceCfg = (au.enabled || au.auto || au.anonymous || au.priority !== 0 || hasAudienceFilters || Object.keys(audienceRest).length)
       ? drop({
@@ -1278,11 +1504,12 @@ async function save(): Promise<void> {
         : undefined,
       retry: rt.max > 0 ? { max: rt.max, backoff_ms: rt.backoff_ms, ...rtRest } : undefined,
       // tools：业务工具源(sources)、全局调用预算、中枢内置动作与审批承接分离。
-      tools: (sourceCfgs.length || builtinCfg || approvalCfg || Object.keys(tlRest).length)
+      tools: (sourceCfgs.length || builtinCfg || approvalCfg || agentDirectCfg || Object.keys(tlRest).length)
         ? {
           ...(sourceCfgs.length ? { sources: sourceCfgs, max_calls: tl.max_calls } : {}),
           ...(builtinCfg ? { builtin: builtinCfg } : {}),
           ...(approvalCfg ? { approval: approvalCfg } : {}),
+          ...(agentDirectCfg ? { agent_direct: agentDirectCfg } : {}),
           ...tlRest,
         }
         : undefined,
@@ -1293,6 +1520,14 @@ async function save(): Promise<void> {
           recent_messages: mem.recent_messages, recent_budget_chars: mem.recent_budget_chars, summary_enabled: mem.summary_enabled,
           ...(mem.summary_enabled ? { summary_trigger_chars: mem.summary_trigger_chars, summary_keep_recent: mem.summary_keep_recent, ...(mem.summary_model.trim() ? { summary_model: mem.summary_model.trim() } : {}) } : {}),
           ...memRest,
+        }
+        : undefined,
+      agent_client: (agentClient.configured || agentClient.inherited || agentClient.enabled || agentClient.instructions.trim() || agentClient.active_tool_limit !== 8 || Object.keys(agentClientRest).length)
+        ? {
+          enabled: agentClient.enabled,
+          ...(agentClient.instructions.trim() ? { instructions: agentClient.instructions.trim() } : {}),
+          ...(agentClient.active_tool_limit !== 8 ? { active_tool_limit: agentClient.active_tool_limit } : {}),
+          ...agentClientRest,
         }
         : undefined,
       budget: (budget.enabled && (Number(budget.hard_cost_usd) > 0 || Number(budget.hard_tokens) > 0 || Object.keys(budgetRest).length))
@@ -1651,6 +1886,37 @@ onMounted(async () => {
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .tool-source-editor__head { margin-bottom: 10px; font-size: 12px; }
+.agent-direct-title { margin-top: 6px; }
+.agent-direct-alert { margin: -4px 0 14px; }
+.agent-direct-catalog-summary {
+  margin: -4px 0 14px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.agent-tool-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.agent-tool-option code {
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--el-text-color-primary);
+  font-family: var(--bz-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.agent-tool-option__meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .field-hint { margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary); }
 .field-hint code { font-family: var(--bz-mono); font-size: 11px; background: var(--el-fill-color-light); padding: 1px 4px; }
 @media (max-width: 900px) {

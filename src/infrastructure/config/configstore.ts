@@ -24,6 +24,8 @@ import type { ToolEmbeddingRepository } from '../../services/tool-index-reposito
 import { MysqlKbDatasourceRepository, MysqlKnowledgeRepository } from './config-knowledge-repository';
 import { InstanceBrandingRepository } from './config-instance-branding-repository';
 import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
+import { AgentAuthRepository, type AgentAuthRepositoryContract } from './config-agent-auth-repository';
+import { AgentClientRuntimeRepository } from './config-agent-client-runtime-repository';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 export type RouteRepositoryContract = Pick<RouteRepository, keyof RouteRepository>;
@@ -42,7 +44,9 @@ export type StorageBucketRepositoryContract = Pick<StorageBucketRepository, keyo
 export type AlertRuleRepositoryContract = Pick<AlertRuleRepository, keyof AlertRuleRepository>;
 export type ChatConfigRepositoryContract = Pick<ChatConfigRepository, keyof ChatConfigRepository>;
 export type RateLimitLedgerContract = Pick<RateLimitLedger, keyof RateLimitLedger>;
-export type ApprovalLedgerContract = Pick<ApprovalLedger, keyof ApprovalLedger>;
+export type ApprovalLedgerContract =
+  Omit<Pick<ApprovalLedger, keyof ApprovalLedger>, 'forJobs'>
+  & Partial<Pick<ApprovalLedger, 'forJobs'>>;
 export type ConversationLedgerContract = Pick<ConversationLedger, keyof ConversationLedger>;
 export type ExecutorLedgerContract = Pick<ExecutorLedger, keyof ExecutorLedger>;
 export type ToolCallLedgerContract = Pick<ToolCallLedger, keyof ToolCallLedger>;
@@ -53,8 +57,9 @@ export type KbDatasourceRepositoryContract = Pick<MysqlKbDatasourceRepository, k
 export type { InstanceBrandingRepositoryContract };
 export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, keyof DeliveryDlqLedger>;
 export type ObservabilityLedgerContract =
-  Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot'>
-  & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot'>>;
+  Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>
+  & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>>;
+export type AgentClientRuntimeRepositoryContract = Pick<AgentClientRuntimeRepository, keyof AgentClientRuntimeRepository>;
 
 export interface ConfigStoreContract {
   readonly routes: RouteRepositoryContract;
@@ -80,6 +85,10 @@ export interface ConfigStoreContract {
   readonly instanceBranding: InstanceBrandingRepositoryContract;
   readonly deliveryDlq: DeliveryDlqLedgerContract;
   readonly observability: ObservabilityLedgerContract;
+  /** 新 Agent Auth 能力对旧宿主仓储保持可选；缺失时 HTTP 面 fail closed。 */
+  readonly agentAuth?: AgentAuthRepositoryContract;
+  /** Agent Client Runtime v1 对旧宿主保持可选；缺失时新 API fail closed。 */
+  readonly agentClientRuntime?: AgentClientRuntimeRepositoryContract;
   init(): Promise<void>;
   close?(): Promise<void>;
   readonly db: Pool;
@@ -112,6 +121,8 @@ export class ConfigStore implements ConfigStoreContract {
   readonly instanceBranding = new InstanceBrandingRepository(() => this.pool);
   readonly deliveryDlq = new DeliveryDlqLedger(() => this.pool);
   readonly observability = new ObservabilityLedger(() => this.pool);
+  readonly agentAuth = new AgentAuthRepository(() => this.pool);
+  readonly agentClientRuntime = new AgentClientRuntimeRepository(() => this.pool);
 
   constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);

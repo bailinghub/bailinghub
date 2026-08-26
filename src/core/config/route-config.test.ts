@@ -6,6 +6,7 @@ import {
   normalizeRouteConfig,
   prepareRouteConfig,
   routeDeliveryConfig,
+  routeAgentClientConfig,
   routeKnowledgeConfig,
   routeRetryConfig,
   validateRouteConfig,
@@ -148,6 +149,20 @@ test('validateRouteConfig: retry 与 memory 范围错误会提前拒绝', async 
     memory: { recent_messages: 0 },
   }, deps, defaults);
   assert.equal(err2, 'memory.recent_messages 必须是 1..50 的整数');
+});
+
+test('agent_client: 严格校验并兼容既有 agent_direct 开关', async () => {
+  const err = await validateRouteConfig({
+    route_key: 'agent.bad', target: 'notify', agent_client: { enabled: true, active_tool_limit: 13 },
+  }, deps, defaults);
+  assert.equal(err, 'agent_client.active_tool_limit 必须是 1..12 的整数');
+  assert.deepEqual(routeAgentClientConfig({ tools: { agent_direct: { enabled: true } } }), {
+    enabled: true, active_tool_limit: 8,
+  });
+  assert.deepEqual(routeAgentClientConfig({ agent_client: { instructions: 'local' }, tools: { agent_direct: { enabled: true } } }), {
+    enabled: true, instructions: 'local', active_tool_limit: 8,
+  });
+  assert.equal(routeAgentClientConfig({ agent_client: { enabled: false }, tools: { agent_direct: { enabled: true } } }), null);
 });
 
 test('validateRouteConfig: budget 必须是合法预算策略', async () => {

@@ -17,6 +17,11 @@ config.json
 .paused
 build-info.json
 *.log
+*.local
+*.key
+*.pem
+*.p12
+id_rsa*
 .DS_Store
 web/console/
 web/site/

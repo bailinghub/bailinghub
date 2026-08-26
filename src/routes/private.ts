@@ -12,10 +12,13 @@ import type { KbService } from '../services/kb';
 import type { ToolIndexService } from '../services/tools-index';
 import type { TargetRegistry } from '../core/targets/registry';
 import type { KernelHostAdminSessionV1, KernelIdentityProviderV1 } from '../kernel-api/v1/contracts';
+import { handleAgentAuthHttpFor } from './agent-auth';
+import { handleAgentApiHttpFor } from './agent-api';
 
 export interface PrivateHttpDeps extends AuthRuntimeDeps {
   cfg: AppConfig;
   stateStore: RuntimeStateStore;
+  isPaused: () => boolean;
   kbService: KbService | null;
   toolIndex: ToolIndexService | null;
   handleAdminApi(method: string, path: string, req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<boolean>;
@@ -108,6 +111,17 @@ export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingM
   // 业务侧审批决策回调：不走中枢后台账号；用触发方 token 或签名验证，见 routes/approvals.ts。
   const mApprovalDecision = method === 'POST' ? path.match(/^\/approvals\/(\d+)\/decision$/) : null;
   if (mApprovalDecision) { await deps.handleApprovalDecision(req, res, Number(mApprovalDecision[1]), url); return; }
+
+  // 本地 Agent 的网页授权与独立 API 使用专用 bearer，不复用旧 /run Client Token 入口。
+  if (await handleAgentAuthHttpFor({ configStore: deps.configStore }, req, res, url)) return;
+  if (await handleAgentApiHttpFor({
+    configStore: deps.configStore,
+    stateStore: deps.stateStore,
+    isPaused: deps.isPaused,
+    handleRun: deps.handleRun,
+    toolProxyDeps: toolProxyDeps(deps),
+    kbService: deps.kbService,
+  }, req, res, url)) return;
 
   if (method === 'POST' && path === '/admin/login') {
     if (deps.identityProvider?.handleLogin) await deps.identityProvider.handleLogin(req, res);
@@ -202,7 +216,8 @@ export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingM
   if (method === 'GET' && path.startsWith('/jobs/')) {
     const job = await deps.stateStore.getJob(path.slice('/jobs/'.length));
     // 接入方只能看自己触发的 job（job_id 是 uuid 不可猜，这里是第二道闸）。
-    if (!job || (!isAdmin && job.client_app_id !== principal.client.app_id)) { send(res, 404, { error: 'not found' }); return; }
+    // Agent 任务还必须由原 Agent Session 经专用 API 读取，同 app 的 Client Token 也不能越权。
+    if (!job || (!isAdmin && (job.client_app_id !== principal.client.app_id || !!job.agent_session_id))) { send(res, 404, { error: 'not found' }); return; }
     send(res, 200, job);
     return;
   }

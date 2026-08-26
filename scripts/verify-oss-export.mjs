@@ -3,8 +3,11 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { findPublicContentDenylistMatches, loadPrivateExactTextDenylist } from './public-content-denylist.mjs';
+
 const root = process.cwd();
 const exportDir = join(root, '.oss-dist', 'bailinghub');
+const privateExactTextDenylist = loadPrivateExactTextDenylist({ root });
 
 function run(cmd, args, cwd = root) {
   console.log(`> ${[cmd, ...args].join(' ')}`);
@@ -14,8 +17,6 @@ function run(cmd, args, cwd = root) {
 function output(cmd, args, cwd = root) {
   return execFileSync(cmd, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
-
-const rx = (parts, flags = '') => new RegExp(parts.join(''), flags);
 
 function verifyGitBoundary() {
   const rehearsalRoot = mkdtempSync(join(tmpdir(), 'bailinghub-oss-git-'));
@@ -75,15 +76,6 @@ function verifyGitBoundary() {
   const allowedHiddenRoots = new Set(['.github']);
   const allowedHiddenFiles = new Set(['.dockerignore', '.env.example', '.gitignore', '.npmignore']);
   const forbiddenFiles = new Set(['config.json', '.env', 'targets.local.json']);
-  const bannedText = rx([
-    '/Users/', 'macmini',
-    '|', '项目', '\\/www',
-    '|', 'Nie', '0712',
-    '|', 'github', '_pat', '_',
-    '|', 'pt', '-[A-Za-z0-9_-]{20,}',
-    '|', 'bnopen', '\\.cn',
-    '|', 'sh-', 'cynosdb', 'mysql', '-[A-Za-z0-9.-]+', 'tencent', 'cdb\\.com',
-  ]);
   const forbiddenPublicWording = new RegExp([
     '商业' + '版',
     '商业' + '扩展',
@@ -118,7 +110,9 @@ function verifyGitBoundary() {
     const textFiles = files.filter((file) => /\.(?:md|ts|tsx|js|mjs|json|sql|php|py|vue|html|css|sh|yml|yaml|txt|gitignore|npmignore|dockerignore)$/.test(file));
     for (const file of textFiles) {
       const text = output('git', ['show', `:${file}`], repoDir);
-      if (bannedText.test(text)) findings.push(`${file}: forbidden private text in git boundary`);
+      for (const match of findPublicContentDenylistMatches(text, privateExactTextDenylist)) {
+        findings.push(`${file}: ${match} in git boundary`);
+      }
       if (file !== 'LICENSE' && forbiddenPublicWording.test(text)) {
         findings.push(`${file}: use neutral public wording for private extension boundaries`);
       }

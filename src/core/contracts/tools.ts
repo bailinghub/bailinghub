@@ -108,6 +108,100 @@ function normalizeToolArgs(args: Record<string, unknown>): { ok: true; args: Rec
   }
 }
 
+const RESERVED_TOOL_HEADERS = new Set([
+  'authorization', 'cookie', 'host', 'content-length', 'connection', 'transfer-encoding',
+  'x-bailing-timestamp', 'x-bailing-signature', 'x-bailing-job-id', 'x-bailing-client',
+  'x-bailing-idempotency-key', 'x-bailing-on-behalf-of', 'x-bailing-conversation',
+  'x-bailing-tool-scope',
+]);
+
+/**
+ * 服务端最后一道参数闸：MCP/Zod 只是客户端体验，不是信任边界。
+ * 这里拒绝顶层未声明参数、缺少必填项、基础类型/enum 不匹配以及保留治理头。
+ */
+function validateToolArguments(tool: ToolDefinition, args: Record<string, unknown>): string | null {
+  const properties = isRecord(tool.inputSchema['properties']) ? tool.inputSchema['properties'] as Record<string, unknown> : {};
+  // paramIn 也是 ACC/ToolDefinition 的显式参数声明。历史手工工具可能只在
+  // paramIn 声明 path/header/query 参数，而 inputSchema.properties 留空；这些参数
+  // 不是“未知参数”，但仍只能按已声明的位置出站。
+  const unknown = Object.keys(args).filter((key) => (
+    !Object.prototype.hasOwnProperty.call(properties, key)
+    && !Object.prototype.hasOwnProperty.call(tool.paramIn, key)
+  ));
+  if (unknown.length) return `unknown_arguments:${unknown.slice(0, 8).join(',')}`;
+  const required = Array.isArray(tool.inputSchema['required'])
+    ? tool.inputSchema['required'].filter((item): item is string => typeof item === 'string')
+    : [];
+  const missing = required.filter((key) => args[key] === undefined);
+  if (missing.length) return `missing_required:${missing.slice(0, 8).join(',')}`;
+  for (const [key, value] of Object.entries(args)) {
+    const schema = isRecord(properties[key]) ? properties[key] as Record<string, unknown> : {};
+    const error = validateSchemaValue(value, schema, key, 0);
+    if (error) return error;
+    if (tool.paramIn[key] === 'header' && RESERVED_TOOL_HEADERS.has(key.toLowerCase())) {
+      return `reserved_header:${key}`;
+    }
+  }
+  return null;
+}
+
+function validateSchemaValue(value: unknown, schema: Record<string, unknown>, path: string, depth: number): string | null {
+  if (depth > 16) return `argument_too_deep:${path}`;
+  if (!valueMatchesSchemaType(value, schema)) return `argument_type:${path}`;
+  if (Array.isArray(schema['enum']) && !schema['enum'].some((candidate) => canonicalJson(candidate) === canonicalJson(value))) {
+    return `argument_enum:${path}`;
+  }
+  if (typeof value === 'string') {
+    const min = Number(schema['minLength']);
+    const max = Number(schema['maxLength']);
+    if (Number.isFinite(min) && value.length < min) return `argument_min_length:${path}`;
+    if (Number.isFinite(max) && value.length > max) return `argument_max_length:${path}`;
+  }
+  if (typeof value === 'number') {
+    const min = Number(schema['minimum']);
+    const max = Number(schema['maximum']);
+    if (Number.isFinite(min) && value < min) return `argument_minimum:${path}`;
+    if (Number.isFinite(max) && value > max) return `argument_maximum:${path}`;
+  }
+  if (Array.isArray(value)) {
+    const itemSchema = isRecord(schema['items']) ? schema['items'] as Record<string, unknown> : null;
+    if (value.length > 1000) return `argument_array_too_large:${path}`;
+    if (itemSchema) {
+      for (let i = 0; i < value.length; i++) {
+        const error = validateSchemaValue(value[i], itemSchema, `${path}[${i}]`, depth + 1);
+        if (error) return error;
+      }
+    }
+  }
+  if (isRecord(value)) {
+    if (Object.keys(value).length > 256) return `argument_object_too_large:${path}`;
+    const properties = isRecord(schema['properties']) ? schema['properties'] as Record<string, unknown> : {};
+    const required = Array.isArray(schema['required'])
+      ? schema['required'].filter((item): item is string => typeof item === 'string')
+      : [];
+    const missing = required.filter((key) => value[key] === undefined);
+    if (missing.length) return `missing_required:${path}.${missing[0]}`;
+    const additional = schema['additionalProperties'];
+    for (const [key, child] of Object.entries(value)) {
+      const declared = properties[key];
+      if (declared === undefined) {
+        if (additional === true) continue;
+        if (isRecord(additional)) {
+          const error = validateSchemaValue(child, additional, `${path}.${key}`, depth + 1);
+          if (error) return error;
+          continue;
+        }
+        return `unknown_argument:${path}.${key}`;
+      }
+      if (isRecord(declared)) {
+        const error = validateSchemaValue(child, declared, `${path}.${key}`, depth + 1);
+        if (error) return error;
+      }
+    }
+  }
+  return null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -208,9 +302,26 @@ export interface ToolRuntime {
    * 返回 null = 检索运行时不可用（索引未建/凭证不可用/embedding 临时挂）→ 调用方应降级回 progressive。retrievalMode=false 时不存在。 */
   retrieve?(query: string): Promise<ToolRuntime['llmTools'] | null>;
   /** 受闸调用：白名单复核→风险闸→限流→审计(fail-closed)→签名外发。返回回流 LLM 的文本（错误也以文本回流）。 */
-  invoke(name: string, args: Record<string, unknown>): Promise<{ ok: boolean; text: string; status: number }>;
+  invoke(name: string, args: Record<string, unknown>): Promise<ToolInvokeResult>;
   /** 下游是否已经进入“不允许自动重试、必须人工对账”的执行边界。 */
   executionUncertainty(): ToolExecutionUncertainty | null;
+}
+
+export type ToolGovernanceState =
+  | 'executed'
+  | 'business_rejected'
+  | 'awaiting_approval'
+  | 'rejected_before_dispatch'
+  | 'reconciliation_required';
+
+/** 工具调用的受治理结果；旧调用方仍可只读 ok/text/status。 */
+export interface ToolInvokeResult {
+  ok: boolean;
+  text: string;
+  status: number;
+  governance_state?: ToolGovernanceState;
+  auto_retry_allowed?: boolean;
+  approval_id?: number;
 }
 
 /**
@@ -255,7 +366,7 @@ export function composeToolRuntimes(runtimes: ToolRuntime[], maxCalls: number, a
     } : {}),
     async invoke(name, args) {
       const runtime = owner.get(name);
-      if (!runtime) return { ok: false, text: `工具 ${name} 不在本路由白名单内，调用被拒。`, status: 0 };
+      if (!runtime) return { ok: false, text: `工具 ${name} 不在本路由白名单内，调用被拒。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
       return runtime.invoke(name, args);
     },
     executionUncertainty() {
@@ -270,6 +381,8 @@ export function composeToolRuntimes(runtimes: ToolRuntime[], maxCalls: number, a
 
 /** 审批车道句柄：由 server 接到 bz_tool_approvals + 送达插座。不注入时风险闸按未配置审批承接处理（一律拦）。 */
 export interface ApprovalDeps {
+  /** 传统任务批准后由中枢重跑；Agent 直调由本地 Agent 用 invocation_id 续执行。 */
+  continuationMode?: 'rerun' | 'resume';
   /** 查"已批准且未消费"的同快照审批单并原子消费；消费成功返回单号，否则 null */
   consumeApproved(tool: string, hash: string): Promise<number | null>;
   /** 查同快照 pending 单（去重：同一调用别重复开单） */
@@ -372,17 +485,25 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       }
       const t = byName.get(name);
       // 闸1：白名单复核（与清单装配解耦的独立校验——清单多吐了也走不到执行）
-      if (!t) return { ok: false, text: `工具 ${name} 不在本路由白名单内，调用被拒。`, status: 0 };
+      if (!t) return { ok: false, text: `工具 ${name} 不在本路由白名单内，调用被拒。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
       const normalized = normalizeToolArgs(args);
       if (!normalized.ok) {
         await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: normalized.error }).catch(() => undefined);
-        return { ok: false, text: `工具 ${name} 参数不是合法 JSON 对象，调用已拒绝。请按工具参数 schema 重新传参。`, status: 0 };
+        return { ok: false, text: `工具 ${name} 参数不是合法 JSON 对象，调用已拒绝。请按工具参数 schema 重新传参。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
       }
       const callArgs = normalized.args;
+      const schemaError = validateToolArguments(t, callArgs);
+      if (schemaError) {
+        await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: schemaError }).catch(() => undefined);
+        const mismatch = schemaError.startsWith('argument_type:')
+          ? '参数类型与声明的 schema 不一致'
+          : '参数与声明的 schema 不一致';
+        return { ok: false, text: `工具 ${name} ${mismatch}，调用已拒绝（${schemaError}）。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
+      }
       // 闸1.5：主体闸——ACC subject.required 的工具必须有操作主体（装配层已过滤看不见，这里防绕过双闸兜底）
       if (t.requiresSubject && !d.onBehalfOf) {
         await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: 'requires-subject：任务无操作主体' }).catch(() => undefined);
-        return { ok: false, text: `工具 ${name} 需要明确的操作主体，当前任务没有可信身份（如匿名访客）。请告知用户登录后再操作或走人工流程。`, status: 0 };
+        return { ok: false, text: `工具 ${name} 需要明确的操作主体，当前任务没有可信身份（如匿名访客）。请告知用户登录后再操作或走人工流程。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
       }
       // 闸1.8：幂等账本——同 job 内"副作用工具"(非只读、非声明幂等)已执行过的相同调用，重试/崩溃恢复重跑时直接返回上次结果，
       //   不重复执行（防写操作重复扣款）。放在审批闸之前：否则重跑时已消费的审批单会被当成"无批准"再次触发待审批，把重跑卡死。
@@ -431,8 +552,25 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             idempotency_key: existing.idempotencyKey,
             reason: existing.error ?? '检测到未完成的执行日志，禁止自动重放',
           }).catch(() => undefined);
-          return { ok: false, text: executionUncertainty.message, status: 0 };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
         }
+      }
+      // 前置调度闸：任何可重试的限流都必须发生在审批单消费前。
+      // 请求尚未出站，不能把 429 伪装成业务拒绝，也不能白白用掉人工批准。
+      const toolLimited = d.rateLimit
+        ? await d.rateLimit(`tool:${d.provider.name}:${name}`, t.rateLimitPerMin, 60)
+        : !allowRate(`tool:${d.provider.name}:${name}`, t.rateLimitPerMin);
+      const providerLimited = d.rateLimit
+        ? await d.rateLimit(`provider:${d.provider.name}`, d.provider.rate_limit_per_min, 60)
+        : !allowRate(`provider:${d.provider.name}`, d.provider.rate_limit_per_min);
+      if (toolLimited || providerLimited) {
+        return {
+          ok: false,
+          text: `工具 ${name} 触发限流，稍后使用同一调用标识重试。`,
+          status: 429,
+          governance_state: 'rejected_before_dispatch',
+          auto_retry_allowed: true,
+        };
       }
       // 闸2：风险闸 + 审批车道（B 方案：先撤再来）。high / confirm-required 的调用：
       //   有"已批准未消费"的同快照单 → 原子消费后放行；没有 → 开 pending 单推审批人，本次调用拒绝（任务正常收尾，批准后自动重跑）。
@@ -441,28 +579,28 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       const confirmCheck = firstConfirmHit(t, callArgs);
       if (confirmCheck.error) {
         await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: confirmCheck.error }).catch(() => undefined);
-        return { ok: false, text: `工具 ${name} 的审批条件参数类型不符合声明，调用已拒绝。请按工具参数 schema 重新传参。`, status: 0 };
+        return { ok: false, text: `工具 ${name} 的审批条件参数类型不符合声明，调用已拒绝。请按工具参数 schema 重新传参。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
       }
       const confirmHit = confirmCheck.hit;
       const needsApproval = t.risk === 'high' || t.confirmRequired || !!confirmHit;
       if (needsApproval) {
         if (!d.approvals) { // 未接审批车道（理论不发生，server 总会注入）：一律拦
           await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: approvalReason(t, confirmHit) }).catch(() => undefined);
-          return { ok: false, text: `工具 ${name} 属于需人工确认的高风险操作，当前不允许自动执行。请告知用户走人工流程。`, status: 0 };
+          return { ok: false, text: `工具 ${name} 属于需人工确认的高风险操作，当前不允许自动执行。请告知用户走人工流程。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
         }
         const hash = argsHash(callArgs);
         approvalId = await d.approvals.consumeApproved(name, hash);
         if (approvalId === null) {
           const pendingId = await d.approvals.findPending(name, hash);
           if (pendingId !== null) {
-            return { ok: false, text: `该操作已有待审批单（编号 ${pendingId}），请勿重复提交。请结束任务并告知用户：操作待人工审批。`, status: 0 };
+            return { ok: false, text: `该操作已有待审批单（编号 ${pendingId}），请勿重复提交。`, status: 0, governance_state: 'awaiting_approval', auto_retry_allowed: false, approval_id: pendingId };
           }
           // 参数漂移纠偏：同工具已有"已批准未消费"单但参数对不上（大脑重跑没按原样发，如 {id:25} 漂成 {name:"周杰伦"}）。
           // 不开新单空转审批——把批准的精确参数怼回去让大脑当场重发；安全零降级：执行仍只认精确匹配的原子消费。
           const drifted = await d.approvals.findApprovedAnyArgs(name);
           if (drifted) {
             await d.audit('tool_args_drift', { tool: name, approval_id: drifted.id, got_args: JSON.stringify(callArgs).slice(0, 500) }).catch(() => undefined);
-            return { ok: false, text: `该工具已有人工批准的调用（审批单 ${drifted.id}），但你本次的参数与批准的不一致。请立即按批准的参数原样重新调用：${name} 参数 ${drifted.args_json}（一字不改，不要再确认）。`, status: 0 };
+            return { ok: false, text: `该工具已有人工批准的调用（审批单 ${drifted.id}），但你本次的参数与批准的不一致。请使用原审批快照续执行，不要更改参数。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
           }
           const argsJson = JSON.stringify(callArgs);
           const reason = approvalReason(t, confirmHit);
@@ -476,19 +614,12 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
           const id = await d.approvals.create(snap);
           await d.audit('tool_approval_pending', { approval_id: id, tool: name, scope: t.scope, risk: t.risk, confirm_required: t.confirmRequired, ...(confirmHit ? { confirm_when: confirmHit } : {}) }).catch(() => undefined);
           await d.approvals.notify(id, { ...snap, args_json: argsJson.slice(0, 1000) }).catch(() => undefined);
-          return { ok: false, text: `工具 ${name} 属于需人工审批的操作，已提交审批单（编号 ${id}）。请结束本次任务并告知用户：该操作已提交人工审批，批准后系统会自动继续执行。`, status: 0 };
+          const continuation = d.approvals.continuationMode === 'resume'
+            ? '批准后请用本 invocation_id 续执行；中枢不会启动模型重跑。'
+            : '批准后系统会自动重跑原任务。';
+          return { ok: false, text: `工具 ${name} 属于需人工审批的操作，已提交审批单（编号 ${id}）。${continuation}`, status: 0, governance_state: 'awaiting_approval', auto_retry_allowed: false, approval_id: id };
         }
         // 走到这 = 批准单已消费，放行执行（审计带 approval_id 闭环留痕）
-      }
-      // 闸3：限流（每工具 + 工具源总闸）
-      const toolLimited = d.rateLimit
-        ? await d.rateLimit(`tool:${d.provider.name}:${name}`, t.rateLimitPerMin, 60)
-        : !allowRate(`tool:${d.provider.name}:${name}`, t.rateLimitPerMin);
-      const providerLimited = d.rateLimit
-        ? await d.rateLimit(`provider:${d.provider.name}`, d.provider.rate_limit_per_min, 60)
-        : !allowRate(`provider:${d.provider.name}`, d.provider.rate_limit_per_min);
-      if (toolLimited || providerLimited) {
-        return { ok: false, text: `工具 ${name} 触发限流，稍后再试。`, status: 429 };
       }
       // 组装请求：path/header/query/body 各归其位；GET 未标位置的参数仍回落 query。
       const query = new URLSearchParams();
@@ -535,7 +666,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             reason: '执行日志不可用，请求未发出',
             error: String(error).slice(0, 500),
           }).catch(() => undefined);
-          return { ok: false, text: `工具 ${name} 的执行日志当前不可用，请求未发出。请稍后重新发起并重新完成必要审批。`, status: 0 };
+          return { ok: false, text: `工具 ${name} 的执行日志当前不可用，请求未发出。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
         }
         if (!reserved.inserted) {
           if (reserved.entry.state === 'completed') {
@@ -556,7 +687,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             idempotency_key: reserved.entry.idempotencyKey,
             reason: reserved.entry.error ?? '并发或恢复路径检测到未完成执行日志',
           }).catch(() => undefined);
-          return { ok: false, text: executionUncertainty.message, status: 0 };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
         }
       }
 
@@ -568,6 +699,9 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         const r = await fetch(d.provider.base_url.replace(/\/+$/, '') + pathWithQuery, {
           method: t.method,
           headers: {
+            // ACC 声明的普通业务头先放；下面的治理头由中枢最后覆盖。
+            // validateToolArguments 仍会显式拒绝保留头，这里是第二道防线。
+            ...headers,
             ...(body ? { 'content-type': 'application/json' } : {}),
             'x-bailing-timestamp': String(ts),
             'x-bailing-signature': sigHeader,
@@ -578,7 +712,6 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             // 来源会话坐标（非签名材料）：业务侧自审批批准后据此 /send 回流到原会话；收件人权威仍以已验签的 on-behalf-of 为准
             ...(d.conversation ? { 'x-bailing-conversation': d.conversation } : {}),
             'x-bailing-tool-scope': t.scope,
-            ...headers,
           },
           body: body || undefined,
           signal: AbortSignal.timeout(timeoutMs),
@@ -606,7 +739,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             idempotency_key: idemKey,
             reason: error,
           }).catch(() => undefined);
-          return { ok: false, text: executionUncertainty.message, status: 0 };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
         }
       }
       // 回流给模型的：受上下文预算 truncateBytes 截断（与审计留存解耦）
@@ -632,7 +765,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             idempotency_key: idemKey,
             reason: executionUncertainty.reason,
           }).catch(() => undefined);
-          return { ok: false, text: executionUncertainty.message, status: 0 };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
         }
       }
       // 审计留存：logFull 记全量响应（封顶 AUDIT_MAX_BYTES，超出记 resp_truncated）；resp_bytes 始终记真实字节数。
@@ -660,7 +793,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             reason,
             message: `工具 ${name} 已产生业务响应，但审计证据不完整。为避免重复业务后果，本任务已禁止自动重试；请使用幂等键 ${idemKey} 人工对账。`,
           };
-          return { ok: false, text: executionUncertainty.message, status: 0 };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
         }
         throw error;
       }
@@ -683,10 +816,10 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             idempotency_key: idemKey,
             reason: executionUncertainty.reason,
           }).catch(() => undefined);
-          return { ok: false, text: executionUncertainty.message, status: 0 };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
         }
       }
-      return { ok, text: retText, status };
+      return { ok, text: retText, status, governance_state: ok ? 'executed' : 'business_rejected', auto_retry_allowed: false };
     },
   };
 }

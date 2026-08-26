@@ -22,6 +22,19 @@ Each public version should describe:
 
 ## Unreleased
 
+## v0.5.0 - Revocable Local-Agent Authorization and Governed Local Planning
+
+Released on 2026-08-26.
+
+- **Agent Auth v1**: adds browser + PKCE authorization in which the business system reuses its existing authenticated session to approve a trusted subject and routes. Access tokens are short-lived, refresh tokens rotate with replay fail-closed behavior, and sessions can be revoked locally or by the business backend.
+- **Agent Client Runtime v1**: the local Agent owns planning and multi-step selection while Core continues to provide bounded prompts, memory, knowledge, and tools and owns identity revalidation, approval, idempotency, business invocation, recovery, and audit.
+- **Constrained capability and approval policy**: the route page adds structured `tools.agent_direct` configuration. Writable tools are exposed by exact operation ID; approval inherits business-side ACC by default, and `force_approval_tools` may only tighten policy.
+- **Visible conversation and trace**: user messages, visible final answers, tool requests, and governance outcomes from local planning enter the Core ledger. Hidden reasoning is not accepted, synchronized, or persisted.
+- **Business-side SDKs**: both the PHP 8.1+ and PHP 7.3-compatible SDKs add the same server-side `AgentAuth` thin client. The Client Token remains only in the business backend and never enters a browser, local plugin, or public configuration.
+- **Database schema**: adds `055_agent_auth.sql` and `056_agent_client_runtime.sql`. Apply every pending migration through the official migrator; do not modify an applied file or copy another instance's state database.
+- **Compatibility**: the new capability is an optional additive surface. Existing `/run`, chat entries, Client API v1, Kernel Host API v1, Executor Protocol, ACC, tool signatures, and final business authorization remain compatible.
+- **Related docs**: [RELEASE_NOTES_v0.5.0.en.md](RELEASE_NOTES_v0.5.0.en.md), [Agent Client v1 Integration Guide](AGENT_CLIENT_QUICKSTART.en.md), [Agent Auth v1](AGENT_AUTH_API.en.md), [Agent Client Runtime v1](AGENT_CLIENT_RUNTIME_API.en.md), and [Compatibility](COMPATIBILITY.en.md).
+
 ## v0.4.0 - Native Conversational Forms and Chat-Entry Controls
 
 Released on 2026-08-25.
