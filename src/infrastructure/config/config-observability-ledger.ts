@@ -1,6 +1,28 @@
 import { dtAt, traceSeverityValue, traceStageValue } from '../../core/config/config-codec';
-import type { TraceSeverity, TraceStage } from '../../core/contracts/types';
+import type { Job, TraceSeverity, TraceStage } from '../../core/contracts/types';
 import type { ControlPlaneOperationalMetricsSnapshot } from '../../core/observability/openmetrics';
+import { rowToJob } from '../../core/state/state-codec';
+
+export interface JobAuditView {
+  ts: string;
+  event: string;
+  stage: TraceStage;
+  severity: TraceSeverity;
+  title: string;
+  summary: string;
+  detail: unknown;
+}
+
+function auditView(row: any): JobAuditView {
+  return {
+    ts: new Date(row.ts).toISOString(), event: row.event,
+    stage: traceStageValue(row.stage),
+    severity: traceSeverityValue(row.severity),
+    title: row.title,
+    summary: row.summary,
+    detail: row.detail ? (typeof row.detail === 'string' ? JSON.parse(row.detail) : row.detail) : {},
+  };
+}
 
 export class ObservabilityLedger {
   constructor(private readonly poolOf: () => any) {}
@@ -59,16 +81,29 @@ export class ObservabilityLedger {
     });
   }
 
-  async auditForJob(jobId: string): Promise<Array<{ ts: string; event: string; stage: TraceStage; severity: TraceSeverity; title: string; summary: string; detail: unknown }>> {
+  async auditForJob(jobId: string): Promise<JobAuditView[]> {
     const [rows] = await this.pool.query('SELECT ts,event,stage,severity,title,summary,detail FROM bz_audit WHERE job_id=? ORDER BY id LIMIT 100', [jobId]);
-    return (rows as any[]).map((r) => ({
-      ts: new Date(r.ts).toISOString(), event: r.event,
-      stage: traceStageValue(r.stage),
-      severity: traceSeverityValue(r.severity),
-      title: r.title,
-      summary: r.summary,
-      detail: r.detail ? (typeof r.detail === 'string' ? JSON.parse(r.detail) : r.detail) : {},
-    }));
+    return (rows as any[]).map(auditView);
+  }
+
+  async auditsForJobs(jobIds: string[]): Promise<Record<string, JobAuditView[]>> {
+    const ids = [...new Set(jobIds.map(String).filter(Boolean))].slice(0, 100);
+    const grouped: Record<string, JobAuditView[]> = Object.fromEntries(ids.map((id) => [id, []]));
+    if (!ids.length) return grouped;
+    const placeholders = ids.map(() => '?').join(',');
+    const [rows] = await this.pool.query(
+      `SELECT job_id,ts,event,stage,severity,title,summary,detail FROM (
+        SELECT id,job_id,ts,event,stage,severity,title,summary,detail,
+          ROW_NUMBER() OVER (PARTITION BY job_id ORDER BY id) AS row_num
+        FROM bz_audit WHERE job_id IN (${placeholders})
+      ) ranked WHERE row_num<=100 ORDER BY id`,
+      ids,
+    );
+    for (const row of rows as any[]) {
+      const jobId = String(row.job_id);
+      if (grouped[jobId] && grouped[jobId]!.length < 100) grouped[jobId]!.push(auditView(row));
+    }
+    return grouped;
   }
 
   async listRecentJobs(limit = 50, offset = 0): Promise<any[]> {
@@ -106,6 +141,26 @@ export class ObservabilityLedger {
       params,
     );
     return rows as any[];
+  }
+
+  /**
+   * Agent Client 一轮运行下的受治理工具 Job 候选。
+   *
+   * 这里只用 thread_id + session_id + target 借现有索引缩小集合；调用方仍必须读取完整 Job，
+   * 再用 isAgentToolInvocationJob 与 run 的 client/session/route/thread 逐项复核，不能把 SQL 候选当成授权事实。
+   */
+  async agentToolJobCandidatesForRun(
+    runId: string,
+    threadId: number,
+    limit = 100,
+  ): Promise<{ jobs: Job[]; truncated: boolean }> {
+    const n = Math.min(Math.max(Math.floor(Number(limit) || 100), 1), 200);
+    const [rows] = await this.pool.query(
+      "SELECT * FROM bz_jobs WHERE thread_id=? AND session_id=? AND target='agent-tool-v1' ORDER BY created_at,job_id LIMIT ?",
+      [threadId, runId, n + 1],
+    );
+    const candidates = rows as Record<string, unknown>[];
+    return { jobs: candidates.slice(0, n).map(rowToJob), truncated: candidates.length > n };
   }
 
   async dispatchStatus(): Promise<{

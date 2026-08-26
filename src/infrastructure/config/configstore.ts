@@ -44,7 +44,9 @@ export type StorageBucketRepositoryContract = Pick<StorageBucketRepository, keyo
 export type AlertRuleRepositoryContract = Pick<AlertRuleRepository, keyof AlertRuleRepository>;
 export type ChatConfigRepositoryContract = Pick<ChatConfigRepository, keyof ChatConfigRepository>;
 export type RateLimitLedgerContract = Pick<RateLimitLedger, keyof RateLimitLedger>;
-export type ApprovalLedgerContract = Pick<ApprovalLedger, keyof ApprovalLedger>;
+export type ApprovalLedgerContract =
+  Omit<Pick<ApprovalLedger, keyof ApprovalLedger>, 'forJobs'>
+  & Partial<Pick<ApprovalLedger, 'forJobs'>>;
 export type ConversationLedgerContract = Pick<ConversationLedger, keyof ConversationLedger>;
 export type ExecutorLedgerContract = Pick<ExecutorLedger, keyof ExecutorLedger>;
 export type ToolCallLedgerContract = Pick<ToolCallLedger, keyof ToolCallLedger>;
@@ -55,8 +57,8 @@ export type KbDatasourceRepositoryContract = Pick<MysqlKbDatasourceRepository, k
 export type { InstanceBrandingRepositoryContract };
 export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, keyof DeliveryDlqLedger>;
 export type ObservabilityLedgerContract =
-  Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot'>
-  & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot'>>;
+  Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>
+  & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>>;
 export type AgentClientRuntimeRepositoryContract = Pick<AgentClientRuntimeRepository, keyof AgentClientRuntimeRepository>;
 
 export interface ConfigStoreContract {

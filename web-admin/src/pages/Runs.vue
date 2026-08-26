@@ -60,29 +60,45 @@
               <div class="chat">
                 <div v-for="m in threadData.messages" :key="m.id" class="turn" :class="m.direction === 'in' ? 'fromUser' : 'fromHub'">
                   <div class="bubbleWrap">
-                    <div class="bMeta muted">{{ m.direction === 'in' ? whoLabel(threadData.thread) : '中枢' }} · {{ fmtTime(m.created_at, true) }}</div>
+                    <div class="bMeta muted">{{ messageActorLabel(m, threadData.thread) }} · {{ fmtTime(m.created_at, true) }}</div>
                     <div class="bubble"><RichText :text="m.content" /></div>
-                    <!-- AI 轮次：可折叠的执行轨迹（懒拉该 job 的详情+审计，复用 /runs/:job 接口） -->
-                    <div v-if="m.direction === 'out' && m.job_id" class="traceLine">
-                      <span class="tracetoggle" @click="toggleTrace(m.job_id)">
-                        <svg class="traceCaret" :class="{ open: traces[m.job_id]?.open }" viewBox="0 0 1024 1024" aria-hidden="true">
+                    <!-- AI 轮次：旧链路按 job_id，新 Agent Client 链路按 agent_run_id 懒拉各自的安全轨迹。 -->
+                    <div v-if="shouldShowMessageTrace(m)" class="traceLine">
+                      <span class="tracetoggle" @click="toggleTrace(m)">
+                        <svg class="traceCaret" :class="{ open: traces[traceKey(m)]?.open }" viewBox="0 0 1024 1024" aria-hidden="true">
                           <path d="M0.085333 239.36L512 784.64l511.914667-545.28z" fill="currentColor"></path>
                         </svg>
                         执行轨迹
-                        <span v-if="traceBadge(m.job_id)" class="muted">{{ traceBadge(m.job_id) }}</span>
+                        <span v-if="traceBadge(traceKey(m))" class="muted">{{ traceBadge(traceKey(m)) }}</span>
                       </span>
-                      <div v-if="traces[m.job_id]?.open" class="tracebox" v-loading="traces[m.job_id]?.loading">
-                        <template v-if="traces[m.job_id]?.detail">
+                      <div v-if="traces[traceKey(m)]?.open" class="tracebox" v-loading="traces[traceKey(m)]?.loading">
+                        <template v-if="traces[traceKey(m)]?.detail">
                           <div class="tmeta2">
-                            <el-tag size="small" :type="statusType(traces[m.job_id].detail.status)" effect="plain">{{ traces[m.job_id].detail.status }}</el-tag>
-                            <span v-if="traceModel(m.job_id)" class="mono muted">{{ traceModel(m.job_id) }}</span>
-                            <span v-if="traces[m.job_id].detail.usage?.duration_ms" class="muted">{{ (traces[m.job_id].detail.usage.duration_ms / 1000).toFixed(1) }}s</span>
-                            <span v-if="traces[m.job_id].detail.usage?.tokens" class="muted">{{ traces[m.job_id].detail.usage.tokens }} tok</span>
+                            <el-tag v-if="isAgentTrace(traceKey(m))" size="small" type="primary" effect="plain">本地智能体编排</el-tag>
+                            <el-tag size="small" :type="statusType(traces[traceKey(m)].detail.status)" effect="plain">{{ traceStatusLabel(traces[traceKey(m)].detail.status) }}</el-tag>
+                            <span v-if="traceModel(traceKey(m))" class="mono muted">{{ traceModel(traceKey(m)) }}</span>
+                            <span v-if="traceDuration(traceKey(m))" class="muted">{{ (traceDuration(traceKey(m)) / 1000).toFixed(1) }}s</span>
+                            <span v-if="traceTokenCount(traceKey(m))" class="muted">{{ traceTokenCount(traceKey(m)) }} tok</span>
                           </div>
-                          <div class="muted toolsum">{{ fmtTools(traces[m.job_id].detail?.dispatch?.tools) }}</div>
-                          <el-timeline v-if="traces[m.job_id].events?.length" class="tline">
-                            <el-timeline-item v-for="(a, i) in traces[m.job_id].events" :key="i" :timestamp="fmtTime(a.ts)" placement="top">
+                          <div v-if="isAgentTrace(traceKey(m))" class="agentTraceHint">
+                            本地智能体负责理解、规划和工具选择；隐藏推理不会上传。以下只展示中枢可验证的运行边界、ACC 工具治理、审批与结果。
+                          </div>
+                          <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.partial" class="agentTracePartial">
+                            本轮工具记录超过单次展示上限，以下是已通过归属校验的部分轨迹，不代表全量。
+                          </div>
+                          <div v-if="!isAgentTrace(traceKey(m))" class="muted toolsum">{{ fmtTools(traces[traceKey(m)].detail?.dispatch?.tools) }}</div>
+                          <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].invocations.length" class="agentInvocations">
+                            <div v-for="inv in traces[traceKey(m)].invocations" :key="inv.job_id" class="agentInvocation">
+                              <el-tag size="small" effect="plain" type="primary" class="mono">{{ inv.tool }}</el-tag>
+                              <span class="muted">{{ invocationStateLabel(inv) }}</span>
+                              <span v-if="inv.duration_ms" class="muted">{{ (inv.duration_ms / 1000).toFixed(1) }}s</span>
+                              <el-button link type="primary" size="small" @click.stop="openDetail({ job_id: inv.job_id })">工具详情</el-button>
+                            </div>
+                          </div>
+                          <el-timeline v-if="traces[traceKey(m)].events?.length" class="tline">
+                            <el-timeline-item v-for="(a, i) in traces[traceKey(m)].events" :key="i" :timestamp="fmtTime(a.ts)" placement="top">
                               <b>{{ traceTitle(a) }}</b>
+                              <el-tag v-if="a.source" size="small" effect="plain" :type="a.source === 'local_agent' ? 'primary' : 'info'" class="traceSource">{{ traceSourceLabel(a.source) }}</el-tag>
                               <el-tag size="small" effect="plain" :type="traceStageType(a.stage)" class="traceStage">{{ traceStageLabel(a.stage) }}</el-tag>
                               <el-tag v-if="a.severity && a.severity !== 'info'" size="small" effect="plain" :type="traceSeverityType(a.severity)" class="traceSeverity">{{ a.severity }}</el-tag>
                               <span v-if="traceSummaryText(a)" class="muted auditTag">{{ traceSummaryText(a) }}</span>
@@ -94,10 +110,11 @@
                               </template>
                             </el-timeline-item>
                           </el-timeline>
-                          <div v-else class="muted notrace">这一轮没有工具调用（纯生成回复）</div>
-                          <el-button plain type="primary" size="small" class="traceDetailBtn" @click="openDetail({ job_id: m.job_id })">查看完整详情</el-button>
+                          <div v-else class="muted notrace">这一轮没有可展示的执行事件</div>
+                          <div v-if="isAgentTrace(traceKey(m)) && !traces[traceKey(m)].summary?.tool_invocations" class="muted notrace">本轮未调用中枢治理工具。</div>
+                          <el-button v-if="m.job_id" plain type="primary" size="small" class="traceDetailBtn" @click="openDetail({ job_id: m.job_id })">查看完整详情</el-button>
                         </template>
-                        <div v-else-if="!traces[m.job_id]?.loading" class="muted">该轮详情已不可用（job 可能已清理）</div>
+                        <div v-else-if="!traces[traceKey(m)]?.loading" class="muted">该轮详情已不可用（记录可能已清理）</div>
                       </div>
                     </div>
                   </div>
@@ -435,6 +452,8 @@ interface TraceEvent {
   title?: string;
   summary?: string;
   detail?: Record<string, unknown>;
+  source?: 'local_agent' | 'hub_governance';
+  tool_job_id?: string;
 }
 interface TracePayload {
   job: any;
@@ -442,6 +461,44 @@ interface TracePayload {
   lookup?: any;
   debug_bundle?: any;
   debug_report?: string;
+}
+interface AgentRunInvocation {
+  job_id: string;
+  invocation_id: string;
+  tool: string;
+  status: string;
+  state: string | null;
+  ok: boolean | null;
+  business_status: string | number | null;
+  approval_status: string | null;
+  approval_id: number | null;
+  event_count: number;
+  duration_ms?: number;
+  created_at: string;
+  updated_at: string;
+}
+interface AgentRunTracePayload {
+  kind: 'agent_client_run';
+  run: any;
+  trace: { summary?: any; events: TraceEvent[] };
+  invocations: AgentRunInvocation[];
+}
+interface ThreadMessage {
+  id: number;
+  direction: 'in' | 'out';
+  content: string;
+  created_at: string;
+  job_id?: string | null;
+  agent_run_id?: string | null;
+}
+interface ConversationTraceState {
+  kind: 'job' | 'agent-run';
+  open: boolean;
+  loading: boolean;
+  detail: any;
+  events: TraceEvent[];
+  summary: any | null;
+  invocations: AgentRunInvocation[];
 }
 interface DetailTraceGroup {
   key: string;
@@ -479,11 +536,11 @@ const threadsMore = ref(false);
 const threadsMoreLoading = ref(false);
 const threadQ = ref('');
 const curThread = ref<number | null>(null);
-const threadData = ref<{ thread: any; messages: any[] } | null>(null);
+const threadData = ref<{ thread: any; messages: ThreadMessage[] } | null>(null);
 const threadDataLoading = ref(false);
 const paneRef = ref<HTMLElement | null>(null);
-// 逐轮执行轨迹缓存：job_id → { open, loading, detail, events, summary }（懒拉，展开才请求）
-const traces = reactive<Record<string, { open: boolean; loading: boolean; detail: any; events: TraceEvent[]; summary: any | null }>>({});
+// 逐轮执行轨迹缓存：job:<id> / agent-run:<id> 分开命名，避免两类 UUID 语义混淆。
+const traces = reactive<Record<string, ConversationTraceState>>({});
 const traceLookupJob = computed(() => traceLookupResult.value?.job ?? {});
 const traceLookupEvents = computed(() => traceLookupResult.value ? normalizeTraceEvents(traceLookupResult.value) : []);
 const traceLookupSummary = computed(() => traceLookupResult.value?.trace.summary ?? {});
@@ -504,10 +561,16 @@ const DETAIL_TRACE_STAGE_TO_GROUP = DETAIL_TRACE_GROUP_DEFS.reduce<Record<string
 }, {});
 
 function statusType(st: string): 'success' | 'danger' | 'info' | 'warning' {
-  if (st === 'done') return 'success';
-  if (st === 'error' || st === 'rejected') return 'danger';
-  if (st === 'running' || st === 'dispatched') return 'warning';
+  if (st === 'done' || st === 'completed') return 'success';
+  if (st === 'error' || st === 'rejected' || st === 'failed') return 'danger';
+  if (st === 'running' || st === 'dispatched' || st === 'preparing' || st === 'context_ready') return 'warning';
   return 'info';
+}
+function traceStatusLabel(st: string): string {
+  const labels: Record<string, string> = {
+    completed: '已完成', failed: '失败', cancelled: '已取消', preparing: '准备中', context_ready: '上下文已就绪',
+  };
+  return labels[st] || st;
 }
 // 显示安全上限：审计要全量可追溯，但极端大内容（如几 MB 响应）整段塞进 DOM 会卡；
 // 200K 字符够覆盖正常审计内容，超出才尾部标注（真实留存在后端审计，这里只是展示护栏）。
@@ -716,6 +779,10 @@ function whoLabel(t: any): string {
   if (sc.startsWith('req:')) return '单次任务 ' + sc.slice(4, 16);
   return sc ? sc.slice(-24) : '匿名';
 }
+function messageActorLabel(message: ThreadMessage, thread: any): string {
+  if (message.direction === 'in') return whoLabel(thread);
+  return message.agent_run_id ? '本地智能体' : '中枢';
+}
 function identityTitle(t: any): string {
   const p = String(t.principal_id || '');
   const sc = String(t.scope_key || '');
@@ -731,12 +798,41 @@ const filteredThreads = computed(() => {
   });
 });
 
+function traceKey(message: ThreadMessage): string {
+  return message.job_id ? `job:${message.job_id}` : `agent-run:${message.agent_run_id || 'missing'}`;
+}
+const agentRunIdsWithOutput = computed(() => new Set(
+  (threadData.value?.messages ?? [])
+    .filter((message) => message.direction === 'out' && !!message.agent_run_id)
+    .map((message) => message.agent_run_id as string),
+));
+function shouldShowMessageTrace(message: ThreadMessage): boolean {
+  if (message.direction === 'out') return !!(message.job_id || message.agent_run_id);
+  // 客户端在 complete 前崩溃或断网时只有入站消息；此时仍需从该轮入站气泡进入排障轨迹。
+  return !!message.agent_run_id && !agentRunIdsWithOutput.value.has(message.agent_run_id);
+}
+function isAgentTrace(key: string): boolean {
+  return traces[key]?.kind === 'agent-run';
+}
+function traceSourceLabel(source: TraceEvent['source']): string {
+  return source === 'local_agent' ? '本地编排' : '中枢治理';
+}
+function invocationStateLabel(invocation: AgentRunInvocation): string {
+  if (invocation.approval_status === 'denied') return '审批拒绝';
+  if (invocation.approval_status === 'pending') return '等待审批';
+  if (invocation.approval_status === 'approved' && invocation.state === 'awaiting_approval') return '已批准，等待本地智能体续执行';
+  const labels: Record<string, string> = {
+    executed: '执行成功', business_rejected: '业务拒绝', awaiting_approval: '等待审批', denied: '审批拒绝',
+    rejected_before_dispatch: '派发前拦截', reconciliation_required: '需要人工对账', in_progress: '执行中',
+  };
+  return labels[invocation.state || ''] || invocation.state || traceStatusLabel(invocation.status);
+}
 // 轨迹徽标（懒拉后才有）：工具次数 / 识图次数 / 耗时
-function traceBadge(jobId: string): string {
-  const tr = traces[jobId];
+function traceBadge(key: string): string {
+  const tr = traces[key];
   if (!tr || !tr.detail) return '';
   const parts: string[] = [];
-  const tools = tr.summary?.tool_results ?? (tr.events || []).filter((a) => a.event === 'tool_result').length;
+  const tools = tr.summary?.tool_invocations ?? tr.summary?.tool_results ?? (tr.events || []).filter((a) => a.event === 'tool_result').length;
   if (tools) parts.push(tools + ' 次工具');
   const vc = tr.summary?.perceptions ?? (tr.events || []).filter((a) => a.event === 'perception').length;
   if (vc) parts.push(vc + ' 次识图');
@@ -744,13 +840,21 @@ function traceBadge(jobId: string): string {
   if (warn) parts.push(warn + ' 警告');
   const err = tr.summary?.error_count ?? 0;
   if (err) parts.push(err + ' 错误');
-  const dur = tr.detail.usage?.duration_ms;
+  const dur = traceDuration(key);
   if (dur) parts.push((dur / 1000).toFixed(1) + 's');
   return parts.length ? '· ' + parts.join(' · ') : '';
 }
-function traceModel(jobId: string): string {
-  const d = traces[jobId]?.detail;
-  return String(d?.dispatch?.target_config?.model || d?.target || '');
+function traceModel(key: string): string {
+  const d = traces[key]?.detail;
+  return String(d?.model || d?.runtime || d?.dispatch?.target_config?.model || d?.target || '');
+}
+function traceDuration(key: string): number {
+  const trace = traces[key];
+  return Number(trace?.summary?.duration_ms ?? trace?.detail?.usage?.duration_ms ?? 0) || 0;
+}
+function traceTokenCount(key: string): number {
+  const usage = traces[key]?.detail?.usage ?? {};
+  return Number(usage.total_tokens ?? usage.tokens ?? 0) || 0;
 }
 
 async function load(): Promise<void> {
@@ -804,16 +908,25 @@ async function openThread(id: number): Promise<void> {
     setTimeout(scrollPaneToBottom, 150); // 兜底：图片/异步内容撑高后再贴底
   }
 }
-async function toggleTrace(jobId: string): Promise<void> {
-  const cur = traces[jobId];
+async function toggleTrace(message: ThreadMessage): Promise<void> {
+  const key = traceKey(message);
+  const cur = traces[key];
   if (cur?.open) { cur.open = false; return; }
   if (cur?.detail) { cur.open = true; return; }
-  traces[jobId] = { open: true, loading: true, detail: null, events: [], summary: null };
+  const kind: ConversationTraceState['kind'] = message.job_id ? 'job' : 'agent-run';
+  traces[key] = { kind, open: true, loading: true, detail: null, events: [], summary: null, invocations: [] };
   try {
-    const t = await api<TracePayload>('/admin/api/runs/' + jobId + '/trace');
-    traces[jobId] = { open: true, loading: false, detail: t.job, events: normalizeTraceEvents(t), summary: t.trace.summary ?? null };
+    if (message.job_id) {
+      const t = await api<TracePayload>('/admin/api/runs/' + message.job_id + '/trace');
+      traces[key] = { kind, open: true, loading: false, detail: t.job, events: normalizeTraceEvents(t), summary: t.trace.summary ?? null, invocations: [] };
+    } else if (message.agent_run_id && curThread.value) {
+      const t = await api<AgentRunTracePayload>(`/admin/api/threads/${curThread.value}/agent-runs/${message.agent_run_id}/trace`);
+      traces[key] = { kind, open: true, loading: false, detail: t.run, events: t.trace.events, summary: t.trace.summary ?? null, invocations: t.invocations ?? [] };
+    } else {
+      throw new Error('该轮缺少可追溯标识');
+    }
   } catch (e) {
-    traces[jobId] = { open: true, loading: false, detail: null, events: [], summary: null };
+    traces[key] = { kind, open: true, loading: false, detail: null, events: [], summary: null, invocations: [] };
     ElMessage.error((e as Error).message);
   }
 }
@@ -1070,6 +1183,12 @@ watch(() => route.query['job'], (v) => {
 .tracebox { margin-top: 6px; padding: 10px 12px; border: 1px dashed var(--el-border-color); border-radius: 0; background: var(--el-fill-color-blank); }
 .traceDetailBtn { margin-top: 4px; height: 26px; padding: 0 10px; }
 .tmeta2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.agentTraceHint { margin: 6px 0 9px; padding: 7px 9px; border-left: 3px solid var(--el-color-primary-light-3); background: var(--el-color-primary-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
+.agentTracePartial { margin: 6px 0 9px; padding: 7px 9px; border-left: 3px solid var(--el-color-warning); background: var(--el-color-warning-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
+.agentInvocations { display: flex; flex-direction: column; gap: 5px; margin: 7px 0 10px; }
+.agentInvocation { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-height: 28px; padding: 4px 7px; border: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-light); }
+.agentInvocation :deep(.el-button) { margin-left: auto; }
+.traceSource { margin-left: 8px; vertical-align: 1px; }
 .tline { padding-left: 4px; margin-top: 4px; }
 .notrace { font-size: 12px; margin: 4px 0; }
 .traceLookup { max-width: 720px; margin-bottom: 14px; }

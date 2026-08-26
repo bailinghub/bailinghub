@@ -81,8 +81,33 @@ const fixtures = {
     last_preview: '查询订单 SO-1001',
     last_active_at: new Date().toISOString(),
     message_count: 2,
+  }, {
+    thread_id: 2,
+    scope_key: 'agent:demo-app:employee-edit',
+    channel: 'agent:demo-app',
+    client_name: 'Demo 业务系统',
+    principal_id: 'uid:tenant-1:user-7',
+    route_name: 'Demo 售后助手',
+    last_preview: '员工资料已修改',
+    last_active_at: new Date().toISOString(),
+    message_count: 2,
+  }, {
+    thread_id: 3,
+    scope_key: 'agent:demo-app:incomplete-turn',
+    channel: 'agent:demo-app',
+    client_name: 'Demo 业务系统',
+    principal_id: 'uid:tenant-1:user-7',
+    route_name: 'Demo 售后助手',
+    last_preview: '等待本地智能体继续处理',
+    last_active_at: new Date().toISOString(),
+    message_count: 1,
   }],
 };
+
+const agentRunId = '123e4567-e89b-42d3-a456-426614174000';
+const agentToolJobId = '223e4567-e89b-42d3-a456-426614174000';
+const incompleteAgentRunId = '323e4567-e89b-42d3-a456-426614174000';
+const incompleteAgentToolJobId = '423e4567-e89b-42d3-a456-426614174000';
 
 let smokeRequests = 0;
 
@@ -98,6 +123,84 @@ function tracePayload() {
     },
     approvals: [],
     messages: [],
+  };
+}
+
+function agentRunTracePayload() {
+  return {
+    kind: 'agent_client_run',
+    run: {
+      run_id: agentRunId,
+      thread_id: 2,
+      client_app_id: 'demo-app',
+      route_key: 'demo_support',
+      status: 'completed',
+      model: 'deepseek-chat',
+      runtime: 'deepseek-harness',
+      usage: { total_tokens: 168 },
+      governance: { planner: 'local_agent', execution: 'bailinghub_governed', hidden_reasoning_sync: false },
+    },
+    trace: {
+      summary: { tool_invocations: 1, approvals: 0, warning_count: 0, error_count: 0, duration_ms: 1800 },
+      events: [
+        { ts: new Date().toISOString(), event: 'agent_client_run_started', source: 'local_agent', stage: 'launch', severity: 'info', title: '本地智能体开始处理', summary: '本轮由本地智能体负责理解、规划和工具选择', detail: { hidden_reasoning_sync: false } },
+        { ts: new Date().toISOString(), event: 'tool_call', source: 'hub_governance', tool_job_id: agentToolJobId, stage: 'tool', severity: 'info', title: '工具调用', summary: 'staff_edit', detail: { tool: 'staff_edit', argument_keys: ['id', 'name'] } },
+        { ts: new Date().toISOString(), event: 'tool_result', source: 'hub_governance', tool_job_id: agentToolJobId, stage: 'tool', severity: 'info', title: '工具结果', summary: 'staff_edit · HTTP 200', detail: { tool: 'staff_edit', status: 200, ok: true } },
+      ],
+    },
+    invocations: [{
+      job_id: agentToolJobId,
+      invocation_id: 'a'.repeat(64),
+      tool: 'staff_edit',
+      status: 'done',
+      state: 'executed',
+      ok: true,
+      business_status: 200,
+      approval_status: null,
+      approval_id: null,
+      event_count: 3,
+      duration_ms: 1200,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }],
+  };
+}
+
+function incompleteAgentRunTracePayload() {
+  return {
+    kind: 'agent_client_run',
+    run: {
+      run_id: incompleteAgentRunId,
+      thread_id: 3,
+      client_app_id: 'demo-app',
+      route_key: 'demo_support',
+      status: 'context_ready',
+      model: null,
+      runtime: 'deepseek-harness',
+      usage: null,
+      governance: { planner: 'local_agent', execution: 'bailinghub_governed', hidden_reasoning_sync: false },
+    },
+    trace: {
+      summary: { tool_invocations: 1, approvals: 1, warning_count: 1, error_count: 0, duration_ms: 3200, partial: true },
+      events: [
+        { ts: new Date().toISOString(), event: 'agent_client_run_started', source: 'local_agent', stage: 'launch', severity: 'info', title: '本地智能体开始处理', summary: '本轮由本地智能体负责规划', detail: { hidden_reasoning_sync: false } },
+        { ts: new Date().toISOString(), event: 'agent_tool_invocation_state', source: 'hub_governance', tool_job_id: incompleteAgentToolJobId, stage: 'tool', severity: 'warning', title: 'ACC 工具调用状态更新', summary: 'staff_edit · awaiting_approval', detail: { tool: 'staff_edit', state: 'awaiting_approval', ok: false } },
+      ],
+    },
+    invocations: [{
+      job_id: incompleteAgentToolJobId,
+      invocation_id: 'b'.repeat(64),
+      tool: 'staff_edit',
+      status: 'done',
+      state: 'awaiting_approval',
+      ok: false,
+      business_status: null,
+      approval_status: 'approved',
+      approval_id: 9,
+      event_count: 2,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }],
   };
 }
 
@@ -123,6 +226,8 @@ async function mockApi(context) {
   await context.route('**/admin/api/config-schemas/*', (route) => route.fulfill({ json: { required: [], properties: {} } }));
   await context.route('**/admin/api/tool-providers/*/tools', (route) => route.fulfill({ json: { tools: [{ name: 'list_demo_orders', scope: 'demo.order.read' }] } }));
   await context.route('**/admin/api/runs/*/trace', (route) => route.fulfill({ json: tracePayload() }));
+  await context.route(`**/admin/api/threads/2/agent-runs/${agentRunId}/trace`, (route) => route.fulfill({ json: agentRunTracePayload() }));
+  await context.route(`**/admin/api/threads/3/agent-runs/${incompleteAgentRunId}/trace`, (route) => route.fulfill({ json: incompleteAgentRunTracePayload() }));
   await context.route('**/admin/api/**', (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === '/admin/api/me') return route.fulfill({ json: { username: 'admin', role: 'admin', perms: ['*'] } });
@@ -148,6 +253,8 @@ async function mockApi(context) {
     if (url.pathname === '/admin/api/routes') return route.fulfill({ json: fixtures.routes });
     if (url.pathname === '/admin/api/runs') return route.fulfill({ json: fixtures.runs });
     if (/^\/admin\/api\/runs\/[^/]+\/trace$/.test(url.pathname)) return route.fulfill({ json: tracePayload() });
+    if (url.pathname === `/admin/api/threads/2/agent-runs/${agentRunId}/trace`) return route.fulfill({ json: agentRunTracePayload() });
+    if (url.pathname === `/admin/api/threads/3/agent-runs/${incompleteAgentRunId}/trace`) return route.fulfill({ json: incompleteAgentRunTracePayload() });
     if (url.pathname === '/admin/api/threads') return route.fulfill({ json: fixtures.threads });
     if (url.pathname === '/admin/api/threads/1') return route.fulfill({
       json: {
@@ -155,6 +262,23 @@ async function mockApi(context) {
         messages: [
           { id: 1, direction: 'in', content: '查询订单 SO-1001', created_at: new Date().toISOString() },
           { id: 2, direction: 'out', content: '订单 SO-1001 已查询完成', job_id: fixtures.runs[0].job_id, created_at: new Date().toISOString() },
+        ],
+      },
+    });
+    if (url.pathname === '/admin/api/threads/2') return route.fulfill({
+      json: {
+        thread: fixtures.threads[1],
+        messages: [
+          { id: 3, direction: 'in', content: '把员工资料改成新的姓名', agent_run_id: agentRunId, created_at: new Date().toISOString() },
+          { id: 4, direction: 'out', content: '员工资料已修改', agent_run_id: agentRunId, created_at: new Date().toISOString() },
+        ],
+      },
+    });
+    if (url.pathname === '/admin/api/threads/3') return route.fulfill({
+      json: {
+        thread: fixtures.threads[2],
+        messages: [
+          { id: 5, direction: 'in', content: '等待本地智能体继续处理', agent_run_id: incompleteAgentRunId, created_at: new Date().toISOString() },
         ],
       },
     });
@@ -233,6 +357,26 @@ try {
   await page.locator('.tracetoggle').filter({ hasText: '执行轨迹' }).first().click();
   await expectVisible(page, '工具返回');
   await expectVisible(page, '任务完成');
+
+  await page.getByText('员工资料已修改').first().click();
+  await expectVisible(page, '把员工资料改成新的姓名');
+  await page.locator('.tracetoggle').filter({ hasText: '执行轨迹' }).first().click();
+  await expectVisible(page, '本地智能体编排');
+  await expectVisible(page, '隐藏推理不会上传');
+  await expectVisible(page, '中枢治理');
+  await expectVisible(page, 'staff_edit');
+  if (await page.getByText('未挂工具', { exact: true }).count()) {
+    throw new Error('Agent Client 轨迹不应显示旧 Job 的「未挂工具」提示');
+  }
+  if (await page.getByText('PRIVATE_REASONING', { exact: false }).count()) {
+    throw new Error('Agent Client 会话轨迹不得展示隐藏推理');
+  }
+
+  await page.getByText('等待本地智能体继续处理').first().click();
+  await page.locator('.tracetoggle').filter({ hasText: '执行轨迹' }).first().click();
+  await expectVisible(page, '上下文已就绪');
+  await expectVisible(page, '已批准，等待本地智能体续执行');
+  await expectVisible(page, '不代表全量');
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
   console.log('✓ console e2e passed');

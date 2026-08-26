@@ -93,17 +93,18 @@ export function completeTraceEntry(entry: AuditEntry): Required<AuditEntry> {
 }
 
 export function traceStageOf(event: string, detail: Record<string, unknown> = {}): TraceStage {
-  if (event === 'received' || event === 'awaiting_executor' || event === 'rejected') return 'launch';
+  if (event === 'received' || event === 'awaiting_executor' || event === 'rejected' || event === 'agent_client_run_started') return 'launch';
   if (
     event === 'kb_injected' || event === 'kb_error' ||
+    event === 'agent_client_turn_context_ready' ||
     event === 'perception_degraded' || event === 'speech_degraded' || event === 'file_input' || event === 'file_input_degraded' ||
     event === 'tools_retrieval_degraded' || event === 'tools_retrieval_diagnostics'
   ) return 'context';
   if (event.startsWith('memory_summary') || event === 'memory_summarized') return 'summary';
   if (event === 'recovered' || event === 'rerun' || event === 'retry_scheduled') return 'recovery';
   if (event.includes('approval') || event === 'tool_approved' || event === 'tool_denied' || event === 'tool_args_drift') return 'approval';
-  if (event.startsWith('tool_') || event === 'tools_retrieved' || event === 'tool_lookup' || event === 'builtin_send' || event.startsWith('builtin_send_')) return 'tool';
-  if (event.startsWith('delivery') || event.startsWith('channel_delivery') || event.startsWith('dlq_')) return 'delivery';
+  if (event.startsWith('tool_') || event.startsWith('agent_tool_') || event === 'tools_retrieved' || event === 'tool_lookup' || event === 'builtin_send' || event.startsWith('builtin_send_')) return 'tool';
+  if (event === 'agent_client_run_completed' || event.startsWith('delivery') || event.startsWith('channel_delivery') || event.startsWith('dlq_')) return 'delivery';
   if (event.startsWith('channel_') || event.startsWith('wecom_') || event === 'chat_upload' || event === 'chat_upload_error' || event === 'chat_rated') return 'channel';
   if (
     event === 'started' || event === 'dispatched' || event === 'finished' ||
@@ -124,6 +125,13 @@ export function traceStageOf(event: string, detail: Record<string, unknown> = {}
 
 export function traceSeverityOf(event: string, detail: Record<string, unknown> = {}): TraceSeverity {
   const status = String(detail['status'] ?? '');
+  if (event === 'agent_tool_invocation_state') {
+    const state = String(detail['state'] ?? '');
+    if (state === 'in_progress') return 'info';
+    if (state === 'awaiting_approval' || state === 'denied' || state === 'business_rejected' || state === 'rejected_before_dispatch') return 'warning';
+    if (state === 'reconciliation_required') return 'error';
+    if (state === 'executed') return detail['ok'] === false ? 'error' : 'info';
+  }
   if (event === 'tools_retrieval_diagnostics' && status !== 'ok') return 'warning';
   if (event === 'finished' && (status === 'error' || status === 'rejected')) return 'error';
   if (event.includes('error') || event.includes('failed') || event.endsWith('_failure')) return 'error';
@@ -136,6 +144,11 @@ export function traceSeverityOf(event: string, detail: Record<string, unknown> =
 export function traceTitleOf(event: string): string {
   const titles: Record<string, string> = {
     received: '任务已接收',
+    agent_client_run_started: '本地智能体开始处理',
+    agent_client_turn_context_ready: '运行上下文已就绪',
+    agent_client_run_completed: '本地智能体已提交最终回复',
+    agent_tool_invocation_created: 'ACC 工具调用已建立',
+    agent_tool_invocation_state: 'ACC 工具调用状态更新',
     awaiting_executor: '等待执行器认领',
     rejected: '任务被拒绝',
     started: '本地执行开始',
@@ -196,6 +209,18 @@ export function traceTitleOf(event: string): string {
 
 export function traceSummaryOf(event: string, detail: Record<string, unknown> = {}): string {
   if (event === 'received') return compact([detail['target'], detail['profile'], detail['source']]);
+  if (event === 'agent_client_run_started') return '本地智能体规划；中枢保留治理与审计';
+  if (event === 'agent_client_turn_context_ready') return compact([
+    detail['route'],
+    detail['active_tools'] != null ? `${detail['active_tools']} active tools` : '',
+  ]);
+  if (event === 'agent_client_run_completed') return compact([detail['status']]);
+  if (event === 'agent_tool_invocation_created') return compact([detail['tool'], detail['route']]);
+  if (event === 'agent_tool_invocation_state') return compact([
+    detail['tool'],
+    detail['state'],
+    detail['business_status'] != null ? `business=${detail['business_status']}` : '',
+  ]);
   if (event === 'awaiting_executor') return compact([detail['target']]);
   if (event === 'rejected') return compact([detail['reason'], detail['quota'] != null ? `quota=${detail['quota']}` : '']);
   if (event === 'dispatched') return compact([detail['executor_id'], detail['target'], detail['tools'] != null ? `${detail['tools']} tools` : '']);

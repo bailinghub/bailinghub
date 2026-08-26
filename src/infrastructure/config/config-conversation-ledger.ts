@@ -161,13 +161,13 @@ export class ConversationLedger {
     return rows[0] ? Number(rows[0].thread_id) : null;
   }
 
-  async threadMessages(threadId: number, n = 50): Promise<Array<{ direction: string; content: string; job_id: string | null; created_at: string }>> {
+  async threadMessages(threadId: number, n = 50): Promise<Array<{ direction: string; content: string; job_id: string | null; agent_run_id?: string | null; created_at: string }>> {
     const [rows] = await this.pool.query(
-      `SELECT direction,content,job_id,created_at FROM bz_messages WHERE thread_id=? ORDER BY id DESC LIMIT ${Math.min(Math.max(n, 1), 100)}`,
+      `SELECT direction,content,job_id,agent_run_id,created_at FROM bz_messages WHERE thread_id=? ORDER BY id DESC LIMIT ${Math.min(Math.max(n, 1), 100)}`,
       [threadId],
     );
     return (rows as any[]).reverse().map((r) => ({
-      direction: r.direction, content: r.content, job_id: r.job_id ?? null,
+      direction: r.direction, content: r.content, job_id: r.job_id ?? null, agent_run_id: r.agent_run_id ?? null,
       created_at: new Date(r.created_at).toISOString(),
     }));
   }
@@ -210,12 +210,13 @@ export class ConversationLedger {
     const t = (trows as any[])[0];
     if (!t) return null;
     const [mrows] = await this.pool.query(
-      'SELECT id,direction,channel,principal_id,job_id,content,created_at FROM bz_messages WHERE thread_id=? ORDER BY id ASC LIMIT 1000',
+      'SELECT id,direction,channel,principal_id,job_id,agent_run_id,content,created_at FROM bz_messages WHERE thread_id=? ORDER BY id ASC LIMIT 1000',
       [threadId],
     );
     const messages = (mrows as any[]).map((m) => ({
       id: Number(m.id), direction: m.direction, channel: m.channel, principal_id: m.principal_id ?? null,
-      job_id: m.job_id ?? null, content: m.content, created_at: new Date(m.created_at).toISOString(),
+      job_id: m.job_id ?? null, agent_run_id: m.agent_run_id ?? null,
+      content: m.content, created_at: new Date(m.created_at).toISOString(),
     }));
     return { thread: { ...rowThreadHead(t), summary: t.summary ?? null }, messages };
   }
