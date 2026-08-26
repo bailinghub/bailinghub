@@ -189,8 +189,8 @@ function directPermissionAllows(route: Route, tool: ToolDefinition, writeNames: 
   return writeNames.has(tool.name);
 }
 
-function directToolDefinition(tool: ToolDefinition, unattended: Set<string>): ToolDefinition {
-  if (tool.readonly || unattended.has(tool.name)) return tool;
+function directToolDefinition(tool: ToolDefinition, forceApproval: Set<string>): ToolDefinition {
+  if (tool.readonly || !forceApproval.has(tool.name)) return tool;
   return { ...tool, confirmRequired: true };
 }
 
@@ -325,12 +325,12 @@ async function resolveSurface(deps: ToolProxyDeps, auth: AgentToolAuthContext, r
     return { route, revision: fingerprint(route, empty), context: empty, tools: [] };
   }
   const writeNames = new Set(direct.write_tools ?? []);
-  const unattended = new Set(direct.unattended_write_tools ?? []);
+  const forceApproval = new Set(direct.force_approval_tools ?? []);
   const sources = resolved.sources.map((source) => ({
     ...source,
     allowed: source.allowed
       .filter((tool) => directPermissionAllows(route, tool, writeNames))
-      .map((tool) => directToolDefinition(tool, unattended)),
+      .map((tool) => directToolDefinition(tool, forceApproval)),
   })).filter((source) => source.allowed.length);
   const allowed = sources.flatMap((source) => source.allowed).sort((a, b) => a.name.localeCompare(b.name));
   const context: AllowedToolContext = { ...resolved, sources, allowed };

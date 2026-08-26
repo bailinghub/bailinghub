@@ -15,6 +15,12 @@
 
 `turns` 与 `complete` 的原始 JSON 请求上限为 512 KiB。该上限可覆盖 64000 字符 Unicode 文本的 JSON 编码、Turn 的 16 KiB `page_context` 以及合理 envelope；解析后仍按各字段的字符上限严格校验。
 
+## 工具审批语义
+
+`tools.agent_direct.write_tools` 只负责按精确 operationId 开放本地 Agent 可调用的写工具；工具是否需要审批默认继续以业务侧 ACC 的 `risk`、`approval.required` 和 `approval.when` 声明为准。路由只有把工具精确列入 `tools.agent_direct.force_approval_tools` 时，才会在 ACC 之外额外强制审批。高风险、ACC 明示审批和条件审批不会被路由覆盖掉。
+
+早期私有候选的 `unattended_write_tools` 仅保留兼容读取：存在该字段时，`write_tools` 中未列入它的工具仍按旧语义强制审批。新配置不得与 `force_approval_tools` 同时使用；删除旧字段表示默认继承 ACC，迁移为新字段时应填写旧 `write_tools` 与 `unattended_write_tools` 的差集，而不是原样复制旧列表。
+
 ## Bootstrap
 
 ```json
@@ -37,7 +43,7 @@
       "permission": "full"
     }
   },
-  "capabilities": { "revision": "<sha256>", "authorized_total": 312, "active_limit": 8, "readonly": 311, "writes": 1, "approval_required": 1 }
+  "capabilities": { "revision": "<sha256>", "authorized_total": 312, "active_limit": 8, "readonly": 311, "writes": 1, "approval_required": 0 }
 }
 ```
 

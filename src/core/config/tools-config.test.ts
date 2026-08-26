@@ -123,27 +123,59 @@ test('validateRouteToolsConfig: 业务 webhook 审批必须配置 url', async ()
   assert.equal(err, 'tools.approval.type=business_webhook 时 url 必填');
 });
 
-test('agentDirectToolsConfig: 只在明示启用时返回精确写工具策略', () => {
+test('agentDirectToolsConfig: 写工具默认继承 ACC，新字段只精确追加审批', () => {
   assert.equal(agentDirectToolsConfig({}), null);
   assert.equal(agentDirectToolsConfig({ agent_direct: { enabled: false } }), null);
   assert.deepEqual(agentDirectToolsConfig({
     agent_direct: {
       enabled: true,
       write_tools: ['staff_edit', 'staff_edit'],
-      unattended_write_tools: ['ticket_draft'],
+      force_approval_tools: ['staff_edit', 'staff_edit'],
     },
   }), {
     enabled: true,
     write_tools: ['staff_edit'],
-    unattended_write_tools: ['ticket_draft'],
+    force_approval_tools: ['staff_edit'],
+  });
+  assert.deepEqual(agentDirectToolsConfig({
+    agent_direct: { enabled: true, write_tools: ['staff_edit'] },
+  }), {
+    enabled: true,
+    write_tools: ['staff_edit'],
+    force_approval_tools: [],
   });
 });
 
-test('validateRouteToolsConfig: Agent 直调写工具只允许精确 operationId，无人值守集必须是子集', async () => {
+test('agentDirectToolsConfig: 旧 unattended 白名单兼容转换为显式强制审批集', () => {
+  assert.deepEqual(agentDirectToolsConfig({
+    agent_direct: {
+      enabled: true,
+      write_tools: ['staff_edit', 'ticket_draft'],
+      unattended_write_tools: ['ticket_draft'],
+    },
+  }), {
+    enabled: true,
+    write_tools: ['staff_edit', 'ticket_draft'],
+    force_approval_tools: ['staff_edit'],
+  });
+});
+
+test('validateRouteToolsConfig: Agent 直调审批覆盖只允许精确 operationId 且必须是写工具子集', async () => {
   assert.equal(await validateRouteToolsConfig({ agent_direct: { enabled: true } }), null);
   assert.match(await validateRouteToolsConfig({ agent_direct: { enabled: true, write_tools: ['*'] } }) ?? '', /不允许通配符/);
   assert.match(await validateRouteToolsConfig({
+    agent_direct: { enabled: true, write_tools: ['staff_edit'], force_approval_tools: ['staff_delete'] },
+  }) ?? '', /force_approval_tools 必须是 write_tools 的子集/);
+  assert.match(await validateRouteToolsConfig({
     agent_direct: { enabled: true, write_tools: ['staff_edit'], unattended_write_tools: ['staff_delete'] },
   }) ?? '', /write_tools 的子集/);
+  assert.match(await validateRouteToolsConfig({
+    agent_direct: {
+      enabled: true,
+      write_tools: ['staff_edit'],
+      force_approval_tools: ['staff_edit'],
+      unattended_write_tools: ['staff_edit'],
+    },
+  }) ?? '', /不可同时配置/);
   assert.match(await validateRouteToolsConfig({ agent_direct: { enabled: true, future: true } }) ?? '', /未声明字段/);
 });

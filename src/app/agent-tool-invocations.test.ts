@@ -100,6 +100,15 @@ function route(): Route {
   };
 }
 
+function routeWithForcedApproval(tool = 'staff_edit'): Route {
+  const value = route();
+  value.tools = {
+    ...value.tools,
+    agent_direct: { enabled: true, write_tools: ['staff_edit'], force_approval_tools: [tool] },
+  };
+  return value;
+}
+
 function auth(): AgentToolAuthContext {
   const client: Client = {
     app_id: 'digital-cloud', name: 'Digital Cloud', token: 'hidden', agent_authorize_url: 'https://biz.example.com/agent',
@@ -188,7 +197,7 @@ function runtimeRun(overrides: Partial<AgentClientRunRecord> = {}): AgentClientR
   };
 }
 
-test('Agent direct: 本地投影只含只读与精确写工具，写工具默认提级审批', async (t) => {
+test('Agent direct: 本地投影只含只读与精确写工具，写工具默认继承 ACC 审批声明', async (t) => {
   let businessCalls = 0;
   const business = createServer(async (req, res) => {
     businessCalls++;
@@ -205,7 +214,7 @@ test('Agent direct: 本地投影只含只读与精确写工具，写工具默认
 
   const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
   assert.deepEqual(catalog.tools.map((item) => item.name), ['staff_edit', 'staff_list']);
-  assert.equal(catalog.tools.find((item) => item.name === 'staff_edit')?.approval_required, true);
+  assert.equal(catalog.tools.find((item) => item.name === 'staff_edit')?.approval_required, false);
   assert.equal(catalog.tools.some((item) => item.name === 'recharge_refund'), false);
   assert.equal(JSON.stringify(catalog).includes('provider-secret'), false);
   assert.equal(JSON.stringify(catalog).includes('127.0.0.1'), false);
@@ -219,28 +228,65 @@ test('Agent direct: 本地投影只含只读与精确写工具，写工具默认
   assert.equal(businessCalls, 1);
   assert.ok([...fx.state.jobs.values()].every((job) => job.target === 'agent-tool-v1' && job.status === 'done'));
 
-  const pending = await invokeAgentToolFor(fx.deps, auth(), {
+  const write = await invokeAgentToolFor(fx.deps, auth(), {
     invocation_id: invocationId('b'), route: 'tenant-agent', capability_revision: catalog.capability_revision,
+    agent_run_id: AGENT_RUN_ID, tool: 'staff_edit', arguments: { id: 7, name: 'Ada' },
+  });
+  assert.equal(write.state, 'executed');
+  assert.equal(write.ok, true);
+  assert.equal(businessCalls, 2);
+  assert.equal(fx.approvals.length, 0);
+});
+
+test('Agent direct: 路由精确列出的写工具额外强制审批并可续执行', async (t) => {
+  let businessCalls = 0;
+  const business = createServer((_req, res) => {
+    businessCalls++;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end('{"ok":true}');
+  });
+  const port = await listen(business);
+  t.after(() => close(business));
+  const fx = fixture(`http://127.0.0.1:${port}`);
+  fx.setRoute(routeWithForcedApproval());
+
+  const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
+  assert.equal(catalog.tools.find((item) => item.name === 'staff_edit')?.approval_required, true);
+  const pending = await invokeAgentToolFor(fx.deps, auth(), {
+    invocation_id: invocationId('8'), route: 'tenant-agent', capability_revision: catalog.capability_revision,
     agent_run_id: AGENT_RUN_ID, tool: 'staff_edit', arguments: { id: 7, name: 'Ada' },
   });
   assert.equal(pending.state, 'awaiting_approval');
   assert.equal(pending.approval_id, 1);
-  assert.equal(businessCalls, 1, '审批前不得外发写请求');
+  assert.equal(businessCalls, 0, '审批前不得外发写请求');
   assert.equal(fx.approvals.length, 1);
 
   fx.approvals[0]!.status = 'approved';
   // 其他工具的描述变更会改变整份 catalog revision，但 staff_edit 的执行指纹未变。
   fx.setSpec(spec().replace('查询员工', '查询门店员工'));
   const completed = await resumeAgentToolFor(fx.deps, auth(), {
-    invocation_id: invocationId('b'),
+    invocation_id: invocationId('8'),
   });
   assert.equal(completed.state, 'executed');
-  assert.equal(businessCalls, 2);
+  assert.equal(businessCalls, 1);
   const again = await resumeAgentToolFor(fx.deps, auth(), {
-    invocation_id: invocationId('b'),
+    invocation_id: invocationId('8'),
   });
   assert.deepEqual(again, completed);
-  assert.equal(businessCalls, 2, '完成后 resume 必须返回已存结果，不得重复写');
+  assert.equal(businessCalls, 1, '完成后 resume 必须返回已存结果，不得重复写');
+});
+
+test('Agent direct: ACC 高风险写工具在默认继承模式下仍需要审批', async () => {
+  const fx = fixture('https://business.invalid');
+  fx.setSpec(spec().replace('"risk":{"level":"medium"}', '"risk":{"level":"high"}'));
+  const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
+  assert.equal(catalog.tools.find((item) => item.name === 'staff_edit')?.approval_required, true);
+  const pending = await invokeAgentToolFor(fx.deps, auth(), {
+    invocation_id: invocationId('6'), route: 'tenant-agent', capability_revision: catalog.capability_revision,
+    agent_run_id: AGENT_RUN_ID, tool: 'staff_edit', arguments: { id: 7, name: 'Ada' },
+  });
+  assert.equal(pending.state, 'awaiting_approval');
+  assert.equal(fx.approvals.length, 1);
 });
 
 test('Agent direct: invocation 与 agent_run_id/参数不可变绑定', async (t) => {
@@ -338,6 +384,7 @@ test('Agent direct: 终态回放仍重验当前具体工具授权', async (t) =>
 
 test('Agent direct: 当前工具执行契约变更时审批快照不执行', async () => {
   const fx = fixture('https://business.invalid');
+  fx.setRoute(routeWithForcedApproval());
   const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
   const pending = await invokeAgentToolFor(fx.deps, auth(), {
     invocation_id: invocationId('e'), route: 'tenant-agent', capability_revision: catalog.capability_revision,
@@ -365,6 +412,7 @@ test('Agent direct: 工具限流不消费批准，同 invocation 可安全重试
   const port = await listen(business);
   t.after(() => close(business));
   const fx = fixture(`http://127.0.0.1:${port}`);
+  fx.setRoute(routeWithForcedApproval());
   const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
   const invocation_id = invocationId('f');
   const pending = await invokeAgentToolFor(fx.deps, auth(), {
