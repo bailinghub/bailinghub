@@ -92,6 +92,17 @@ Agent Client 不会收到模型凭据、Tool Provider Secret、业务 API 地址
 中枢创建接入方时会显示一次 Client Token。它只交给业务后端，用于业务授权页服务端调用
 BailingHub Agent Auth 接口。不要把它写入 DSH 配置、网页 JavaScript、URL、README 或截图。
 
+创建完成后可打开控制台“智能体客户端”：
+
+- 查看哪些既有接入方已经开放 Agent 授权，以及允许的 workspace；
+- 查看 Agent Session 的设备名、可信业务主体、最后活跃与有效期；
+- 远程撤销遗失设备或不再允许的 Agent Session；
+- 按 `hubUrl + clientAppId + workspace + connectionName` 生成不含秘密的 JSON 或 DSH 命令；
+- 查看近期会话、Agent Run、工具调用、Token、失败率与审批状态聚合。
+
+该页面复用现有接入方、Agent Session 和 Agent Run 账本，不会创建第二套 Client，也不等同于
+“执行器”。生成的配置不包含 Client Token、Agent Token 或模型 Key。
+
 ## 4. 业务开发者：建立可信身份授权页
 
 BailingHub SDK 提供的是服务端 Agent Auth 方法，不会在任意业务系统中自动生成统一样式的页面。
@@ -178,8 +189,20 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 ## 6. 多 Hub 与多 workspace
 
 一条连接由 `Hub + clientAppId + workspace` 唯一绑定，`connectionName` 只是该绑定的本机别名。
-首个公开版本按最小权限原则每次授权一个 workspace。需要连接另一套中枢或另一条 route 时，使用
-另一个 `connectionName` 并重新完成浏览器授权；不要复用或复制 access/refresh token 文件。
+每次登录按最小权限原则申请一个 workspace。需要连接另一套中枢或另一条 route 时，可由控制台
+生成命令，或由用户在 DSH 中执行：
+
+```text
+/bailinghub connections add "门店 A" https://hub-a.example.com merchant-agent order-assistant
+/bailinghub connections list
+/bailinghub connections use "门店 A"
+/bailinghub login
+```
+
+连接切换是用户命令，不是模型工具；它只影响之后新建的 Agent 会话，已有会话保持原连接不漂移。
+`/bailinghub use <workspace>` 只在当前授权已经允许的 workspace 内切换，不能替代多连接选择。
+删除连接时使用 `/bailinghub connections remove <名称>`：SDK 会先远程撤销 Agent Session，成功
+后再删除本地凭据；远程撤销失败则保留连接和凭据供重试。不要复制 access/refresh token 文件。
 
 ## 7. 最小验收
 

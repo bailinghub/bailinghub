@@ -97,6 +97,19 @@ BailingHub displays the Client Token once. Give it only to the business backend 
 the authorization page. Never put it in DSH settings, browser JavaScript, a URL, documentation,
 or screenshots.
 
+After creation, open **Agent Clients** in the console to:
+
+- inspect which existing clients enable Agent authorization and their allowed workspaces;
+- inspect device label, trusted business principal, last activity, and expiry for Agent Sessions;
+- remotely revoke a lost or no-longer-authorized Agent Session;
+- generate secret-free JSON or DSH commands from
+  `hubUrl + clientAppId + workspace + connectionName`;
+- view recent conversation, Agent Run, tool-call, token, failure-rate, and approval aggregates.
+
+This page projects the existing client, Agent Session, and Agent Run ledgers. It does not create a
+second Client resource and is not the Executor feature. Generated configuration contains no Client
+Token, Agent token, or model key.
+
 ## 4. Business developer: bind trusted identity
 
 The BailingHub SDK provides server-side Agent Auth methods; it does not inject one universal UI
@@ -184,9 +197,22 @@ reads nor manages model-provider keys.
 ## 6. Multiple Hubs and workspaces
 
 A connection is uniquely bound to `Hub + clientAppId + workspace`; `connectionName` is only its
-local alias. The first public version authorizes one workspace per connection for least
-privilege. Use a different alias and a new browser authorization for another Hub or route. Never
-copy access/refresh-token files between connections.
+local alias. Each login requests one workspace for least privilege. For another Hub or route, use a
+console-generated command or run these user commands in DSH:
+
+```text
+/bailinghub connections add "shop A" https://hub-a.example.com merchant-agent order-assistant
+/bailinghub connections list
+/bailinghub connections use "shop A"
+/bailinghub login
+```
+
+Connection selection is a user command, not a model tool. It affects only newly created Agent
+sessions; existing sessions stay pinned to their original connection. `/bailinghub use
+<workspace>` moves only within workspaces already granted to the current authorization and is not
+a multi-connection selector. `/bailinghub connections remove <name>` first revokes the remote
+Agent Session and deletes local credentials only after success; a failed remote revoke keeps the
+connection for retry. Never copy access or refresh-token files between connections.
 
 ## 7. Minimum acceptance
 

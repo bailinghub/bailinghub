@@ -37,6 +37,17 @@ export interface ReserveAgentClientRunInput {
   user_input: string;
 }
 
+export interface AgentClientAdminStats {
+  client_app_id: string;
+  runs: number;
+  conversations: number;
+  completed: number;
+  failed: number;
+  tool_calls: number;
+  total_tokens: number;
+  approvals: Record<string, number>;
+}
+
 export class AgentClientRuntimeConflictError extends Error {
   override readonly name = 'AgentClientRuntimeConflictError';
 }
@@ -167,6 +178,49 @@ export class AgentClientRuntimeRepository {
   async findRunForInvocation(runId: string): Promise<AgentClientRunRecord | null> {
     const [rows] = await this.pool.query('SELECT * FROM bz_agent_client_runs WHERE run_id=? LIMIT 1', [runId]);
     return rows[0] ? runRow(rows[0]) : null;
+  }
+
+  /** Safe aggregate for the Agent Client admin center. No prompts, tool arguments, or results are returned. */
+  async statsForAdmin(input: { since: string; clientAppId?: string }): Promise<AgentClientAdminStats[]> {
+    const where = input.clientAppId ? 'created_at>=? AND client_app_id=?' : 'created_at>=?';
+    const params = input.clientAppId ? [input.since, input.clientAppId] : [input.since];
+    const [runRows] = await this.pool.query(
+      'SELECT client_app_id,COUNT(*) AS runs,' +
+      ' COUNT(DISTINCT CONCAT_WS(\'|\',session_id,route_key,client_conversation_id)) AS conversations,' +
+      ' SUM(CASE WHEN status=\'completed\' THEN 1 ELSE 0 END) AS completed,' +
+      ' SUM(CASE WHEN status IN (\'failed\',\'cancelled\') THEN 1 ELSE 0 END) AS failed,' +
+      ' SUM(COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_json,\'$.tool_calls\')) AS UNSIGNED),0)) AS tool_calls,' +
+      ' SUM(COALESCE(CAST(JSON_UNQUOTE(JSON_EXTRACT(usage_json,\'$.total_tokens\')) AS UNSIGNED),0)) AS total_tokens' +
+      ` FROM bz_agent_client_runs WHERE ${where} GROUP BY client_app_id ORDER BY client_app_id`,
+      params,
+    );
+    const approvalWhere = input.clientAppId
+      ? 'j.created_at>=? AND j.agent_session_id IS NOT NULL AND j.client_app_id=?'
+      : 'j.created_at>=? AND j.agent_session_id IS NOT NULL';
+    const [approvalRows] = await this.pool.query(
+      'SELECT j.client_app_id,a.status,COUNT(*) AS total FROM bz_tool_approvals a' +
+      ` JOIN bz_jobs j ON j.job_id=a.job_id WHERE ${approvalWhere}` +
+      ' GROUP BY j.client_app_id,a.status ORDER BY j.client_app_id,a.status',
+      params,
+    );
+    const approvals = new Map<string, Record<string, number>>();
+    for (const row of approvalRows as any[]) {
+      const clientAppId = String(row.client_app_id);
+      const status = String(row.status);
+      const current = approvals.get(clientAppId) ?? {};
+      current[status] = Number(row.total ?? 0);
+      approvals.set(clientAppId, current);
+    }
+    return (runRows as any[]).map((row) => ({
+      client_app_id: String(row.client_app_id),
+      runs: Number(row.runs ?? 0),
+      conversations: Number(row.conversations ?? 0),
+      completed: Number(row.completed ?? 0),
+      failed: Number(row.failed ?? 0),
+      tool_calls: Number(row.tool_calls ?? 0),
+      total_tokens: Number(row.total_tokens ?? 0),
+      approvals: approvals.get(String(row.client_app_id)) ?? {},
+    }));
   }
 
   async finalizeTurn(input: {

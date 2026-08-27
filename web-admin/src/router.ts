@@ -16,6 +16,7 @@ export const PAGES = [
   { path: 'routes', perm: 'routes:read', title: '触发路由', group: '场景配置' },
   // ③ 接入入口 —— 场景怎么被触发（谁/从哪触发）
   { path: 'clients', perm: 'clients:read', title: '接入方', group: '接入入口' },
+  { path: 'agent-clients', perm: 'clients:read', title: '智能体客户端', group: '接入入口' },
   { path: 'chat', perm: 'routes:read', title: '聊天入口', group: '接入入口' },
   { path: 'channels', perm: 'channels:read', title: '入站渠道', group: '接入入口' },
   // ④ 能力 —— 场景可引用的积木
@@ -59,6 +60,7 @@ export const router = createRouter({
         { path: 'channels', component: () => import('./pages/Channels.vue'), meta: { perm: 'channels:read', title: '入站渠道' } },
         { path: 'projects', component: () => import('./pages/Projects.vue'), meta: { perm: 'projects:read', title: '项目目录' } },
         { path: 'clients', component: () => import('./pages/Clients.vue'), meta: { perm: 'clients:read', title: '接入方' } },
+        { path: 'agent-clients', component: () => import('./pages/AgentClients.vue'), meta: { perm: 'clients:read', title: '智能体客户端' } },
         { path: 'credentials', component: () => import('./pages/Credentials.vue'), meta: { perm: 'credentials:read', title: '模型凭证' } },
         { path: 'storage', component: () => import('./pages/StorageBuckets.vue'), meta: { perm: 'storage:read', title: '媒体存储' } },
         { path: 'settings', component: () => import('./pages/SystemSettings.vue'), meta: { perm: 'admins:manage', title: '实例外观' } },
