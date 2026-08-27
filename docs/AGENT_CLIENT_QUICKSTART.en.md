@@ -72,8 +72,10 @@ Client setting.
 ### 3.3 Configure a route
 
 1. Set `tools.agent_direct.enabled=true`.
-2. Add only explicitly allowed write operation IDs to `write_tools`; read-only tools do not need
-   to be listed there.
+2. Add only explicitly allowed write operation IDs to `write_tools`. For a large catalog, use
+   **Select all current write operations** in the console; it stores an exact snapshot of the
+   current operation IDs and does not authorize future writes automatically. Read-only tools do
+   not need to be listed there.
 3. Inherit approval requirements from the ACC declaration. Use `force_approval_tools` only to
    make selected writes stricter.
 4. Enable Local Agent Runtime and optionally set host-specific instructions and an active tool

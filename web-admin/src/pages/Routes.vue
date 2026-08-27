@@ -620,6 +620,12 @@
             <p>只有精确列入的写工具才会暴露给本地 Agent。候选项来自已选工具源的 <code>/tools</code> 编译结果，并且必须已被上方 scope 放行。</p>
             <p>可手动填写尚未拉取到的 operationId，但不允许 <code>*</code> 或其他通配符。</p>
           </HelpTip></template>
+          <div class="agent-direct-write-actions">
+            <span>当前目录已选 {{ agentDirectSelectedCatalogWriteCount }} / {{ agentDirectWriteOptions.length }}</span>
+            <el-button size="small" type="primary" plain :disabled="!agentDirectWriteOptions.length || agentDirectAllCurrentWritesSelected"
+              @click="selectAllCurrentAgentDirectWrites">全选当前写操作（{{ agentDirectWriteOptions.length }}）</el-button>
+            <el-button size="small" :disabled="!agentDirect.write_tools.length" @click="clearAgentDirectWrites">清空</el-button>
+          </div>
           <el-select v-model="agentDirect.write_tools" multiple filterable allow-create default-first-option
             style="width: 100%" placeholder="选择写操作，或手填精确 operationId" @change="onAgentDirectNamesChange('write_tools')">
             <el-option v-for="tool in agentDirectWriteOptions" :key="tool.name" :value="tool.name" :label="tool.name">
@@ -632,7 +638,7 @@
               </div>
             </el-option>
           </el-select>
-          <div class="field-hint">只读工具不需逐个列出；开启直调后会按工具源 scope 与业务主体权限自动暴露。</div>
+          <div class="field-hint">“全选当前”保存的是此刻工具目录的精确 operationId 快照，不会自动授权未来新增写操作；只读工具仍按工具源 scope 与业务主体权限自动暴露。</div>
         </el-form-item>
         <el-form-item>
           <template #label>额外强制审批 <HelpTip title="额外强制审批">
@@ -853,6 +859,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
+import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { WarningFilled } from '@element-plus/icons-vue';
 import { api } from '../request';
 import { openDoc } from '../docs';
@@ -862,6 +869,7 @@ import { useMe } from '../store';
 import { LLM_PROVIDERS, detectProvider } from '../llm-catalog';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
 import { kernelOrigin } from '../runtime-path';
+import { EXACT_OPERATION_ID_RE, includesAllCurrentOperationIds, mergeExactOperationIds } from '../agent-direct-selection';
 
 const s = useMe();
 const routeSchema = useConfigSchema('route');
@@ -1102,6 +1110,14 @@ const agentDirectToolOptions = computed<AgentDirectToolOption[]>(() => {
 });
 const agentDirectWriteOptions = computed(() => agentDirectToolOptions.value.filter((tool) => !tool.readonly && tool.allowed));
 const agentDirectReadonlyCount = computed(() => agentDirectToolOptions.value.filter((tool) => tool.readonly && tool.allowed).length);
+const agentDirectCurrentWriteNames = computed(() => agentDirectWriteOptions.value.map((tool) => tool.name));
+const agentDirectSelectedCatalogWriteCount = computed(() => {
+  const selected = new Set(agentDirect.write_tools);
+  return agentDirectCurrentWriteNames.value.filter((name) => selected.has(name)).length;
+});
+const agentDirectAllCurrentWritesSelected = computed(() => (
+  includesAllCurrentOperationIds(agentDirect.write_tools, agentDirectCurrentWriteNames.value)
+));
 const agentDirectApprovalOptions = computed<AgentDirectToolOption[]>(() => {
   const catalog = new Map(agentDirectToolOptions.value.map((tool) => [tool.name, tool]));
   return agentDirect.write_tools.map((name) => catalog.get(name) ?? {
@@ -1115,14 +1131,13 @@ const agentDirectApprovalOptions = computed<AgentDirectToolOption[]>(() => {
   });
 });
 
-const OPERATION_ID_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 type AgentDirectListField = 'write_tools' | 'force_approval_tools';
 function onAgentDirectNamesChange(field: AgentDirectListField): void {
   agentDirect.configured = true;
   const values = agentDirect[field].map((value) => String(value).trim()).filter(Boolean);
-  const invalid = values.filter((value) => !OPERATION_ID_RE.test(value));
+  const invalid = values.filter((value) => !EXACT_OPERATION_ID_RE.test(value));
   if (invalid.length) {
-    agentDirect[field] = [...new Set(values.filter((value) => OPERATION_ID_RE.test(value)))];
+    agentDirect[field] = [...new Set(values.filter((value) => EXACT_OPERATION_ID_RE.test(value)))];
     ElMessage.warning(invalid.includes('*') ? '本地 Agent 工具不允许 *，请选择或填写精确 operationId' : 'operationId 只允许字母、数字和下划线，且以字母或下划线开头');
   } else {
     agentDirect[field] = [...new Set(values)];
@@ -1143,6 +1158,29 @@ function onAgentDirectNamesChange(field: AgentDirectListField): void {
     }
   }
 }
+async function selectAllCurrentAgentDirectWrites(): Promise<void> {
+  const current = agentDirectCurrentWriteNames.value;
+  if (!current.length || agentDirectAllCurrentWritesSelected.value) return;
+  try {
+    await ElMessageBox.confirm(
+      `将把当前工具目录中的 ${current.length} 个写 operationId 精确加入本地 Agent 白名单。未来新增写操作不会自动获得授权，ACC 风险、主体与审批治理仍然生效。`,
+      '全选当前写操作',
+      { type: 'warning', confirmButtonText: '确认全选', cancelButtonText: '取消' },
+    );
+  } catch {
+    return;
+  }
+  agentDirect.configured = true;
+  agentDirect.write_tools = mergeExactOperationIds(agentDirect.write_tools, current);
+  ElMessage.success(`已选择当前 ${current.length} 个写操作，保存路由后生效`);
+}
+function clearAgentDirectWrites(): void {
+  if (!agentDirect.write_tools.length) return;
+  agentDirect.configured = true;
+  agentDirect.write_tools = [];
+  agentDirect.force_approval_tools = [];
+  ElMessage.info('已清空写操作授权及其额外强制审批项，保存路由后生效');
+}
 function agentToolRiskType(risk: string): 'success' | 'warning' | 'danger' | 'info' {
   if (risk === 'high') return 'danger';
   if (risk === 'medium') return 'warning';
@@ -1151,7 +1189,7 @@ function agentToolRiskType(risk: string): 'success' | 'warning' | 'danger' | 'in
 }
 function validateAgentDirectNames(field: AgentDirectListField, label: string): string[] {
   const names = agentDirect[field].map((value) => String(value).trim()).filter(Boolean);
-  if (names.some((name) => !OPERATION_ID_RE.test(name))) throw new Error(`${label}只允许精确 operationId，不允许 * 或其他通配符`);
+  if (names.some((name) => !EXACT_OPERATION_ID_RE.test(name))) throw new Error(`${label}只允许精确 operationId，不允许 * 或其他通配符`);
   return [...new Set(names)];
 }
 
@@ -1894,6 +1932,17 @@ onMounted(async () => {
   font-size: 12px;
   line-height: 1.6;
 }
+.agent-direct-write-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.agent-direct-write-actions span { margin-right: auto; }
 .agent-tool-option {
   display: flex;
   align-items: center;
