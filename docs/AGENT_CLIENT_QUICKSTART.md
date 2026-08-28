@@ -30,7 +30,7 @@ BailingHub 负责可信业务身份、能力裁剪、审批、幂等、业务调
 | `hubUrl` | DSH/宿主部署者 | 宿主插件配置 | 否；只填中枢公开 HTTPS 根地址 |
 | `clientAppId` | DSH/宿主部署者 | 宿主插件配置 | 否；对应中枢“接入方”的 `app_id` |
 | `workspace` | DSH/宿主部署者 | 宿主插件配置 | 否；对应允许的 BailingHub `route_key` |
-| `connectionName` | 最终用户或宿主部署者 | 本机 SDK 连接注册表 | 否；只是本机可读别名 |
+| `connectionName` | 最终用户或宿主部署者 | 本机 SDK 连接注册表 | 否；选择一个本机连接实例的可读名称 |
 | Agent 授权页 URL | 业务开发者/中枢管理员 | BailingHub 接入方配置 | 否，但不应让最终用户手填 |
 | 接入方 Client Token | 业务后端 | 服务端 Secret/环境变量 | **是；不得进入浏览器、DSH 或公开配置** |
 | Tool Provider Secret | 业务后端与 BailingHub | 两端 Secret/凭据管理 | **是；不得进入 DSH** |
@@ -186,23 +186,29 @@ Windows 在具备原生安全存储前对 Agent Session 失败关闭。
 DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中单独配置。BailingHub 插件既不读取
 也不代管模型 Key。
 
-## 6. 多 Hub 与多 workspace
+## 6. 多 Hub、多 workspace 与同绑定身份实例
 
-一条连接由 `Hub + clientAppId + workspace` 唯一绑定，`connectionName` 只是该绑定的本机别名。
-每次登录按最小权限原则申请一个 workspace。需要连接另一套中枢或另一条 route 时，可由控制台
-生成命令，或由用户在 DSH 中执行：
+公开绑定由 `Hub + clientAppId + workspace` 组成；`connectionName` 选择一个本机连接实例。
+未发布的多连接候选允许多个实例使用同一公开绑定，但每个实例都必须单独完成浏览器授权，并拥有
+独立 Agent Session、凭据与撤销生命周期。Core 不信任本机实例名或实例 ID，可信主体仍只来自业务
+后端批准得到的 `principal` 与 `on_behalf_of`。
+
+每次登录按最小权限原则申请一个 workspace。需要连接另一套中枢、另一条 route，或在同一公开
+绑定下授权另一业务身份时，可由控制台生成命令，或由用户在 DSH 中执行：
 
 ```text
-/bailinghub connections add "门店 A" https://hub-a.example.com merchant-agent order-assistant
+/bailinghub connections add "identity-a" https://hub-a.example.com merchant-agent order-assistant
 /bailinghub connections list
-/bailinghub connections use "门店 A"
+/bailinghub connections use "identity-a"
 /bailinghub login
 ```
 
 连接切换是用户命令，不是模型工具；它只影响之后新建的 Agent 会话，已有会话保持原连接不漂移。
 `/bailinghub use <workspace>` 只在当前授权已经允许的 workspace 内切换，不能替代多连接选择。
 删除连接时使用 `/bailinghub connections remove <名称>`：SDK 会先远程撤销 Agent Session，成功
-后再删除本地凭据；远程撤销失败则保留连接和凭据供重试。不要复制 access/refresh token 文件。
+后再删除该实例的本地凭据；远程撤销失败则保留该实例和凭据供重试。不要复制 access/refresh token
+文件。Core 的 `bz_agent_sessions` 以 `session_id` 为主键，不会把相同 client、route 或主体的多次
+授权折叠成一条会话，因此每个实例可以独立失效和审计。
 
 ## 7. 最小验收
 

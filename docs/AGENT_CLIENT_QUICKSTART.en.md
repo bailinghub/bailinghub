@@ -33,7 +33,7 @@ sends its login cookie, password, or API secret to DSH, and DSH never calls busi
 | `hubUrl` | host deployer | host plugin settings | No; public BailingHub HTTPS origin |
 | `clientAppId` | host deployer | host plugin settings | No; BailingHub client `app_id` |
 | `workspace` | host deployer | host plugin settings | No; an allowed BailingHub `route_key` |
-| `connectionName` | local user | local SDK registry | No; local readable alias only |
+| `connectionName` | local user | local SDK registry | No; readable selector for one local connection instance |
 | Agent authorization URL | business developer / Hub admin | BailingHub client config | No, but users do not enter it |
 | business Client Token | business backend | server-side secret store | **Yes; never browser or DSH config** |
 | Tool Provider Secret | business backend and BailingHub | both secret stores | **Yes; never DSH** |
@@ -196,16 +196,22 @@ Agent Session fails closed on Windows until a native secure store is available.
 Configure the model provider and model API key separately in DSH. The BailingHub plugin neither
 reads nor manages model-provider keys.
 
-## 6. Multiple Hubs and workspaces
+## 6. Multiple Hubs, workspaces, and same-binding identity instances
 
-A connection is uniquely bound to `Hub + clientAppId + workspace`; `connectionName` is only its
-local alias. Each login requests one workspace for least privilege. For another Hub or route, use a
-console-generated command or run these user commands in DSH:
+The public binding is `Hub + clientAppId + workspace`; `connectionName` selects one local
+connection instance. The unreleased multi-connection candidate permits multiple instances on the
+same public binding, but every instance requires separate browser authorization and owns an
+independent Agent Session, credential, and revocation lifecycle. Core does not trust the local
+instance name or id: the trusted subject still comes only from business-backend approval as
+`principal` and `on_behalf_of`.
+
+Each login requests one workspace for least privilege. For another Hub, route, or business identity
+on the same public binding, use a console-generated command or run these user commands in DSH:
 
 ```text
-/bailinghub connections add "shop A" https://hub-a.example.com merchant-agent order-assistant
+/bailinghub connections add "identity-a" https://hub-a.example.com merchant-agent order-assistant
 /bailinghub connections list
-/bailinghub connections use "shop A"
+/bailinghub connections use "identity-a"
 /bailinghub login
 ```
 
@@ -213,8 +219,10 @@ Connection selection is a user command, not a model tool. It affects only newly 
 sessions; existing sessions stay pinned to their original connection. `/bailinghub use
 <workspace>` moves only within workspaces already granted to the current authorization and is not
 a multi-connection selector. `/bailinghub connections remove <name>` first revokes the remote
-Agent Session and deletes local credentials only after success; a failed remote revoke keeps the
-connection for retry. Never copy access or refresh-token files between connections.
+Agent Session and deletes that instance's local credentials only after success; a failed remote
+revoke keeps that instance for retry. Never copy access or refresh-token files between connections.
+Core keys `bz_agent_sessions` by `session_id`; it does not collapse authorizations that share a
+client, route, or subject, so each instance can be revoked and audited independently.
 
 ## 7. Minimum acceptance
 
