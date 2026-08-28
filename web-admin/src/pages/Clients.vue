@@ -99,11 +99,13 @@
         <el-input v-model="form.name" placeholder="如 业务系统" />
       </el-form-item>
       <el-form-item>
-        <template #label>{{ fieldTitle('agent_authorize_url', 'Agent 授权页') }} <HelpTip :title="fieldTitle('agent_authorize_url', 'Agent 授权页')">
+        <template #label>{{ fieldTitle('agent_authorize_url', 'Agent 授权入口') }} <HelpTip :title="fieldTitle('agent_authorize_url', 'Agent 授权入口')">
           <p>{{ fieldDesc('agent_authorize_url', '本地 Agent 发起登录时打开的业务系统网页。') }}</p>
+          <p>同一接入方只配置一个<b>稳定、统一的业务授权入口</b>，不要绑定具体账号、租户或门店。该页面负责业务登录、切换账号和选择租户；业务后端再从当前服务端登录态派生可信 <code>principal</code> / <code>on_behalf_of</code>。</p>
+          <p>本地插件不会填写或选择业务 URL，也不能用 <code>connectionName</code> 指定业务身份。</p>
           <p>留空表示不开放 Agent 登录。生产必须使用 HTTPS；本机联调可使用带端口的 <code>127.0.0.1</code> / <code>::1</code> HTTP URL。</p>
         </HelpTip></template>
-        <el-input v-model="form.agent_authorize_url" placeholder="https://business.example.com/agent-authorize" class="mono" />
+        <el-input v-model="form.agent_authorize_url" placeholder="https://business.example.com/agent/authorize" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('allowed_routes', '可调路由') }} <span v-if="fieldRequired('allowed_routes')" class="field-required">*</span> <HelpTip :title="fieldTitle('allowed_routes', '可调路由')">

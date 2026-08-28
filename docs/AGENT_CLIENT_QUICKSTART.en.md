@@ -34,7 +34,7 @@ sends its login cookie, password, or API secret to DSH, and DSH never calls busi
 | `clientAppId` | host deployer | host plugin settings | No; BailingHub client `app_id` |
 | `workspace` | host deployer | host plugin settings | No; an allowed BailingHub `route_key` |
 | `connectionName` | local user | local SDK registry | No; readable selector for one local connection instance |
-| Agent authorization URL | business developer / Hub admin | BailingHub client config | No, but users do not enter it |
+| Agent authorization URL | business developer / Hub admin | BailingHub client config | No; one neutral entry per app, never entered by end users |
 | business Client Token | business backend | server-side secret store | **Yes; never browser or DSH config** |
 | Tool Provider Secret | business backend and BailingHub | both secret stores | **Yes; never DSH** |
 | Agent access/refresh token | generic SDK | Keychain or explicit secure store | **Yes; never plugin settings** |
@@ -91,7 +91,7 @@ In Clients, create one Agent Client application:
 
 - a stable public `app_id`, for example `merchant-agent`;
 - the minimum `allowed_routes` set;
-- the HTTPS business authorization page, for example
+- one stable, account- and tenant-neutral HTTPS business authorization entry point, for example
   `https://business.example.com/agent/authorize`;
 - a reasonable rate limit and `enabled=true`.
 
@@ -115,9 +115,11 @@ Token, Agent token, or model key.
 ## 4. Business developer: bind trusted identity
 
 The BailingHub SDK provides server-side Agent Auth methods; it does not inject one universal UI
-into every business system. The business system owns a page that follows its normal login and
-permission model. The backend derives `principal`, `on_behalf_of`, and allowed routes from the
-current authenticated server session.
+into every business system. The business system owns one stable entry point that follows its normal
+login and permission model. It handles login and, when needed, account switching plus selection
+from tenants the backend confirms are accessible. The backend derives `principal`, `on_behalf_of`,
+and allowed routes from the resulting current authenticated server session. Do not register a
+different authorization URL per account, tenant, or store.
 
 1. BailingHub appends only `authorization_id` to the configured page URL.
 2. The page sends only that ID to its own backend.
@@ -180,7 +182,9 @@ export BAILINGHUB_CONNECTION_NAME='default'
 ```
 
 `hubUrl` is the Hub origin without `/console`, `/agent-api`, or a business path. `workspace` is a
-route key, not a business domain, tenant ID, or chat-entry ID.
+route key, not a business domain, tenant ID, or chat-entry ID. Plugin settings contain no business
+URL: BailingHub returns the registered page for `clientAppId`, and the user confirms the business
+account and tenant only on that page.
 
 Run in DSH:
 
@@ -198,12 +202,11 @@ reads nor manages model-provider keys.
 
 ## 6. Multiple Hubs, workspaces, and same-binding identity instances
 
-The public binding is `Hub + clientAppId + workspace`; `connectionName` selects one local
-connection instance. The unreleased multi-connection candidate permits multiple instances on the
-same public binding, but every instance requires separate browser authorization and owns an
-independent Agent Session, credential, and revocation lifecycle. Core does not trust the local
-instance name or id: the trusted subject still comes only from business-backend approval as
-`principal` and `on_behalf_of`.
+The public binding is `Hub + clientAppId + workspace`; `connectionName` is only a local connection
+selector and cannot name an account, tenant, or store. The unreleased multi-connection candidate
+permits multiple instances on the same public binding, but every instance requires separate
+browser authorization. Core does not trust the local instance name or id: the trusted subject
+still comes only from business-backend approval as `principal` and `on_behalf_of`.
 
 Each login requests one workspace for least privilege. For another Hub, route, or business identity
 on the same public binding, use a console-generated command or run these user commands in DSH:
@@ -221,8 +224,15 @@ sessions; existing sessions stay pinned to their original connection. `/bailingh
 a multi-connection selector. `/bailinghub connections remove <name>` first revokes the remote
 Agent Session and deletes that instance's local credentials only after success; a failed remote
 revoke keeps that instance for retry. Never copy access or refresh-token files between connections.
-Core keys `bz_agent_sessions` by `session_id`; it does not collapse authorizations that share a
-client, route, or subject, so each instance can be revoked and audited independently.
+
+On one device, when a newly authorized connection under the same public binding yields the same
+trusted `on_behalf_of` as an older connection, the SDK revokes and removes the older local
+connection after the new authorization succeeds. Different identities remain independent. If the
+new authorization succeeded but revoking or removing the older connection failed, the result marks
+`cleanupRequired` and retains a recoverable state. Do not reauthorize; clean up the reported old
+connection first. Core still keys `bz_agent_sessions` by `session_id` and performs no global
+cross-device identity deduplication, so sessions on different devices can be revoked and audited
+independently.
 
 ## 7. Minimum acceptance
 
@@ -240,6 +250,11 @@ client, route, or subject, so each instance can be revoked and audited independe
 - **`invalid_client`:** check `clientAppId`, enabled state, authorization URL, and allowed route.
 - **Authorization page does not open:** production requires HTTPS; only loopback development may
   use port-qualified `127.0.0.1` or `::1` HTTP.
+- **A fixed tenant or store opens:** `agent_authorize_url` is misconfigured. Register the business
+  system's neutral authorization entry point, perform account/tenant choice inside that page, and
+  do not add a business URL to plugin settings.
+- **`cleanupRequired`:** the new identity authorization already succeeded. Do not authorize again;
+  retry revoke or removal for the reported old connection.
 - **Authorized but no tools:** check the Tool Provider, `tools.agent_direct.enabled`, audience
   policy, and Local Agent Runtime switch.
 - **A write requires approval:** inspect the ACC declaration first. `force_approval_tools` may

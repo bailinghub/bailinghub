@@ -25,10 +25,14 @@ JavaScript, local plugin settings, URLs, screenshots, or logs.
 
 ## 2. Client registration
 
-Create a BailingHub client with a stable public `app_id` such as `merchant-agent`, the business
-system's HTTPS `agent_authorize_url`, the minimum `allowed_routes`, `enabled=true`, and a reasonable
-rate limit. Production authorization pages require HTTPS. Explicit-port `127.0.0.1` or `::1` HTTP
-URLs are allowed only for local development.
+Create a BailingHub client with a stable public `app_id` such as `merchant-agent`, one stable,
+account- and tenant-neutral business HTTPS `agent_authorize_url`, the minimum `allowed_routes`,
+`enabled=true`, and a reasonable rate limit. The local plugin never asks for a business URL. If the
+business system has multiple accounts or tenants, this single entry point owns login, account
+switching, and tenant selection. The backend then derives trusted identity from the resulting
+server session; neither the local model nor a URL parameter may select the business subject.
+Production authorization pages require HTTPS. Explicit-port `127.0.0.1` or `::1` HTTP URLs are
+allowed only for local development.
 
 ## 3. Flow
 
@@ -47,10 +51,11 @@ Local SDK                  BailingHub                  business page/backend
 ```
 
 The SDK creates random state, a PKCE verifier/challenge, and a random loopback callback. Core
-appends only `authorization_id` to the registered business page. The business backend derives the
-trusted principal from its current server session, approves or denies the request, and returns the
-Core-generated redirect. The SDK exchanges the one-time code with PKCE and stores the resulting
-session in a secure local credential store.
+appends only `authorization_id` to the registered business page. That page requires login and, when
+needed, lets the user switch account or select an authorized tenant. The business backend derives
+the trusted principal from the resulting current server session, approves or denies the request,
+and returns the Core-generated redirect. The SDK exchanges the one-time code with PKCE and stores
+the resulting session in a secure local credential store.
 
 ## 4. Endpoints
 
@@ -154,7 +159,9 @@ authority changes. Business tool endpoints still revalidate current permission o
 ## 5. Business-page rules
 
 - The page belongs to the business system; the SDK does not inject a universal UI.
-- Require the normal business login before consent.
+- Use one stable entry point for the Client App, not a different URL per account, tenant, or store.
+- Require the normal business login before consent. Let a signed-in user switch account and select
+  only a tenant that the backend confirms the account may access.
 - Show the current account, tenant, device, and requested workspace clearly.
 - Keep the Client Token in the backend; the page holds only `authorization_id`.
 - Use `Cache-Control: no-store` and never export tokens to analytics or error reporting.
@@ -173,3 +180,12 @@ authority changes. Business tool endpoints still revalidate current permission o
 
 On refresh failure, never fall back to an admin token, Client Token, or anonymous access. Isolate
 the invalid session and require a new browser authorization.
+
+A local multi-connection implementation may use `connectionName` as a selector, but it is not a
+trusted identity claim. When a new authorization under the same public binding (Hub +
+`client_app_id` + workspace) yields the same trusted `on_behalf_of`, the SDK may revoke and remove
+the older local connection. Different `on_behalf_of` values remain independent. If the new
+authorization succeeded but revoking or removing the older connection failed, the SDK must retain
+a recoverable state and return `cleanupRequired`. Do not reauthorize in that state; clean up the
+reported old connection first. Core does not turn this local deduplication rule into a global
+cross-device session-uniqueness constraint.

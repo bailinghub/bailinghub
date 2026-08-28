@@ -9,6 +9,7 @@
               <p><b>智能体客户端</b>在本地理解用户意图、选择能力并完成多步编排；中枢继续负责业务身份、授权、审批、执行与审计。</p>
               <p><b>执行器</b>是中枢下发 Job、由本地运行时执行本地任务后回报结果。两者是独立概念。</p>
               <p>本页聚合现有接入方、Agent Session 和 Agent Run，不创建第二套接入方配置。</p>
+              <p>每个接入方只配置一个不绑定账号、租户或门店的业务授权入口；账号切换与租户选择由业务授权页完成。</p>
             </HelpTip>
           </div>
           <div class="actions">
@@ -109,7 +110,8 @@
     </el-card>
 
     <el-dialog v-model="connection.open" title="生成智能体客户端连接配置" width="620px">
-      <el-alert type="info" :closable="false" show-icon title="这里只生成公开连接元数据，不包含 Client Token、Agent Token 或模型密钥。" />
+      <el-alert type="info" :closable="false" show-icon title="这里只生成公开连接元数据，不包含业务 URL、业务身份、Client Token、Agent Token 或模型密钥。" />
+      <p class="connection-note"><code>connectionName</code> 只是本机连接选择器。登录时会统一打开接入方配置的业务授权页，由该页面确认当前账号与租户。</p>
       <el-form label-position="top" class="connection-form">
         <el-form-item label="Hub 地址"><el-input :model-value="hubUrl" readonly class="mono" /></el-form-item>
         <div class="form-grid">
@@ -242,6 +244,7 @@ onMounted(refreshAll);
 .mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .connection-form { margin-top: 18px; }
+.connection-note { margin: 12px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.6; }
 .pagination { display: flex; justify-content: flex-end; padding-top: 14px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .code-block { margin-top: 10px; padding: 12px; overflow: auto; border-radius: 8px; background: #111827; color: #e5e7eb; }
