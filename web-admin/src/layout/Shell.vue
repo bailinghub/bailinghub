@@ -102,7 +102,7 @@ const menuRef = ref<{ open: (index: string) => void } | null>(null);
 const ICONS: Record<string, unknown> = {
   kb: markRaw(Collection), runs: markRaw(Tickets), executors: markRaw(Monitor), cost: markRaw(Coin), routes: markRaw(Connection), targets: markRaw(Cpu),
   tools: markRaw(SetUp), approvals: markRaw(Stamp), chat: markRaw(ChatDotRound), channels: markRaw(Promotion), projects: markRaw(Folder),
-  clients: markRaw(Key), credentials: markRaw(Lock), storage: markRaw(Box), settings: markRaw(Brush), system: markRaw(InfoFilled), diagnostics: markRaw(Warning), accounts: markRaw(User), audit: markRaw(Document),
+  clients: markRaw(Key), 'agent-clients': markRaw(Connection), credentials: markRaw(Lock), storage: markRaw(Box), settings: markRaw(Brush), system: markRaw(InfoFilled), diagnostics: markRaw(Warning), accounts: markRaw(User), audit: markRaw(Document),
 };
 const GROUP_ORDER = ['场景配置', '接入入口', '能力装配', '运行', '基础资源', '系统管理'] as const;
 const DEFAULT_OPEN_GROUPS = new Set<string>(['场景配置', '接入入口', '能力装配', '运行']);

@@ -145,3 +145,39 @@ test('AgentAuthRepository rejects an approved authorization after its short code
   assert.deepEqual(result, { ok: false, reason: 'invalid_grant' });
   assert.equal(insertedSession, false);
 });
+
+test('AgentAuthRepository admin session projection filters state and never returns token hashes', async () => {
+  const queries: Array<{ sql: string; params: unknown[] }> = [];
+  const row = sessionRow({
+    access_expires_at: '2026-08-27 01:00:00',
+    refresh_expires_at: '2026-09-27 00:00:00',
+    created_at: '2026-08-27 00:00:00',
+    updated_at: '2026-08-27 00:10:00',
+    last_seen_at: '2026-08-27 00:10:00',
+  });
+  const pool = {
+    async query(sql: string, params: unknown[] = []) {
+      queries.push({ sql, params });
+      if (sql.startsWith('SELECT COUNT(*) AS total,')) {
+        return [[{ total: 3, active: 1, expired: 1, revoked: 1 }], []];
+      }
+      if (sql.startsWith('SELECT COUNT(*) AS total')) return [[{ total: 1 }], []];
+      if (sql.startsWith('SELECT session_id,client_app_id')) return [[row], []];
+      throw new Error(`unexpected query: ${sql}`);
+    },
+  } as unknown as Pool;
+  const repo = new AgentAuthRepository(() => pool);
+  const now = new Date('2026-08-27T00:30:00.000Z');
+  const result = await repo.listSessionsForAdmin({
+    clientAppId: 'example-business', state: 'active', limit: 25, offset: 5, now,
+  });
+  assert.equal(result.total, 1);
+  assert.equal(result.list[0]?.state, 'active');
+  assert.equal(result.list[0]?.last_seen_at, new Date('2026-08-27 00:10:00').toISOString());
+  assert.equal(Object.hasOwn(result.list[0]!, 'access_token_hash'), false);
+  assert.match(queries[0]!.sql, /client_app_id=\? AND revoked_at IS NULL AND refresh_expires_at>\?/);
+  assert.deepEqual(queries[1]!.params.slice(-2), [25, 5]);
+
+  const summary = await repo.sessionSummaryForAdmin(now);
+  assert.deepEqual(summary, { total: 3, active: 1, expired: 1, revoked: 1 });
+});

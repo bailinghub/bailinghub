@@ -33,6 +33,25 @@ export type RefreshRotationResult =
   | { ok: true; session: AgentSession }
   | { ok: false; reason: 'invalid_grant' | 'replayed' };
 
+export type AgentSessionAdminState = 'active' | 'expired' | 'revoked';
+
+export interface AgentSessionAdminRecord extends AgentSession {
+  last_seen_at?: string;
+  state: AgentSessionAdminState;
+}
+
+export interface AgentSessionAdminList {
+  list: AgentSessionAdminRecord[];
+  total: number;
+}
+
+export interface AgentSessionAdminSummary {
+  total: number;
+  active: number;
+  expired: number;
+  revoked: number;
+}
+
 function jsonObject<T extends object>(value: unknown): T {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value as T;
   if (typeof value === 'string') {
@@ -85,6 +104,19 @@ function sessionRow(row: any): AgentSession {
     access_expires_at: iso(row.access_expires_at),
     refresh_expires_at: iso(row.refresh_expires_at),
     ...(row.revoked_at ? { revoked_at: iso(row.revoked_at) } : {}),
+  };
+}
+
+function sessionAdminState(row: any, now: Date): AgentSessionAdminState {
+  if (row.revoked_at) return 'revoked';
+  return new Date(row.refresh_expires_at).getTime() <= now.getTime() ? 'expired' : 'active';
+}
+
+function sessionAdminRow(row: any, now: Date): AgentSessionAdminRecord {
+  return {
+    ...sessionRow(row),
+    ...(row.last_seen_at ? { last_seen_at: iso(row.last_seen_at) } : {}),
+    state: sessionAdminState(row, now),
   };
 }
 
@@ -242,6 +274,71 @@ export class AgentAuthRepository {
     if (!row) return null;
     void this.pool.query('UPDATE bz_agent_sessions SET last_seen_at=? WHERE session_id=?', [dt(), row.session_id]).catch(() => undefined);
     return sessionRow(row);
+  }
+
+  /** Admin-only projection. Token hashes and refresh-token rows never leave the repository. */
+  async listSessionsForAdmin(input: {
+    clientAppId?: string;
+    state?: AgentSessionAdminState | 'all';
+    limit?: number;
+    offset?: number;
+    now?: Date;
+  } = {}): Promise<AgentSessionAdminList> {
+    const now = input.now ?? new Date();
+    const limit = Math.min(Math.max(Math.round(Number(input.limit) || 50), 1), 200);
+    const offset = Math.max(Math.round(Number(input.offset) || 0), 0);
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (input.clientAppId) {
+      where.push('client_app_id=?');
+      params.push(input.clientAppId);
+    }
+    if (input.state === 'active') {
+      where.push('revoked_at IS NULL AND refresh_expires_at>?');
+      params.push(dtIso(now.toISOString()));
+    } else if (input.state === 'expired') {
+      where.push('revoked_at IS NULL AND refresh_expires_at<=?');
+      params.push(dtIso(now.toISOString()));
+    } else if (input.state === 'revoked') {
+      where.push('revoked_at IS NOT NULL');
+    }
+    const predicate = where.length ? ` WHERE ${where.join(' AND ')}` : '';
+    const [countRows] = await this.pool.query(`SELECT COUNT(*) AS total FROM bz_agent_sessions${predicate}`, params);
+    const [rows] = await this.pool.query(
+      `SELECT session_id,client_app_id,device_label,principal_json,on_behalf_of,allowed_routes,access_expires_at,refresh_expires_at,created_at,updated_at,last_seen_at,revoked_at FROM bz_agent_sessions${predicate} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      [...params, limit, offset],
+    );
+    return {
+      list: (rows as any[]).map((row) => sessionAdminRow(row, now)),
+      total: Number((countRows as any[])[0]?.total ?? 0),
+    };
+  }
+
+  async getSessionForAdmin(sessionId: string, now = new Date()): Promise<AgentSessionAdminRecord | null> {
+    const [rows] = await this.pool.query(
+      'SELECT session_id,client_app_id,device_label,principal_json,on_behalf_of,allowed_routes,access_expires_at,refresh_expires_at,created_at,updated_at,last_seen_at,revoked_at FROM bz_agent_sessions WHERE session_id=? LIMIT 1',
+      [sessionId],
+    );
+    return (rows as any[])[0] ? sessionAdminRow((rows as any[])[0], now) : null;
+  }
+
+  async sessionSummaryForAdmin(now = new Date()): Promise<AgentSessionAdminSummary> {
+    const stamp = dtIso(now.toISOString());
+    const [rows] = await this.pool.query(
+      'SELECT COUNT(*) AS total,' +
+      ' SUM(CASE WHEN revoked_at IS NULL AND refresh_expires_at>? THEN 1 ELSE 0 END) AS active,' +
+      ' SUM(CASE WHEN revoked_at IS NULL AND refresh_expires_at<=? THEN 1 ELSE 0 END) AS expired,' +
+      ' SUM(CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END) AS revoked' +
+      ' FROM bz_agent_sessions',
+      [stamp, stamp],
+    );
+    const row = (rows as any[])[0] ?? {};
+    return {
+      total: Number(row.total ?? 0),
+      active: Number(row.active ?? 0),
+      expired: Number(row.expired ?? 0),
+      revoked: Number(row.revoked ?? 0),
+    };
   }
 
   async rotateRefreshToken(input: {

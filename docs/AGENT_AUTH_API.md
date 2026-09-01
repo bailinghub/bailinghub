@@ -26,10 +26,14 @@ Agent Session。BailingHub 提供协议与服务端 SDK 方法；业务系统负
 中枢管理员在“接入方”创建应用并配置：
 
 - `app_id`：稳定的公开客户端标识，例如 `merchant-agent`；
-- `agent_authorize_url`：业务系统自己的 HTTPS 授权页，例如
-  `https://business.example.com/agent/authorize`；
+- `agent_authorize_url`：业务系统自己的一个稳定、统一 HTTPS 授权入口，例如
+  `https://business.example.com/agent/authorize`；它不能绑定具体账号、租户或门店；
 - `allowed_routes`：该应用最多可申请的 route；
 - `enabled=true` 与合理限速。
+
+本地插件不会填写业务 URL。业务系统存在多账号或多租户时，统一授权入口负责完成登录、切换账号和
+选择租户；业务后端再从所选结果对应的当前服务端登录态派生可信身份，不能让本地模型或 URL 参数
+直接指定业务主体。
 
 生产授权页只允许 HTTPS。本机开发可以使用带显式端口的 `127.0.0.1` 或 `::1` HTTP URL。
 
@@ -52,8 +56,8 @@ Agent Session。BailingHub 提供协议与服务端 SDK 方法；业务系统负
 1. SDK 生成随机 `state`、PKCE verifier/challenge 和随机 loopback callback；
 2. Core 创建 10 分钟有效的授权请求，返回业务授权页 URL；
 3. Core 只向配置好的授权页追加 `authorization_id`；
-4. 业务页要求用户先完成业务系统登录；
-5. 业务后端用 Client Token 查询上下文，并从当前服务端登录态推导可信身份；
+4. 业务页要求用户先完成业务系统登录，并在需要时切换账号或选择当前账号有权访问的租户；
+5. 业务后端用 Client Token 查询上下文，并从选择完成后的当前服务端登录态推导可信身份；
 6. 批准后 Core 返回锁定 callback 的 `redirect_uri`，浏览器跳转回本机；
 7. SDK 用一次性 code 和 PKCE verifier 换取 Agent Session；
 8. 后续 Runtime 请求使用短期 access token，SDK 用轮换 refresh token 续期。
@@ -169,7 +173,9 @@ access token 默认 15 分钟有效，refresh session 默认 30 天有效；每�
 ## 5. 业务授权页实现规则
 
 - 页面属于业务系统，不由 SDK 自动注入；可以完全继承业务系统自己的 UI 风格；
-- 未登录先跳业务登录，登录完成后回到同一授权请求；
+- 同一 Client App 使用一个稳定、统一的入口，不为每个账号、租户或门店配置不同 URL；
+- 未登录先跳业务登录，登录完成后回到同一授权请求；已登录用户可在这里切换账号，并从服务端确认
+  其有权访问的租户中进行选择；
 - 明确展示当前账号、租户、设备名和申请的 workspace；
 - 授权页前端只持有 `authorization_id`，Client Token 只在后端；
 - 所有响应使用 `Cache-Control: no-store`，不要在分析、监控或错误上报中记录 token；
@@ -188,3 +194,9 @@ access token 默认 15 分钟有效，refresh session 默认 30 天有效；每�
 
 客户端遇到刷新失败不得回退为管理员 Token、Client Token 或匿名调用；应清理/隔离失效会话并要求
 用户重新执行浏览器授权。
+
+本机多连接实现可以用 `connectionName` 选择连接，但它不是可信身份声明。若同一公开绑定
+（Hub + `client_app_id` + workspace）再次授权得到相同可信 `on_behalf_of`，SDK 可撤销并移除旧的
+本机连接；不同 `on_behalf_of` 保持独立。若新授权已成功、但旧会话撤销或本地清理失败，SDK 应保留
+可恢复状态并返回 `cleanupRequired`：此时不要重复授权，应先按返回信息清理旧连接。Core 不把该
+本机去重规则提升为跨设备的全局会话唯一约束。

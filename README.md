@@ -234,6 +234,7 @@ BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
 | `docs/RELEASE_NOTES_v0.3.3.md` | `v0.3.3` npm 发布来源元数据纠偏说明 |
 | `docs/RELEASE_NOTES_v0.3.4.md` | `v0.3.4` 匿名预览与可信业务身份引导说明 |
 | `docs/RELEASE_NOTES_v0.5.0.md` | `v0.5.0` 可撤销本地 Agent 授权与受治理本地编排说明 |
+| `docs/RELEASE_NOTES_v0.5.1.md` | `v0.5.1` 智能体客户端管理中心与批量写操作配置说明 |
 | `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
 | `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
 | `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |
