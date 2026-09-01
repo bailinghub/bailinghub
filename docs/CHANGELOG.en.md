@@ -22,6 +22,18 @@ Each public version should describe:
 
 ## Unreleased
 
+## v0.5.1 - Agent Client Management and Bulk Write-Operation Configuration
+
+Planned release date: 2026-09-01.
+
+- **Agent Client management center**: adds a dedicated console page that summarizes applications with business authorization enabled, available workspaces, Agent Session state, and recent run statistics without creating a second Client, route, or executor resource model.
+- **Session governance**: administrators can filter Agent Sessions by client and state and revoke an individual session. The projection never returns access tokens, refresh tokens, prompts, tool arguments, or business results.
+- **Bulk write-operation configuration**: the route page can select or clear every writable operationId currently declared by the selected tool sources. The stored policy remains an exact operationId list, rejects wildcards, and cannot weaken ACC approval or final business authorization.
+- **Neutral business authorization entry**: the bilingual guides define `agent_authorize_url` as one account- and tenant-neutral entry. The business page still owns login, account switching, and explicit tenant selection, while the business backend derives trusted `principal` and `on_behalf_of` values from the current session. Local `connectionName` only selects a local connection instance.
+- **Database and runtime contracts**: no migration is added, and Agent Client Runtime, Client API, Kernel API, business SDK, Widget, tool-signature, approval, and final-authorization semantics remain unchanged.
+- **Validation**: 612 Core tests, console build and E2E, Client API ecosystem consumers, SDK contracts, Docker Demo, security audit, OSS export, and npm artifact checks.
+- **Related docs**: [RELEASE_NOTES_v0.5.1.en.md](RELEASE_NOTES_v0.5.1.en.md), [Agent Client v1 Integration Guide](AGENT_CLIENT_QUICKSTART.en.md), and [Agent Auth v1](AGENT_AUTH_API.en.md).
+
 ## v0.5.0 - Revocable Local-Agent Authorization and Governed Local Planning
 
 Released on 2026-08-26.

@@ -15,6 +15,18 @@
 
 ## Unreleased
 
+## v0.5.1 - 智能体客户端管理中心与批量写操作配置
+
+计划发布日期：2026-09-01。
+
+- **智能体客户端管理中心**：新增独立控制台菜单，汇总已启用业务授权的客户端应用、可用工作区、Agent Session 状态与最近运行统计，不创建第二套 Client、路由或执行器资源。
+- **会话治理**：管理员可按客户端和状态查看 Agent Session，并逐个撤销；投影不返回 access token、refresh token、提示词、工具参数或业务结果。
+- **批量写操作配置**：路由页可一次选择或清除当前工具源声明的全部可写 operationId；保存结果仍是精确 operationId 列表，不接受通配符，也不放宽 ACC 审批或业务系统最终授权。
+- **统一业务授权入口**：中英文文档明确 `agent_authorize_url` 是账号与租户中立的统一入口。业务页面继续负责登录、换号与显式租户选择，业务后端从当前会话派生可信 `principal` 与 `on_behalf_of`；本地 `connectionName` 只选择本机连接实例。
+- **数据库与运行契约**：没有新增 migration，也不改变 Agent Client Runtime、Client API、Kernel API、业务 SDK、Widget、工具签名、审批与最终业务授权语义。
+- **验证方式**：Core 612 项单测、控制台构建与 E2E、Client API 生态消费者、SDK 契约、Docker Demo、安全审计、OSS 导出和 npm 制品检查。
+- **相关文档**：[RELEASE_NOTES_v0.5.1.md](RELEASE_NOTES_v0.5.1.md)、[Agent Client v1 接入指南](AGENT_CLIENT_QUICKSTART.md) 与 [Agent Auth v1](AGENT_AUTH_API.md)。
+
 ## v0.5.0 - 可撤销本地 Agent 授权与受治理本地编排
 
 发布日期：2026-08-26。
