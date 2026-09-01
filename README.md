@@ -46,6 +46,15 @@
 
 开源 Demo 已内置**订单查询、售后工单、退款审批和故障 trace**，不需要真实业务系统或模型 Key 就能复现完整治理链路。接入你自己的系统时，可用的具体动作取决于你主动声明并实现了哪些业务接口；BailingHub 不会凭空获得后台能力。
 
+### 公开 Demo 中可复现的执行证据
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme-demo-evidence.zh-CN-dark.svg">
+  <img src="assets/readme-demo-evidence.zh-CN.svg" width="100%" alt="公开 Docker Demo 以固定订单 SO-1001 展示自然语言退款请求经过工具治理、业务审批、获批执行和 trace 留痕的完整链路">
+</picture>
+
+图中内容来自仓库内置的确定性 fixture，不是客户后台截图。运行 `npm run demo:e2e` 会在公开 Demo 中真实创建任务、冻结工具参数、完成审批与执行，并生成可回查的 trace。
+
 ## 三种入口，同一套业务能力
 
 <picture>

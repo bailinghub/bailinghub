@@ -131,6 +131,15 @@ admin / bailing-demo-admin
 
 The demo starts BailingHub, MySQL, a sample business application, a tool provider, a route, and an integration client. Follow [Docker Demo](docs/DEMO.en.md) for the guided task or [Independent Validation](docs/INDEPENDENT_VALIDATION.en.md) to test the public path without maintainer-only instructions.
 
+### Reproducible Execution Evidence
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme-demo-evidence.en-dark.svg">
+  <img src="assets/readme-demo-evidence.en.svg" width="100%" alt="The public Docker demo uses deterministic order SO-1001 to show a refund request moving through tool governance, business approval, approved execution, and trace evidence">
+</picture>
+
+Everything in this visual comes from the repository's deterministic fixture, not a customer console. Running `npm run demo:e2e` creates the job, freezes the tool arguments, completes approval and execution, and writes reviewable trace evidence in the public demo.
+
 For a fresh Ubuntu or Debian server, the auditable installer uses official prebuilt images by default:
 
 ```bash

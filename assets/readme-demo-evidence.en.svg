@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+<title id="title">SO-1001: request → approval → execution → trace</title>
+<desc id="desc">The public BailingHub Docker demo uses deterministic order SO-1001 to reproduce a refund request through trusted identity, tool governance, business approval, approved execution, and trace evidence.</desc>
+<defs><marker id="demo-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1f883d"/></marker></defs>
+<rect width="1600" height="900" fill="#ffffff"/>
+<path d="M 0 0 H 1600 V 7 H 0 Z" fill="#1f883d"/>
+<text x="80" y="53" fill="#1f883d" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="750" text-anchor="start">PUBLIC DEMO · DETERMINISTIC FIXTURE</text>
+<text x="80" y="104" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="34" font-weight="700" text-anchor="start">SO-1001: request → approval → execution → trace</text>
+<text x="80" y="142" fill="#667085" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="16" font-weight="500" text-anchor="start">No production system or model key. Reproduce the governed path locally.</text>
+<rect x="80" y="180" width="410" height="535" rx="18" fill="#f6f8fa" stroke="#d0d7de" stroke-width="2"/>
+<text x="110" y="220" fill="#1f883d" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="750" text-anchor="start">01 · REQUEST</text>
+<rect x="110" y="250" width="350" height="96" rx="16" fill="#dafbe1" stroke="#1f883d" stroke-width="2"/>
+<text x="135" y="292" fill="#116329" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="16" font-weight="750" text-anchor="start">Request ¥199 refund for SO-1001</text>
+<text x="135" y="320" fill="#667085" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="500" text-anchor="start">Natural-language request</text>
+<text x="110" y="386" fill="#667085" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="750" text-anchor="start">FIXTURE ORDER</text>
+<rect x="110" y="405" width="350" height="255" rx="14" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<text x="135" y="446" fill="#667085" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="15" font-weight="650" text-anchor="start">Order</text>
+<text x="435" y="446" fill="#111820" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="750" text-anchor="end">SO-1001</text>
+<path d="M 135 466 H 435" stroke="#d0d7de" stroke-width="1"/>
+<text x="135" y="501" fill="#667085" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="15" font-weight="650" text-anchor="start">Item</text>
+<text x="435" y="501" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="15" font-weight="750" text-anchor="end">AI consulting plan</text>
+<path d="M 135 521 H 435" stroke="#d0d7de" stroke-width="1"/>
+<text x="135" y="556" fill="#667085" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="15" font-weight="650" text-anchor="start">Amount</text>
+<text x="435" y="556" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="15" font-weight="750" text-anchor="end">¥199</text>
+<path d="M 135 576 H 435" stroke="#d0d7de" stroke-width="1"/>
+<text x="135" y="611" fill="#667085" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="15" font-weight="650" text-anchor="start">Status</text>
+<text x="435" y="611" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="15" font-weight="750" text-anchor="end">Paid · awaiting shipment</text>
+<path d="M 490 447 H 545" fill="none" stroke="#1f883d" stroke-width="4" marker-end="url(#demo-arrow)"/>
+<rect x="560" y="180" width="480" height="535" rx="18" fill="#dafbe1" stroke="#1f883d" stroke-width="3"/>
+<text x="590" y="220" fill="#116329" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="750" text-anchor="start">02 · GOVERNANCE</text>
+<text x="590" y="264" fill="#667085" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="750" text-anchor="start">TOOL CALL</text>
+<rect x="590" y="282" width="420" height="66" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<text x="615" y="324" fill="#111820" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="750" text-anchor="start">request_demo_refund</text>
+<rect x="590" y="370" width="195" height="58" rx="29" fill="#fff8c5" stroke="#9a6700" stroke-width="2"/>
+<text x="688" y="407" fill="#9a6700" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="750" text-anchor="middle">High-risk write</text>
+<rect x="805" y="370" width="205" height="58" rx="29" fill="#fff8c5" stroke="#9a6700" stroke-width="2"/>
+<text x="908" y="407" fill="#9a6700" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="750" text-anchor="middle">Approval required</text>
+<rect x="590" y="460" width="175" height="82" rx="13" fill="#fff8c5" stroke="#9a6700" stroke-width="2"/>
+<text x="678" y="495" fill="#9a6700" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="850" text-anchor="middle">1</text>
+<text x="678" y="522" fill="#9a6700" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="750" text-anchor="middle">Awaiting approval</text>
+<path d="M 765 501 H 830" fill="none" stroke="#1f883d" stroke-width="3" marker-end="url(#demo-arrow)"/>
+<rect x="845" y="460" width="165" height="82" rx="13" fill="#dafbe1" stroke="#1f883d" stroke-width="2"/>
+<path d="M 887 495 l 9 9 18 -22" fill="none" stroke="#1f883d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="928" y="522" fill="#116329" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="13" font-weight="750" text-anchor="middle">Approved</text>
+<rect x="590" y="580" width="420" height="74" rx="12" fill="#eef2f5" stroke="#d0d7de" stroke-width="2"/>
+<rect x="612" y="601" width="32" height="32" rx="8" fill="#ddf4ff"/>
+<text x="628" y="624" fill="#0969da" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="850" text-anchor="middle">{}</text>
+<text x="660" y="624" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="13" font-weight="700" text-anchor="start">Arguments frozen before approval</text>
+<path d="M 1040 447 H 1095" fill="none" stroke="#1f883d" stroke-width="4" marker-end="url(#demo-arrow)"/>
+<rect x="1110" y="180" width="410" height="535" rx="18" fill="#f6f8fa" stroke="#d0d7de" stroke-width="2"/>
+<text x="1140" y="220" fill="#1f883d" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="750" text-anchor="start">03 · RESULT &amp; TRACE</text>
+<rect x="1140" y="250" width="350" height="104" rx="14" fill="#dafbe1" stroke="#1f883d" stroke-width="2"/>
+<circle cx="1172" cy="287" r="17" fill="#1f883d"/>
+<path d="M 1163 287 l 7 7 13 -16" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1203" y="286" fill="#116329" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="15" font-weight="800" text-anchor="start">Refund request recorded</text>
+<text x="1172" y="326" fill="#667085" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="12" font-weight="500" text-anchor="start">Demo Business authorized and executed</text>
+<text x="1140" y="397" fill="#667085" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="800" text-anchor="start">DEMO TRACE</text>
+<circle cx="1160" cy="426" r="12" fill="#ffffff" stroke="#1f883d" stroke-width="2"/>
+<text x="1160" y="431" fill="#116329" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="850" text-anchor="middle">1</text>
+<text x="1185" y="432" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="700" text-anchor="start">Request received</text>
+<path d="M 1160 439 V 462" stroke="#1f883d" stroke-width="2"/>
+<circle cx="1160" cy="474" r="12" fill="#ffffff" stroke="#1f883d" stroke-width="2"/>
+<text x="1160" y="479" fill="#116329" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="850" text-anchor="middle">2</text>
+<text x="1185" y="480" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="700" text-anchor="start">Subject bound</text>
+<path d="M 1160 487 V 510" stroke="#1f883d" stroke-width="2"/>
+<circle cx="1160" cy="522" r="12" fill="#ffffff" stroke="#1f883d" stroke-width="2"/>
+<text x="1160" y="527" fill="#116329" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="850" text-anchor="middle">3</text>
+<text x="1185" y="528" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="700" text-anchor="start">Arguments frozen</text>
+<path d="M 1160 535 V 558" stroke="#1f883d" stroke-width="2"/>
+<circle cx="1160" cy="570" r="12" fill="#ffffff" stroke="#1f883d" stroke-width="2"/>
+<text x="1160" y="575" fill="#116329" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="850" text-anchor="middle">4</text>
+<text x="1185" y="576" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="700" text-anchor="start">Approved</text>
+<path d="M 1160 583 V 606" stroke="#1f883d" stroke-width="2"/>
+<circle cx="1160" cy="618" r="12" fill="#1f883d" stroke="#1f883d" stroke-width="2"/>
+<text x="1160" y="623" fill="#ffffff" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="850" text-anchor="middle">5</text>
+<text x="1185" y="624" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="700" text-anchor="start">Executed</text>
+<rect x="80" y="750" width="1440" height="68" rx="14" fill="#eef2f5" stroke="#d0d7de" stroke-width="2"/>
+<circle cx="118" cy="784" r="18" fill="#1f883d"/>
+<path d="M 108 784 l 7 7 14 -17" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="150" y="791" fill="#111820" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="16" font-weight="750" text-anchor="start">1 tool call · 1 approval · 0 errors</text>
+<text x="800" y="858" fill="#667085" font-family="Arial, 'Helvetica Neue', sans-serif" font-size="14" font-weight="650" text-anchor="middle">Public fixture evidence—no customer console, real account, or private credential.</text>
+</svg>
