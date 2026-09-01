@@ -5,265 +5,199 @@
   </picture>
 </p>
 
-# BailingHub
+<p align="center">
+  <a href="README.md">简体中文</a> · <strong>English</strong>
+</p>
 
-**BailingHub** is an open-source A2B (Agent-to-Business) control plane built around [ACC, the Agent Capability Contract](https://www.agentcapability.org).
+# BailingHub: Let Agents Operate Your Business System Through Conversation
 
-It lets you connect selected business actions to agents through OpenAPI/SDK tools and `x-agent-capability` metadata, while keeping routing, permissions, signatures, approvals, audit trails, traceability, and state ownership under your control.
+BailingHub is open-source software that lets people operate an existing commerce, SaaS, CRM, or ERP system through conversation while keeping every action under control. A user can ask an agent to look up an order, update a staff profile, prepare an after-sales action, or complete another permitted workflow without learning every screen in the back office.
 
-For Direct Client API, Dify, n8n, MCP, and OpenClaw entry points, see [Integrations](https://www.bailinghub.com/en/integrations).
+You choose which business APIs become available. BailingHub connects the conversation to those capabilities and keeps identity, permissions, approvals, signatures, execution records, and audit evidence under your control.
 
-ACC is the capability declaration contract for A2B: agents safely doing business work through existing systems. Its independent specification repository is [agent-capability/agent-capability-contract](https://github.com/agent-capability/agent-capability-contract). BailingHub adopts the ACC contract model, compiles capability declarations into unified `ToolDefinition` records, and enforces allowlists, risk levels, approvals, rate limits, signatures, and audit trails.
+> **Let AI take over repetitive operations, not business authority.**
 
-> Chinese documentation remains the most detailed reference. The first-release English path covers overview, quickstart, Docker demo, API contract, tools, and SDK integration.
+<p align="center">
+  <a href="https://trial.bailinghub.com/register/"><strong>Try Online</strong></a>
+  · <a href="docs/DEMO.en.md"><strong>Run the Demo</strong></a>
+  · <a href="docs/QUICKSTART.en.md"><strong>Deploy BailingHub</strong></a>
+  · <a href="docs/INTEGRATION.en.md"><strong>Connect Your System</strong></a>
+</p>
 
-## Why
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme-product-overview.en-dark.svg">
+  <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
+</picture>
 
-Most existing business systems were not designed for A2B. Once an agent starts calling business APIs, teams quickly run into the same questions:
+## Operate the System by Conversation
 
-- Which business event should route to which agent or model?
-- Which tools is the agent allowed to see?
-- How do we prevent unsafe writes, over-permissioned tools, or accidental damage?
-- Where do approval requests, audit trails, and trace logs live?
-- How do we switch models or agent runtimes without rewriting business code?
-- How do we let the business system remain the final authority for user permissions?
+Most business software already has the data, permission model, and APIs it needs. What it lacks is a safe bridge between a natural-language request and the exact operation the current user is allowed to perform.
 
-BailingHub puts these concerns into a self-hosted control plane.
+BailingHub provides that bridge for scenarios such as:
 
-## What It Is
+| Team or system | Example conversational operations |
+|---|---|
+| Commerce operations | Find products, inspect inventory, query orders, or start an allowed after-sales action. |
+| Customer service | Look up a member, summarize an order, check fulfillment, or collect the information needed for the next step. |
+| SaaS administration | Query tenant-scoped data or update an allowed setting without bypassing the existing role model. |
+| CRM and sales | Find a customer, review activity, add a permitted follow-up, or prepare a handoff. |
+| Internal operations | Query staff records, update allowed profile fields, or run a governed administrative action. |
+| Reporting | Ask for current business data and receive text, tables, a built-in follow-up form, or charts when the host registers a trusted renderer. |
 
-BailingHub is:
+These are integration patterns, not bundled access to a specific product. Your business system exposes the selected operations, and it remains the final authority on every call.
 
-- A self-hosted A2B control plane for existing systems.
-- A governed tool runtime for OpenAPI/SDK business tools.
-- A routing layer for `/run`, web chat widgets, and inbound channels.
-- A runtime ledger for jobs, messages, approvals, audit events, and trace data.
-- A way to let AI act on behalf of a real business user without bypassing your existing permission model.
+## Three Ways to Start a Conversation
 
-BailingHub is not:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme-entry-points.en-dark.svg">
+  <img src="assets/readme-entry-points.en.svg" width="100%" alt="Three BailingHub entry points: embedded assistant, API and automation clients, and a local agent client">
+</picture>
 
-- Another chatbot.
-- A generic low-code workflow engine.
-- A replacement for your business backend.
-- A replacement for MCP.
+### 1. Embedded assistant
 
-MCP solves tool discovery and invocation. BailingHub focuses on the business-side control plane around tools: routing, identity, risk, approval, audit, signatures, and traceability. The independent [BailingHub MCP Server](https://github.com/bailinghub/bailinghub-mcp-server) connects compatible clients to the public Client API without becoming part of the BailingHub core distribution.
+Add the zero-dependency web widget to an existing back office, customer portal, or SaaS page. A signed visitor ticket can carry the trusted business identity, while page context helps the agent understand where the conversation started.
 
-## Deployment Scope
+### 2. API, workflow, and channel clients
 
-The open-source edition is designed for a **single organization per deployment**. One hub can connect multiple business systems, clients, routes, and tool providers, but they share one management and audit boundary.
+Use the versioned Client API and `/run` flow from your own application, Dify, n8n, an inbound channel, or another compatible client. The caller starts the task; BailingHub selects the configured route, context, tools, and delivery policy.
 
-If you need to serve multiple isolated organizations, run separate hub deployments. Do not treat `client`, `route`, or `tool_provider` as an organization-level isolation boundary.
+### 3. Local agent client
 
-## 10-Minute Demo
+Let a desktop or CLI agent plan locally after browser authorization through the business system's existing login. BailingHub provides the permitted workspace and capabilities, then governs each invocation and records the visible result and execution trail.
 
-> **Prefer to look around before installing?** Open the [online experience](https://trial.bailinghub.com/register/), create an account, inspect the console, import demo data, and run diagnostics. This environment is for understanding the product and validating its configuration model. Do not upload production credentials or sensitive data, and do not connect real workloads. Self-host the open-source edition for actual use.
+The independent [BailingHub MCP Server](https://github.com/bailinghub/bailinghub-mcp-server) provides a host-neutral SDK and MCP surface. DeepSeek Harness users can install the independent community plugin [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin). Neither package is part of the BailingHub Core distribution.
 
-To validate the complete loop in your own environment:
+## The Simple Flow
+
+```text
+User or business event
+        ↓
+Widget / Client API / local Agent Client
+        ↓
+BailingHub route or Agent workspace
+        ↓
+Agent interprets, plans, and selects a permitted capability
+        ↓
+BailingHub checks identity, allowlist, risk, approval, and idempotency
+        ↓
+Signed request reaches the existing business API
+        ↓
+Business system rechecks current permissions and performs the operation
+        ↓
+Result, conversation, approval, audit, and trace evidence return to BailingHub
+```
+
+The model or agent runtime can change without becoming the source of business truth.
+
+| Layer | Owns |
+|---|---|
+| Your business system | Accounts, tenants, roles, permissions, authoritative data, and final authorization. |
+| BailingHub | Routes, capability projection, governed invocation, approvals, jobs, conversations, audit, and trace. |
+| Agent or model | Understanding, planning, tool selection, and response generation inside the granted boundary. |
+| ACC | The portable declaration of what a business capability means and how it should be governed. |
+
+## A2B and ACC
+
+**A2B (Agent-to-Business)** means letting an agent work through an existing business system on behalf of a real business subject, with controls suitable for business actions rather than only text generation.
+
+[ACC, the Agent Capability Contract](https://www.agentcapability.org), is the open capability-declaration contract used by BailingHub. The independent specification repository is [agent-capability/agent-capability-contract](https://github.com/agent-capability/agent-capability-contract).
+
+A business developer can describe an operation through OpenAPI `x-agent-capability` metadata or a BailingHub SDK. BailingHub compiles those declarations into unified `ToolDefinition` records and applies the configured allowlist, risk, approval, rate-limit, signature, and audit rules at runtime.
+
+```text
+ACC describes the business capability.
+BailingHub governs when and how an agent may reach it.
+The business system decides whether the current user may execute it.
+```
+
+## Run the Complete Demo
+
+To explore before installing, use the [online experience](https://trial.bailinghub.com/register/). It is for understanding the product and configuration model only. Do not upload production credentials or sensitive data, and do not connect real workloads.
+
+To run the complete disposable loop locally:
 
 ```bash
+git clone --branch v0.5.1 --depth 1 https://github.com/bailinghub/bailinghub.git
+cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
 
-Open:
-
-```text
-http://localhost:18900/console/
-```
-
-Login:
+Open `http://localhost:18900/console/` and sign in with:
 
 ```text
 admin / bailing-demo-admin
 ```
 
-The demo starts:
+The demo starts BailingHub, MySQL, a sample business application, a tool provider, a route, and an integration client. Follow [Docker Demo](docs/DEMO.en.md) for the guided task or [Independent Validation](docs/INDEPENDENT_VALIDATION.en.md) to test the public path without maintainer-only instructions.
 
-- BailingHub hub
-- MySQL
-- A demo business app
-- A demo tool provider
-- A demo route
-- A demo integration client
-- Audit and trace flows
-
-See [docs/DEMO.en.md](docs/DEMO.en.md) for the complete demo and [docs/QUICKSTART.en.md](docs/QUICKSTART.en.md) for the English quickstart.
-
-To test whether a new developer can reproduce the public path without private maintainer instructions, follow the [Independent Validation Task](docs/INDEPENDENT_VALIDATION.en.md). It uses only non-production demo data and provides an Issue form for PASS, partial, and failed results.
-
-## One-Line Install
-
-For a fresh Ubuntu/Debian server:
+For a fresh Ubuntu or Debian server, the auditable installer uses official prebuilt images by default:
 
 ```bash
 curl -fsSL https://www.bailinghub.com/install.sh | sh
 ```
 
-Use official prebuilt images:
+Use [Quickstart](docs/QUICKSTART.en.md) for registry selection, source-mode installation, production secrets, MySQL, the first route, and upgrade checks.
 
-```bash
-curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=image sh
-```
+## Connect an Existing System
 
-Use source mode for auditing or development:
+Start with one small, well-understood read operation and one carefully governed write operation:
 
-```bash
-curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
-```
+1. **Declare the operations.** Publish OpenAPI with `x-agent-capability`, or build the specification with the PHP, PHP 7, Node, Python, Java, Go, or .NET SDK.
+2. **Establish identity at the entry point.** A signed widget ticket, trusted `/run` request, or Agent Auth approval binds the business subject when an operation requires one. The receiving API then verifies the BailingHub signature and rechecks the subject's current tenant, role, and permission.
+3. **Register the tool provider and route.** Choose the model or executor, knowledge, memory, tool allowlist, approval policy, and delivery target in the BailingHub console.
+4. **Choose an entry point.** Embed the widget, call the Client API, connect an automation platform, or authorize a local Agent Client.
+5. **Verify the evidence.** Test one read, one permitted write, one denied action, approval when required, replay behavior, and the resulting audit and trace records.
 
-Global prebuilt images are published on GHCR:
-
-```text
-ghcr.io/bailinghub/bailinghub:<version>
-ghcr.io/bailinghub/bailing-demo-business:<version>
-```
-
-```bash
-curl -fsSL https://www.bailinghub.com/install.sh | env \
-BAILING_INSTALL_MODE=image \
-BAILING_IMAGE_REGISTRY=ghcr.io \
-BAILING_IMAGE_NAMESPACE=bailinghub \
-BAILING_MYSQL_IMAGE=mysql:8.4 \
-sh
-```
-
-An Aliyun ACR mirror remains the default for networks in China. Enterprise environments can override `BAILINGHUB_IMAGE`, `BAILING_DEMO_BUSINESS_IMAGE`, and `BAILING_MYSQL_IMAGE` with internal registries.
-
-## How Business Tools Work
-
-A business system publishes selected APIs as tools:
+The conventional tool manifest endpoint is:
 
 ```text
 /.well-known/bailing/tools.json
 ```
 
-Tools can be declared by:
+The SDK helpers cover capability specifications, tickets, `sha256=` HMAC verification, authorization probes, callbacks, and Hub API calls. They do not replace your application's login or permission system.
 
-- OpenAPI with `x-agent-capability` extensions
-- PHP SDK annotations
-- PHP 7 builder SDK
-- Node SDK
-- Python SDK
-- Java SDK
-- Go SDK
-- .NET SDK
-- Future adapters such as MCP
+## Safety and Authority Boundaries
 
-The hub compiles those inputs into a unified `ToolDefinition`, then enforces:
+- **The business system is the final authority.** When an operation requires an acting subject, `X-Bailing-On-Behalf-Of` carries the bound identity; the receiving API still verifies the signature and current permission before doing work.
+- **Capabilities are projected, not assumed.** Every tool must be declared and pass the route allowlist and any subject requirement. Agent Client mode additionally intersects route, workspace, and Agent Session scope; its direct write tools use exact operation IDs and do not accept wildcards.
+- **Approval cannot weaken business policy.** ACC metadata supplies the default risk and approval intent; BailingHub may add stricter approval requirements but cannot grant authority the business system did not provide.
+- **Credentials have separate roles.** Business-backend Client Tokens do not enter the browser or local plugin. Agent authorization uses browser login, PKCE, short-lived access, refresh rotation, and revocable sessions.
+- **Side effects are traceable.** Idempotency, frozen approval snapshots, audit events, task state, visible conversation messages, and tool traces support review and recovery. Hidden model reasoning is neither required nor stored.
+- **Production secrets stay outside public configuration.** Use environment variables or a secret manager, restrict management access, configure retention, and test the pause switch before production use.
 
-- route allowlist
-- risk level
-- rate limits
-- approval intent
-- audit trail
-- HMAC-signed tool calls
-- on-behalf-of subject propagation
+See [Security Policy](SECURITY.md), [Business Tools and Governance](docs/TOOLS.en.md), and [Agent Client v1](docs/AGENT_CLIENT_QUICKSTART.en.md) for the operational details.
 
-The business system still decides whether the user can actually perform the action.
+## Deployment Scope
 
-```text
-BailingHub controls reach.
-Your business system controls authority.
-```
+The open-source edition is designed for **one organization per deployment**. One hub may connect multiple business systems, clients, routes, and tool providers when they share one management and audit boundary.
 
-## Minimal Tool Example
-
-```js
-import { buildOpenApiSpec, param, tool } from '@bailinghub/connect';
-
-export default buildOpenApiSpec({
-  title: 'CRM Tools',
-  version: '1.0.0',
-  authzProbe: { method: 'POST', path: '/.well-known/bailing/authz-probe' },
-  tools: [
-    tool({
-      name: 'member_query',
-      method: 'GET',
-      path: '/api/members/{id}',
-      description: 'Query member profile',
-      scope: 'member.read',
-      requiresSubject: true,
-      params: [param('id', { in: 'path', required: true, description: 'Member ID' })],
-    }),
-  ],
-});
-```
-
-## Typical Architecture
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-overview.en-dark.png">
-  <img src="assets/architecture-overview.en.png" width="100%" alt="BailingHub architecture from business triggers through routing, context assembly, brain dispatch, governance, and result delivery">
-</picture>
-
-## Core Capabilities
-
-| Capability | Description |
-|---|---|
-| Trigger routes | Route a business scenario to a model, executor, memory policy, knowledge base, tools, and delivery target. |
-| Tool governance | Govern OpenAPI/SDK tools with allowlists, risk levels, rate limits, approvals, audit, and signatures. |
-| Business authority | Tool calls carry `X-Bailing-On-Behalf-Of`; the business system keeps final permission control. |
-| Runtime ledger | Jobs, messages, approvals, audit records, and trace data live in the hub state database. |
-| Knowledge injection | Route-level knowledge retrieval before dispatch. |
-| Web widget | Embed a zero-dependency chat widget into any web page. |
-| SDKs | PHP, PHP 7, Node, Python, Java, Go, and .NET helper SDKs for tool specs, tickets, HMAC verification, authz probes, callbacks, and hub API calls. |
-| Self-hosted | Run in your own environment with MySQL and Docker. |
+Run separate BailingHub deployments for mutually isolated organizations. A `client`, `route`, `workspace`, or `tool_provider` is not an organization-level security boundary.
 
 ## Documentation
 
-- [Chinese README](README.md)
-- [English Quickstart](docs/QUICKSTART.en.md)
-- [Docker Demo](docs/DEMO.en.md)
-- [Independent Validation Task](docs/INDEPENDENT_VALIDATION.en.md)
-- [HTTP Contract](docs/CONTRACT.en.md)
-- [Agent Client v1 Integration Guide](docs/AGENT_CLIENT_QUICKSTART.en.md)
-- [Agent Auth v1](docs/AGENT_AUTH_API.en.md)
-- [Agent Client Runtime v1](docs/AGENT_CLIENT_RUNTIME_API.en.md)
-- [Kernel Host API v1](docs/KERNEL_HOST_API.en.md)
-- [Business Tools and Governance](docs/TOOLS.en.md)
-- [SDK Guide](docs/SDK.en.md)
-- [Dify Integration Recipe](docs/integrations/dify/README.en.md)
-- [JeecgBoot Integration Recipe](docs/integrations/jeecgboot/README.en.md)
-- [English Documentation Map](docs/README.en.md)
-- [Architecture](docs/ARCHITECTURE.en.md)
-- [Pipeline](docs/PIPELINE.en.md)
-- [Tool Model](docs/TOOLS_MODEL.en.md)
-- [Tool Governance](docs/TOOLS_DESIGN.en.md)
-- [AI-Friendly Tool Design](docs/AI_FRIENDLY_TOOLS.en.md)
-- [Third-Party Integration](docs/INTEGRATION.en.md)
-- [Latest Release Notes](docs/RELEASE_NOTES_v0.5.1.en.md)
-- [v0.1.7 Release Notes](docs/RELEASE_NOTES_v0.1.7.en.md)
-- [v0.1.6 Release Notes](docs/RELEASE_NOTES_v0.1.6.en.md)
-- [v0.1.5 Release Notes](docs/RELEASE_NOTES_v0.1.5.en.md)
-- [v0.1.4 Release Notes](docs/RELEASE_NOTES_v0.1.4.en.md)
-- [v0.1.3 Release Notes](docs/RELEASE_NOTES_v0.1.3.en.md)
-- [v0.1.2 Release Notes](docs/RELEASE_NOTES_v0.1.2.en.md)
-- [First Public Release Notes](docs/RELEASE_NOTES_v0.1.0.en.md)
-- [Compatibility And Upgrade Policy](docs/COMPATIBILITY.en.md)
+- [Quickstart](docs/QUICKSTART.en.md) — deploy and run the first route.
+- [Docker Demo](docs/DEMO.en.md) — complete the sample business-operation loop.
+- [Integration Guide](docs/INTEGRATION.en.md) — connect an existing application.
+- [Agent Client v1](docs/AGENT_CLIENT_QUICKSTART.en.md) — browser authorization and local planning.
+- [Business Tools and Governance](docs/TOOLS.en.md) — declare, sign, approve, and audit tools.
+- [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
+- [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.
+- [English Documentation Map](docs/README.en.md) — the complete public documentation index.
+- [Changelog](docs/CHANGELOG.en.md) and [v0.5.1 Release Notes](docs/RELEASE_NOTES_v0.5.1.en.md) — current release changes and upgrade notes.
 
-## Feedback and Contributions
+## Feedback and Ecosystem
 
-BailingHub is an early public release. We want its contracts and operational model to be tested against more real business systems, technology stacks, and industries. If a contract is unclear, integration is unnecessarily difficult, a security boundary needs scrutiny, or an important scenario is missing, please open a [bug report](https://github.com/bailinghub/bailinghub/issues/new?template=bug_report.yml), a [feature request](https://github.com/bailinghub/bailinghub/issues/new?template=feature_request.yml), or a pull request.
+BailingHub is an early public project. If an integration is unclear, a safety boundary deserves scrutiny, or a scenario is missing, open a [bug report](https://github.com/bailinghub/bailinghub/issues/new?template=bug_report.yml), [feature request](https://github.com/bailinghub/bailinghub/issues/new?template=feature_request.yml), or pull request.
 
-If you are evaluating one real business API but are not ready to publish a complete system or begin deployment, use the [real API integration evaluation](https://github.com/bailinghub/bailinghub/issues/new?template=integration_evaluation.yml) form. Share one sanitized operation and the acting-subject, authority, approval, or audit question you need to resolve. This is a public pre-integration technical review, not hosted integration work, certification, or permission to connect production. Do not include secrets, private hostnames, customer data, or a complete internal API specification.
+For one sanitized real API operation, use the [integration evaluation](https://github.com/bailinghub/bailinghub/issues/new?template=integration_evaluation.yml) form. It is a public pre-integration review, not hosted integration work, certification, or permission to connect production. Never include secrets, private hostnames, customer data, or a complete internal specification.
 
-Useful reports include the business context, expected behavior, a minimal reproduction, and a sanitized trace. See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidance.
+Independent distributions, industry adaptations, executors, connectors, and ACC implementations are welcome. A listing or compatibility reference is not certification, a service warranty, adoption by another project, or a transfer of maintenance responsibility. See [Community Derivatives and Ecosystem Collaboration](docs/ECOSYSTEM.en.md).
 
-### Derivatives And Ecosystem
+## Open-Source Foundations and License
 
-We welcome independent distributions, industry adaptations, executors, connectors, and independent ACC implementations. Community projects may keep their own names, directions, and governance. Reusable improvements are welcome upstream, and strong independent projects may request a future listing on the official ecosystem surface. A listing is not certification, a service warranty, or a transfer of maintenance responsibility. See [Community Derivatives And Ecosystem Collaboration](docs/ECOSYSTEM.en.md).
+BailingHub uses the open ACC contract, Node.js and TypeScript for the service, and Vue with Element Plus and Pinia for the console. Complete Docker and production deployments use an independent MySQL service for persistent runtime state; JSONL is for local smoke testing only. ACC attribution is preserved in [NOTICE](NOTICE); locked dependencies, licenses, and external runtimes are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-DeepSeek Harness users can install the independent community plugin [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin) so the local Agent performs reasoning, planning, and multi-step tool selection while BailingHub continues to own trusted business identity, capability filtering, approvals, execution, and audit. The plugin consumes the host-neutral `bailinghub-mcp-server/sdk`, does not enter the BailingHub Core distribution, and does not imply DeepSeek development, certification, or endorsement. See the [Agent Client v1 Integration Guide](docs/AGENT_CLIENT_QUICKSTART.en.md) for deployer, business-developer, and end-user configuration ownership.
+Names such as Dify, n8n, MCP, OpenClaw, DeepSeek, and DeepSeek Harness identify compatibility targets or independent integrations only. They do not imply development, certification, adoption, or endorsement by the corresponding upstream projects.
 
-## Open-Source Foundations and Third-Party Software
-
-BailingHub adopts the open [Agent Capability Contract (ACC)](https://www.agentcapability.org), runs its service on Node.js and TypeScript, builds its console with Vue, Element Plus, and Pinia, and uses an independent MySQL service as the default persistent runtime.
-
-ACC attribution is preserved in [NOTICE](NOTICE). The complete locked dependency, license, and external runtime inventory is recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-
-## License
-
-Apache License 2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [SECURITY.md](SECURITY.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
-
-The Apache License does not grant trademark rights to the names "BailingHub", "百灵中枢", or related marks. See [NOTICE](NOTICE).
+BailingHub is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [SECURITY.md](SECURITY.md), and [CONTRIBUTING.md](CONTRIBUTING.md). The license does not grant trademark rights to “BailingHub”, “百灵中枢”, or related marks.

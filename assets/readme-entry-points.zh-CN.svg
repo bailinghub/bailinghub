@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+<title id="title">一个中枢，接住三种 AI 操作入口</title>
+<desc id="desc">网页聊天、本地智能体和 API 自动化入口汇入同一套 BailingHub 身份、路由、工具、审批与审计能力，再调用已有业务系统。</desc>
+<defs><marker id="entry-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1f883d"/></marker></defs>
+<rect width="1600" height="900" fill="#ffffff"/>
+<path d="M 0 0 H 1600 V 7 H 0 Z" fill="#1f883d"/>
+<text x="80" y="55" fill="#1f883d" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" font-weight="750" text-anchor="start">BAILINGHUB · 多入口，同一套业务能力</text>
+<text x="80" y="108" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="46" font-weight="800" text-anchor="start">一个中枢，接住三种 AI 操作入口</text>
+<text x="80" y="148" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="500" text-anchor="start">用户从哪里发起可以不同，权限、业务规则和最终执行仍统一回到原系统。</text>
+<rect x="80" y="185" width="430" height="155" rx="16" fill="#f6f8fa" stroke="#d0d7de" stroke-width="2"/>
+<circle cx="128" cy="233" r="25" fill="#1f883d"/>
+<path d="M 114 224 h 28 v 17 h -13 l -8 7 v -7 h -7 z" fill="none" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"/>
+<text x="170" y="228" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="800" text-anchor="start">网页聊天</text>
+<text x="170" y="262" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="650" text-anchor="start">嵌入商城、SaaS 或内部后台</text>
+<text x="110" y="308" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="500" text-anchor="start">用户留在当前页面直接说目标</text>
+<rect x="80" y="390" width="430" height="155" rx="16" fill="#ddf4ff" stroke="#0969da" stroke-width="2"/>
+<circle cx="128" cy="438" r="25" fill="#0969da"/>
+<rect x="113" y="424" width="30" height="21" rx="3" fill="none" stroke="#ffffff" stroke-width="3"/><path d="M 123 451 h 10 M 128 445 v 6" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+<text x="170" y="433" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="800" text-anchor="start">本地智能体</text>
+<text x="170" y="467" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="650" text-anchor="start">浏览器授权后在桌面 Agent 中办事</text>
+<text x="110" y="513" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="500" text-anchor="start">显式选择已授权的业务身份</text>
+<rect x="80" y="595" width="430" height="155" rx="16" fill="#f6f8fa" stroke="#d0d7de" stroke-width="2"/>
+<circle cx="128" cy="643" r="25" fill="#1f883d"/>
+<text x="128" y="650" fill="#ffffff" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="800" text-anchor="middle">&lt;/&gt;</text>
+<text x="170" y="638" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="23" font-weight="800" text-anchor="start">API / 自动化</text>
+<text x="170" y="672" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="650" text-anchor="start">后端事件、定时任务或工作流触发</text>
+<text x="110" y="718" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="500" text-anchor="start">用稳定接口接入现有自动化</text>
+<path d="M 510 262 C 560 262 560 330 610 330" fill="none" stroke="#1f883d" stroke-width="4" marker-end="url(#entry-arrow)"/>
+<path d="M 510 467 C 560 467 560 450 610 450" fill="none" stroke="#1f883d" stroke-width="4" marker-end="url(#entry-arrow)"/>
+<path d="M 510 672 C 560 672 560 570 610 570" fill="none" stroke="#1f883d" stroke-width="4" marker-end="url(#entry-arrow)"/>
+<rect x="610" y="235" width="440" height="430" rx="20" fill="#dafbe1" stroke="#1f883d" stroke-width="3"/>
+<text x="640" y="282" fill="#116329" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="31" font-weight="850" text-anchor="start">BailingHub</text>
+<text x="640" y="316" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="500" text-anchor="start">统一的 Agent 业务控制面</text>
+<rect x="640" y="355" width="170" height="96" rx="13" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<rect x="658" y="373" width="28" height="28" rx="7" fill="#ddf4ff"/>
+<text x="672" y="393" fill="#0969da" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="800" text-anchor="middle">1</text>
+<text x="658" y="429" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="start">身份绑定</text>
+<rect x="830" y="355" width="170" height="96" rx="13" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<rect x="848" y="373" width="28" height="28" rx="7" fill="#ddf4ff"/>
+<text x="862" y="393" fill="#0969da" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="800" text-anchor="middle">2</text>
+<text x="848" y="429" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="start">路由与上下文</text>
+<rect x="640" y="480" width="170" height="96" rx="13" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<rect x="658" y="498" width="28" height="28" rx="7" fill="#ddf4ff"/>
+<text x="672" y="518" fill="#0969da" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="800" text-anchor="middle">3</text>
+<text x="658" y="554" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="start">工具范围</text>
+<rect x="830" y="480" width="170" height="96" rx="13" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<rect x="848" y="498" width="28" height="28" rx="7" fill="#fff8c5"/>
+<text x="862" y="518" fill="#9a6700" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="800" text-anchor="middle">4</text>
+<text x="848" y="554" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="start">审批与审计</text>
+<text x="830" y="625" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="500" text-anchor="middle">路由、知识、工具和记录只维护一套</text>
+<path d="M 1050 450 H 1145" fill="none" stroke="#1f883d" stroke-width="4" marker-end="url(#entry-arrow)"/>
+<rect x="1160" y="235" width="360" height="430" rx="18" fill="#f6f8fa" stroke="#d0d7de" stroke-width="2"/>
+<text x="1190" y="282" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="27" font-weight="800" text-anchor="start">已有业务系统</text>
+<text x="1190" y="316" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="16" font-weight="500" text-anchor="start">数据、账号和权限继续归你</text>
+<rect x="1190" y="360" width="130" height="56" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<text x="1255" y="396" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="middle">商城</text>
+<rect x="1340" y="360" width="130" height="56" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<text x="1405" y="396" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="middle">SaaS</text>
+<rect x="1190" y="438" width="130" height="56" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<text x="1255" y="474" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="middle">CRM</text>
+<rect x="1340" y="438" width="130" height="56" rx="12" fill="#ffffff" stroke="#d0d7de" stroke-width="2"/>
+<text x="1405" y="474" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="middle">ERP</text>
+<rect x="1190" y="516" width="280" height="56" rx="12" fill="#dafbe1" stroke="#1f883d" stroke-width="2"/>
+<text x="1330" y="552" fill="#116329" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="750" text-anchor="middle">内部系统</text>
+<text x="1340" y="620" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="15" font-weight="650" text-anchor="middle">最终授权 · 真实执行 · 原生数据</text>
+<rect x="610" y="705" width="910" height="74" rx="14" fill="#eef2f5" stroke="#d0d7de" stroke-width="2"/>
+<circle cx="650" cy="742" r="19" fill="#1f883d"/>
+<path d="M 640 742 l 7 7 14 -16" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="690" y="749" fill="#111820" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="17" font-weight="700" text-anchor="start">同一套已接入能力 · 同一条授权边界 · 同一份执行记录</text>
+<text x="800" y="854" fill="#667085" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" font-weight="650" text-anchor="middle">入口可以更换，业务身份不能由模型伪造，业务权限也不会被绕过。</text>
+</svg>

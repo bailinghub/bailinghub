@@ -5,286 +5,187 @@
   </picture>
 </p>
 
-# 百灵中枢 · BailingHub
+# BailingHub：让 Agent 通过对话操作你的业务后台
 
-> **BailingHub** is an open-source A2B (Agent-to-Business) control plane built around [ACC (Agent Capability Contract)](https://www.agentcapability.org): connect OpenAPI/SDK tools to agents with routing, tool governance, approvals, audit trails, traceability, and self-hosted control.
->
-> 中文文档是当前主文档；English documentation is available for the first-release path: [README.en.md](README.en.md), [docs/QUICKSTART.en.md](docs/QUICKSTART.en.md), [docs/DEMO.en.md](docs/DEMO.en.md), [docs/CONTRACT.en.md](docs/CONTRACT.en.md), [docs/TOOLS.en.md](docs/TOOLS.en.md), and [docs/SDK.en.md](docs/SDK.en.md). The public API, SDKs, schemas, Docker demo, and code identifiers are designed to be language-neutral.
->
-> 生态接入：Direct Client API、Dify、n8n、MCP 与 OpenClaw 的统一入口见 [生态集成](https://www.bailinghub.com/integrations)。
+**BailingHub（百灵中枢）**是一个面向现有商城、SaaS、CRM、ERP 和内部管理系统的开源 Agent 业务执行中枢。
 
-业务系统的 **A2B 控制面**：一个独立部署、独立生命周期的服务，把「业务事件」与「Agent 大脑」用一条稳定的网络契约解耦开。业务侧只管**触发**（发任务 / 嵌聊天组件 / 接入站渠道），中枢负责**选大脑、装上下文、过安全闸、调业务工具、把结果送回**——大脑是 llm 还是远端执行器、用哪个知识库、带不带记忆，全在后台配置，业务无感。
+把“查订单、改资料、创建工单、发起审批”等你主动开放的后台能力接进来，用户就能从网页聊天窗、本地智能体或 Dify / n8n / MCP 等入口，用自然语言完成真实业务操作。BailingHub 负责身份绑定、能力范围、风险控制和全程审计；业务系统继续按原有权限做最终裁决。
 
-A2B（Agent-to-Business）指“让 Agent 安全、可治理地接入已有业务系统，并代替真实业务主体查数据、办业务、走流程”。[ACC](https://www.agentcapability.org) 是 A2B 场景下的能力声明契约，独立规范仓库见 [agent-capability/agent-capability-contract](https://github.com/agent-capability/agent-capability-contract)；OpenAPI 绑定字段为 `x-agent-capability`。百灵中枢采用 ACC 的开放契约心智，把能力声明编译成统一 `ToolDefinition`，再执行白名单、风险、审批、限流、签名和审计。
+> **接管操作，不接管权限。** BailingHub 不是模拟点击任意网页，也不会绕过你的后台权限；Agent 只能调用业务系统明确开放的接口，每次操作仍由业务系统检查身份和权限。
 
-> 一句话定位：**中枢是被业务「消费」的服务。业务挂了它不挂，它挂了业务无感。**
-> 状态心智：**状态是王座，大脑是缓存**——对话总账（`bz_messages`）是唯一真值，大脑会话只是可重建的缓存。
+<p align="center">
+  <a href="https://trial.bailinghub.com/register/"><strong>在线体验</strong></a>
+  · <a href="docs/DEMO.md"><strong>运行 Docker Demo</strong></a>
+  · <a href="docs/第三方对接指南.md"><strong>接入现有系统</strong></a>
+  · <a href="README.en.md"><strong>English</strong></a>
+</p>
 
-## 为什么需要它
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme-product-overview.zh-CN-dark.svg">
+  <img src="assets/readme-product-overview.zh-CN.svg" width="100%" alt="用户通过对话查询订单、发起退款，BailingHub 执行治理并留下审批和审计记录">
+</picture>
 
-传统系统要做 A2B，通常会遇到同一组问题：不同入口怎么路由到不同大脑、Agent 怎么安全调用业务接口、审批和审计放在哪里、知识/记忆/页面上下文怎么注入、结果怎么可靠回传、未来换模型或换 agent 时业务代码要不要重写。BailingHub 把这些能力收敛成中枢服务和一组可配置插座，让业务系统保持原有边界，只通过 HTTP 契约接入。
+在线体验环境只用于了解产品和配置方式。请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
 
-In short: BailingHub is not another chatbot or agent framework. It is a self-hosted control plane that lets an existing system expose selected business actions to AI agents while keeping permissions, signatures, approvals, audit logs, and state ownership under the business system's control.
+## 适合哪些团队
 
-## 10 分钟体验
+- 已有商城、SaaS、CRM、ERP 或内部后台，希望增加能查数据、办业务的 AI 助手。
+- 已经在使用本地 Agent、MCP、Dify 或 n8n，希望复用一套业务身份、能力配置和审计记录。
+- 需要自托管，并且不愿把业务密码、超级权限或全部接口直接交给模型。
 
-> **不想先部署？** 打开 [在线体验](https://trial.bailinghub.com/register/)，注册后可直接查看控制台、导入演示数据并运行系统体检。该环境只用于了解产品和验证配置心智，请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
+如果业务系统没有可调用接口，也不准备增加薄适配层，BailingHub 不会把任意网站自动变成可操作系统。
 
-需要在自己的环境验证完整闭环时：
+## 它能用在哪里
+
+| 已有系统 | 用户可以这样说 | 实际发生的事 |
+|---|---|---|
+| 商城 / SaaS 后台 | “查一下 SO-1001 的订单状态” | Agent 调用已授权的订单查询接口并返回实时结果 |
+| CRM / ERP / 门店系统 | “把这位员工的联系电话改成新号码” | 中枢校验能力范围，业务系统再按当前用户权限决定是否修改 |
+| 客服 / 运维后台 | “为这个订单创建一个售后工单” | Agent 生成参数、调用业务动作，结果写入对话与审计总账 |
+| 退款 / 删除等高风险场景 | “为 SO-1001 申请退款 199 元” | 调用暂停并进入审批，批准后只执行获批的那次请求 |
+
+开源 Demo 已内置**订单查询、售后工单、退款审批和故障 trace**，不需要真实业务系统或模型 Key 就能复现完整治理链路。接入你自己的系统时，可用的具体动作取决于你主动声明并实现了哪些业务接口；BailingHub 不会凭空获得后台能力。
+
+## 三种入口，同一套业务能力
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme-entry-points.zh-CN-dark.svg">
+  <img src="assets/readme-entry-points.zh-CN.svg" width="100%" alt="网页聊天组件、本地智能体和外部平台通过 BailingHub 使用同一套业务能力与治理规则">
+</picture>
+
+| 入口 | 适合谁 | 怎么使用 |
+|---|---|---|
+| **嵌入业务后台的聊天窗口** | 已有网站、商城或 SaaS | 粘贴一行 `<script>`；需要身份时，由业务后端基于现有登录态签发短票据 |
+| **本地智能体 / 桌面客户端** | 希望从本机 Agent 直接操作业务的人 | 浏览器完成业务身份授权；本地 Agent 负责理解和规划，中枢提供受裁剪能力并记录执行轨迹 |
+| **API 与生态平台** | 自有服务、Dify、n8n、MCP 客户端或消息渠道 | 通过稳定 Client API 或独立适配器接入，不必各自重做任务、审批和审计 |
+
+三个入口可以同时存在。路由、知识库、记忆、业务身份、工具范围和审计仍在同一个中枢管理，不需要在每个 Agent 客户端里重复维护一套业务配置。
+
+## 一次后台操作如何完成
+
+1. **业务系统声明能力**：只开放准备交给 Agent 的查询、创建、修改或申请动作。
+2. **用户建立可信身份**：网页聊天由业务后端基于现有登录态签发短票据；本地智能体则通过浏览器授权把 Agent Session 绑定到当前业务主体。两种方式都不传递业务密码和 Cookie。
+3. **Agent 理解并选择工具**：中枢内置目标或本地 Agent 根据路由、上下文和可见能力生成参数。
+4. **BailingHub 执行治理**：白名单、风险等级、限流、确认、审批和幂等规则在调用前生效。
+5. **业务系统最终授权**：每次工具调用都按契约签名；需要主体的能力还会携带已绑定主体，业务后端仍按自己的租户、角色和业务规则执行或拒绝。
+6. **全过程留痕**：消息、任务、工具调用、审批、结果和 trace 进入中枢自己的状态库；记录可追溯，Agent Session 可撤销，任务入口可暂停。
+
+一句话概括：**BailingHub 决定 Agent 最多“够得到什么”，业务系统决定这个人此刻“能不能做”。**
+
+## 为什么不只做一个聊天框或直接暴露 MCP
+
+- **普通聊天框**解决对话界面，但通常不负责可信业务身份、写操作审批、调用签名和执行审计。
+- **MCP**解决工具发现与调用协议；BailingHub 补上业务侧的能力裁剪、身份、风险、审批、限流和审计。两者可以配合使用。
+- **传统工作流**适合画死的固定步骤；BailingHub 允许 Agent 在明确治理边界内动态选择工具，同时保留业务最终授权。
+- **BailingHub 不替代业务后端**：它是独立控制面，不读取业务数据库，也不把 Agent 变成超级管理员。
+
+## A2B 与 ACC
+
+我们用 **A2B（Agent-to-Business）**描述“让 Agent 安全接入已有业务系统，并代表真实业务主体查数据、办业务、走流程”。
+
+[ACC（Agent Capability Contract）](https://www.agentcapability.org) 是 A2B 场景下的开放能力声明契约，独立规范仓库位于 [agent-capability/agent-capability-contract](https://github.com/agent-capability/agent-capability-contract)。BailingHub 使用 ACC 的契约模型，把 OpenAPI / SDK 等来源编译成统一工具定义，再执行治理；OpenAPI 扩展字段为 `x-agent-capability`。
+
+## 跑通完整闭环
+
+在本机启动中枢、MySQL、Demo 业务系统、工具源、路由和接入方：
 
 ```bash
+git clone --branch v0.5.1 --depth 1 https://github.com/bailinghub/bailinghub.git
+cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
 ```
 
-打开 http://localhost:18900/console/ ，用 `admin / bailing-demo-admin` 登录；demo 会自动创建中枢、MySQL、示例业务系统、工具源、路由和接入方。完整演示见 [docs/DEMO.md](docs/DEMO.md)，生产部署见 [docs/QUICKSTART.md](docs/QUICKSTART.md)。
-
-开发者本地体检：
+打开 <http://localhost:18900/console/>，使用 `admin / bailing-demo-admin` 登录。然后按 [Docker Demo](docs/DEMO.md) 运行订单查询和退款审批，观察“Agent 调工具 → 业务审批 → 结果回写 → 审计 trace”的真实链路。
 
 ```bash
-npm run doctor
+docker compose exec bailinghub npm run smoke
 ```
 
-愿意帮助验证“陌生开发者能否仅凭公开资料独立跑通”时，请按 [独立验证任务卡](docs/INDEPENDENT_VALIDATION.md) 完成非生产 Docker demo，并通过专用 Issue 模板反馈 PASS、部分通过或失败结果。无需接入真实业务，也不要提交任何生产凭据。
+全新 Ubuntu / Debian 服务器也可以使用可审计的一键安装脚本：
 
-项目边界和长期取舍见 [VISION.md](VISION.md)；整体架构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+```bash
+curl -fsSL https://www.bailinghub.com/install.sh | sh
+```
+
+该命令默认使用面向中国网络的官方 ACR 镜像 `crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:<version>`。如果希望在本机从公开源码构建：
+
+```bash
+curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
+```
+
+GHCR、生产环境变量和 MySQL 配置见 [快速开始](docs/QUICKSTART.md)。本地开发者还可以运行 `npm run doctor` 检查配置、文档与开源边界。
+
+## 接入你自己的系统
+
+建议先选择**一个低风险查询**和**一个需要治理的写操作**完成最小闭环：
+
+1. 用 OpenAPI `x-agent-capability` 或 PHP / PHP 7 / Node / Python / Java / Go / .NET SDK 声明选定动作。
+2. 在业务接口内验签；对于需要主体的能力，再用 `X-Bailing-On-Behalf-Of` 复用原有租户、角色和数据权限。
+3. 在中枢登记工具源，配置触发路由、接入方、可见工具和需要审批的风险边界。
+4. 从网页聊天、本地 Agent 或 Client API 发起真实请求，核对业务结果、审批和 trace。
+
+第一次接入请直接阅读 [第三方对接指南](docs/第三方对接指南.md)；本地智能体接入见 [Agent Client v1 指南](docs/AGENT_CLIENT_QUICKSTART.md)，工具设计原则见 [AI 友好工具设计指南](docs/AI友好工具设计指南.md)。
+
+## 核心能力
+
+| 能力组 | BailingHub 提供什么 |
+|---|---|
+| **入口与路由** | `/run`、网页聊天、入站渠道和 Client API；按场景选择目标、会话策略、知识、记忆、工具和送达 |
+| **业务能力接入** | OpenAPI / SDK / ACC 工具声明、能力搜索、读写范围裁剪和请求签名 |
+| **Agent 上下文** | 知识库、滚动记忆、页面上下文、媒体与多模态输入策略 |
+| **执行治理** | 白名单、风险分级、限流、确认、审批意图、幂等与不确定结果冻结 |
+| **可信运行记录** | 对话总账、任务、工具调用、审批、审计、trace、成本与运行状态 |
+| **管理与运维** | 自托管控制台、RBAC、智能体客户端与授权设备管理、远程撤销、暂停开关和健康检查 |
+
+## 安全与部署边界
+
+- **业务权限不外包**：中枢控制能力 Reach，业务后端控制最终 Authority；页面上下文和访客 ID 只作理解线索，不能用于鉴权。
+- **输入默认不可信**：业务和访客正文按数据处理；生产密钥必须来自环境变量或密钥管理器，不能进入仓库、前端或 Agent 配置。
+- **写操作有闸**：高风险或要求确认的工具先冻结调用快照并进入审批；批准后只放行与快照完全一致的那次调用。
+- **随时可以叫停**：`POST /admin/pause` 或 `touch .paused` 会停止受理新任务。
+- **状态独立保存**：完整 MySQL 部署把消息、任务、审批和审计写入中枢自己的 `bz_` 状态表，不写入业务数据库；JSONL 仅用于本地烟测。模型或执行器的运行时会话可以重建，Agent Session 则是可撤销的持久授权记录。
+- **开源版按单组织部署**：一套中枢可接多个业务系统、路由和工具源，但共享一个管理与审计边界；互相隔离的组织应分别部署。
+- **这是接口治理，不是浏览器 RPA**：业务系统需要提供选定接口、验签和最终授权；BailingHub 不会直接导入业务代码或接管任意网页。
+
+完整威胁模型、漏洞报告方式和生产建议见 [SECURITY.md](SECURITY.md) 与 [工具治理设计](docs/TOOLS_DESIGN.md)。
+
+## 架构与项目边界
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-overview.zh-CN-dark.png">
   <img src="assets/architecture-overview.zh-CN.png" width="100%" alt="百灵中枢从业务触发、路由与上下文装配、大脑调度、安全治理到结果送达的架构图">
 </picture>
 
-## 这是什么、不是什么
+BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协作。[BailingHub MCP Server](https://github.com/bailinghub/bailinghub-mcp-server) 是独立生态适配层；[dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin) 是 DeepSeek Harness 的独立社区插件。它们消费 Core 的公共接口，不进入 Core 发行包，也不代表对应上游项目的开发、认证或背书。
 
-- **是**：一个独立服务，只通过网络契约与业务对话（见 [docs/CONTRACT.md](docs/CONTRACT.md)）。状态进自己的库（`bz_` 前缀），不进业务库。
-- **不是**：业务系统的一个模块。它不 import 业务代码，不跑在业务进程里。业务对它的依赖是**单向、异步、可降级**的。
+## 文档导航
 
-## 部署范围
-
-当前开源版按**单组织部署**设计。一套中枢可以接多个业务系统、多个接入方、多个路由和多个工具源，但它们属于同一个管理域和审计空间。
-
-如果要服务多个互相隔离的独立组织，建议每个组织独立部署一套中枢；不要把 `client`、`route` 或 `tool_provider` 当作组织级隔离边界。
-
-## 和 chatbot / workflow / MCP 的区别
-
-- **不是普通 chatbot**：它不只回答问题，而是把业务触发、上下文装配、工具调用、审批、审计、送达和追溯收敛成一个可治理运行面。
-- **不是传统 workflow**：它不要求业务把流程画死在编排器里；路由决定大脑、知识、记忆、工具白名单和送达策略，AI 在治理边界内动态执行。
-- **不替代 MCP**：MCP 是工具协议生态；百灵中枢是业务侧 AI 控制面。独立的 [BailingHub MCP Server](https://github.com/bailinghub/bailinghub-mcp-server) 可把兼容客户端接入公共 Client API，仍由中枢负责身份、权限、风险、限流和审计。该适配器不进入 BailingHub 核心发行包。
-
-## 能力面
-
-| 能力 | 说明 | 文档 |
-|---|---|---|
-| **触发路由** | 业务场景 → 大脑/项目/会话策略/能力档/知识/记忆/工具/送达，一条路由配齐 | [CONTRACT §1](docs/CONTRACT.md) |
-| **网页聊天组件** | 一行 `<script>` 嵌入；零依赖、Shadow DOM 隔离；外观可配（尺寸/位置/头像/气泡图标/打字机流式）；签名访客票据带可信身份 | [CONTRACT §1.1](docs/CONTRACT.md) |
-| **入站渠道** | 外部平台消息直达中枢（企微被动回复 + 超窗异步推），`kind + config + route_key` 解耦 | [docs/CHANNELS.md](docs/CHANNELS.md) |
-| **知识库** | 向量检索 + 派发前注入；业务推送入库 / 数据源连接器拉取入库 | [CONTRACT §2.1](docs/CONTRACT.md) |
-| **工具插座** | Agent 安全调业务接口：OpenAPI `x-agent-capability` ACC 声明、四道闸（白名单/风险/限流/审计）、审批车道、`sha256=` 签名 | [docs/TOOLS_DESIGN.md](docs/TOOLS_DESIGN.md) |
-| **对话记忆层** | 滚动摘要：水位线 + 异步增量结构化压缩，路由级可配（默认关） | [CONTRACT §1.1](docs/CONTRACT.md) |
-| **页面上下文** | 网页访客在哪个页面提问 → 登记表寻址出页面语义注入 Agent 上下文 / 偏置知识检索 | [CONTRACT §1.1](docs/CONTRACT.md) |
-| **对象存储** | 聊天图片落桶取永久 URL（追溯 / vision / 业务图片入参三用一份存储） | [CONTRACT §2.4e](docs/CONTRACT.md) |
-| **控制台** | 上述全部 DB 驱动、后台可配、改完即生效；RBAC + 审计 | [docs/QUICKSTART.md](docs/QUICKSTART.md) |
-
-## 快速上手
-
-最快体验完整闭环（中枢 + MySQL + demo 业务系统 + 工具源）：
-
-```bash
-export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
-docker compose up --build
-```
-
-`BAILING_TOKEN` 是管理 API 与派生签名凭证的根密钥。Docker Compose 不再提供公开默认值；请在同一终端保留该环境变量，或把随机值写入本机 `.env`。一键安装脚本会自动生成并保存强随机值。
-
-全新 Ubuntu/Debian 服务器可用一键安装脚本快速体验；它只是把 Docker 安装、下载开源分发包、生成 `.env`、`docker compose up -d --build` 自动化，脚本内容在 [scripts/install.sh](scripts/install.sh) 可审计：
-
-```bash
-curl -fsSL https://www.bailinghub.com/install.sh | sh
-```
-
-一键安装默认使用官方预构建镜像，减少首次构建和 npm 安装耗时：
-
-```bash
-curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=image sh
-```
-
-如需审计源码构建或做二次开发，可切到源码模式：
-
-```bash
-curl -fsSL https://www.bailinghub.com/install.sh | env BAILING_INSTALL_MODE=source sh
-```
-
-面向中国网络的默认镜像位于阿里云 ACR：
-
-```text
-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailinghub:<version>
-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-demo-business:<version>
-crpi-xm97pbcjrmf5in3s.cn-shanghai.personal.cr.aliyuncs.com/bailinghub/bailing-mysql:8.4
-```
-
-全球开发者也可以使用 GHCR：
-
-```text
-ghcr.io/bailinghub/bailinghub:<version>
-ghcr.io/bailinghub/bailing-demo-business:<version>
-```
-
-```bash
-curl -fsSL https://www.bailinghub.com/install.sh | env \
-BAILING_INSTALL_MODE=image \
-BAILING_IMAGE_REGISTRY=ghcr.io \
-BAILING_IMAGE_NAMESPACE=bailinghub \
-BAILING_MYSQL_IMAGE=mysql:8.4 \
-sh
-```
-
-国内默认安装使用官方同步的 MySQL 8.4 镜像，不依赖 Docker Hub；GHCR 安装使用上游 `mysql:8.4`。企业环境可通过 `BAILINGHUB_IMAGE`、`BAILING_DEMO_BUSINESS_IMAGE` 和 `BAILING_MYSQL_IMAGE` 覆盖为内部镜像源。
-
-打开 http://localhost:18900/console/ ，用 `admin / bailing-demo-admin` 登录；或按 [docs/DEMO.md](docs/DEMO.md) 直接用 curl 触发 `demo_support` 路由，跑通「业务系统暴露工具 → 中枢治理 → agent 调工具 → 审计」。
-
-Docker demo 容器内可直接运行完整 smoke，默认会识别 `demo_support` 并检查 `/run + trace + 脱敏排障包`：
-
-```bash
-docker compose exec bailinghub npm run smoke
-```
-
-完整部署（MySQL + 控制台 + 路由/凭证/接入方）见 **[docs/QUICKSTART.md](docs/QUICKSTART.md)**。最小烟测（零外部依赖，本地 jsonl 状态）：
-
-```bash
-cd bailinghub
-npm install
-npm run doctor
-npm run typecheck
-npm run smoke                    # health / console / schema / 后台体检 / route=auto；有 demo token 时会跑 /run + trace
-npm start                       # 默认 127.0.0.1:18900
-
-# 另开终端：
-curl localhost:18900/health
-curl -X POST localhost:18900/run -H 'content-type: application/json' -d '{
-  "request_id":"smoke-001",
-  "project":"self",
-  "source":"manual",
-  "input":"README 描述的架构与 src 实现是否一致？有无明显实现缺口？"
-}'
-# 立即返回 {job_id,...}；稍后 curl localhost:18900/jobs/<job_id>
-```
-
-`project:"self"` 指向本仓自身，用于烟测「业务触发 → 大脑只读调查 → 结构化结论」整条链路。**网页聊天 / 路由 / 知识库 / 渠道等完整能力需 MySQL 后端**（`npm run db:init`）与控制台配置——见 QUICKSTART。
-
-生产/远端烟测可指定地址和 token：
-
-```bash
-BAILING_SMOKE_URL=https://your-hub.example.com \
-BAILING_SMOKE_TOKEN=<admin-token> \
-npm run smoke
-
-# 需要额外覆盖真实 /run + trace 时，再加：
-BAILING_SMOKE_RUN_ROUTE=<route-key> npm run smoke
-```
-
-## 目录
-
-| 路径 | 作用 |
+| 我想做什么 | 从这里开始 |
 |---|---|
-| `docs/ARCHITECTURE.md` | **架构说明**：七层模型、通用性推演、解耦边界和扩展方向 |
-| `docs/KERNEL_HOST_API.md` | **Kernel Host API v1**：完整 Core 的高层嵌入、生命周期、挂载路径与制品升级边界 |
-| `docs/README.md` / `docs/README.en.md` | 文档地图：每类文档的职责边界与维护纪律 |
-| `docs/user-guide/` | 使用者指南：面向业务负责人、产品经理、系统管理员和实施顾问，按业务场景说明为什么需要中枢、后台怎么配、配完交给开发者什么 |
-| `docs/CONTRACT.md` | **边界契约**：`/run`、聊天入口、工具调用/签名、回送、降级、鉴权——业务与中枢唯一的「缝」 |
-| `docs/CLIENT_API.md` | **生态接入稳定面**：版本化 Client API、机器契约、兼容规则与 Dify/n8n 跨仓门禁 |
-| `docs/AGENT_CLIENT_QUICKSTART.md` | **智能体客户端接入**：Core、业务授权页、通用 SDK 与本地宿主插件如何从零串起来 |
-| `docs/AGENT_AUTH_API.md` | **Agent Auth v1**：业务登录态、PKCE、Client Token 与可撤销 Agent Session 的语言无关契约 |
-| `docs/AGENT_CLIENT_RUNTIME_API.md` | **Agent Client Runtime v1**：本地编排所需的工作区、上下文、能力搜索、工具调用与可见结果回传契约 |
-| `docs/QUICKSTART.md` | 从零部署到第一条路由跑通的操作手册 |
-| `docs/QUICKSTART.en.md` | English quickstart for Docker demo, first route, and first business tool |
-| `docs/DEMO.md` | Docker Demo：20 分钟跑通 Agent 调业务工具闭环 |
-| `docs/DEMO.en.md` | English Docker demo walkthrough |
-| `docs/INDEPENDENT_VALIDATION.md` / `docs/INDEPENDENT_VALIDATION.en.md` | 陌生开发者仅凭公开资料完成非生产验证的中英文任务卡与客观通过标准 |
-| `docs/CONTRACT.en.md` | English HTTP and wire contract summary |
-| `docs/TOOLS.en.md` | English tool provider and tool governance guide |
-| `docs/SDK.en.md` | English SDK guide for PHP, Node, Python, Java, Go, .NET, and any-language integration |
-| `docs/integrations/dify/` | Dify 通过中枢控制面发起受治理任务的中英文最小接入配方与校验脚本 |
-| `docs/integrations/jeecgboot/` | JeecgBoot 用户查询与冻结/解冻的一读一写接入配方，保留租户隔离、原权限与最终业务授权 |
-| `docs/TOOLS_MODEL.md` | **ACC 工具模型**：把 OpenAPI/SDK/Overlay/MCP 等来源统一成 Agent 工具治理抽象 |
-| `docs/TOOLS_DESIGN.md` | 工具插座设计：四道闸、审批车道、渐进式披露、签名 |
-| `docs/AI友好工具设计指南.md` | 开发者如何把老系统动作设计成 Agent 友好工具：最小接入、行业模板、风险选择 |
-| `docs/*.en.md` | English companion docs for public open-source usage, architecture, tools, SDK, and compatibility |
-| `docs/CHANNELS.md` | 入站渠道（企微等）接入说明 |
-| `docs/CHANGELOG.md` | 发布记录：公开版本发布后，每次对外可见变更都在这里说明 |
-| `docs/RELEASE_NOTES_v0.1.1.md` | `v0.1.1` 聊天组件运营控制与接入边界修复说明 |
-| `docs/RELEASE_NOTES_v0.1.2.md` | `v0.1.2` 服务端根 token 与派生凭证安全加固说明 |
-| `docs/RELEASE_NOTES_v0.1.3.md` | `v0.1.3` 便携式执行器接入与 OpenClaw 适配说明 |
-| `docs/RELEASE_NOTES_v0.1.4.md` | `v0.1.4` 网页聊天真实流式输出与可重连 SSE 说明 |
-| `docs/RELEASE_NOTES_v0.1.5.md` | `v0.1.5` 一键安装参数可靠性与全新服务器兼容性说明 |
-| `docs/RELEASE_NOTES_v0.1.6.md` | `v0.1.6` 独立验证路径与安装后权限提示说明 |
-| `docs/RELEASE_NOTES_v0.1.7.md` | `v0.1.7` 版本化 Client API 与跨生态兼容门禁说明 |
-| `docs/RELEASE_NOTES_v0.1.8.md` | `v0.1.8` 首次管理员只创建一次与重启安全说明 |
-| `docs/RELEASE_NOTES_v0.1.9.md` | `v0.1.9` 可选 OpenMetrics 运维指标与安全抓取说明 |
-| `docs/RELEASE_NOTES_v0.1.10.md` | `v0.1.10` 实例品牌设置、模型标识诊断与生态接入配方说明 |
-| `docs/RELEASE_NOTES_v0.1.11.md` | `v0.1.11` 副作用执行日志与不确定结果冻结说明 |
-| `docs/RELEASE_NOTES_v0.1.12.md` | `v0.1.12` 语音转写策略与失败关闭说明 |
-| `docs/RELEASE_NOTES_v0.1.13.md` | `v0.1.13` 语音转写与分发版本一致性说明 |
-| `docs/RELEASE_NOTES_v0.1.14.md` | `v0.1.14` 流式对话阶段性进度提示说明 |
-| `docs/RELEASE_NOTES_v0.1.15.md` | `v0.1.15` 可信富内容渲染与聊天可靠性说明 |
-| `docs/RELEASE_NOTES_v0.1.16.md` | `v0.1.16` 工具运行时收敛与语义检索韧性说明 |
-| `docs/RELEASE_NOTES_v0.2.0.md` | `v0.2.0` 工具清单访问保护与主动核验说明 |
-| `docs/RELEASE_NOTES_v0.3.0.md` | `v0.3.0` 可组合 Core 与 Kernel Host API v1 说明 |
-| `docs/RELEASE_NOTES_v0.3.1.md` | `v0.3.1` PDF 解析安全更新说明 |
-| `docs/RELEASE_NOTES_v0.3.2.md` | `v0.3.2` 受管演示数据引导说明 |
-| `docs/RELEASE_NOTES_v0.3.3.md` | `v0.3.3` npm 发布来源元数据纠偏说明 |
-| `docs/RELEASE_NOTES_v0.3.4.md` | `v0.3.4` 匿名预览与可信业务身份引导说明 |
-| `docs/RELEASE_NOTES_v0.5.0.md` | `v0.5.0` 可撤销本地 Agent 授权与受治理本地编排说明 |
-| `docs/RELEASE_NOTES_v0.5.1.md` | `v0.5.1` 智能体客户端管理中心与批量写操作配置说明 |
-| `docs/RELEASE_NOTES_v0.1.0.md` | 首个公开版本的发布说明 |
-| `docs/兼容性与升级.md` | 版本发布策略：SemVer、稳定契约、数据库结构纪律、发布记录要求 |
-| `sql/` | 中枢**独立**状态库 DDL（`bz_` 前缀，按序号演进）；数据库结构演进纪律见 [sql/README.md](sql/README.md) |
-| `src/` | 服务端：入口/队列/调度/适配器/状态/知识/工具/记忆/页面上下文 |
-| `web/widget/widget.js` | 可嵌入的网页聊天组件（零依赖单文件） |
-| `web-admin/` | 控制台前端（Vue3 + Element Plus，构建产物落 `web/console/`） |
-| `sdk/php` `sdk/php7` `sdk/node` `sdk/python` `sdk/java` `sdk/go` `sdk/dotnet` | 业务侧接入 SDK（工具注解 / spec 构建 + `sha256=` 验签 + callback 验签 + 票据签发 + authorize 探针 + HubClient，单一签名方案无版本分支） |
-| `brain/` | executor 大脑配置：`agents/`(角色) `runbooks/`(排查清单) `profiles.json`(能力档)；定制走 `.local` 叠加层，见 [brain/README.md](brain/README.md) / [brain/README.en.md](brain/README.en.md) |
+| 看懂产品和控制台 | [用户指南](docs/user-guide/README.md) |
+| 部署完整开源版 | [快速开始](docs/QUICKSTART.md) |
+| 跑通公开 Demo | [Docker Demo](docs/DEMO.md) |
+| 接入现有业务 | [第三方对接指南](docs/第三方对接指南.md) |
+| 接入本地智能体 | [Agent Client v1 指南](docs/AGENT_CLIENT_QUICKSTART.md) |
+| 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |
+| 理解架构与长期取舍 | [架构](docs/ARCHITECTURE.md) · [项目愿景](VISION.md) |
+| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.5.1 Release Notes](docs/RELEASE_NOTES_v0.5.1.md) |
 
-## 安全基线
-
-- **输入即不可信**：业务/访客传入的正文被当作数据包裹，不作为指令执行。
-- **生产密钥只走环境**：生产部署设置 `BAILING_ENV=production` 后，`server.token`、MySQL 口令、模型 API key、执行器 token、告警 webhook 等敏感项必须来自环境变量或密钥管理器；`config.json` 只保留非敏感结构配置或占位值。
-- **鉴权分层**：接入方 token（挡公网扫描 + 路由白名单 + 限速）/ 管理 token / 任务级短凭证（`tool_token`，任务终态即失效）三者解耦；密钥列表只给掩码、完整值走显式 reveal + 审计。
-- **集中限速账本**：MySQL 后端下，接入方限速、聊天入口 IP 限速、后台登录防爆破、工具源/工具级限速统一落到 `bz_rate_limits`，多进程/多副本共享同一套滑动窗口语义；jsonl 模式仅适合本地烟测。
-- **审计留存显式配置**：`bz_audit` 默认不自动删除；生产按合规要求设置 `BAILING_AUDIT_RETENTION_DAYS` 后，中枢定期清理超龄审计并记录清理事件。
-- **谁能做什么由业务裁决**：工具调用带 `X-Bailing-On-Behalf-Of` 主体并 `sha256=` 签名（把主体+任务钉进 HMAC），但「这个人此刻能不能做」由业务侧验签后按自家权限表裁决——Agent 调用与人点按钮走同一条裁决路径。页面上下文/访客 id 是**可伪造线索**，只作理解/检索提示，绝不用于鉴权。
-- **写操作有闸**：`risk=high` / `confirm-required` 的工具不自动执行，先冻结调用快照并进入审批车道；生产环境推荐由业务侧审批流承接，中枢控制台作为兜底。批准后任务自动重跑，只放行与批准快照完全一致的那一次调用。
-- **kill switch**：`POST /admin/pause` 或 `touch .paused` 立即停止受理新任务。
+完整中英文文档地图见 [docs/README.md](docs/README.md)。公共 API、SDK、Schema、Docker Demo 与代码标识保持语言中立。
 
 ## 参与和反馈
 
-BailingHub 当前公开版本仍处于早期验证阶段。我们希望它经得起更多真实业务系统、技术栈和行业场景的检验。如果你发现契约表达不清、接入过程繁琐、安全边界存在疑问，或有当前模型尚未覆盖的场景，欢迎提交 [Bug report](https://github.com/bailinghub/bailinghub/issues/new?template=bug_report.yml)、[Feature request](https://github.com/bailinghub/bailinghub/issues/new?template=feature_request.yml) 或 Pull Request。
+BailingHub 仍处于早期公开验证阶段。欢迎提交 [Bug report](https://github.com/bailinghub/bailinghub/issues/new?template=bug_report.yml)、[Feature request](https://github.com/bailinghub/bailinghub/issues/new?template=feature_request.yml) 或 Pull Request。
 
-如果你正在评估一个真实业务接口，但还没有准备好公开完整系统或开始部署，可以使用 [真实 API 接入评估](https://github.com/bailinghub/bailinghub/issues/new?template=integration_evaluation.yml) 模板：只提交一个脱敏后的 operation，以及行动主体、权限、审批或审计问题。它是公开的接入前技术评估，不是云托管、认证或代接生产系统；不要提交密钥、私有域名、客户数据或完整内部接口文档。
+如果你正在评估一个真实业务接口，但暂时不能公开完整系统，可使用 [真实 API 接入评估](https://github.com/bailinghub/bailinghub/issues/new?template=integration_evaluation.yml) 模板，只提交一个脱敏 operation 和身份、权限、审批或审计问题。不要提交密钥、私有域名、客户数据或完整内部接口文档。贡献规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-提出问题时，建议附上业务场景、预期行为、最小复现步骤和脱敏后的 trace；贡献方式见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+我们欢迎独立发行版、行业适配、执行器、连接器和 ACC 独立实现。衍生项目可以保持自己的名称、方向与治理；展示不代表官方认证、服务担保或维护责任转移，详见 [社区衍生与生态合作](docs/ECOSYSTEM.md)。Dify、n8n、MCP、本地 Agent 与其他入口见 [生态集成](https://www.bailinghub.com/integrations)。
 
-### 衍生项目与生态
+## 开源与许可证
 
-我们欢迎社区创建独立发行版、行业适配、执行器、连接器和 ACC 独立实现。衍生项目可以保持自己的名称、方向与治理；通用改进欢迎回到上游，优秀的独立项目未来也可以申请在官方生态页面展示。展示不代表官方认证、服务担保或维护责任转移。完整原则见 [社区衍生与生态合作](docs/ECOSYSTEM.md)。
-
-DeepSeek Harness 用户可以安装独立社区插件 [dsh-bailinghub](https://github.com/bailinghub/bailinghub-dsh-plugin)，让本地 Agent 负责理解、规划和多步工具选择，同时继续由 BailingHub 负责可信业务身份、能力裁剪、审批、执行与审计。该插件通过宿主无关的 `bailinghub-mcp-server/sdk` 接入，不进入 BailingHub Core 发行包，也不代表 DeepSeek 官方开发、认证或背书。部署者、业务开发者和最终用户分别需要配置什么，见 [Agent Client v1 接入指南](docs/AGENT_CLIENT_QUICKSTART.md)。
-
-## 开源基础与第三方软件
-
-百灵中枢采用开放的 [ACC（Agent Capability Contract）](https://www.agentcapability.org) 能力声明契约，服务端基于 Node.js / TypeScript，控制台基于 Vue / Element Plus / Pinia，默认使用独立的 MySQL 服务持久化运行状态。
-
-ACC 归属信息已保留在 [NOTICE](NOTICE)；完整的锁定依赖、许可证和外部运行时说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
-
-## License
+BailingHub 服务端基于 Node.js / TypeScript，控制台基于 Vue / Element Plus / Pinia；完整 Docker 和正式部署使用独立 MySQL 持久化运行状态，JSONL 仅用于本地烟测。ACC 归属信息保留在 [NOTICE](NOTICE)，完整锁定依赖、许可证与外部运行时清单见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 Apache License 2.0. See [LICENSE](LICENSE), [NOTICE](NOTICE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [SECURITY.md](SECURITY.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## 版本与发布记录
-
-公开发布后，任何影响业务侧对接、wire 契约、数据库结构、SDK、控制台操作路径的变更，都会记录在 [docs/CHANGELOG.md](docs/CHANGELOG.md)。部署后可通过：
-
-```bash
-curl <中枢地址>/version
-```
-
-查看当前实例的应用版本、契约版本和数据库结构版本；后台「系统状态」页可查看数据库结构是否与当前代码一致。
+部署后可通过 `GET /version` 查看应用版本、契约版本和数据库结构版本；所有影响业务接入、wire 契约、数据库结构、SDK 与控制台路径的变更记录在 [docs/CHANGELOG.md](docs/CHANGELOG.md)。
