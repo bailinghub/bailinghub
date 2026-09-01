@@ -192,6 +192,59 @@ const entryPointsCopy = {
   },
 };
 
+const demoEvidenceCopy = {
+  'zh-CN': {
+    eyebrow: '公开 Docker Demo · 确定性示例数据',
+    title: '从 SO-1001 到审批、执行与 Trace，完整链路可复现',
+    desc: 'BailingHub 公开 Docker Demo 使用固定订单 SO-1001 演示退款请求经过可信身份、工具治理、业务审批、获批执行和 Trace 留痕的完整链路。',
+    subtitle: '无需真实业务系统或模型 Key；运行开源 Demo 即可生成真实任务与留痕。',
+    requestLabel: '01 · 用户请求',
+    request: '帮 SO-1001 申请退款 199 元',
+    orderLabel: '公开 fixture 订单',
+    orderRows: [['订单', 'SO-1001'], ['商品', 'AI 咨询套餐'], ['金额', '¥199'], ['状态', '已支付 · 待发货']],
+    governanceLabel: '02 · 治理闸门',
+    toolLabel: '调用工具',
+    tool: 'request_demo_refund',
+    risk: '高风险写操作',
+    approval: '需要业务审批',
+    waiting: '等待业务审批',
+    approved: '业务侧已批准',
+    frozen: '批准的是冻结后的这一组参数',
+    evidenceLabel: '03 · 执行与留痕',
+    resultTitle: '退款申请已写入 Demo Business',
+    resultMeta: '原业务系统完成最终授权与真实执行',
+    traceTitle: 'DEMO TRACE',
+    trace: ['任务接收', '可信主体绑定', '工具调用冻结', '业务审批决定', '获批调用执行'],
+    summary: '1 次工具调用 · 1 次审批 · 0 个错误 · 可回查',
+    boundary: '这是公开 fixture 的可复现流程证据，不包含客户后台、真实账号或私密凭据。',
+  },
+  en: {
+    eyebrow: 'PUBLIC DEMO · DETERMINISTIC FIXTURE',
+    title: 'SO-1001: request → approval → execution → trace',
+    desc: 'The public BailingHub Docker demo uses deterministic order SO-1001 to reproduce a refund request through trusted identity, tool governance, business approval, approved execution, and trace evidence.',
+    subtitle: 'No production system or model key. Reproduce the governed path locally.',
+    requestLabel: '01 · REQUEST',
+    request: 'Request ¥199 refund for SO-1001',
+    orderLabel: 'FIXTURE ORDER',
+    orderRows: [['Order', 'SO-1001'], ['Item', 'AI consulting plan'], ['Amount', '¥199'], ['Status', 'Paid · awaiting shipment']],
+    governanceLabel: '02 · GOVERNANCE',
+    toolLabel: 'TOOL CALL',
+    tool: 'request_demo_refund',
+    risk: 'High-risk write',
+    approval: 'Approval required',
+    waiting: 'Awaiting approval',
+    approved: 'Approved',
+    frozen: 'Arguments frozen before approval',
+    evidenceLabel: '03 · RESULT & TRACE',
+    resultTitle: 'Refund request recorded',
+    resultMeta: 'Demo Business authorized and executed',
+    traceTitle: 'DEMO TRACE',
+    trace: ['Request received', 'Subject bound', 'Arguments frozen', 'Approved', 'Executed'],
+    summary: '1 tool call · 1 approval · 0 errors',
+    boundary: 'Public fixture evidence—no customer console, real account, or private credential.',
+  },
+};
+
 function escapeXml(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
@@ -432,6 +485,145 @@ function renderEntryPoints(locale, themeName) {
   return `${parts.join('\n')}\n`;
 }
 
+function renderGitHubSocialPreview() {
+  const c = themes.dark;
+  const family = `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif`;
+  const mono = `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  const parts = [];
+  const addText = (x, y, value, options = {}) => parts.push(text(x, y, value, { fill: c.text, family, ...options }));
+  const addPill = (x, y, width, label, { fill = c.surfaceStrong, stroke = c.border, color = c.text } = {}) => {
+    parts.push(`<rect x="${x}" y="${y}" width="${width}" height="58" rx="29" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`);
+    addText(x + width / 2, y + 38, label, { size: 21, weight: 750, fill: color, anchor: 'middle' });
+  };
+
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">`);
+  parts.push('<title id="title">让 Agent 通过对话操作你的业务后台</title>');
+  parts.push('<desc id="desc">BailingHub 将自然语言请求连接到商城、SaaS、CRM 和 ERP，同时保留可信身份、权限、审批、审计与业务系统最终授权。</desc>');
+  parts.push(`<defs><linearGradient id="social-glow" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#12261a"/><stop offset="1" stop-color="#0d1117"/></linearGradient><marker id="social-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="${c.green}"/></marker></defs>`);
+  parts.push('<rect width="1280" height="640" fill="url(#social-glow)"/>');
+  parts.push(`<path d="M 0 0 H 1280 V 8 H 0 Z" fill="${c.green}"/>`);
+  parts.push('<circle cx="1140" cy="78" r="170" fill="#3fb950" opacity="0.05"/>');
+  parts.push('<circle cx="1120" cy="600" r="260" fill="#58a6ff" opacity="0.04"/>');
+
+  parts.push('<g transform="translate(84 60) scale(0.315) translate(-42 -44)">');
+  parts.push('<path fill="#3fb950" fill-rule="evenodd" d="M42 44h34v152H54l-12-12zM76 44h58v34H76zM76 103h22v34H76zM76 162h58v34H76zM150 44h22l12 12v8h-34zM150 86h34v110h-34z"/>');
+  parts.push('<path fill="#56d364" fill-rule="evenodd" d="M116 103h68v34h-68zM76 162h58v34H76z"/>');
+  parts.push('</g>');
+  addText(152, 95, 'BailingHub', { size: 31, weight: 850, fill: c.greenText });
+  addText(330, 94, 'AGENT-TO-BUSINESS', { size: 17, weight: 750, fill: c.muted, family: mono });
+
+  addText(80, 188, '让 Agent 通过对话', { size: 58, weight: 850 });
+  addText(80, 258, '操作你的业务后台', { size: 58, weight: 850 });
+  addText(80, 310, '商城 · SaaS · CRM · ERP｜权限、审批与审计仍在你手里', { size: 25, weight: 650, fill: c.muted });
+  addText(80, 348, 'Connect natural-language agents to existing business systems—without bypassing authorization.', { size: 18, fill: c.muted });
+
+  addPill(80, 414, 230, '自然语言目标');
+  parts.push(`<path d="M 310 443 H 365" fill="none" stroke="${c.green}" stroke-width="4" marker-end="url(#social-arrow)"/>`);
+  parts.push(`<rect x="380" y="382" width="390" height="126" rx="24" fill="${c.greenSoft}" stroke="${c.green}" stroke-width="3"/>`);
+  addText(575, 424, 'BailingHub', { size: 30, weight: 850, fill: c.greenText, anchor: 'middle' });
+  addText(575, 462, '身份 · 能力 · 审批 · 审计', { size: 21, weight: 700, fill: c.muted, anchor: 'middle' });
+  addText(575, 489, 'Identity · capability · approval · audit', { size: 14, fill: c.muted, anchor: 'middle', family: mono });
+  parts.push(`<path d="M 770 443 H 825" fill="none" stroke="${c.green}" stroke-width="4" marker-end="url(#social-arrow)"/>`);
+  addPill(840, 414, 360, '商城 · SaaS · CRM · ERP', { fill: c.accentSoft, stroke: c.accent, color: c.accent });
+
+  parts.push(`<rect x="80" y="552" width="1120" height="2" fill="${c.border}"/>`);
+  parts.push(`<circle cx="98" cy="590" r="13" fill="${c.warningSoft}" stroke="${c.warning}" stroke-width="2"/>`);
+  addText(98, 596, '!', { size: 16, weight: 850, fill: c.warning, anchor: 'middle', family: mono });
+  addText(124, 597, '不是让 AI 直连数据库；最终权限和业务规则仍由你的系统判断。', { size: 20, weight: 650, fill: c.muted });
+
+  parts.push('</svg>');
+  return `${parts.join('\n')}\n`;
+}
+
+function renderDemoEvidence(locale, themeName) {
+  const c = themes[themeName];
+  const t = demoEvidenceCopy[locale];
+  const family = locale === 'zh-CN'
+    ? `-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif`
+    : `Arial, 'Helvetica Neue', sans-serif`;
+  const mono = `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+  const parts = [];
+  const addText = (x, y, value, options = {}) => parts.push(text(x, y, value, { fill: c.text, family, ...options }));
+  const addPanel = (x, y, width, height, { fill = c.surface, stroke = c.border, radius = 18, strokeWidth = 2 } = {}) => {
+    parts.push(`<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}"/>`);
+  };
+
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">`);
+  parts.push(`<title id="title">${escapeXml(t.title)}</title>`);
+  parts.push(`<desc id="desc">${escapeXml(t.desc)}</desc>`);
+  parts.push(`<defs><marker id="demo-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="${c.green}"/></marker></defs>`);
+  parts.push(`<rect width="1600" height="900" fill="${c.background}"/>`);
+  parts.push(`<path d="M 0 0 H 1600 V 7 H 0 Z" fill="${c.green}"/>`);
+
+  addText(80, 53, t.eyebrow, { size: locale === 'zh-CN' ? 17 : 15, weight: 750, fill: c.green, family: mono });
+  addText(80, 104, t.title, { size: locale === 'zh-CN' ? 39 : 34, weight: locale === 'zh-CN' ? 820 : 700 });
+  addText(80, 142, t.subtitle, { size: locale === 'zh-CN' ? 19 : 16, fill: c.muted });
+
+  addPanel(80, 180, 410, 535);
+  addText(110, 220, t.requestLabel, { size: locale === 'zh-CN' ? 17 : 15, weight: 750, fill: c.green, family: mono });
+  addPanel(110, 250, 350, 96, { fill: c.greenSoft, stroke: c.green, radius: 16 });
+  addText(135, 292, t.request, { size: locale === 'zh-CN' ? 20 : 16, weight: 750, fill: c.greenText });
+  addText(135, 320, locale === 'zh-CN' ? '自然语言请求' : 'Natural-language request', { size: 14, fill: c.muted });
+  addText(110, 386, t.orderLabel, { size: 15, weight: 750, fill: c.muted, family: mono });
+  addPanel(110, 405, 350, 255, { fill: c.background, radius: 14 });
+  t.orderRows.forEach((row, index) => {
+    const y = 446 + index * 55;
+    addText(135, y, row[0], { size: 15, weight: 650, fill: c.muted });
+    addText(435, y, row[1], { size: locale === 'zh-CN' ? 17 : 15, weight: 750, anchor: 'end', family: index === 0 ? mono : family });
+    if (index < t.orderRows.length - 1) parts.push(`<path d="M 135 ${y + 20} H 435" stroke="${c.border}" stroke-width="1"/>`);
+  });
+
+  parts.push(`<path d="M 490 447 H 545" fill="none" stroke="${c.green}" stroke-width="4" marker-end="url(#demo-arrow)"/>`);
+
+  addPanel(560, 180, 480, 535, { fill: c.greenSoft, stroke: c.green, radius: 18, strokeWidth: 3 });
+  addText(590, 220, t.governanceLabel, { size: locale === 'zh-CN' ? 17 : 15, weight: 750, fill: c.greenText, family: mono });
+  addText(590, 264, t.toolLabel, { size: 14, weight: 750, fill: c.muted, family: mono });
+  addPanel(590, 282, 420, 66, { fill: c.background, radius: 12 });
+  addText(615, 324, t.tool, { size: locale === 'zh-CN' ? 19 : 17, weight: 750, family: mono });
+  addPanel(590, 370, 195, 58, { fill: c.warningSoft, stroke: c.warning, radius: 29 });
+  addText(688, 407, t.risk, { size: locale === 'zh-CN' ? 17 : 14, weight: 750, fill: c.warning, anchor: 'middle' });
+  addPanel(805, 370, 205, 58, { fill: c.warningSoft, stroke: c.warning, radius: 29 });
+  addText(908, 407, t.approval, { size: locale === 'zh-CN' ? 17 : 14, weight: 750, fill: c.warning, anchor: 'middle' });
+  addPanel(590, 460, 175, 82, { fill: c.warningSoft, stroke: c.warning, radius: 13 });
+  addText(678, 495, '1', { size: 15, weight: 850, fill: c.warning, anchor: 'middle', family: mono });
+  addText(678, 522, t.waiting, { size: locale === 'zh-CN' ? 16 : 14, weight: 750, fill: c.warning, anchor: 'middle' });
+  parts.push(`<path d="M 765 501 H 830" fill="none" stroke="${c.green}" stroke-width="3" marker-end="url(#demo-arrow)"/>`);
+  addPanel(845, 460, 165, 82, { fill: c.greenSoft, stroke: c.green, radius: 13 });
+  parts.push(`<path d="M 887 495 l 9 9 18 -22" fill="none" stroke="${c.green}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`);
+  addText(928, 522, t.approved, { size: locale === 'zh-CN' ? 16 : 13, weight: 750, fill: c.greenText, anchor: 'middle' });
+  addPanel(590, 580, 420, 74, { fill: c.surfaceStrong, radius: 12 });
+  parts.push(`<rect x="612" y="601" width="32" height="32" rx="8" fill="${c.accentSoft}"/>`);
+  addText(628, 624, '{}', { size: 13, weight: 850, fill: c.accent, anchor: 'middle', family: mono });
+  addText(660, 624, t.frozen, { size: locale === 'zh-CN' ? 16 : 13, weight: 700 });
+
+  parts.push(`<path d="M 1040 447 H 1095" fill="none" stroke="${c.green}" stroke-width="4" marker-end="url(#demo-arrow)"/>`);
+
+  addPanel(1110, 180, 410, 535);
+  addText(1140, 220, t.evidenceLabel, { size: locale === 'zh-CN' ? 17 : 15, weight: 750, fill: c.green, family: mono });
+  addPanel(1140, 250, 350, 104, { fill: c.greenSoft, stroke: c.green, radius: 14 });
+  parts.push(`<circle cx="1172" cy="287" r="17" fill="${c.green}"/>`);
+  parts.push(`<path d="M 1163 287 l 7 7 13 -16" fill="none" stroke="${c.background}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`);
+  addText(1203, 286, t.resultTitle, { size: locale === 'zh-CN' ? 17 : 15, weight: 800, fill: c.greenText });
+  addText(1172, 326, t.resultMeta, { size: locale === 'zh-CN' ? 14 : 12, fill: c.muted });
+  addText(1140, 397, t.traceTitle, { size: 15, weight: 800, fill: c.muted, family: mono });
+  t.trace.forEach((stage, index) => {
+    const y = 432 + index * 48;
+    parts.push(`<circle cx="1160" cy="${y - 6}" r="12" fill="${index === t.trace.length - 1 ? c.green : c.background}" stroke="${c.green}" stroke-width="2"/>`);
+    addText(1160, y - 1, String(index + 1), { size: 11, weight: 850, fill: index === t.trace.length - 1 ? c.background : c.greenText, anchor: 'middle', family: mono });
+    addText(1185, y, stage, { size: locale === 'zh-CN' ? 16 : 14, weight: 700 });
+    if (index < t.trace.length - 1) parts.push(`<path d="M 1160 ${y + 7} V ${y + 30}" stroke="${c.green}" stroke-width="2"/>`);
+  });
+
+  addPanel(80, 750, 1440, 68, { fill: c.surfaceStrong, radius: 14 });
+  parts.push(`<circle cx="118" cy="784" r="18" fill="${c.green}"/>`);
+  parts.push(`<path d="M 108 784 l 7 7 14 -17" fill="none" stroke="${c.background}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`);
+  addText(150, 791, t.summary, { size: locale === 'zh-CN' ? 18 : 16, weight: 750 });
+  addText(800, 858, t.boundary, { size: locale === 'zh-CN' ? 16 : 14, weight: 650, fill: c.muted, anchor: 'middle' });
+
+  parts.push('</svg>');
+  return `${parts.join('\n')}\n`;
+}
+
 const outputs = [
   ['assets/architecture-overview.zh-CN.svg', () => render('zh-CN', 'light')],
   ['assets/architecture-overview.zh-CN-dark.svg', () => render('zh-CN', 'dark')],
@@ -445,6 +637,11 @@ const outputs = [
   ['assets/readme-entry-points.zh-CN-dark.svg', () => renderEntryPoints('zh-CN', 'dark')],
   ['assets/readme-entry-points.en.svg', () => renderEntryPoints('en', 'light')],
   ['assets/readme-entry-points.en-dark.svg', () => renderEntryPoints('en', 'dark')],
+  ['.github/social-preview/bailinghub-social-preview.svg', renderGitHubSocialPreview],
+  ['assets/readme-demo-evidence.zh-CN.svg', () => renderDemoEvidence('zh-CN', 'light')],
+  ['assets/readme-demo-evidence.zh-CN-dark.svg', () => renderDemoEvidence('zh-CN', 'dark')],
+  ['assets/readme-demo-evidence.en.svg', () => renderDemoEvidence('en', 'light')],
+  ['assets/readme-demo-evidence.en-dark.svg', () => renderDemoEvidence('en', 'dark')],
 ];
 
 for (const [file, build] of outputs) {
