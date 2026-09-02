@@ -140,6 +140,14 @@ The demo starts BailingHub, MySQL, a sample business application, a tool provide
 
 Everything in this visual comes from the repository's deterministic fixture, not a customer console. Running `npm run demo:e2e` creates the job, freezes the tool arguments, completes approval and execution, and writes reviewable trace evidence in the public demo.
 
+### See the Governed Loop in 15 Seconds
+
+The animation below was captured from this repository's public Docker demo. A natural-language refund request for deterministic order `SO-1001` is stopped before execution, sent to the sample business system with frozen arguments, approved there, executed, and recorded in Trace. It contains no customer console, real account, or production credential.
+
+<img src=".github/readme-media/bailinghub-public-demo.en.gif" width="100%" alt="BailingHub public Docker demo shows a refund request moving through hub governance, business approval, approved execution, and trace evidence">
+
+[Run the Docker Demo](docs/DEMO.en.md) · [Reproduce the independent validation](docs/INDEPENDENT_VALIDATION.en.md)
+
 For a fresh Ubuntu or Debian server, the auditable installer uses official prebuilt images by default:
 
 ```bash
