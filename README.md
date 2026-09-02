@@ -55,6 +55,14 @@
 
 图中内容来自仓库内置的确定性 fixture，不是客户后台截图。运行 `npm run demo:e2e` 会在公开 Demo 中真实创建任务、冻结工具参数、完成审批与执行，并生成可回查的 trace。
 
+### 15 秒看懂完整闭环
+
+下面的动图录制自本仓库公开 Docker Demo：用户用自然语言为固定订单 `SO-1001` 申请退款，中枢先拦截高风险写操作，业务系统确认冻结参数并批准后才真正执行，最后在 Trace 中留下完整记录。画面不包含客户后台、真实账号或生产凭据。
+
+<img src=".github/readme-media/bailinghub-public-demo.zh-CN.gif" width="100%" alt="BailingHub 公开 Docker Demo 展示 SO-1001 退款请求依次经过中枢治理、业务审批、获批执行和 Trace 留痕">
+
+[运行 Docker Demo](docs/DEMO.md) · [按独立验证清单复现](docs/INDEPENDENT_VALIDATION.md)
+
 ## 三种入口，同一套业务能力
 
 <picture>
