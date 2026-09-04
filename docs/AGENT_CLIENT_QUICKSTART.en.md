@@ -26,6 +26,11 @@ Local Agent host (for example, DSH)
 The dependency direction is host to generic SDK to BailingHub Core. The business system never
 sends its login cookie, password, or API secret to DSH, and DSH never calls business APIs directly.
 
+Host adapters should follow the pinned
+[`bailinghub-mcp-server@0.3.0` host-neutral Agent Client SDK guide](https://github.com/bailinghub/bailinghub-mcp-server/blob/v0.3.0/docs/AGENT_CLIENT_SDK.md)
+for installation, login, multiple connections, and secure credential storage. Do not copy SDK
+source or reimplement the credential layer from documentation on an unversioned branch.
+
 ## 2. Configuration ownership
 
 | Configuration | Owner | Storage | Secret |
@@ -37,7 +42,7 @@ sends its login cookie, password, or API secret to DSH, and DSH never calls busi
 | Agent authorization URL | business developer / Hub admin | BailingHub client config | No; one neutral entry per app, never entered by end users |
 | business Client Token | business backend | server-side secret store | **Yes; never browser or DSH config** |
 | Tool Provider Secret | business backend and BailingHub | both secret stores | **Yes; never DSH** |
-| Agent access/refresh token | generic SDK | Keychain or explicit secure store | **Yes; never plugin settings** |
+| Agent access/refresh token | generic SDK | macOS Keychain, Windows CurrentUser DPAPI, or an explicitly enabled mode-`0600` Linux/POSIX file fallback | **Yes; never plugin settings** |
 | model API key | local Agent host | DSH model-provider credential store | **Yes; independent of Hub auth** |
 | BailingHub admin token | Hub operator | Hub server secret store | **Yes; never any Agent client** |
 
@@ -161,9 +166,10 @@ browser.
 
 ## 5. Local Agent user: install and authorize
 
-For DSH, follow the versioned installation and compatibility matrix in the
-[dsh-bailinghub repository](https://github.com/bailinghub/bailinghub-dsh-plugin). The native
-plugin configuration contains only:
+For DSH, follow the installation and compatibility matrix for the current stable
+`dsh-bailinghub@0.3.0` release in the
+[v0.3.0 getting-started guide](https://github.com/bailinghub/bailinghub-dsh-plugin/blob/v0.3.0/docs/GETTING_STARTED.md).
+The native plugin configuration contains only:
 
 ```text
 hubUrl=https://hub.example.com
@@ -193,9 +199,12 @@ Run in DSH:
 /bailinghub status
 ```
 
-Login creates a random loopback PKCE callback and opens the business authorization page. The SDK
-uses macOS Keychain; a Linux/POSIX file fallback is explicit opt-in and requires mode `0600`.
-Agent Session fails closed on Windows until a native secure store is available.
+Login creates a random loopback PKCE callback and opens the business authorization page. The public
+`0.3.0` SDK uses macOS Keychain; on Windows it stores each credential slot in a CurrentUser
+DPAPI-protected binary file under LocalAppData; the mode-`0600` file fallback on Linux and other
+POSIX systems requires explicit user opt-in. Login fails closed when Windows PowerShell 5.1 or
+DPAPI is unavailable and never falls back to a plaintext token. Do not copy Keychain records,
+DPAPI ciphertext, or credential files to migrate a login.
 
 Configure the model provider and model API key separately in DSH. The BailingHub plugin neither
 reads nor manages model-provider keys.
@@ -203,10 +212,11 @@ reads nor manages model-provider keys.
 ## 6. Multiple Hubs, workspaces, and same-binding identity instances
 
 The public binding is `Hub + clientAppId + workspace`; `connectionName` is only a local connection
-selector and cannot name an account, tenant, or store. The unreleased multi-connection candidate
-permits multiple instances on the same public binding, but every instance requires separate
-browser authorization. Core does not trust the local instance name or id: the trusted subject
-still comes only from business-backend approval as `principal` and `on_behalf_of`.
+selector and cannot name an account, tenant, or store. The multiple-connection lifecycle is
+publicly released in `bailinghub-mcp-server@0.3.0` and permits multiple instances on the same public
+binding, but every instance requires separate browser authorization. Core does not trust the local
+instance name or id: the trusted subject still comes only from business-backend approval as
+`principal` and `on_behalf_of`.
 
 Each login requests one workspace for least privilege. For another Hub, route, or business identity
 on the same public binding, use a console-generated command or run these user commands in DSH:
@@ -260,4 +270,8 @@ independently.
 - **A write requires approval:** inspect the ACC declaration first. `force_approval_tools` may
   only make policy stricter.
 - **Missing SDK:** the host adapter and `bailinghub-mcp-server/sdk` were not installed at compatible
-  versions. Fix the public package dependency; do not copy SDK source or add a local absolute path.
+  versions. Fix the public package dependency to the stable `bailinghub-mcp-server@0.3.0`; do not
+  copy SDK source or add a local absolute path.
+- **Windows cannot save an Agent Session:** verify that system Windows PowerShell 5.1 and
+  CurrentUser DPAPI are available. The SDK fails closed; do not add a plaintext token field or copy
+  another user's DPAPI file as a workaround.
