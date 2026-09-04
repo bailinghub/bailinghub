@@ -23,6 +23,10 @@ BailingHub 负责可信业务身份、能力裁剪、审批、幂等、业务调
 依赖方向始终从宿主指向通用 SDK，再指向 BailingHub Core。业务系统不会把自己的登录 Cookie、
 密码或业务 API Secret 发给 DSH；DSH 也不会直接调用业务 API。
 
+宿主适配器的安装、登录、多连接与安全存储实现应以
+[`bailinghub-mcp-server@0.3.0` 宿主无关 Agent Client SDK 指南](https://github.com/bailinghub/bailinghub-mcp-server/blob/v0.3.0/docs/AGENT_CLIENT_SDK.zh-CN.md)
+为准，不要复制 SDK 源码或根据未固定版本的分支文档自行实现凭据层。
+
 ## 2. 谁配置什么
 
 | 配置 | 谁填写 | 存放位置 | 是否秘密 |
@@ -34,7 +38,7 @@ BailingHub 负责可信业务身份、能力裁剪、审批、幂等、业务调
 | Agent 授权页 URL | 业务开发者/中枢管理员 | BailingHub 接入方配置 | 否；同一应用只配一个中立入口，不让最终用户手填 |
 | 接入方 Client Token | 业务后端 | 服务端 Secret/环境变量 | **是；不得进入浏览器、DSH 或公开配置** |
 | Tool Provider Secret | 业务后端与 BailingHub | 两端 Secret/凭据管理 | **是；不得进入 DSH** |
-| Agent access/refresh token | 通用 SDK | Keychain 或显式启用的安全存储 | **是；不得显示或写入插件配置** |
+| Agent access/refresh token | 通用 SDK | macOS Keychain、Windows CurrentUser DPAPI，或 Linux/POSIX 显式启用的 mode-`0600` 文件回退 | **是；不得显示或写入插件配置** |
 | 模型 API Key | 本地智能体宿主 | DSH 模型提供方凭据 | **是；与 BailingHub 授权完全独立** |
 | BailingHub 管理 Token | 中枢管理员 | 中枢服务端 Secret | **是；不得进入任何 Agent 客户端** |
 
@@ -151,8 +155,9 @@ return redirect($result['redirect_uri']);
 
 ## 5. 本地智能体使用者：安装并授权
 
-以 DSH 原生插件为例，安装步骤、目标版本和兼容矩阵以
-[dsh-bailinghub 仓库](https://github.com/bailinghub/bailinghub-dsh-plugin)为准。插件配置只包含：
+以 DSH 原生插件为例，当前稳定的 `dsh-bailinghub@0.3.0` 安装步骤和兼容矩阵以
+[v0.3.0 使用指南](https://github.com/bailinghub/bailinghub-dsh-plugin/blob/v0.3.0/docs/GETTING_STARTED.zh-CN.md)
+为准。插件配置只包含：
 
 ```text
 hubUrl=https://hub.example.com
@@ -181,9 +186,11 @@ export BAILINGHUB_CONNECTION_NAME='default'
 /bailinghub status
 ```
 
-登录命令会在本机随机 `127.0.0.1` 端口建立 PKCE 回调并打开业务系统授权页。授权成功后，SDK
-在 macOS 使用 Keychain 保存凭据；Linux/POSIX 文件回退必须显式启用且文件权限为 `0600`；
-Windows 在具备原生安全存储前对 Agent Session 失败关闭。
+登录命令会在本机随机 `127.0.0.1` 端口建立 PKCE 回调并打开业务系统授权页。授权成功后，公开
+SDK `0.3.0` 在 macOS 使用 Keychain；在 Windows 将每个凭据槽保存为 LocalAppData 下受
+CurrentUser DPAPI 保护的加密二进制文件；Linux 与其他 POSIX 系统的 mode-`0600` 文件回退必须由
+用户显式启用。Windows PowerShell 5.1 或 DPAPI 不可用时登录失败关闭，不会降级为明文 Token。
+不要复制 Keychain 记录、DPAPI 密文或凭据文件来迁移登录。
 
 DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中单独配置。BailingHub 插件既不读取
 也不代管模型 Key。
@@ -191,9 +198,9 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 ## 6. 多 Hub、多 workspace 与同绑定身份实例
 
 公开绑定由 `Hub + clientAppId + workspace` 组成；`connectionName` 只是一个本机连接选择器，不能
-指定账号、租户或门店。未发布的多连接候选允许多个实例使用同一公开绑定，但每个实例都必须单独
-完成浏览器授权。Core 不信任本机实例名或实例 ID，可信主体仍只来自业务后端批准得到的
-`principal` 与 `on_behalf_of`。
+指定账号、租户或门店。多连接生命周期已经随 `bailinghub-mcp-server@0.3.0` 稳定发布，允许多个
+实例使用同一公开绑定，但每个实例都必须单独完成浏览器授权。Core 不信任本机实例名或实例 ID，
+可信主体仍只来自业务后端批准得到的 `principal` 与 `on_behalf_of`。
 
 每次登录按最小权限原则申请一个 workspace。需要连接另一套中枢、另一条 route，或在同一公开
 绑定下授权另一业务身份时，可由控制台生成命令，或由用户在 DSH 中执行：
@@ -242,4 +249,7 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 - **写操作要求审批**：先查看业务侧 ACC 声明；route 的 `force_approval_tools` 只能额外收紧，不能
   降低高风险或 ACC 明示审批。
 - **提示缺少 SDK**：说明宿主适配器与 `bailinghub-mcp-server/sdk` 没有按兼容版本安装；不要通过
-  复制 SDK 源码或改成本机绝对路径绕过，应修正公开包依赖。
+  复制 SDK 源码或改成本机绝对路径绕过；当前稳定多连接路径应修正为公开包精确依赖
+  `bailinghub-mcp-server@0.3.0`。
+- **Windows 无法保存 Agent Session**：确认系统 Windows PowerShell 5.1 与 CurrentUser DPAPI 可用；
+  SDK 会失败关闭，不要增加明文 Token 字段或复制其他用户的 DPAPI 文件绕过。
