@@ -45,7 +45,7 @@ BailingHub Client Token、Tool Provider Secret 或业务系统密码的步骤。
 
 ### 3.1 部署 Core 并执行数据库迁移
 
-使用包含 Agent Auth v1、Agent Client Runtime v1、migration 055 和 056 的 BailingHub 版本。
+完整对话归档使用 BailingHub0.6.0、Agent Client SDK0.4.0及兼容客户端。Core需要已有迁移055/056及新增057；由一个部署步骤执行迁移，运行时启动不会自动迁移。
 升级后先确认：
 
 - `/health` 和 `/health/ready` 正常；
@@ -183,7 +183,7 @@ export BAILINGHUB_CONNECTION_NAME='default'
 
 登录命令会在本机随机 `127.0.0.1` 端口建立 PKCE 回调并打开业务系统授权页。授权成功后，SDK
 在 macOS 使用 Keychain 保存凭据；Linux/POSIX 文件回退必须显式启用且文件权限为 `0600`；
-Windows 在具备原生安全存储前对 Agent Session 失败关闭。
+Windows 使用当前用户的原生 DPAPI 凭据保护；详细平台要求以独立SDK/插件的兼容矩阵为准。
 
 DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中单独配置。BailingHub 插件既不读取
 也不代管模型 Key。
@@ -191,7 +191,7 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 ## 6. 多 Hub、多 workspace 与同绑定身份实例
 
 公开绑定由 `Hub + clientAppId + workspace` 组成；`connectionName` 只是一个本机连接选择器，不能
-指定账号、租户或门店。未发布的多连接候选允许多个实例使用同一公开绑定，但每个实例都必须单独
+充当可信账号、租户或门店身份。多个实例可以使用同一公开绑定，但每个实例都必须单独
 完成浏览器授权。Core 不信任本机实例名或实例 ID，可信主体仍只来自业务后端批准得到的
 `principal` 与 `on_behalf_of`。
 
@@ -205,7 +205,7 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 /bailinghub login
 ```
 
-连接切换是用户命令，不是模型工具；它只影响之后新建的 Agent 会话，已有会话保持原连接不漂移。
+连接切换是用户命令，不是模型工具；它选择连接管理和登录的目标，不会为新会话自动授予业务范围。DSH0.4.0在首消息前必须另外显式选择本次授权，已有会话保持原范围。
 `/bailinghub use <workspace>` 只在当前授权已经允许的 workspace 内切换，不能替代多连接选择。
 删除连接时使用 `/bailinghub connections remove <名称>`：SDK 会先远程撤销 Agent Session，成功
 后再删除该实例的本地凭据；远程撤销失败则保留该实例和凭据供重试。不要复制 access/refresh token
@@ -217,6 +217,25 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 此时不要重新授权，应先按结果列出的旧连接完成清理。Core 的 `bz_agent_sessions` 仍以 `session_id`
 为主键，不执行跨设备的全局身份去重，因此不同设备上的授权仍可独立失效和审计。
 
+### 6.1 首消息前选择本次对话的授权
+
+先分别授权所需账户，再从 `/bailinghub connections list` 获取各自的 `connectionKey`。在新会话的第一条用户消息之前运行：
+
+```text
+/bailinghub scope set <A的connectionKey> <B的connectionKey>
+/bailinghub scope
+```
+
+这里使用实际返回的连接key，不使用示例占位符或门店名。只选择A就只能使用A；`/bailinghub scope none`表示只聊天，不访问Hub。确认选择成功后再发送业务请求。DSH0.4.0只接受同一Hub/clientAppId/workspace下的授权集合，不组合不同系统或路由。
+
+第一条用户消息后范围固定；改选需要新会话。自研宿主使用`setSessionScope/getSessionScope/restoreSessionScope`，恢复失败不能回退到默认或剩余授权。
+
+### 6.2 查看完整对话与重试同步
+
+支持的宿主通过SDK0.4.0归档真实可见文本，保留原Session、持久历史与独立待传记录。管理员在“任务→会话→客户端完整对话”阅读沟通并打开各授权的原执行记录。
+
+DSH使用`/bailinghub archive status`查看状态，`/bailinghub archive sync`补传。离线重开后联网，可在同一runtime、同一Session重试原范围核验与同步；原授权明确撤销仍整组阻断。保存失败或历史缺口要单独显示，不能靠重复发消息或重执行业务来补账。归档恢复不等于恢复跨进程丢失的invocation。详见[使用者指南](user-guide/conversations.md)与[归档接口](AGENT_CONVERSATION_AUDIT.md)。
+
 ## 7. 最小验收
 
 发布或接入完成后，至少验证：
@@ -224,7 +243,7 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 1. 全新 DSH Profile 只通过公开包安装，不引用本机路径或本地 tgz；
 2. `/bailinghub login` 打开的域名是开发者配置的业务授权页；
 3. `/bailinghub status` 只显示非秘密会话元数据；
-4. 本地 Agent 能查询一项只读能力；
+4. 首消息前显式选择范围，未选/空范围只聊天；选择A/B后本地Agent能在原范围内查询一项只读能力；
 5. 一项可回滚写操作遵循 ACC/route 审批语义，且不会重复调用；
 6. BailingHub 会话页能看到本地编排边界和中枢治理轨迹；
 7. 日志、页面和包制品中没有 Client Token、Agent token、模型 Key、业务 Cookie、工具参数值或响应正文。
@@ -237,7 +256,7 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 - **打开了固定租户或门店**：`agent_authorize_url` 配错了；应改成业务系统的统一授权入口，并在页面
   内依据当前登录态完成切号或选租户，插件端不要增加业务 URL 配置。
 - **`cleanupRequired`**：新身份授权已经成功，不要再次授权；先按返回的旧连接名称重试撤销或移除。
-- **登录成功但没有业务工具**：检查 route 的工具源、`tools.agent_direct.enabled`、受众策略和
+- **登录成功但没有业务工具**：先确认本次新会话首消息前已成功设置非空scope；只登录或切换默认连接不等于选择范围。再检查route的工具源、`tools.agent_direct.enabled`、受众策略和
   “本地 Agent Runtime”开关。
 - **写操作要求审批**：先查看业务侧 ACC 声明；route 的 `force_approval_tools` 只能额外收紧，不能
   降低高风险或 ACC 明示审批。

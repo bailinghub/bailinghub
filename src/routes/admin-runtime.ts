@@ -167,6 +167,15 @@ export async function handleAdminRuntimeApiFor(
   const configStore = deps.configStore;
   const stateStore = deps.stateStore;
 
+  async function conversationLinkForJob(job: any): Promise<Record<string, string>> {
+    if (!configStore.agentConversationAudit || !configStore.agentClientRuntime || !isAgentToolInvocationJob(job)) return {};
+    const runId = job.metadata?.agent_run_id;
+    if (typeof runId !== 'string') return {};
+    const run = await configStore.agentClientRuntime.findRunForInvocation(runId);
+    if (!run || !isToolJobForAgentRun(job, run)) return {};
+    return await configStore.agentConversationAudit.findRunLinkForAdmin(runId) ?? {};
+  }
+
   async function tracePayload(jobId: string): Promise<Record<string, unknown> | null> {
     const job = await stateStore.getJob(jobId);
     if (!job) return null;
@@ -179,7 +188,7 @@ export async function handleAdminRuntimeApiFor(
       configStore.deliveryDlq.listByParentJob(jobId, true, 100).catch(() => []),
       routeKey ? configStore.routes.get(routeKey).catch(() => null) : Promise.resolve(null),
     ]);
-    const jobWithRaw = { ...job, raw_input: rawInput };
+    const jobWithRaw = { ...job, raw_input: rawInput, ...await conversationLinkForJob(job) };
     const trace = buildJobTrace({ job, audit, approvals, messages });
     const dispatchSnapshot = {
       status: job.status,
@@ -395,7 +404,7 @@ export async function handleAdminRuntimeApiFor(
       audit: auditByJob[job.job_id] ?? [],
       approvals: approvalsByJob[job.job_id] ?? [],
     }));
-    send(res, 200, buildAgentClientTrace({
+    const payload = buildAgentClientTrace({
       run: {
         run_id: run.run_id,
         thread_id: run.thread_id,
@@ -412,7 +421,9 @@ export async function handleAdminRuntimeApiFor(
       runAudit,
       tools,
       candidatesTruncated: candidates.truncated,
-    }));
+    });
+    const conversationLink = await configStore.agentConversationAudit?.findRunLinkForAdmin(runId);
+    send(res, 200, { ...payload, run: { ...(payload.run as Record<string, unknown>), ...(conversationLink ?? {}) } });
     return true;
   }
 

@@ -48,8 +48,9 @@ the end user to paste a BailingHub Client Token, Tool Provider Secret, or busine
 
 ### 3.1 Deploy Core and apply migrations
 
-Use a BailingHub release that contains Agent Auth v1, Agent Client Runtime v1, and migrations 055
-and 056. Confirm that health and readiness pass, no migration is pending, the console can edit
+Full conversation archives require BailingHub0.6.0, Agent Client SDK0.4.0 and a compatible client.
+Apply migrations055/056 and the new057 from one deployment step; runtime startup does not apply them.
+Confirm that health and readiness pass, no migration is pending, the console can edit
 Agent Client settings, and production traffic uses HTTPS.
 
 Never copy databases, tokens, business domains, or route configuration from a maintainer's
@@ -195,7 +196,7 @@ Run in DSH:
 
 Login creates a random loopback PKCE callback and opens the business authorization page. The SDK
 uses macOS Keychain; a Linux/POSIX file fallback is explicit opt-in and requires mode `0600`.
-Agent Session fails closed on Windows until a native secure store is available.
+Windows uses native CurrentUser DPAPI protection. Consult the independent SDK/plugin compatibility matrix for platform requirements.
 
 Configure the model provider and model API key separately in DSH. The BailingHub plugin neither
 reads nor manages model-provider keys.
@@ -203,8 +204,8 @@ reads nor manages model-provider keys.
 ## 6. Multiple Hubs, workspaces, and same-binding identity instances
 
 The public binding is `Hub + clientAppId + workspace`; `connectionName` is only a local connection
-selector and cannot name an account, tenant, or store. The unreleased multi-connection candidate
-permits multiple instances on the same public binding, but every instance requires separate
+selector, not a trusted account, tenant or store identity. Multiple instances may share the same
+public binding, but every instance requires separate
 browser authorization. Core does not trust the local instance name or id: the trusted subject
 still comes only from business-backend approval as `principal` and `on_behalf_of`.
 
@@ -218,8 +219,9 @@ on the same public binding, use a console-generated command or run these user co
 /bailinghub login
 ```
 
-Connection selection is a user command, not a model tool. It affects only newly created Agent
-sessions; existing sessions stay pinned to their original connection. `/bailinghub use
+Connection selection is a user command, not a model tool. It selects the connection-management and
+login target; it does not grant business scope to a new conversation. DSH0.4.0 requires a separate
+explicit scope selection before the first message. Existing conversations retain their original scope. `/bailinghub use
 <workspace>` moves only within workspaces already granted to the current authorization and is not
 a multi-connection selector. `/bailinghub connections remove <name>` first revokes the remote
 Agent Session and deletes that instance's local credentials only after success; a failed remote
@@ -233,6 +235,25 @@ new authorization succeeded but revoking or removing the older connection failed
 connection first. Core still keys `bz_agent_sessions` by `session_id` and performs no global
 cross-device identity deduplication, so sessions on different devices can be revoked and audited
 independently.
+
+### 6.1 Select conversation scope before the first message
+
+Authorize the intended accounts separately, then obtain each `connectionKey` from `/bailinghub connections list`. Before the first user message in a new conversation, run:
+
+```text
+/bailinghub scope set <connectionKey-for-A> <connectionKey-for-B>
+/bailinghub scope
+```
+
+Use the actual returned keys, not these placeholders or account labels. Select only A to allow only A; `/bailinghub scope none` means ordinary chat without Hub access. Wait for successful selection before sending business requests. DSH0.4.0 accepts one Hub/clientAppId/workspace binding, not a cross-system or cross-route group.
+
+The first user message fixes the scope; changing it requires a new conversation. Custom hosts use `setSessionScope/getSessionScope/restoreSessionScope`. Failed restoration must never select a default or remaining subset.
+
+### 6.2 Read the conversation and retry synchronization
+
+Compatible hosts use SDK0.4.0 to capture actual visible text, preserving the original Session, durable history and separate pending records. Administrators open Tasks → Conversations → Client conversations and follow each turn into the original account's execution record.
+
+Use `/bailinghub archive status` to inspect synchronization and `/bailinghub archive sync` to retry. After reopening offline, the same runtime and Session can revalidate the original scope and synchronize when connectivity returns. Confirmed revocation keeps the whole group blocked. Show storage failures and history gaps separately; never resend user messages or repeat business actions merely to repair the archive. Restoring an archive does not restore an invocation lost across process restarts. See the [user guide](user-guide/conversations.en.md) and [archive API](AGENT_CONVERSATION_AUDIT.en.md).
 
 ## 7. Minimum acceptance
 
@@ -255,7 +276,7 @@ independently.
   do not add a business URL to plugin settings.
 - **`cleanupRequired`:** the new identity authorization already succeeded. Do not authorize again;
   retry revoke or removal for the reported old connection.
-- **Authorized but no tools:** check the Tool Provider, `tools.agent_direct.enabled`, audience
+- **Authorized but no tools:** first confirm a nonempty scope was selected before this conversation’s first message; login or default-connection switching alone does not grant scope. Then check the Tool Provider, `tools.agent_direct.enabled`, audience
   policy, and Local Agent Runtime switch.
 - **A write requires approval:** inspect the ACC declaration first. `force_approval_tools` may
   only make policy stricter.

@@ -29,6 +29,16 @@ You choose which business APIs become available. BailingHub connects the convers
   <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
 </picture>
 
+## v0.6.0: Follow the Conversation Through Its Business Actions
+
+Select accounts A and B from the same business system in a compatible client, then ask: “Check orders for both stores, but update the contact for Store A only.” The agent can choose the corresponding authorization for each action within that selection. Your business system must expose those operations and still decides whether each call is allowed.
+
+In **Tasks → Conversations**, administrators can read the text synchronized by the client—user requests, intermediate explanations and final replies—then open each account's original calls and approvals. Unsynchronized text and missing history are identified separately from business results.
+
+This experience uses **BailingHub 0.6.0 + MCP/Agent Client SDK 0.4.0 + DSH plugin 0.4.0**, or your own client implementing the same host APIs. These are separate packages. Multi-account scope currently covers one business system and one workspace.
+
+[Start with the user guide](docs/user-guide/conversations.en.md) · [Upgrade and compatible versions](docs/RELEASE_NOTES_v0.6.0.en.md)
+
 ## Operate the System by Conversation
 
 Most business software already has the data, permission model, and APIs it needs. What it lacks is a safe bridge between a natural-language request and the exact operation the current user is allowed to perform.
@@ -117,7 +127,7 @@ To explore before installing, use the [online experience](https://trial.bailingh
 To run the complete disposable loop locally:
 
 ```bash
-git clone --branch v0.5.1 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.6.0 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -201,7 +211,7 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
 - [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.
 - [English Documentation Map](docs/README.en.md) — the complete public documentation index.
-- [Changelog](docs/CHANGELOG.en.md) and [v0.5.1 Release Notes](docs/RELEASE_NOTES_v0.5.1.en.md) — current release changes and upgrade notes.
+- [Changelog](docs/CHANGELOG.en.md) and [v0.6.0 Release Notes](docs/RELEASE_NOTES_v0.6.0.en.md) — current release changes and upgrade notes.
 
 ## Feedback and Ecosystem
 

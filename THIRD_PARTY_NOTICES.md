@@ -100,7 +100,7 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [@vueuse/core](https://www.npmjs.com/package/@vueuse/core) | 14.3.0 | MIT | runtime |
 | Console | [@vueuse/metadata](https://www.npmjs.com/package/@vueuse/metadata) | 14.3.0 | MIT | runtime |
 | Console | [@vueuse/shared](https://www.npmjs.com/package/@vueuse/shared) | 14.3.0 | MIT | runtime |
-| Console | [@xmldom/xmldom](https://www.npmjs.com/package/@xmldom/xmldom) | 0.8.13 | MIT | runtime |
+| Console | [@xmldom/xmldom](https://www.npmjs.com/package/@xmldom/xmldom) | 0.8.15 | MIT | runtime |
 | Console | [argparse](https://www.npmjs.com/package/argparse) | 1.0.10 | MIT | runtime |
 | Console | [async-validator](https://www.npmjs.com/package/async-validator) | 4.2.5 | MIT | runtime |
 | Console | [base64-js](https://www.npmjs.com/package/base64-js) | 1.5.1 | MIT | runtime |
@@ -195,7 +195,7 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [@napi-rs/canvas-win32-arm64-msvc](https://www.npmjs.com/package/@napi-rs/canvas-win32-arm64-msvc) | 1.0.3 | MIT | runtime |
 | Hub | [@napi-rs/canvas-win32-x64-msvc](https://www.npmjs.com/package/@napi-rs/canvas-win32-x64-msvc) | 1.0.3 | MIT | runtime |
 | Hub | [@types/node](https://www.npmjs.com/package/@types/node) | 22.19.20 | MIT | runtime |
-| Hub | [@xmldom/xmldom](https://www.npmjs.com/package/@xmldom/xmldom) | 0.8.13 | MIT | runtime |
+| Hub | [@xmldom/xmldom](https://www.npmjs.com/package/@xmldom/xmldom) | 0.8.15 | MIT | runtime |
 | Hub | [ajv](https://www.npmjs.com/package/ajv) | 8.20.0 | MIT | build/test |
 | Hub | [ajv-formats](https://www.npmjs.com/package/ajv-formats) | 3.0.1 | MIT | build/test |
 | Hub | [argparse](https://www.npmjs.com/package/argparse) | 1.0.10 | MIT | runtime |
@@ -203,16 +203,15 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [base64-js](https://www.npmjs.com/package/base64-js) | 1.5.1 | MIT | runtime |
 | Hub | [bluebird](https://www.npmjs.com/package/bluebird) | 3.4.7 | MIT | runtime |
 | Hub | [core-util-is](https://www.npmjs.com/package/core-util-is) | 1.0.3 | MIT | runtime |
-| Hub | [denque](https://www.npmjs.com/package/denque) | 2.1.0 | Apache-2.0 | runtime |
 | Hub | [dingbat-to-unicode](https://www.npmjs.com/package/dingbat-to-unicode) | 1.0.1 | BSD-2-Clause | runtime |
 | Hub | [duck](https://www.npmjs.com/package/duck) | 0.1.12 | BSD | runtime |
 | Hub | [esbuild](https://www.npmjs.com/package/esbuild) | 0.28.1 | MIT | runtime |
 | Hub | [fast-deep-equal](https://www.npmjs.com/package/fast-deep-equal) | 3.1.3 | MIT | build/test |
-| Hub | [fast-uri](https://www.npmjs.com/package/fast-uri) | 3.1.5 | BSD-3-Clause | build/test |
+| Hub | [fast-uri](https://www.npmjs.com/package/fast-uri) | 3.1.7 | BSD-3-Clause | build/test |
 | Hub | [fsevents](https://www.npmjs.com/package/fsevents) | 2.3.2 | MIT | build/test |
 | Hub | [fsevents](https://www.npmjs.com/package/fsevents) | 2.3.3 | MIT | runtime |
 | Hub | [generate-function](https://www.npmjs.com/package/generate-function) | 2.3.1 | MIT | runtime |
-| Hub | [iconv-lite](https://www.npmjs.com/package/iconv-lite) | 0.7.2 | MIT | runtime |
+| Hub | [iconv-lite](https://www.npmjs.com/package/iconv-lite) | 0.7.3 | MIT | runtime |
 | Hub | [immediate](https://www.npmjs.com/package/immediate) | 3.0.6 | MIT | runtime |
 | Hub | [inherits](https://www.npmjs.com/package/inherits) | 2.0.4 | ISC | runtime |
 | Hub | [is-property](https://www.npmjs.com/package/is-property) | 1.0.2 | MIT | runtime |
@@ -224,7 +223,7 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [lop](https://www.npmjs.com/package/lop) | 0.4.2 | BSD-2-Clause | runtime |
 | Hub | [lru.min](https://www.npmjs.com/package/lru.min) | 1.1.4 | MIT | runtime |
 | Hub | [mammoth](https://www.npmjs.com/package/mammoth) | 1.12.0 | BSD-2-Clause | runtime |
-| Hub | [mysql2](https://www.npmjs.com/package/mysql2) | 3.22.5 | MIT | runtime |
+| Hub | [mysql2](https://www.npmjs.com/package/mysql2) | 3.24.3 | MIT | runtime |
 | Hub | [named-placeholders](https://www.npmjs.com/package/named-placeholders) | 1.1.6 | MIT | runtime |
 | Hub | [option](https://www.npmjs.com/package/option) | 0.2.4 | BSD-2-Clause | runtime |
 | Hub | [pako](https://www.npmjs.com/package/pako) | 1.0.11 | (MIT AND Zlib) | runtime |
@@ -239,7 +238,7 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [safer-buffer](https://www.npmjs.com/package/safer-buffer) | 2.1.2 | MIT | runtime |
 | Hub | [setimmediate](https://www.npmjs.com/package/setimmediate) | 1.0.5 | MIT | runtime |
 | Hub | [sprintf-js](https://www.npmjs.com/package/sprintf-js) | 1.0.3 | BSD-3-Clause | runtime |
-| Hub | [sql-escaper](https://www.npmjs.com/package/sql-escaper) | 1.3.3 | MIT | runtime |
+| Hub | [sql-escaper](https://www.npmjs.com/package/sql-escaper) | 1.5.1 | MIT | runtime |
 | Hub | [string_decoder](https://www.npmjs.com/package/string_decoder) | 1.1.1 | MIT | runtime |
 | Hub | [tsx](https://www.npmjs.com/package/tsx) | 4.22.4 | MIT | runtime |
 | Hub | [typescript](https://www.npmjs.com/package/typescript) | 5.9.3 | Apache-2.0 | build/test |

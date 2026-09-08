@@ -3,7 +3,7 @@
     <template #header>
       <div style="display: flex; justify-content: space-between; align-items: center">
         <span><b>任务</b> <HelpTip title="任务页是什么">
-            <p>「<b>会话</b>」把平铺的任务还原成「一个人一条对话」，看完整上下文与逐轮执行轨迹。</p>
+            <p>「<b>会话</b>」展示客户端已同步的可见文本与每轮各授权执行，也保留原授权记录入口。旧历史或未同步内容可能缺失。</p>
             <p>「<b>调度流</b>」按时间倒序审计<b>每一次派发</b>，点行看任务全详情（输入 / 组装上下文 / 工具 / 回复）。</p>
             <p>「<b>追溯</b>」按 job_id、request_id、client_id、thread_id 或 principal_id 查单次任务完整生命周期，用于接入排障和审批/送达/工具调用对账。</p>
           </HelpTip></span>
@@ -15,7 +15,16 @@
       <!-- ============ 会话视图：把平铺的 job 还原成「一个人一条对话」（收件箱式主从） ============ -->
       <el-tab-pane name="threads">
         <template #label><span><el-icon style="vertical-align:-2px"><ChatLineRound /></el-icon> 会话</span></template>
-        <div class="convo">
+        <div class="conversationViewSwitch">
+          <el-radio-group v-model="conversationView" size="small" @change="onConversationView">
+            <el-radio-button value="audit">客户端完整对话</el-radio-button>
+            <el-radio-button value="legacy">原授权记录</el-radio-button>
+          </el-radio-group>
+          <span class="muted">{{ conversationView === 'audit' ? '按客户端会话汇总正文；授权执行保持独立可追溯。' : '保留单授权、历史会话与业务接入记录；执行摘要不等于客户端完整答复。' }}</span>
+        </div>
+        <ClientConversations v-show="conversationView === 'audit'" ref="clientConversations" :selected-id="auditConversationId" :focus-turn="auditTurnId"
+          @select="selectAuditConversation" @open-thread="gotoThread" @open-job="openDetail({ job_id: $event })" />
+        <div v-show="conversationView === 'legacy'" class="convo">
           <!-- 左：会话列表 -->
           <div class="rail">
             <el-input v-model="threadQ" size="default" placeholder="搜会话：身份 / 接入方 / 内容 / 路由" clearable class="railsearch">
@@ -29,7 +38,7 @@
                 <div class="trow1">
                   <el-tag v-if="partyVisible(t)" size="small" effect="plain" :type="partyType(t)">{{ partyLabel(t) }}</el-tag>
                   <span class="who mono" :title="identityTitle(t)">{{ whoLabel(t) }}</span>
-                  <span class="tcount muted">{{ t.message_count }}轮</span>
+                  <span class="tcount muted">{{ t.message_count }} 条消息</span>
                 </div>
                 <div class="tprev muted">{{ t.last_preview || '（无内容）' }}</div>
                 <div class="tmeta muted"><span class="mono">{{ t.route_name }}</span> · {{ fmtTime(t.last_active_at, true) }}</div>
@@ -40,14 +49,14 @@
 
           <!-- 右：完整对话（聊天记录）+ 逐轮执行轨迹 -->
           <div ref="paneRef" class="pane" v-loading="threadDataLoading">
-            <el-empty v-if="!threadData && !threadDataLoading" :image-size="90" description="选择左侧一条会话，查看完整对话与逐轮执行轨迹" />
+            <el-empty v-if="!threadData && !threadDataLoading" :image-size="90" description="选择左侧记录，查看该授权或业务入口保存的消息与轨迹" />
             <template v-if="threadData">
               <div class="paneHead">
                 <div class="ph1">
                   <el-tag v-if="partyVisible(threadData.thread)" size="small" effect="plain" :type="partyType(threadData.thread)">{{ partyLabel(threadData.thread) }}</el-tag>
                   <b class="mono" :title="identityTitle(threadData.thread)">{{ whoLabel(threadData.thread) }}</b>
                   <el-tag size="small" effect="plain" type="info" class="mono">{{ threadData.thread.route_name }}</el-tag>
-                  <span class="muted">{{ threadData.thread.message_count }}轮 · 最近 {{ fmtTime(threadData.thread.last_active_at, true) }}</span>
+                  <span class="muted">{{ threadData.thread.message_count }} 条消息 · 最近 {{ fmtTime(threadData.thread.last_active_at, true) }}</span>
                 </div>
                 <div class="ph2 muted mono" :title="threadData.thread.scope_key">scope: {{ threadData.thread.scope_key }}</div>
               </div>
@@ -83,6 +92,7 @@
                           <div v-if="isAgentTrace(traceKey(m))" class="agentTraceHint">
                             本地智能体负责理解、规划和工具选择；隐藏推理不会上传。以下只展示中枢可验证的运行边界、ACC 工具治理、审批与结果。
                           </div>
+                          <el-button v-if="traces[traceKey(m)].detail.conversation_audit_id" size="small" plain type="primary" class="traceDetailBtn" @click="gotoAuditConversation(traces[traceKey(m)].detail.conversation_audit_id, traces[traceKey(m)].detail.client_turn_id)">查看客户端完整对话</el-button>
                           <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.partial" class="agentTracePartial">
                             本轮工具记录超过单次展示上限，以下是已通过归属校验的部分轨迹，不代表全量。
                           </div>
@@ -111,7 +121,7 @@
                             </el-timeline-item>
                           </el-timeline>
                           <div v-else class="muted notrace">这一轮没有可展示的执行事件</div>
-                          <div v-if="isAgentTrace(traceKey(m)) && !traces[traceKey(m)].summary?.tool_invocations" class="muted notrace">本轮未调用中枢治理工具。</div>
+                          <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.tool_invocations === 0 && !traces[traceKey(m)].invocations.length" class="muted notrace">本轮未调用中枢治理工具。</div>
                           <el-button v-if="m.job_id" plain type="primary" size="small" class="traceDetailBtn" @click="openDetail({ job_id: m.job_id })">查看完整详情</el-button>
                         </template>
                         <div v-else-if="!traces[traceKey(m)]?.loading" class="muted">该轮详情已不可用（记录可能已清理）</div>
@@ -277,7 +287,8 @@
           </div>
         </div>
         <div class="detailActions">
-          <el-button v-if="detail.thread_id" plain size="small" @click="gotoThread(detail.thread_id)">完整会话</el-button>
+          <el-button v-if="detail.conversation_audit_id" plain size="small" type="primary" @click="gotoAuditConversation(detail.conversation_audit_id, detail.client_turn_id)">客户端完整对话</el-button>
+          <el-button v-if="detail.thread_id" plain size="small" @click="gotoThread(detail.thread_id)">原会话记录</el-button>
           <el-popconfirm v-if="canRerun" title="重跑该任务？将复用原始输入与参数重新执行。" width="260" @confirm="rerun">
             <template #reference><el-button type="primary" size="small">重跑</el-button></template>
           </el-popconfirm>
@@ -431,7 +442,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ChatLineRound, List, Search } from '@element-plus/icons-vue';
 import { api } from '../request';
@@ -439,8 +450,10 @@ import { fmtTime } from '../util';
 import { useMe } from '../store';
 import RichText from '../components/RichText.vue';
 import HelpTip from '../components/HelpTip.vue';
+import ClientConversations from '../components/ClientConversations.vue';
 
 const route = useRoute();
+const router = useRouter();
 
 type TraceSeverity = 'info' | 'warning' | 'error';
 type TraceStage = 'launch' | 'context' | 'execution' | 'tool' | 'approval' | 'delivery' | 'summary' | 'recovery' | 'channel' | 'config' | 'system' | string;
@@ -512,6 +525,9 @@ interface DetailTraceGroup {
 
 const s = useMe();
 const activeTab = ref<'threads' | 'runs' | 'trace'>('threads');
+const conversationView = ref<'audit' | 'legacy'>('audit');
+const auditConversationId = ref(''), auditTurnId = ref('');
+const clientConversations = ref<InstanceType<typeof ClientConversations> | null>(null);
 const list = ref<any[]>([]);
 const loading = ref(false);
 // 调度流分页：服务端按 offset 取，前端「加载更多」累加。每页 RUNS_PAGE 条；满页即推断还有更多。
@@ -538,6 +554,7 @@ const threadQ = ref('');
 const curThread = ref<number | null>(null);
 const threadData = ref<{ thread: any; messages: ThreadMessage[] } | null>(null);
 const threadDataLoading = ref(false);
+let threadLoadGeneration = 0;
 const paneRef = ref<HTMLElement | null>(null);
 // 逐轮执行轨迹缓存：job:<id> / agent-run:<id> 分开命名，避免两类 UUID 语义混淆。
 const traces = reactive<Record<string, ConversationTraceState>>({});
@@ -895,20 +912,25 @@ function scrollPaneToBottom(): void {
   if (el) el.scrollTop = el.scrollHeight;
 }
 async function openThread(id: number): Promise<void> {
+  const generation = ++threadLoadGeneration;
   curThread.value = id;
   threadData.value = null; threadDataLoading.value = true;
   // 切会话清空轨迹缓存（避免不同会话的 job 串台占内存）
   for (const k of Object.keys(traces)) delete traces[k];
-  try { threadData.value = await api('/admin/api/threads/' + id); }
-  catch (e) { ElMessage.error((e as Error).message); }
-  finally { threadDataLoading.value = false; }
-  if (threadData.value) {
+  try {
+    const data = await api<{ thread: any; messages: ThreadMessage[] }>('/admin/api/threads/' + id);
+    if (generation === threadLoadGeneration) threadData.value = data;
+  }
+  catch (e) { if (generation === threadLoadGeneration) ElMessage.error((e as Error).message); }
+  finally { if (generation === threadLoadGeneration) threadDataLoading.value = false; }
+  if (generation === threadLoadGeneration && threadData.value) {
     await nextTick();
     scrollPaneToBottom();
-    setTimeout(scrollPaneToBottom, 150); // 兜底：图片/异步内容撑高后再贴底
+    setTimeout(() => { if (generation === threadLoadGeneration) scrollPaneToBottom(); }, 150); // 图片/异步内容撑高后再贴底
   }
 }
 async function toggleTrace(message: ThreadMessage): Promise<void> {
+  const generation = threadLoadGeneration;
   const key = traceKey(message);
   const cur = traces[key];
   if (cur?.open) { cur.open = false; return; }
@@ -918,23 +940,30 @@ async function toggleTrace(message: ThreadMessage): Promise<void> {
   try {
     if (message.job_id) {
       const t = await api<TracePayload>('/admin/api/runs/' + message.job_id + '/trace');
+      if (generation !== threadLoadGeneration) return;
       traces[key] = { kind, open: true, loading: false, detail: t.job, events: normalizeTraceEvents(t), summary: t.trace.summary ?? null, invocations: [] };
     } else if (message.agent_run_id && curThread.value) {
       const t = await api<AgentRunTracePayload>(`/admin/api/threads/${curThread.value}/agent-runs/${message.agent_run_id}/trace`);
+      if (generation !== threadLoadGeneration) return;
       traces[key] = { kind, open: true, loading: false, detail: t.run, events: t.trace.events, summary: t.trace.summary ?? null, invocations: t.invocations ?? [] };
     } else {
       throw new Error('该轮缺少可追溯标识');
     }
   } catch (e) {
+    if (generation !== threadLoadGeneration) return;
     traces[key] = { kind, open: true, loading: false, detail: null, events: [], summary: null, invocations: [] };
     ElMessage.error((e as Error).message);
   }
 }
 function onTab(name: string): void {
-  if (name === 'threads' && !threadsLoaded.value) void loadThreads();
+  if (name === 'threads' && conversationView.value === 'legacy' && !threadsLoaded.value) void loadThreads();
+}
+function onConversationView(): void {
+  if (conversationView.value === 'legacy' && !threadsLoaded.value) void loadThreads();
 }
 function refresh(): void {
-  if (activeTab.value === 'threads') { void loadThreads(); if (curThread.value) void openThread(curThread.value); }
+  if (activeTab.value === 'threads' && conversationView.value === 'audit') void clientConversations.value?.refresh();
+  else if (activeTab.value === 'threads') { void loadThreads(); if (curThread.value) void openThread(curThread.value); }
   else if (activeTab.value === 'trace') { if (traceJobInput.value.trim()) void lookupJobTrace(); }
   else void load();
 }
@@ -1043,8 +1072,19 @@ async function copyTraceDebugReport(): Promise<void> {
 function gotoThread(threadId: number): void {
   detailOpen.value = false;
   activeTab.value = 'threads';
+  conversationView.value = 'legacy';
   if (!threadsLoaded.value) void loadThreads();
   void openThread(threadId);
+  void router.replace({ query: { ...route.query, job: undefined, conversation: undefined, turn: undefined, thread: String(threadId) } });
+}
+function selectAuditConversation(id: string): void {
+  gotoAuditConversation(id);
+}
+function gotoAuditConversation(id: string, turnId?: string): void {
+  detailOpen.value = false;
+  activeTab.value = 'threads'; conversationView.value = 'audit';
+  auditConversationId.value = id; auditTurnId.value = turnId || '';
+  void router.replace({ query: { ...route.query, job: undefined, thread: undefined, conversation: id, turn: turnId || undefined } });
 }
 async function rerun(): Promise<void> {
   try {
@@ -1063,19 +1103,35 @@ async function openJobFromQuery(job: string): Promise<void> {
 onMounted(async () => {
   const job = String(route.query['job'] ?? '');       // 深链：审批意图页「看任务」直达详情 → 落调度流 + 开抽屉
   const thr = String(route.query['thread'] ?? '');     // 深链：直达某会话
+  const conversation = String(route.query['conversation'] ?? '');
+  if (conversation) { auditConversationId.value = conversation; auditTurnId.value = String(route.query['turn'] ?? ''); }
+  else if (thr) conversationView.value = 'legacy';
   if (job) { activeTab.value = 'trace'; traceJobInput.value = job; }
   await load();                                        // 调度流列表（始终拉，刷新/深链都用得上）
-  if (activeTab.value === 'threads' && !threadsLoaded.value) await loadThreads(); // 默认进会话视图 → 拉会话列表
-  if (thr) void openThread(Number(thr));
+  if (activeTab.value === 'threads' && conversationView.value === 'legacy' && !threadsLoaded.value) await loadThreads();
+  if (thr && !conversation && /^\d+$/.test(thr)) void openThread(Number(thr));
   if (job) await openJobFromQuery(job);
 });
 watch(() => route.query['job'], (v) => {
   void openJobFromQuery(String(v ?? ''));
 });
+watch(() => [route.query['conversation'], route.query['turn']], ([id, turn]) => {
+  if (!id) return;
+  activeTab.value = 'threads'; conversationView.value = 'audit';
+  auditConversationId.value = String(id); auditTurnId.value = String(turn || '');
+});
+watch(() => route.query['thread'], (value) => {
+  const id = String(value || '');
+  if (!/^\d+$/.test(id) || (curThread.value === Number(id) && conversationView.value === 'legacy')) return;
+  activeTab.value = 'threads'; conversationView.value = 'legacy';
+  if (!threadsLoaded.value) void loadThreads();
+  void openThread(Number(id));
+});
 </script>
 
 <style scoped>
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
+.conversationViewSwitch { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
 .dangerText { color: var(--el-color-danger); }
 .warningText { color: var(--el-color-warning); }
 .loadmore { text-align: center; padding: 12px 0 4px; }

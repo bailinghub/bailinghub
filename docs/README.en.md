@@ -6,6 +6,7 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [user-guide/conversations.en.md](user-guide/conversations.en.md) | Multi-account conversations, full-text review and offline recovery for users. |
 | [QUICKSTART.en.md](QUICKSTART.en.md) | Install BailingHub, run the Docker demo, create the first route, and connect the first business tool. |
 | [DEMO.en.md](DEMO.en.md) | Docker demo walkthrough: hub, MySQL, demo business system, tool provider, audit, and trace. |
 | [INDEPENDENT_VALIDATION.en.md](INDEPENDENT_VALIDATION.en.md) | Independent Docker demo task with objective pass criteria and a standard report path. |
@@ -16,6 +17,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Chinese Agent Auth v1 protocol. |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | Agent Client Runtime v1 workspaces, turns, tools, and completion contract. |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Chinese Agent Client Runtime v1 contract. |
+| [AGENT_CONVERSATION_AUDIT.en.md](AGENT_CONVERSATION_AUDIT.en.md) | Complete visible conversation audit, member confirmation, run ownership and admin pagination. |
+| [AGENT_CONVERSATION_AUDIT.md](AGENT_CONVERSATION_AUDIT.md) | Chinese complete conversation audit protocol. |
 | [user-guide/README.en.md](user-guide/README.en.md) | User and product-owner guide: business goals, console concepts, and scenario-based setup. |
 | [CONTRACT.en.md](CONTRACT.en.md) | Stable HTTP and wire contract between business systems and the hub. |
 | [INTEGRATION.en.md](INTEGRATION.en.md) | Third-party integration guide for tools, signatures, authorization, and callback handling. |
@@ -108,6 +111,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.5.0.en.md](RELEASE_NOTES_v0.5.0.en.md) | `v0.5.0` revocable local-Agent authorization and governed local planning. |
 | [RELEASE_NOTES_v0.5.0.md](RELEASE_NOTES_v0.5.0.md) | Chinese `v0.5.0` release notes. |
 | [RELEASE_NOTES_v0.5.1.en.md](RELEASE_NOTES_v0.5.1.en.md) | `v0.5.1` Agent Client management center and bulk write-operation configuration. |
+| [RELEASE_NOTES_v0.6.0.en.md](RELEASE_NOTES_v0.6.0.en.md) | `v0.6.0`: follow a conversation through its business actions, with compatible multi-account clients. |
+| [RELEASE_NOTES_v0.6.0.md](RELEASE_NOTES_v0.6.0.md) | Chinese `v0.6.0` release notes and upgrade guide. |
 | [RELEASE_NOTES_v0.5.1.md](RELEASE_NOTES_v0.5.1.md) | Chinese `v0.5.1` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |

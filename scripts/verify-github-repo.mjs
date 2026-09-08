@@ -129,6 +129,7 @@ const requiredFiles = [
   'docs/RELEASE_NOTES_v0.3.4.md',
   'docs/RELEASE_NOTES_v0.5.0.md',
   'docs/RELEASE_NOTES_v0.5.1.md',
+  'docs/RELEASE_NOTES_v0.6.0.md',
   'docs/CHANGELOG.md',
 ];
 for (const file of requiredFiles) requireFile(file);

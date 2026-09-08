@@ -26,6 +26,7 @@ import { InstanceBrandingRepository } from './config-instance-branding-repositor
 import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
 import { AgentAuthRepository, type AgentAuthRepositoryContract } from './config-agent-auth-repository';
 import { AgentClientRuntimeRepository } from './config-agent-client-runtime-repository';
+import { AgentConversationAuditRepository } from './config-agent-conversation-audit-repository';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 export type RouteRepositoryContract = Pick<RouteRepository, keyof RouteRepository>;
@@ -60,6 +61,7 @@ export type ObservabilityLedgerContract =
   Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>
   & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>>;
 export type AgentClientRuntimeRepositoryContract = Pick<AgentClientRuntimeRepository, keyof AgentClientRuntimeRepository>;
+export type AgentConversationAuditRepositoryContract = Pick<AgentConversationAuditRepository, keyof AgentConversationAuditRepository>;
 
 export interface ConfigStoreContract {
   readonly routes: RouteRepositoryContract;
@@ -89,6 +91,8 @@ export interface ConfigStoreContract {
   readonly agentAuth?: AgentAuthRepositoryContract;
   /** Agent Client Runtime v1 对旧宿主保持可选；缺失时新 API fail closed。 */
   readonly agentClientRuntime?: AgentClientRuntimeRepositoryContract;
+  /** Optional, admin-only visible transcript ledger; never a source of Agent memory. */
+  readonly agentConversationAudit?: AgentConversationAuditRepositoryContract;
   init(): Promise<void>;
   close?(): Promise<void>;
   readonly db: Pool;
@@ -123,6 +127,7 @@ export class ConfigStore implements ConfigStoreContract {
   readonly observability = new ObservabilityLedger(() => this.pool);
   readonly agentAuth = new AgentAuthRepository(() => this.pool);
   readonly agentClientRuntime = new AgentClientRuntimeRepository(() => this.pool);
+  readonly agentConversationAudit = new AgentConversationAuditRepository(() => this.pool);
 
   constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);

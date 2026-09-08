@@ -15,6 +15,7 @@ It does not replace developer documentation. Developer docs explain HTTP, signat
 
 | Document | Question answered |
 |---|---|
+| [conversations.en.md](conversations.en.md) | Select several accounts, follow the full conversation into its actions, and handle offline or missing records. |
 | [overview.en.md](overview.en.md) | Why does an existing system need an Agent control plane? |
 | [concepts.en.md](concepts.en.md) | How do routes, callers, targets, tools, knowledge, and channels relate? |
 | [console-map.en.md](console-map.en.md) | What does each console menu do and what does it produce? |
