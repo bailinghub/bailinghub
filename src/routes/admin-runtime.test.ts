@@ -212,3 +212,41 @@ test('Agent Run trace 对旧扩展仓储回退到单 job 审计与审批读取',
   assert.equal(res.statusCode, 200);
   assert.equal(res.json().invocations.length, 1);
 });
+
+test('Agent Run trace includes only the verified conversation backlink without copying its transcript', async () => {
+  const deps = depsFor();
+  const link = { conversation_audit_id: '723e4567-e89b-42d3-a456-426614174000', client_turn_id: 'turn-1' };
+  const lookups: string[] = [];
+  (deps.configStore as any).agentConversationAudit = {
+    findRunLinkForAdmin: async (id: string) => { lookups.push(id); return id === RUN_ID ? link : null; },
+  };
+  const res = new FakeResponse();
+  await handleAdminRuntimeApiFor(deps, 'GET', `/admin/api/threads/42/agent-runs/${RUN_ID}/trace`,
+    {} as IncomingMessage, res as unknown as ServerResponse,
+    { kind: 'admin', via: 'session', role: 'viewer' });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json().run.conversation_audit_id, link.conversation_audit_id);
+  assert.equal(res.json().run.client_turn_id, link.client_turn_id);
+  assert.deepEqual(lookups, [RUN_ID]);
+  assert.doesNotMatch(JSON.stringify(res.json()), /PRIVATE_FINAL_CONTENT|PRIVATE_USER_INPUT/);
+});
+
+test('a tool job receives the conversation backlink only after the original run ownership is verified', async () => {
+  const deps = depsFor();
+  const link = { conversation_audit_id: '723e4567-e89b-42d3-a456-426614174000', client_turn_id: 'turn-1' };
+  const lookups: string[] = [];
+  Object.assign(deps.configStore, {
+    agentConversationAudit: { findRunLinkForAdmin: async (id: string) => { lookups.push(id); return link; } },
+    conversations: { rawInputForJob: async () => null, messagesForJob: async () => [] },
+    deliveryDlq: { listByParentJob: async () => [] }, routes: { get: async () => null },
+  });
+  for (const id of [VALID_JOB_ID, FORGED_JOB_ID, OTHER_RUN_JOB_ID]) {
+    const res = new FakeResponse();
+    await handleAdminRuntimeApiFor(deps, 'GET', `/admin/api/runs/${id}/trace`,
+      {} as IncomingMessage, res as unknown as ServerResponse,
+      { kind: 'admin', via: 'session', role: 'viewer' });
+    assert.equal(res.statusCode, 200);
+    assert.equal(res.json().job.conversation_audit_id, id === VALID_JOB_ID ? link.conversation_audit_id : undefined);
+  }
+  assert.deepEqual(lookups, [RUN_ID]);
+});

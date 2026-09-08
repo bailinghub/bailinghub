@@ -17,6 +17,7 @@ import { handleAdminDispatchConfigApiFor } from './admin-dispatch-config';
 import { handleAdminInfraApiFor } from './admin-infra';
 import { handleAdminKbApiFor } from './admin-kb';
 import { handleAdminRuntimeApiFor } from './admin-runtime';
+import { handleAdminConversationAuditFor } from './admin-conversation-audit';
 import { handleAdminToolProviderApiFor } from './admin-tool-providers';
 import { handleAdminBrandingApiFor } from './admin-branding';
 import { handleAdminAgentClientsApiFor } from './admin-agent-clients';
@@ -102,6 +103,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     [/^\/admin\/api\/routes/, 'routes:read', 'routes:write'],
     [/^\/admin\/api\/runs/, 'runs:read', 'runs:write'], // 重跑是写操作：viewer 只能看不能跑
     [/^\/admin\/api\/threads/, 'runs:read', 'runs:read'], // 会话视图=运行面只读
+    [/^\/admin\/api\/conversation-audits/, 'runs:read', 'runs:read'],
     [/^\/admin\/api\/status/, 'runs:read', 'runs:read'],
     [/^\/admin\/api\/dispatch-status/, 'runs:read', 'runs:read'],
     [/^\/admin\/api\/config-schemas/, 'audit:read', 'audit:read'],
@@ -185,6 +187,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     return true;
   }
 
+  if (await handleAdminConversationAuditFor(configStore, method, path, req, res, principal)) return true;
   if (await handleAdminRuntimeApiFor({
     configStore,
     stateStore: deps.stateStore,

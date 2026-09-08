@@ -13,6 +13,7 @@ import {
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { authenticateAgentAccess } from './agent-auth';
+import { handleAgentConversationAuditFor } from './agent-conversation-audit';
 import type { KbService } from '../services/kb';
 import {
   completeAgentRunFor,
@@ -91,6 +92,7 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
   if (!auth) { send(res, 401, { error: 'unauthorized' }); return true; }
   const principal: Principal = { kind: 'agent', session: auth.session, client: auth.client };
   const method = req.method ?? 'GET';
+  if (await handleAgentConversationAuditFor(deps.configStore, auth, req, res, path)) return true;
   const runtimeDeps = (): AgentClientRuntimeDeps | null => deps.toolProxyDeps
     ? { toolProxyDeps: deps.toolProxyDeps, kbService: deps.kbService ?? null, stateStore: deps.stateStore }
     : null;

@@ -20,6 +20,8 @@
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | English Agent Auth v1 protocol and trusted business-identity boundary. |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Agent Client Runtime v1：工作区、turn、能力搜索、工具执行与完成回传。 |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | English Agent Client Runtime v1 contract. |
+| [AGENT_CONVERSATION_AUDIT.md](AGENT_CONVERSATION_AUDIT.md) | 完整可见对话审计：逐授权成员确认、幂等文本事件、run 关联和管理员分页读取。 |
+| [AGENT_CONVERSATION_AUDIT.en.md](AGENT_CONVERSATION_AUDIT.en.md) | English complete conversation audit protocol and authorization boundary. |
 | [user-guide/README.md](user-guide/README.md) | 使用者/产品经理视角：从业务需求出发，理解为什么需要中枢、后台菜单怎么配、配完交给开发者什么。 |
 | [CONTRACT.md](CONTRACT.md) | 业务系统和中枢之间的稳定网络契约，接入前应先读。 |
 | [CONTRACT.en.md](CONTRACT.en.md) | English HTTP and wire contract summary. |

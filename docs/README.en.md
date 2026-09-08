@@ -16,6 +16,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Chinese Agent Auth v1 protocol. |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | Agent Client Runtime v1 workspaces, turns, tools, and completion contract. |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Chinese Agent Client Runtime v1 contract. |
+| [AGENT_CONVERSATION_AUDIT.en.md](AGENT_CONVERSATION_AUDIT.en.md) | Complete visible conversation audit, member confirmation, run ownership and admin pagination. |
+| [AGENT_CONVERSATION_AUDIT.md](AGENT_CONVERSATION_AUDIT.md) | Chinese complete conversation audit protocol. |
 | [user-guide/README.en.md](user-guide/README.en.md) | User and product-owner guide: business goals, console concepts, and scenario-based setup. |
 | [CONTRACT.en.md](CONTRACT.en.md) | Stable HTTP and wire contract between business systems and the hub. |
 | [INTEGRATION.en.md](INTEGRATION.en.md) | Third-party integration guide for tools, signatures, authorization, and callback handling. |
