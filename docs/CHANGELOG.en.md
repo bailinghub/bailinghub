@@ -22,6 +22,16 @@ Each public version should describe:
 
 ## Unreleased
 
+## v0.6.1 - Conversation Release and Package Source Verification
+
+Planned release date: 2026-09-08.
+
+- **User experience**: carries forward the visible conversations, authorization trace links and same-system multi-account clients from 0.6.0. The recommended set is Core 0.6.1 + SDK 0.4.0 + DSH 0.4.0.
+- **Release correction**: the 0.6.0 source tag and npm package exist, but missing source-commit metadata prevented the formal Release gate from passing. 0.6.1 uses an independent clone and checks that metadata before publishing; the original 0.6.0 artifacts remain unchanged.
+- **Integration and schema**: no business behavior, API, dependency or migration changes relative to 0.6.0. Upgrades from 0.5.1 still explicitly apply migration 057; installations that already applied 057 do not recreate its tables.
+- **Validation**: retain the release gates for the exact tag, CI, images, npm version, content digest and gitHead before creating the GitHub Release.
+- **Related docs**: [v0.6.1 release notes](RELEASE_NOTES_v0.6.1.en.md) and [user guide](user-guide/conversations.en.md).
+
 ## v0.6.0 - Follow the Conversation Through Its Business Actions
 
 Planned release date: 2026-09-08.
@@ -29,7 +39,7 @@ Planned release date: 2026-09-08.
 - **One conversation view**: inspect synchronized user messages, intermediate explanations and final replies by turn, then open each account's original execution record.
 - **Multiple accounts in a conversation**: with SDK / DSH 0.4.0, select authorized accounts from the same business system before chatting; the agent chooses the appropriate authorization for each action.
 - **Existing authority stays intact**: identities, approvals and account memory remain separate. Full text is restricted to the Hub administration audit domain and is not broadcast into each account's memory.
-- **Upgrade impact**: migration057 adds three archive tables. Business capability declarations and approval rules do not change. Clients need explicit conversation scope and durable history; follow the upgrade guide.
+- **Upgrade impact**: migration 057 adds three archive tables. Business capability declarations and approval rules do not change. Clients need explicit conversation scope and durable history; follow the upgrade guide.
 - **Verification focus**: recovery in the same runtime after an offline reopening, acknowledgement-loss deduplication, whole-group revocation, visible history gaps and late cancellation responses. A successful business action alone does not prove complete transcript capture.
 - **Related docs**: [v0.6.0 release notes](RELEASE_NOTES_v0.6.0.en.md), [multi-account conversation guide](user-guide/conversations.en.md) and [integration contract](AGENT_CONVERSATION_AUDIT.en.md).
 

@@ -45,7 +45,7 @@ BailingHub Client Token、Tool Provider Secret 或业务系统密码的步骤。
 
 ### 3.1 部署 Core 并执行数据库迁移
 
-完整对话归档使用 BailingHub0.6.0、Agent Client SDK0.4.0及兼容客户端。Core需要已有迁移055/056及新增057；由一个部署步骤执行迁移，运行时启动不会自动迁移。
+完整对话归档使用 BailingHub0.6.1、Agent Client SDK0.4.0及兼容客户端。Core需要已有迁移055/056及新增057；由一个部署步骤执行迁移，运行时启动不会自动迁移。
 升级后先确认：
 
 - `/health` 和 `/health/ready` 正常；

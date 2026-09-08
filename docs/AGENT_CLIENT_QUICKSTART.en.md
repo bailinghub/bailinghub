@@ -48,7 +48,7 @@ the end user to paste a BailingHub Client Token, Tool Provider Secret, or busine
 
 ### 3.1 Deploy Core and apply migrations
 
-Full conversation archives require BailingHub0.6.0, Agent Client SDK0.4.0 and a compatible client.
+Full conversation archives require BailingHub0.6.1, Agent Client SDK0.4.0 and a compatible client.
 Apply migrations055/056 and the new057 from one deployment step; runtime startup does not apply them.
 Confirm that health and readiness pass, no migration is pending, the console can edit
 Agent Client settings, and production traffic uses HTTPS.

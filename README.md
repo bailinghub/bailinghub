@@ -27,15 +27,15 @@
 
 在线体验环境只用于了解产品和配置方式。请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
 
-## v0.6.0：看完整沟通，再追到每次业务操作
+## v0.6.1：看完整沟通，再追到每次业务操作
 
 例如，你在支持的新客户端里选择同一业务系统的 A、B 两份授权，再说：“分别查一下两家店的订单，只修改 A 店的联系人。”Agent 可在已选范围内为每次操作使用对应授权，业务系统仍按原规则决定能否执行。示例中的查询和修改能力需要由你的业务系统开放。
 
 管理员可以在“任务→会话”看到客户端已同步的沟通过程：用户说了什么、助手中途如何说明、最后回复了什么，再进入各账户的原始调用和审批记录。归档暂未同步或原文缺失时会明确提示。
 
-这组使用体验需要 **BailingHub 0.6.0 + MCP/Agent Client SDK 0.4.0 + DSH 插件 0.4.0**，或接入相同宿主接口的自有客户端。三个项目分别安装；多授权首期只覆盖同一系统、同一工作区。
+这组使用体验需要 **BailingHub 0.6.1 + MCP/Agent Client SDK 0.4.0 + DSH 插件 0.4.0**，或接入相同宿主接口的自有客户端。三个项目分别安装；多授权首期只覆盖同一系统、同一工作区。
 
-[从用户角度开始使用](docs/user-guide/conversations.md) · [升级与版本配套](docs/RELEASE_NOTES_v0.6.0.md)
+[从用户角度开始使用](docs/user-guide/conversations.md) · [升级与版本配套](docs/RELEASE_NOTES_v0.6.1.md)
 
 ## 适合哪些团队
 
@@ -117,7 +117,7 @@
 在本机启动中枢、MySQL、Demo 业务系统、工具源、路由和接入方：
 
 ```bash
-git clone --branch v0.6.0 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.6.1 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -197,7 +197,7 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 | 接入本地智能体 | [Agent Client v1 指南](docs/AGENT_CLIENT_QUICKSTART.md) |
 | 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |
 | 理解架构与长期取舍 | [架构](docs/ARCHITECTURE.md) · [项目愿景](VISION.md) |
-| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.6.0 Release Notes](docs/RELEASE_NOTES_v0.6.0.md) |
+| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.6.1 Release Notes](docs/RELEASE_NOTES_v0.6.1.md) |
 
 完整中英文文档地图见 [docs/README.md](docs/README.md)。公共 API、SDK、Schema、Docker Demo 与代码标识保持语言中立。
 
