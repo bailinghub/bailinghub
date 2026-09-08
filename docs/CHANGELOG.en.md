@@ -22,6 +22,17 @@ Each public version should describe:
 
 ## Unreleased
 
+## v0.6.0 - Follow the Conversation Through Its Business Actions
+
+Planned release date: 2026-09-08.
+
+- **One conversation view**: inspect synchronized user messages, intermediate explanations and final replies by turn, then open each account's original execution record.
+- **Multiple accounts in a conversation**: with SDK / DSH 0.4.0, select authorized accounts from the same business system before chatting; the agent chooses the appropriate authorization for each action.
+- **Existing authority stays intact**: identities, approvals and account memory remain separate. Full text is restricted to the Hub administration audit domain and is not broadcast into each account's memory.
+- **Upgrade impact**: migration057 adds three archive tables. Business capability declarations and approval rules do not change. Clients need explicit conversation scope and durable history; follow the upgrade guide.
+- **Verification focus**: recovery in the same runtime after an offline reopening, acknowledgement-loss deduplication, whole-group revocation, visible history gaps and late cancellation responses. A successful business action alone does not prove complete transcript capture.
+- **Related docs**: [v0.6.0 release notes](RELEASE_NOTES_v0.6.0.en.md), [multi-account conversation guide](user-guide/conversations.en.md) and [integration contract](AGENT_CONVERSATION_AUDIT.en.md).
+
 ## v0.5.1 - Agent Client Management and Bulk Write-Operation Configuration
 
 Planned release date: 2026-09-01.

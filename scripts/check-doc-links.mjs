@@ -103,6 +103,7 @@ const englishCompanions = {
   'docs/RELEASE_NOTES_v0.3.4.md': 'docs/RELEASE_NOTES_v0.3.4.en.md',
   'docs/RELEASE_NOTES_v0.5.0.md': 'docs/RELEASE_NOTES_v0.5.0.en.md',
   'docs/RELEASE_NOTES_v0.5.1.md': 'docs/RELEASE_NOTES_v0.5.1.en.md',
+  'docs/RELEASE_NOTES_v0.6.0.md': 'docs/RELEASE_NOTES_v0.6.0.en.md',
   'docs/TOOLS_DESIGN.md': 'docs/TOOLS_DESIGN.en.md',
   'docs/TOOLS_MODEL.md': 'docs/TOOLS_MODEL.en.md',
   'docs/AI友好工具设计指南.md': 'docs/AI_FRIENDLY_TOOLS.en.md',
@@ -113,6 +114,7 @@ const englishCompanions = {
   'docs/user-guide/concepts.md': 'docs/user-guide/concepts.en.md',
   'docs/user-guide/console-map.md': 'docs/user-guide/console-map.en.md',
   'docs/user-guide/scenarios.md': 'docs/user-guide/scenarios.en.md',
+  'docs/user-guide/conversations.md': 'docs/user-guide/conversations.en.md',
   'brain/README.md': 'brain/README.en.md',
   'sql/README.md': 'sql/README.en.md',
 };

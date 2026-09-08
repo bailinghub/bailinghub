@@ -4,6 +4,8 @@
 
 Use Jobs as the normal operational home page. It shows conversations, runs, trace events, tool calls, approvals, model usage, errors, and delivery. It produces evidence for quality review and incident diagnosis.
 
+The client-conversation view groups synchronized user and assistant text by turn and links to each account’s original execution record. Authorization-scoped records remain separate. Unsynchronized or missing older text is not presented as a complete transcript. See the [conversation guide](conversations.en.md).
+
 ## Routes
 
 Routes define Agent scenarios. Configure target, model, context, one or more tool providers, global tool-call budget, approval delivery, retry, memory, audience, budget, and result delivery. The route row produces a stable `route_key` and generated call examples.

@@ -15,6 +15,7 @@
 
 | 文档 | 解决的问题 |
 |---|---|
+| [conversations.md](conversations.md) | 在一个对话里选择多个账户，并从完整沟通追到具体操作；解释断网与记录缺口。 |
 | [overview.md](overview.md) | 为什么需要百灵中枢，它解决传统系统接 Agent 时的哪些具体问题。 |
 | [concepts.md](concepts.md) | 路由、接入方、工具源、调度目标、模型凭证、知识库、聊天入口之间是什么关系。 |
 | [console-map.md](console-map.md) | 后台每个菜单是干什么的、什么时候会用、配好后能拿到什么。 |

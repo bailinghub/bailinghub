@@ -6,6 +6,7 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [user-guide/conversations.en.md](user-guide/conversations.en.md) | Multi-account conversations, full-text review and offline recovery for users. |
 | [QUICKSTART.en.md](QUICKSTART.en.md) | Install BailingHub, run the Docker demo, create the first route, and connect the first business tool. |
 | [DEMO.en.md](DEMO.en.md) | Docker demo walkthrough: hub, MySQL, demo business system, tool provider, audit, and trace. |
 | [INDEPENDENT_VALIDATION.en.md](INDEPENDENT_VALIDATION.en.md) | Independent Docker demo task with objective pass criteria and a standard report path. |
@@ -110,6 +111,8 @@ This directory contains public documentation for the open-source BailingHub proj
 | [RELEASE_NOTES_v0.5.0.en.md](RELEASE_NOTES_v0.5.0.en.md) | `v0.5.0` revocable local-Agent authorization and governed local planning. |
 | [RELEASE_NOTES_v0.5.0.md](RELEASE_NOTES_v0.5.0.md) | Chinese `v0.5.0` release notes. |
 | [RELEASE_NOTES_v0.5.1.en.md](RELEASE_NOTES_v0.5.1.en.md) | `v0.5.1` Agent Client management center and bulk write-operation configuration. |
+| [RELEASE_NOTES_v0.6.0.en.md](RELEASE_NOTES_v0.6.0.en.md) | `v0.6.0`: follow a conversation through its business actions, with compatible multi-account clients. |
+| [RELEASE_NOTES_v0.6.0.md](RELEASE_NOTES_v0.6.0.md) | Chinese `v0.6.0` release notes and upgrade guide. |
 | [RELEASE_NOTES_v0.5.1.md](RELEASE_NOTES_v0.5.1.md) | Chinese `v0.5.1` release notes. |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | First public release notes. |
 | [CHANGELOG.en.md](CHANGELOG.en.md) | Public changelog format and current release summary. |

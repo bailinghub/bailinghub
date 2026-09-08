@@ -8,6 +8,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [user-guide/conversations.md](user-guide/conversations.md) | 普通用户的多账户对话、完整沟通追溯和离线恢复指南。 |
 | [QUICKSTART.md](QUICKSTART.md) | 从零部署百灵中枢，适合准备接入真实业务系统的开发者。 |
 | [QUICKSTART.en.md](QUICKSTART.en.md) | English quickstart for Docker demo, first route, and first business tool. |
 | [DEMO.md](DEMO.md) | Docker demo 闭环：中枢、MySQL、demo 业务系统、工具源、审计与 trace。 |
@@ -124,6 +125,8 @@
 | [RELEASE_NOTES_v0.5.0.en.md](RELEASE_NOTES_v0.5.0.en.md) | English `v0.5.0` revocable local-Agent authorization and governed local planning release notes. |
 | [RELEASE_NOTES_v0.5.1.md](RELEASE_NOTES_v0.5.1.md) | `v0.5.1` 智能体客户端管理中心与批量写操作配置说明。 |
 | [RELEASE_NOTES_v0.5.1.en.md](RELEASE_NOTES_v0.5.1.en.md) | English `v0.5.1` Agent Client management center and bulk write-operation configuration release notes. |
+| [RELEASE_NOTES_v0.6.0.md](RELEASE_NOTES_v0.6.0.md) | `v0.6.0` 看完整沟通，再追到每次业务操作；配套多授权客户端升级。 |
+| [RELEASE_NOTES_v0.6.0.en.md](RELEASE_NOTES_v0.6.0.en.md) | English `v0.6.0` release notes and upgrade guide. |
 | [RELEASE_NOTES_v0.1.0.md](RELEASE_NOTES_v0.1.0.md) | 首个公开版本的 GitHub Release 草稿。 |
 | [RELEASE_NOTES_v0.1.0.en.md](RELEASE_NOTES_v0.1.0.en.md) | English release notes. |
 | [CHANGELOG.md](CHANGELOG.md) | 公开发布后的对外变更记录。 |
