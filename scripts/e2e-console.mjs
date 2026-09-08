@@ -108,6 +108,46 @@ const agentRunId = '123e4567-e89b-42d3-a456-426614174000';
 const agentToolJobId = '223e4567-e89b-42d3-a456-426614174000';
 const incompleteAgentRunId = '323e4567-e89b-42d3-a456-426614174000';
 const incompleteAgentToolJobId = '423e4567-e89b-42d3-a456-426614174000';
+const conversationId = '523e4567-e89b-42d3-a456-426614174000';
+const conversationTurnId = 'demo-conversation-turn-1';
+const conversationUser = '对比演示账户 A、B，只更新 A 的资料。';
+const conversationReply = '账户 A 更新成功；账户 B 的审批已通过，仍需客户端继续处理。';
+const conversationMembers = ['A', 'B'].map((label, index) => ({
+  session_id: `623e4567-e89b-42d3-a456-42661417400${index}`,
+  display_label: `演示账户 ${label}`,
+  confirmed: true,
+  principal: { id: `demo-user-${index}`, tenant: `demo-account-${label}`, roles: ['operator'] },
+}));
+const conversation = {
+  conversation_id: conversationId,
+  client_archive_id: '723e4567-e89b-42d3-a456-426614174000',
+  client_conversation_id: 'demo-client-conversation',
+  client_app_id: 'demo-app',
+  route_key: 'demo_support',
+  state: 'ready',
+  member_count: 2,
+  confirmed_count: 2,
+  last_sequence: 6,
+  message_count: 2,
+  turn_count: 1,
+  last_turn_status: 'completed',
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+};
+const conversationEvents = [
+  { kind: 'turn_start' },
+  { kind: 'user_message', content: conversationUser },
+  { kind: 'run_link', run_id: agentRunId, member_session_id: conversationMembers[0].session_id, thread_id: 2 },
+  { kind: 'run_link', run_id: incompleteAgentRunId, member_session_id: conversationMembers[1].session_id, thread_id: 3 },
+  { kind: 'assistant_message', content: conversationReply },
+  { kind: 'turn_end', status: 'completed' },
+].map((event, index) => ({
+  event_id: `823e4567-e89b-42d3-a456-42661417400${index}`,
+  sequence: index + 1,
+  client_turn_id: conversationTurnId,
+  created_at: conversation.created_at,
+  ...event,
+}));
 
 let smokeRequests = 0;
 
@@ -132,6 +172,8 @@ function agentRunTracePayload() {
     run: {
       run_id: agentRunId,
       thread_id: 2,
+      conversation_audit_id: conversationId,
+      client_turn_id: conversationTurnId,
       client_app_id: 'demo-app',
       route_key: 'demo_support',
       status: 'completed',
@@ -172,6 +214,8 @@ function incompleteAgentRunTracePayload() {
     run: {
       run_id: incompleteAgentRunId,
       thread_id: 3,
+      conversation_audit_id: conversationId,
+      client_turn_id: conversationTurnId,
       client_app_id: 'demo-app',
       route_key: 'demo_support',
       status: 'context_ready',
@@ -252,6 +296,13 @@ async function mockApi(context) {
     if (url.pathname === '/admin/api/clients') return route.fulfill({ json: fixtures.clients });
     if (url.pathname === '/admin/api/routes') return route.fulfill({ json: fixtures.routes });
     if (url.pathname === '/admin/api/runs') return route.fulfill({ json: fixtures.runs });
+    if (url.pathname === '/admin/api/conversation-audits') return route.fulfill({ json: {
+      schema: 'bailing.agent-conversation-audit-list.v1', items: [conversation], has_more: false, next_offset: null,
+    } });
+    if (url.pathname === `/admin/api/conversation-audits/${conversationId}`) return route.fulfill({ json: {
+      schema: 'bailing.agent-conversation-audit-detail.v1', conversation, members: conversationMembers,
+      events: conversationEvents, has_more: false, next_after_sequence: null,
+    } });
     if (/^\/admin\/api\/runs\/[^/]+\/trace$/.test(url.pathname)) return route.fulfill({ json: tracePayload() });
     if (url.pathname === `/admin/api/threads/2/agent-runs/${agentRunId}/trace`) return route.fulfill({ json: agentRunTracePayload() });
     if (url.pathname === `/admin/api/threads/3/agent-runs/${incompleteAgentRunId}/trace`) return route.fulfill({ json: incompleteAgentRunTracePayload() });
@@ -351,6 +402,44 @@ try {
   await page.getByRole('button', { name: '取消' }).click();
 
   await page.getByRole('menuitem', { name: '任务' }).click();
+  const auditRadio = page.getByRole('radio', { name: '客户端完整对话', exact: true });
+  if (!await auditRadio.isChecked()) throw new Error('任务会话页应默认展示客户端完整对话');
+  const auditList = page.locator('aside[aria-label="客户端对话列表"]');
+  await auditList.getByRole('button', { name: /demo-client-conversation/ }).click();
+  const auditTurn = page.locator(`section[data-turn-id="${conversationTurnId}"]`);
+  await expectVisible(page, conversationReply);
+  if (await auditTurn.locator('.userMessage .messageText').innerText() !== conversationUser ||
+      await auditTurn.locator('.assistantMessage .messageText').innerText() !== conversationReply) {
+    throw new Error('客户端对话必须展示原始可见正文，不能以授权执行摘要替代');
+  }
+  await expectVisible(page, '已接收 1 轮 / 2 条消息');
+  await expectVisible(page, '旧历史或未同步内容可能缺失');
+  if (await auditTurn.locator('.authorizationRun').count() !== 2) throw new Error('本轮应保留两项独立授权执行');
+  const accountA = auditTurn.locator('.authorizationRun').filter({ hasText: agentRunId });
+  const accountB = auditTurn.locator('.authorizationRun').filter({ hasText: incompleteAgentRunId });
+  await accountA.getByText('演示账户 A', { exact: true }).waitFor();
+  await accountB.getByText('演示账户 B', { exact: true }).waitFor();
+  await accountA.getByRole('button', { name: '查看授权轨迹', exact: true }).click();
+  await accountA.locator('.invocation').getByText('staff_edit', { exact: true }).waitFor();
+  await accountA.getByRole('button', { name: '原授权记录', exact: true }).click();
+  await expectVisible(page, '把员工资料改成新的姓名');
+  if (!await page.getByRole('radio', { name: '原授权记录', exact: true }).isChecked()) {
+    throw new Error('授权执行必须能回到原授权记录');
+  }
+  await page.locator('.tracetoggle').filter({ hasText: '执行轨迹' }).first().click();
+  await page.getByRole('button', { name: '查看客户端完整对话', exact: true }).click();
+  await page.waitForURL((url) => url.searchParams.get('conversation') === conversationId &&
+    url.searchParams.get('turn') === conversationTurnId);
+  await auditTurn.locator('.assistantMessage .messageText').waitFor({ state: 'visible' });
+  if (!await auditRadio.isChecked() || await auditTurn.locator('.assistantMessage .messageText').innerText() !== conversationReply) {
+    throw new Error('原执行轨迹必须返回同一客户端对话与原始答复');
+  }
+
+  // Keep the existing business-entry and authorization-scoped trace checks.
+  await page.locator('.conversationViewSwitch').getByText('原授权记录', { exact: true }).click();
+  if (!await page.getByRole('radio', { name: '原授权记录', exact: true }).isChecked()) {
+    throw new Error('切换后应展示原授权记录');
+  }
   await expectVisible(page, '查询订单 SO-1001');
   await page.getByText('查询订单 SO-1001').first().click();
   await expectVisible(page, '订单 SO-1001 已查询完成');
