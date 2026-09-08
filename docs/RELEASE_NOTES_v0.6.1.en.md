@@ -1,8 +1,8 @@
-# BailingHub v0.6.0: Follow the Conversation Through Its Business Actions
-
-> This source tag and npm package remain historical artifacts; the formal Release source check did not complete. Use [v0.6.1](RELEASE_NOTES_v0.6.1.en.md) for new installations.
+# BailingHub v0.6.1: Follow the Conversation Through Its Business Actions
 
 A conversation may query account A and then update account B. Previously, administrators had to inspect separate execution records to find out what each account did. With a compatible client, they can now read the conversation first, then follow it into the original actions and approvals.
+
+Version 0.6.1 has the same business behavior, APIs and migrations as 0.6.0. The 0.6.0 npm artifact passed content checks but lacked source-commit metadata, so it did not complete the formal Release gate. 0.6.1 completes that source verification and is the recommended installation. Deployments that already applied 057 do not recreate its tables.
 
 ## What changes for users
 
@@ -17,7 +17,7 @@ Start with the [user guide](user-guide/conversations.en.md). Client developers c
 
 | How you use BailingHub | What to prepare |
 |---|---|
-| You operate a Hub and want full local-agent conversations in its console | Upgrade Core to 0.6.0, apply the new migration, and use a client that synchronizes visible conversations. |
+| You operate a Hub and want full local-agent conversations in its console | Upgrade Core to 0.6.1, apply the new migration, and use a client that synchronizes visible conversations. |
 | You use DeepSeek Harness with several business accounts | Install the separate `dsh-bailinghub@0.4.0` package, which pins `bailinghub-mcp-server@0.4.0`. Authorize each account and select the conversation scope before the first message. |
 | You build a desktop or other agent client | Use Agent Client SDK 0.4.0 and integrate scope, original visible history, durable capture and status. Changing a dependency version alone does not complete host integration. |
 | You use web chat, Client API, Dify/n8n tasks or static MCP | Existing entry points remain usable without a new local client. Other adapters retain their independent release cycles. |
@@ -27,7 +27,7 @@ Prepare Core first, then the SDK and client. Upgrading Core alone cannot make ol
 ## Upgrade an existing deployment
 
 1. Back up the database and retain the previous code or images, following the [operations guide](OPERATIONS.en.md).
-2. Use the exact `v0.6.0` code or images. Run migrations from one deployment step: `sql/057_agent_conversation_audit.sql` adds three archive tables without rewriting previous migrations. Runtime startup does not apply it automatically.
+2. Use the exact `v0.6.1` code or images. Run migrations from one deployment step: `sql/057_agent_conversation_audit.sql` adds three archive tables without rewriting previous migrations. Runtime startup does not apply it automatically.
 3. Start the new version, check `/health/ready`, and open Tasks → Conversations. Verify new client text and its links to original execution records.
 4. Upgrade clients using their SDK/plugin migration instructions. **A new conversation without selected authorizations is ordinary chat.** Scope becomes fixed with the first message; start a new conversation to change it. Reopening restores only the original authorizations.
 5. With test data, check same-runtime recovery after reopening offline, whole-scope blocking after revocation, and cancellation without reactivating ended actions. Never repeat business writes merely to repair an archive.
@@ -50,4 +50,4 @@ The release commit must pass `npm run release:check`, covering permissions, memb
 - [Client integration guide](AGENT_CLIENT_QUICKSTART.en.md)
 - [Conversation archive API](AGENT_CONVERSATION_AUDIT.en.md)
 - [SDK and plugin compatibility](https://github.com/bailinghub/bailinghub-dsh-plugin/blob/main/docs/COMPATIBILITY.md)
-- [中文发布说明](RELEASE_NOTES_v0.6.0.md)
+- [中文发布说明](RELEASE_NOTES_v0.6.1.md)
