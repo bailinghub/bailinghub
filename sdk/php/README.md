@@ -221,6 +221,21 @@ $result = $agentAuth->approve(
 
 `principal` 和 `on_behalf_of` 必须由业务后端从当前登录态生成，不得从前端表单原样透传。该协议只绑定业务身份、路由与设备会话，不承载套餐、付费或权益字段。
 
+**未发布的生命周期候选**还支持核对和收回现有授权，需配套候选 Core；公开稳定 Core v0.6.1
+及其下载包尚不包含本增量。业务后端可以先查询自己有权管理的租户，再按原授权记录撤销：
+
+```php
+$page = $agentAuth->listSessions(['tenant' => (string) $tenantId, 'limit' => 20]);
+$session = $agentAuth->context($authorizationId)['session'] ?? null;
+$revoked = $agentAuth->revokeAuthorization($authorizationId);
+```
+
+`listSessions()` 默认 20 条，最大 100；下一页原样保留筛选条件并传 `next_cursor`，返回 null 即结束。
+按操作人筛选必须同时传 `principal_id` 与 `tenant`，无租户用 `tenant => ''`。分页反映当前状态，
+不是跨请求快照。`session` 缺失/null 不可猜测；`active` 不保证业务账号仍有权限，过期按 refresh
+生命周期判断。撤销可按同一授权 ID 幂等重试，503/超时或 consumed 映射缺失的 404 不代表成功。
+Client Token 与管理权限判断均留在业务后端；字段规则见上方 Agent Auth 契约。
+
 ## CI 集成
 
 ```bash

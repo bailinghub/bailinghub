@@ -161,6 +161,33 @@ public function memberQuery(): void
 }
 ```
 
+## Agent authorization lifecycle (unpublished candidate)
+
+PHP 8.1+ and PHP 7.3 provide the optional server-side `AgentAuth` helper for browser consent.
+The additions in this branch let the business backend find the device session created by an
+authorization and withdraw access when a device is lost or an operator leaves. They require
+matching candidate Core sources; public stable Core v0.6.1 and its SDK bundles do not include them.
+
+```php
+$auth = new \Bailing\Connect\AgentAuth('https://hub.example.com', $clientToken);
+$page = $auth->listSessions(['tenant' => (string) $tenantId, 'limit' => 20]);
+$context = $auth->context($authorizationId); // Existing fields plus session on consumed records.
+$result = $auth->revokeAuthorization($authorizationId);
+```
+
+Only the current Client App is queried. The backend must also authorize its caller to manage the
+requested tenant or operator. An operator filter requires `principal_id` and `tenant`; an empty
+tenant explicitly selects a tenantless identity. Pass an opaque `next_cursor` with the original
+filters until it is null; pages reflect current state rather than a frozen snapshot.
+Expiry follows the refresh/session lifetime, and `active` is not proof of current business access.
+Missing session mappings must not be inferred. Revocation is idempotent for the same authorization;
+a timeout/503 or a consumed record's missing-mapping 404 must not be reported as success.
+`revokeSession()` remains available for a known Session ID, and Client Tokens stay server-side.
+
+Node and Python currently have no separate `AgentAuth` helper. Use the same backend HTTP contract
+without introducing another authorization protocol. See [Agent Auth v1](AGENT_AUTH_API.en.md)
+and the [integration quickstart](AGENT_CLIENT_QUICKSTART.en.md).
+
 ## Contract Test
 
 All SDKs are validated against the same tool contract:
@@ -175,3 +202,7 @@ npm run sdk:test-p1
 ```
 
 These tests build SDK-generated specs, compile them through the hub's OpenAPI tool compiler, verify runtime helpers across PHP/Node/Python, and compile or source-check the Java/Go/.NET SDKs depending on the local toolchain.
+
+The runtime checks use `php` by default for both PHP source variants. Set
+`BAILING_SDK_PHP7_BINARY` to a real PHP 7.3/7.4 executable to verify that interpreter; running the
+PHP 7-compatible source on PHP 8 does not establish PHP 7 runtime coverage.

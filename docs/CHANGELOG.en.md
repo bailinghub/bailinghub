@@ -22,6 +22,10 @@ Each public version should describe:
 
 ## Unreleased
 
+- **Authorization lifecycle candidate**: a business backend can page through its own app's sessions by tenant, operator or original authorization. Consumed authorization context exposes a reliable Session link, and access can be withdrawn using the original authorization ID. Revocation and code exchange are atomic; repeated revocation is idempotent.
+- **SDK and consumption**: PHP 8.1+ / PHP 7.3 add `listSessions()` and `revokeAuthorization()` while preserving `context()`. No business UI or tool declarations change. Pages reflect current state, expiry follows the refresh lifetime, and active state does not replace business permission checks. Missing mappings, 503s and timeouts are not proof of revocation.
+- **Lifecycle compatibility**: no new SQL migration. Hosts without the optional repository methods return 503 for new list/revoke operations; existing context remains readable with a null missing mapping. This is an unpublished source candidate, absent from public stable v0.6.1 and its download bundles. See the [authorization contract](AGENT_AUTH_API.en.md) and [quickstart](AGENT_CLIENT_QUICKSTART.en.md).
+
 - **Cross-system conversation candidate**: explicit capability discovery and v2 membership can associate independent authorized Sessions from different Client Apps and workspaces on one Hub with a visible conversation. Each member proves its own authority and the whole group is revalidated; execution, approvals, invocations and memory keep their original ownership.
 - **Console**: members and execution cards show their own system and workspace. The conversation header identifies only the archive writer; missing per-member fields on legacy records are labelled explicitly.
 - **Consumption and schema**: only additive migration `058_agent_conversation_member_bindings.sql` is new; 057 remains unchanged. New repository methods are optional for private Hosts. Missing methods or columns disable cross-system support while v1 remains usable. Clients must negotiate support explicitly; one Session cannot represent two workspaces, and cross-Hub membership is unsupported.

@@ -215,6 +215,23 @@ $result = $agentAuth->approve(
 
 完整关系与 HTTP 契约见中枢文档 `docs/AGENT_CLIENT_QUICKSTART.md` 和 `docs/AGENT_AUTH_API.md`。
 
+**未发布的生命周期候选**还支持核对和收回现有授权，需配套候选 Core；公开稳定 Core v0.6.1
+及其下载包尚不包含本增量。PHP 7.3 版与 PHP 8.1+ 版方法和语义一致：
+
+```php
+$page = $agentAuth->listSessions(array('tenant' => (string) $tenantId, 'limit' => 20));
+$context = $agentAuth->context($authorizationId);
+$session = isset($context['session']) ? $context['session'] : null;
+$revoked = $agentAuth->revokeAuthorization($authorizationId);
+```
+
+默认每页 20 条、最大 100；下一页保留全部筛选条件并传 `next_cursor`，null 表示结束。按操作人
+筛选必须同时传 `principal_id` 与 `tenant`，无租户用 `tenant => ''`。分页反映当前状态，不是跨请求
+快照。`session` 缺失/null 不可猜测；`active` 不保证业务账号仍有权限，过期按 refresh 生命周期判断。
+撤销同一授权可幂等重试，503/超时或 consumed 映射缺失的 404 不代表成功。后端先确认管理权限，
+再调用这些方法；Client Token 不进入浏览器。完整字段见
+[Agent Auth v1](../../docs/AGENT_AUTH_API.md)。
+
 ## 范例
 
 - `examples/build-spec.php`：完整 builder 范例（覆盖全部字段；与 8.x 版同源，跑同一个跨语言契约测试）

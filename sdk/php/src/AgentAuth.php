@@ -29,6 +29,48 @@ final class AgentAuth
     }
 
     /**
+     * 查询当前接入方的授权会话；principal_id 必须同时指定 tenant。
+     * tenant='' 精确选择无租户主体，省略 tenant 则不按租户过滤。
+     *
+     * @param array{authorization_id?:string,on_behalf_of?:string,principal_id?:string,tenant?:string,state?:string,limit?:int,cursor?:string} $filters
+     * @return array<string,mixed>
+     */
+    public function listSessions(array $filters = []): array
+    {
+        $allowed = ['authorization_id', 'on_behalf_of', 'principal_id', 'tenant', 'state', 'limit', 'cursor'];
+        foreach ($filters as $key => $value) {
+            if (!in_array($key, $allowed, true)) {
+                throw new InvalidArgumentException('未知会话筛选字段');
+            }
+            if ($key === 'authorization_id') {
+                if (!is_string($value) || !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iD', $value)) {
+                    throw new InvalidArgumentException('authorization_id 必须是 UUID');
+                }
+            } elseif (in_array($key, ['on_behalf_of', 'principal_id', 'tenant'], true)) {
+                self::assertFilterString($value, $key, $key === 'on_behalf_of' ? 191 : 128, $key === 'tenant');
+            } elseif ($key === 'state' && !in_array($value, ['active', 'expired', 'revoked'], true)) {
+                throw new InvalidArgumentException('state 必须是 active、expired 或 revoked');
+            } elseif ($key === 'limit' && (!is_int($value) || $value < 1 || $value > 100)) {
+                throw new InvalidArgumentException('limit 必须是 1 到 100 的整数');
+            } elseif ($key === 'cursor' && (!is_string($value) || strlen($value) > 2048 || !preg_match('/^[A-Za-z0-9_-]+$/D', $value))) {
+                throw new InvalidArgumentException('cursor 必须是非空、不带填充的 base64url 字符串，长度不超过 2048');
+            }
+        }
+        if (array_key_exists('principal_id', $filters) && !array_key_exists('tenant', $filters)) {
+            throw new InvalidArgumentException('principal_id 必须同时指定 tenant');
+        }
+        $query = http_build_query($filters, '', '&', PHP_QUERY_RFC3986);
+        return $this->hub->get('/agent-auth/v1/sessions' . ($query === '' ? '' : '?' . $query));
+    }
+
+    /** @return array<string,mixed> */
+    public function revokeAuthorization(string $authorizationId): array
+    {
+        self::assertId($authorizationId, 'authorizationId');
+        return $this->hub->post('/agent-auth/v1/authorizations/' . rawurlencode($authorizationId) . '/revoke', []);
+    }
+
+    /**
      * @param array{id:string,tenant?:string,roles?:array<int,string>,audience?:string,channel?:string} $principal
      * @param array<int,string> $allowedRoutes
      * @return array<string,mixed>
@@ -71,8 +113,25 @@ final class AgentAuth
 
     private static function assertId(string $value, string $name): void
     {
-        if (!preg_match('/^[0-9a-f-]{36}$/i', $value)) {
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iD', $value)) {
             throw new InvalidArgumentException($name . ' 必须是 UUID');
+        }
+    }
+
+    private static function assertFilterString(mixed $value, string $name, int $max, bool $allowEmpty): void
+    {
+        if (!is_string($value) || (!$allowEmpty && $value === '') ||
+            preg_match('/[\x00-\x1f\x7f]|^[\p{Z}\x{FEFF}]|[\p{Z}\x{FEFF}]$/u', $value) ||
+            preg_match_all('/./us', $value, $characters) === false) {
+            throw new InvalidArgumentException($name . ' 必须是无首尾空白或控制字符的有效字符串');
+        }
+        // 与 HTTP 服务端的 UTF-16 长度一致，不依赖 mbstring 扩展。
+        $length = 0;
+        foreach ($characters[0] as $character) {
+            $length += strlen($character) > 3 ? 2 : 1;
+        }
+        if ($length > $max) {
+            throw new InvalidArgumentException($name . ' 长度超出限制');
         }
     }
 }
