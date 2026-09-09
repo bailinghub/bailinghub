@@ -17,23 +17,25 @@ const JOB_A = 'fixture-job-a';
 const JOB_B = 'fixture-job-b';
 const timestamp = (second = 0) => `2026-09-08T01:00:${String(second).padStart(2, '0')}.000Z`;
 const members = [
-  { session_id: SESSION_A, display_label: 'FIXTURE · 示例授权 A', confirmed: true, principal: { id: 'fixture-a', tenant: 'fixture-tenant-a', roles: ['reader'] }, on_behalf_of: 'fixture-principal-a' },
-  { session_id: SESSION_B, display_label: 'FIXTURE · 示例授权 B', confirmed: true, principal: { id: 'fixture-b', tenant: 'fixture-tenant-b', roles: ['reader'] }, on_behalf_of: 'fixture-principal-b' },
+  { session_id: SESSION_A, display_label: 'FIXTURE · 示例授权 A', confirmed: true, client_app_id: 'fixture-crm', client_name: 'FIXTURE CRM', route_key: 'fixture-crm-customers', principal: { id: 'fixture-a', tenant: 'fixture-tenant-a', roles: ['reader'] }, on_behalf_of: 'fixture-principal-a' },
+  { session_id: SESSION_B, display_label: 'FIXTURE · 示例授权 B', confirmed: true, client_app_id: 'fixture-erp', client_name: 'FIXTURE ERP', route_key: 'fixture-erp-orders', principal: { id: 'fixture-b', tenant: 'fixture-tenant-b', roles: ['reader'] }, on_behalf_of: 'fixture-principal-b' },
 ];
+// Old admin schema v1 responses omit all member-level system/route fields.
+const { client_app_id, client_name, route_key, ...legacyMember } = members[0];
 const event = (sequence, kind, values = {}) => ({
   event_id: `fixture-event-${sequence}`, sequence, client_turn_id: 'fixture-turn-1', kind,
   created_at: timestamp(sequence), ...values,
 });
 const fullAnswer = '[FIXTURE · 脱敏客户端完整答复]\n\n'
   + '已分别完成两个授权下的只读查询。\n\n'
-  + '示例授权 A：找到演示对象 ALPHA，状态为“可用”，展示数量为 12。\n'
-  + '示例授权 B：找到演示对象 BETA，状态为“待检查”，展示数量为 7。\n\n'
+  + 'CRM 示例授权 A：找到演示对象 ALPHA，状态为“可用”，展示数量为 12。\n'
+  + 'ERP 示例授权 B：找到演示对象 BETA，状态为“待检查”，展示数量为 7。\n\n'
   + '两项结果来自各自独立的授权执行。本条消息保留客户端提交的完整可见答复，'
   + '不是把两条执行摘要拼接后推测出来的正文。工具卡片可分别打开原始授权记录和工具详情。\n\n'
   + '本次仅进行了查询，没有更新任何业务对象。以上名称、数量、身份和执行记录全部是本地 UI fixture。';
 const events = [
   event(1, 'turn_start', { status: 'running' }),
-  event(2, 'user_message', { content: '[FIXTURE] 请分别查询示例授权 A 和示例授权 B 的业务对象，在同一条答复中汇总。只查询，不执行写操作。' }),
+  event(2, 'user_message', { content: '[FIXTURE] 请分别查询 CRM 示例授权 A 和 ERP 示例授权 B 的业务对象，在同一条答复中汇总。只查询，不执行写操作。' }),
   event(3, 'run_link', { run_id: RUN_A, member_session_id: SESSION_A, thread_id: 101 }),
   event(4, 'run_link', { run_id: RUN_B, member_session_id: SESSION_B, thread_id: 102 }),
   event(5, 'assistant_message', { content: fullAnswer }),
@@ -46,18 +48,19 @@ const events = [
 ];
 const conversation = {
   conversation_id: CONVERSATION_ID, client_archive_id: '55555555-5555-4555-8555-555555555551',
-  client_conversation_id: 'FIXTURE · 两授权完整对话与跨页记录', client_app_id: 'fixture-client', route_key: 'fixture-route',
+  client_conversation_id: 'FIXTURE · 跨系统两授权完整对话与跨页记录', client_app_id: 'fixture-crm', route_key: 'fixture-crm-customers',
   state: 'ready', member_count: 2, confirmed_count: 2, last_sequence: 10, message_count: 4, turn_count: 2,
   last_turn_status: 'completed', created_at: timestamp(), updated_at: timestamp(10),
 };
 const history = {
   ...conversation, conversation_id: HISTORY_ID, client_archive_id: '55555555-5555-4555-8555-555555555552',
   client_conversation_id: 'FIXTURE · 历史授权记录尚无客户端正文', member_count: 1, confirmed_count: 1,
+  client_app_id: 'fixture-legacy-client', route_key: 'fixture-legacy-route',
   last_sequence: 0, message_count: 0, turn_count: 0, last_turn_status: null, updated_at: timestamp(),
 };
 const thread = (id) => ({
-  thread_id: id, channel: 'agent:fixture', client_name: 'FIXTURE Client', principal_id: id === 101 ? 'fixture-a' : 'fixture-b',
-  scope_key: 'fixture-scope', route_name: 'fixture-route', message_count: 2,
+  thread_id: id, channel: 'agent:fixture', client_name: members[id === 101 ? 0 : 1].client_name, principal_id: id === 101 ? 'fixture-a' : 'fixture-b',
+  scope_key: 'fixture-scope', route_name: members[id === 101 ? 0 : 1].route_key, message_count: 2,
   last_active_at: timestamp(6), last_preview: `FIXTURE · 仅授权 ${id === 101 ? 'A' : 'B'} 执行摘要`,
 });
 const threads = [thread(101), thread(102)];
@@ -79,7 +82,7 @@ const jobTrace = (jobId) => {
   const isA = jobId === JOB_A;
   return {
     job: { job_id: jobId, request_id: `fixture-request-${isA ? 'a' : 'b'}`, status: 'done', target: 'tool', source: 'agent_client',
-      client_app_id: 'fixture-client', thread_id: isA ? 101 : 102, conversation_audit_id: CONVERSATION_ID,
+      client_app_id: members[isA ? 0 : 1].client_app_id, thread_id: isA ? 101 : 102, conversation_audit_id: CONVERSATION_ID,
       client_turn_id: 'fixture-turn-1', created_at: timestamp(3), raw_input: '脱敏查询参数（FIXTURE）',
       result: { text: `授权 ${isA ? 'A' : 'B'} 查询完成（FIXTURE）` }, dispatch: {} },
     trace: trace(isA ? 'A' : 'B'),
@@ -117,7 +120,7 @@ export function fixtureApi(url) {
     const page = remaining.slice(0, after === 0 ? Math.min(3, requestedLimit) : requestedLimit);
     const has_more = remaining.length > page.length;
     return { schema: 'bailing.agent-conversation-audit-detail.v1', conversation: isHistory ? history : conversation,
-      members: isHistory ? [members[0]] : members, events: page, has_more,
+      members: isHistory ? [legacyMember] : members, events: page, has_more,
       next_after_sequence: has_more ? page.at(-1).sequence : null };
   }
   if (path === '/admin/api/threads') return threads;

@@ -2,16 +2,22 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PayloadTooLargeError, readBody, send } from '../app/http';
 import type { AgentToolAuthContext } from '../app/agent-tool-invocations';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
-import { createConversationAuditFor, confirmConversationAuditFor, appendConversationAuditFor } from '../app/agent-conversation-audit';
+import { createConversationAuditFor, confirmConversationAuditFor, appendConversationAuditFor, conversationAuditCapabilitiesFor } from '../app/agent-conversation-audit';
 import { ConversationAuditError } from '../core/runtime/agent-conversation-audit';
 
-/** Agent write-only surface. No GET or transcript body is exposed to a bearer. */
+/** Agent write-only ledger; the sole GET exposes capability metadata, never text. */
 export async function handleAgentConversationAuditFor(
   store: ConfigStoreContract | null, auth: AgentToolAuthContext,
   req: IncomingMessage, res: ServerResponse, path: string,
 ): Promise<boolean> {
   const base = '/agent-api/v1/conversation-audits';
   if (path !== base && !path.startsWith(`${base}/`)) return false;
+  res.setHeader('cache-control', 'no-store');
+  if (path === `${base}/capabilities` && req.method === 'GET') {
+    try { send(res, 200, await conversationAuditCapabilitiesFor(store)); }
+    catch { send(res, 503, { error: 'conversation_audit_unavailable' }); }
+    return true;
+  }
   const member = path.match(/^\/agent-api\/v1\/conversation-audits\/([0-9a-f-]{36})\/(confirm|events)$/i);
   if (req.method !== 'POST' || (path !== base && !member)) {
     send(res, 404, { error: 'not_found' });

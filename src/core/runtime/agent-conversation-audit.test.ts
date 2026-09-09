@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { ConversationAuditError, parseCreateConversationAudit, parseConversationAuditEvents } from './agent-conversation-audit';
+import { ConversationAuditError, parseCreateConversationAudit, parseCreateCrossBindingConversationAudit, parseConversationAuditEvents } from './agent-conversation-audit';
 import { conversationAuditFixture, AUDIT_SESSION_A } from '../../test-support/agent-conversation-audit-fixture';
 
 test('visible text preserves original characters and refuses undeclared reasoning or identity fields', () => {
@@ -35,4 +35,22 @@ test('event batches enforce continuity, unique ids and explicit byte or total-ev
     [{ ...event, sequence: 20_001 }],
     Array.from({ length: 5 }, (_, index) => ({ ...event, event_id: `large-${index}`, sequence: index + 1, content: 'a'.repeat(64_000) })),
   ]) assert.throws(() => parseConversationAuditEvents({ events: batch }), (error: unknown) => error instanceof ConversationAuditError && error.code === 'conversation_audit_limit' && error.statusCode === 413);
+});
+
+test('cross-binding membership is explicit, canonical and cannot reuse one Session for two routes', () => {
+  const fx = conversationAuditFixture({ crossBinding: true });
+  const input = fx.crossInput();
+  assert.deepEqual(parseCreateCrossBindingConversationAudit({ ...input, members: [...input.members].reverse() }), input);
+  for (const patch of [
+    { schema: 'bailing.agent-conversation-audit-create.v1' },
+    { route: 'orders' }, { hub_url: 'https://other-hub.example.com' },
+    { member_session_ids: [AUDIT_SESSION_A] }, { members: [] },
+    { members: [input.members[0], { ...input.members[0], route: 'inventory' }] },
+    { members: [{ ...input.members[0], client_app_id: 'WRONG_CASE' }] },
+    { members: [{ ...input.members[0], route: 'auto' }] },
+    { members: [{ ...input.members[0], label: 'x'.repeat(129) }] },
+    { members: [{ ...input.members[0], access_token: 'never permitted' }] },
+  ]) assert.throws(() => parseCreateCrossBindingConversationAudit({ ...input, ...patch }),
+    (error: unknown) => error instanceof ConversationAuditError && error.statusCode === 400);
+  assert.throws(() => parseCreateConversationAudit(input), 'old v1 must never infer a wider membership');
 });

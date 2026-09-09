@@ -199,6 +199,53 @@ test('Core Schema Migrator: 同名列结构冲突时不容忍、不记账', asyn
   assert.equal(connection.ledger.has('003_executor.sql'), false);
 });
 
+test('Core Schema Migrator: 058 upgrades a 057 ledger additively and is idempotent for private Hosts', async () => {
+  const connection = new FakeMigrationConnection();
+  seedLedgerWithCurrentChecksums(connection);
+  connection.ledger.delete('058_agent_conversation_member_bindings.sql');
+  const original057 = connection.ledger.get('057_agent_conversation_audit.sql');
+  const result = await migrateBailingHubCoreSchema({ mysql: MYSQL_CONFIG, connection });
+  assert.deepEqual(result.appliedFiles, ['058_agent_conversation_member_bindings.sql']);
+  assert.equal(connection.migrationStatements.length, 4);
+  for (const sql of connection.migrationStatements) {
+    assert.match(sql, /^ALTER TABLE `bz_agent_conversation_(audits|members)` ADD COLUMN /);
+    assert.match(sql, / DEFAULT /);
+    assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|DROP|MODIFY|RENAME)\b/i);
+  }
+  assert.equal(connection.ledger.get('057_agent_conversation_audit.sql'), original057);
+  const rerun = await migrateBailingHubCoreSchema({ mysql: MYSQL_CONFIG, connection });
+  assert.deepEqual(rerun.appliedFiles, []);
+  assert.equal(connection.migrationStatements.length, 4);
+  assert.equal(connection.ends, 0, 'the private Host retains ownership of its injected connection');
+});
+
+test('Core Schema Migrator: a partial 058 replay verifies actual column definitions before recording success', async () => {
+  const migration = '058_agent_conversation_member_bindings.sql';
+  for (const conflicting of [false, true]) {
+    const connection = new FakeMigrationConnection();
+    seedLedgerWithCurrentChecksums(connection);
+    connection.ledger.delete(migration);
+    connection.statementFaults = [
+      { pattern: /ADD COLUMN `membership_version`/, errno: 1060 },
+      { pattern: /ADD COLUMN `client_app_id`/, errno: 1060 },
+    ];
+    connection.fullColumns.set('bz_agent_conversation_audits', [
+      { Field: 'membership_version', Type: 'tinyint unsigned', Null: 'NO', Default: '1' },
+    ]);
+    connection.fullColumns.set('bz_agent_conversation_members', [
+      { Field: 'client_app_id', Type: conflicting ? 'varchar(32)' : 'varchar(64)', Null: 'YES', Default: null },
+    ]);
+    if (conflicting) {
+      await assert.rejects(migrateBailingHubCoreSchema({ mysql: MYSQL_CONFIG, connection }), /058_agent_conversation_member_bindings\.sql 执行失败/);
+      assert.equal(connection.ledger.has(migration), false);
+    } else {
+      const result = await migrateBailingHubCoreSchema({ mysql: MYSQL_CONFIG, connection });
+      assert.deepEqual(result.appliedFiles, [migration]);
+      assert.equal(result.toleratedStatements, 2);
+    }
+  }
+});
+
 test('Core Schema Migrator: 兼容文件名旧账本，补录摘要但绝不重放已记账 SQL', async () => {
   const connection = new FakeMigrationConnection();
   const official = officialMigrations();

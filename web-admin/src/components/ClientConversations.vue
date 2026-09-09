@@ -7,7 +7,7 @@
         <el-empty v-else-if="!listLoading && !conversations.length" :image-size="56" description="尚无客户端正文归档；历史记录可在「原授权记录」查看" />
         <button v-for="item in conversations" :key="item.conversation_id" type="button" class="conversationItem"
           :class="{ selected: currentId === item.conversation_id }" @click="emit('select', item.conversation_id)">
-          <div class="itemHeading"><b>{{ item.client_app_id }}</b><el-tag size="small" effect="plain" :type="statusType(item.last_turn_status)">{{ item.last_turn_status ? turnStatusLabel(item.last_turn_status) : auditStatusLabel(item.state) }}</el-tag></div>
+          <div class="itemHeading"><b>归档写入方：{{ item.client_app_id }}</b><el-tag size="small" effect="plain" :type="statusType(item.last_turn_status)">{{ item.last_turn_status ? turnStatusLabel(item.last_turn_status) : auditStatusLabel(item.state) }}</el-tag></div>
           <div class="conversationName mono">{{ item.client_conversation_id }}</div>
           <div class="muted">已接收 {{ item.turn_count }} 轮 / {{ item.message_count }} 条消息 · {{ item.member_count }} 项授权</div>
           <div class="muted itemTime">{{ fmtTime(item.updated_at, true) }}</div>
@@ -21,11 +21,19 @@
       <el-empty v-if="!conversation && !detailLoading && !detailError" :image-size="80" description="选择一条对话，查看客户端正文与每轮授权执行" />
       <template v-if="conversation">
         <header class="conversationHeader">
-          <div class="headerRow"><b>{{ conversation.client_app_id }}</b><el-tag size="small" effect="plain">{{ conversation.route_key }}</el-tag><el-tag size="small" effect="plain" :type="conversation.state === 'ready' ? 'success' : 'warning'">{{ auditStatusLabel(conversation.state) }}</el-tag></div>
+          <div class="headerRow"><b>归档写入方：{{ conversation.client_app_id }}</b><el-tag size="small" effect="plain">写入路由：{{ conversation.route_key }}</el-tag><el-tag size="small" effect="plain" :type="conversation.state === 'ready' ? 'success' : 'warning'">{{ auditStatusLabel(conversation.state) }}</el-tag></div>
           <div class="mono conversationName">{{ conversation.client_conversation_id }}</div>
           <div class="muted">已接收 {{ conversation.turn_count }} 轮 / {{ conversation.message_count }} 条消息 · {{ conversation.confirmed_count }}/{{ conversation.member_count }} 项授权已确认</div>
           <div class="muted provenance">展示客户端已同步的可见文本，旧历史或未同步内容可能缺失。授权卡片链接中枢验证的执行记录；正文与执行结果分别展示，隐藏推理不在此记录。</div>
-          <div class="members"><el-tag v-for="member in members" :key="member.session_id" size="small" effect="plain" :type="member.confirmed ? 'info' : 'warning'">{{ member.display_label || '未命名授权' }}{{ member.confirmed ? '' : ' · 待确认' }}</el-tag></div>
+          <div class="muted provenance">每项授权分别记录其系统、路由与 Session，业务身份和权限不合并。</div>
+          <div class="members">
+            <article v-for="member in memberCards" :key="member.session_id" class="memberCard" :data-member-session-id="member.session_id">
+              <el-tag size="small" effect="plain" :type="member.confirmed ? 'info' : 'warning'">{{ member.display_label || '未命名授权' }}{{ member.confirmed ? '' : ' · 待确认' }}</el-tag>
+              <div class="muted memberTarget"><span>系统：{{ member.context.systemLabel }}</span><span>路由：{{ member.context.routeLabel }}</span></div>
+              <div v-if="member.context.source === 'legacy_header'" class="missingText">旧记录：仅有归档头部信息，未单独记录成员系统与路由。</div>
+              <div class="muted mono memberSession">Session：{{ member.session_id }}</div>
+            </article>
+          </div>
         </header>
         <el-alert v-if="conversation.state !== 'ready'" title="授权成员尚未全部确认，对话归档尚未就绪。" type="warning" :closable="false" class="notice" />
         <div class="loadedCount muted">已加载 {{ turns.length }} 轮、{{ loadedMessageCount }} 条消息（{{ events.length }} 条归档事件）<span v-if="hasMore"> · 下方可继续加载</span></div>
@@ -47,6 +55,10 @@
             <div class="muted runsHeading">本轮各授权执行 · {{ turn.runs.length }} 条关联记录</div>
             <article v-for="run in turn.runs" :key="run.event_id" class="authorizationRun">
               <div class="runHead"><b>{{ memberLabel(run.member_session_id) }}</b><el-tag size="small" effect="plain" :type="statusType(runTraces[run.run_id || '']?.data?.run.status)">{{ runTraces[run.run_id || '']?.data ? auditStatusLabel(runTraces[run.run_id || ''].data?.run.status) : '已关联执行' }}</el-tag></div>
+              <div class="muted memberTarget"><span>系统：{{ memberContext(run.member_session_id).systemLabel }}</span><span>路由：{{ memberContext(run.member_session_id).routeLabel }}</span></div>
+              <div v-if="memberContext(run.member_session_id).source === 'legacy_header'" class="missingText">旧记录：仅有归档头部信息，未单独记录成员系统与路由。</div>
+              <div v-else-if="memberContext(run.member_session_id).source === 'unavailable'" class="missingText">缺少授权成员的系统与路由信息，保留原执行关联。</div>
+              <div class="muted mono memberSession">Session：{{ run.member_session_id || '未记录' }}</div>
               <div class="muted mono runId">run: {{ run.run_id || '缺少执行标识' }}</div>
               <div class="runActions"><el-button v-if="run.run_id && run.thread_id" size="small" plain :loading="runTraces[run.run_id]?.loading" @click="toggleRunTrace(run)">{{ runTraces[run.run_id]?.open ? '收起授权轨迹' : '查看授权轨迹' }}</el-button><el-button v-if="run.thread_id" size="small" link type="primary" @click="emit('open-thread', run.thread_id)">原授权记录</el-button><span v-if="!run.thread_id" class="missingText">缺少原授权记录关联，无法打开执行轨迹。</span></div>
               <div v-if="run.run_id && runTraces[run.run_id]?.open" class="runTrace">
@@ -79,7 +91,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { api } from '../request';
 import { fmtTime } from '../util';
-import { auditStatusLabel, groupAuditTurns, mergeAuditEvents } from './conversation-audit';
+import { auditMemberContext, auditStatusLabel, groupAuditTurns, mergeAuditEvents } from './conversation-audit';
 import type { AuditConversation, AuditMember, AuditEvent, AuditListPage, AuditDetailPage } from './conversation-audit';
 
 const props = defineProps<{ selectedId?: string; focusTurn?: string }>();
@@ -98,6 +110,7 @@ const detailLoading = ref(false), moreLoading = ref(false), hasMore = ref(false)
 const runTraces = reactive<Record<string, RunTraceState>>({});
 let listGeneration = 0, detailGeneration = 0;
 const turns = computed(() => groupAuditTurns(events.value));
+const memberCards = computed(() => members.value.map(member => ({ ...member, context: auditMemberContext(member, conversation.value) })));
 const loadedMessageCount = computed(() => events.value.filter(event => event.kind === 'user_message' || event.kind === 'assistant_message').length);
 function statusType(status?: string | null): 'info' | 'success' | 'warning' | 'danger' {
   if (status === 'completed' || status === 'executed' || status === 'ready') return 'success';
@@ -106,6 +119,7 @@ function statusType(status?: string | null): 'info' | 'success' | 'warning' | 'd
   return 'info';
 }
 function memberLabel(sessionId?: string): string { return members.value.find(member => member.session_id === sessionId)?.display_label || '未识别授权（保留原执行关联）'; }
+function memberContext(sessionId?: string) { return memberCards.value.find(member => member.session_id === sessionId)?.context || auditMemberContext(undefined, conversation.value); }
 function turnStatusLabel(status?: string | null): string {
   if (status === 'completed') return '本轮已结束';
   if (status === 'failed') return '本轮失败';
@@ -229,6 +243,9 @@ defineExpose({ refresh });
 .runsHeading { margin-bottom: 8px; }
 .authorizationRun { border: 1px solid var(--el-border-color-lighter); padding: 12px; margin-top: 8px; }
 .runId { margin: 7px 0; overflow-wrap: anywhere; }
+.memberCard { flex: 1 1 260px; min-width: 0; padding: 10px; border: 1px solid var(--el-border-color-lighter); }
+.memberTarget { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0; overflow-wrap: anywhere; }
+.memberSession { overflow-wrap: anywhere; }
 .runActions { margin-top: 8px; }
 .runActions .el-button + .el-button { margin-left: 0; }
 .runTrace { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--el-border-color); }

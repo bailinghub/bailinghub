@@ -22,6 +22,11 @@ Each public version should describe:
 
 ## Unreleased
 
+- **Cross-system conversation candidate**: explicit capability discovery and v2 membership can associate independent authorized Sessions from different Client Apps and workspaces on one Hub with a visible conversation. Each member proves its own authority and the whole group is revalidated; execution, approvals, invocations and memory keep their original ownership.
+- **Console**: members and execution cards show their own system and workspace. The conversation header identifies only the archive writer; missing per-member fields on legacy records are labelled explicitly.
+- **Consumption and schema**: only additive migration `058_agent_conversation_member_bindings.sql` is new; 057 remains unchanged. New repository methods are optional for private Hosts. Missing methods or columns disable cross-system support while v1 remains usable. Clients must negotiate support explicitly; one Session cannot represent two workspaces, and cross-Hub membership is unsupported.
+- **Validation**: real HTTP authentication and transactional repository tests cover member proofs, a writer that is not the first sorted member, forged App/route/run ownership, whole-group revocation, ACK deduplication, old Host/v1 compatibility and additive migration replay. This candidate is unpublished and undeployed; its unchanged package version does not identify the candidate. See the [archive contract](AGENT_CONVERSATION_AUDIT.en.md).
+
 ## v0.6.1 - Conversation Release and Package Source Verification
 
 Planned release date: 2026-09-08.

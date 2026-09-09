@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { AgentSession, Client } from '../core/contracts/types';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { AgentConversationAuditRepository } from '../infrastructure/config/config-agent-conversation-audit-repository';
-import { parseCreateConversationAudit } from '../core/runtime/agent-conversation-audit';
+import { parseCreateConversationAudit, parseCreateCrossBindingConversationAudit } from '../core/runtime/agent-conversation-audit';
 
 type Row = Record<string, any>;
 export const AUDIT_SESSION_A = '123e4567-e89b-42d3-a456-426614174001';
@@ -15,13 +15,19 @@ export const AUDIT_ARCHIVE = '323e4567-e89b-42d3-a456-426614174001';
 function duplicate(): never { throw Object.assign(new Error('duplicate fixture key'), { code: 'ER_DUP_ENTRY' }); }
 
 /** Synthetic SQL model for transactional repository tests; no socket, user DB or credentials. */
-export function conversationAuditFixture() {
+export function conversationAuditFixture(options: { crossBinding?: boolean; schemaReady?: boolean } = {}) {
   const client: Client = {
     app_id: 'example-business', name: 'Example', token: '', agent_authorize_url: 'https://business.example.com/authorize',
     allowed_routes: ['orders'], allowed_channels: [], rate_limit_per_min: 0, enabled: true,
   };
   const route: Row = { route_key: 'orders', name: 'Orders', enabled: true, profile: 'general',
     agent_client: { enabled: true }, tools: { agent_direct: { enabled: true } } };
+  const clients = new Map<string, Client>([[client.app_id, client]]);
+  const routes = new Map<string, Row>([[route.route_key, route]]);
+  const migrationColumns = new Set(options.schemaReady === false ? [] : [
+    'bz_agent_conversation_audits.membership_version', 'bz_agent_conversation_members.client_app_id',
+    'bz_agent_conversation_members.route_key', 'bz_agent_conversation_members.client_name',
+  ]);
   const sessions = new Map<string, Row>();
   for (const [id, tenant] of [[AUDIT_SESSION_A, 'store-a'], [AUDIT_SESSION_B, 'store-b'], [AUDIT_SESSION_C, 'store-c']]) {
     sessions.set(id!, {
@@ -37,6 +43,12 @@ export function conversationAuditFixture() {
     [AUDIT_RUN_A, { run_id: AUDIT_RUN_A, session_id: AUDIT_SESSION_A, client_app_id: client.app_id, route_key: 'orders', thread_id: 101, client_conversation_id: 'client-conversation', client_turn_id: 'turn-1' }],
     [AUDIT_RUN_B, { run_id: AUDIT_RUN_B, session_id: AUDIT_SESSION_B, client_app_id: client.app_id, route_key: 'orders', thread_id: 102, client_conversation_id: 'client-conversation', client_turn_id: 'turn-1' }],
   ]);
+  if (options.crossBinding) {
+    clients.set('example-erp', { ...structuredClone(client), app_id: 'example-erp', name: 'Example ERP', allowed_routes: ['inventory'] });
+    routes.set('inventory', { ...structuredClone(route), route_key: 'inventory', name: 'Inventory' });
+    Object.assign(sessions.get(AUDIT_SESSION_B)!, { client_app_id: 'example-erp', allowed_routes: ['inventory'] });
+    Object.assign(runs.get(AUDIT_RUN_B)!, { client_app_id: 'example-erp', route_key: 'inventory' });
+  }
   const queries: Array<{ sql: string; params: any[]; transactional: boolean }> = [];
   let transaction = false;
   let snapshot: { archives: Map<string, Row>; members: Map<string, Row>; events: Map<string, Row> };
@@ -44,8 +56,11 @@ export function conversationAuditFixture() {
     queries.push({ sql, params: structuredClone(params), transactional: transaction });
     if (sql.includes('FOR UPDATE')) assert.equal(transaction, true, 'locking reads must be inside the mutation transaction');
     let result: any;
-    if (sql.startsWith('SELECT') && sql.includes('FROM bz_clients')) result = params[0] === client.app_id ? [client] : [];
-    else if (sql.startsWith('SELECT') && sql.includes('FROM bz_routes')) result = params[0] === route.route_key ? [route] : [];
+    if (sql.startsWith('SELECT') && sql.includes('FROM information_schema.COLUMNS')) result = [...migrationColumns].map((column) => {
+      const [table_name, column_name] = column.split('.'); return { table_name, column_name };
+    });
+    else if (sql.startsWith('SELECT') && sql.includes('FROM bz_clients')) result = clients.has(params[0]) ? [clients.get(params[0])] : [];
+    else if (sql.startsWith('SELECT') && sql.includes('FROM bz_routes')) result = routes.has(params[0]) ? [routes.get(params[0])] : [];
     else if (sql.startsWith('SELECT') && sql.includes('FROM bz_agent_sessions')) result = sessions.has(params[0]) ? [sessions.get(params[0])] : [];
     else if (sql.startsWith('SELECT') && sql.includes('FROM bz_agent_client_runs')) result = runs.has(params[0]) ? [runs.get(params[0])] : [];
     else if (sql.startsWith('INSERT INTO bz_agent_conversation_audits')) {
@@ -105,7 +120,7 @@ export function conversationAuditFixture() {
   const repo = new AgentConversationAuditRepository(() => ({ query, getConnection: async () => connection }));
   const auth = (id = AUDIT_SESSION_A) => {
     const row = sessions.get(id)!;
-    return { client: structuredClone(client), session: {
+    return { client: structuredClone(clients.get(row.client_app_id)!), session: {
       ...structuredClone(row), principal: structuredClone(row.principal_json),
     } as AgentSession };
   };
@@ -115,9 +130,18 @@ export function conversationAuditFixture() {
     member_labels: { [AUDIT_SESSION_A]: 'Store A', [AUDIT_SESSION_B]: 'Store B' }, ...overrides,
   });
   const store = { agentConversationAudit: repo } as unknown as ConfigStoreContract;
+  const crossInput = (overrides: Row = {}) => parseCreateCrossBindingConversationAudit({
+    schema: 'bailing.agent-conversation-audit-create.v2', client_archive_id: AUDIT_ARCHIVE,
+    client_conversation_id: 'client-conversation', members: [
+      { session_id: AUDIT_SESSION_A, client_app_id: client.app_id, route: 'orders', label: 'CRM account' },
+      { session_id: AUDIT_SESSION_B, client_app_id: options.crossBinding ? 'example-erp' : client.app_id,
+        route: options.crossBinding ? 'inventory' : 'orders', label: 'ERP account' },
+    ], ...overrides,
+  });
   return {
-    repo, store, auth, input, client, route, sessions, runs, queries,
+    repo, store, auth, input, crossInput, client, route, clients, routes, migrationColumns, sessions, runs, queries,
     get archives() { return archives; }, get members() { return members; }, get events() { return events; },
     async ready() { const result = await repo.create(auth(), input()); return repo.confirm(auth(AUDIT_SESSION_B), String(result.conversation_id)); },
+    async readyCross() { const result = await repo.createCrossBinding(auth(), crossInput()); return repo.confirm(auth(AUDIT_SESSION_B), String(result.conversation_id)); },
   };
 }

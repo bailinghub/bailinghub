@@ -6,6 +6,9 @@ import { audienceAllows } from './identity-runtime';
 
 export const CONVERSATION_AUDIT_SCHEMA = 'bailing.agent-conversation-audit.v1';
 export const CONVERSATION_AUDIT_ACK_SCHEMA = 'bailing.agent-conversation-audit-ack.v1';
+export const CONVERSATION_AUDIT_CREATE_V2_SCHEMA = 'bailing.agent-conversation-audit-create.v2';
+export const CONVERSATION_AUDIT_CAPABILITIES_SCHEMA = 'bailing.agent-conversation-audit-capabilities.v1';
+export const CONVERSATION_AUDIT_MEMBER_BINDINGS = 'session-client-route.v1';
 export const CONVERSATION_AUDIT_MAX_EVENTS = 20_000;
 export const CONVERSATION_AUDIT_MAX_BYTES = 16 * 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -24,6 +27,7 @@ export function auditError(code = 'conversation_audit_conflict', status = 409): 
     ? 'The conversation audit is unavailable for this identity.'
     : status === 403 ? 'The frozen conversation authorization is no longer valid.'
       : status === 413 ? 'The conversation audit limit was exceeded; no events were truncated or saved.'
+        : status === 503 ? 'The conversation audit capability is unavailable.'
         : 'The conversation audit request conflicts with its frozen membership or event history.');
 }
 
@@ -83,6 +87,41 @@ export function parseCreateConversationAudit(value: unknown): CreateConversation
     client_conversation_id: identifier(value.client_conversation_id),
     route: value.route, member_session_ids: members, member_labels: labels,
   };
+}
+
+export interface ConversationAuditMemberBindingInput {
+  session_id: string;
+  client_app_id: string;
+  route: string;
+  label?: string;
+}
+
+export interface CreateCrossBindingConversationAuditInput {
+  schema: typeof CONVERSATION_AUDIT_CREATE_V2_SCHEMA;
+  client_archive_id: string;
+  client_conversation_id: string;
+  members: ConversationAuditMemberBindingInput[];
+}
+
+/** Explicit opt-in: v1 callers never acquire cross-client or cross-route scope. */
+export function parseCreateCrossBindingConversationAudit(value: unknown): CreateCrossBindingConversationAuditInput {
+  fields(value, ['schema', 'client_archive_id', 'client_conversation_id', 'members']);
+  if (value.schema !== CONVERSATION_AUDIT_CREATE_V2_SCHEMA || !Array.isArray(value.members) ||
+    value.members.length < 1 || value.members.length > 64) invalid();
+  const members = value.members.map((raw): ConversationAuditMemberBindingInput => {
+    fields(raw, ['session_id', 'client_app_id', 'route'], ['label']);
+    if (typeof raw.client_app_id !== 'string' || !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(raw.client_app_id) ||
+      typeof raw.route !== 'string' || !/^[a-z0-9][a-z0-9_-]{1,63}$/.test(raw.route) || raw.route === 'auto') invalid();
+    return {
+      session_id: auditUuid(raw.session_id), client_app_id: raw.client_app_id, route: raw.route,
+      ...(raw.label !== undefined ? { label: text(raw.label, 128) } : {}),
+    };
+  }).sort((a, b) => a.session_id.localeCompare(b.session_id));
+  // One session cannot identify two targets, even if both routes are permitted.
+  if (new Set(members.map((member) => member.session_id)).size !== members.length) invalid();
+  return { schema: CONVERSATION_AUDIT_CREATE_V2_SCHEMA,
+    client_archive_id: auditUuid(value.client_archive_id),
+    client_conversation_id: identifier(value.client_conversation_id), members };
 }
 
 export type ConversationAuditEventKind = 'turn_start' | 'user_message' | 'assistant_message' | 'run_link' | 'turn_end';

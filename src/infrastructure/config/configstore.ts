@@ -61,7 +61,9 @@ export type ObservabilityLedgerContract =
   Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>
   & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>>;
 export type AgentClientRuntimeRepositoryContract = Pick<AgentClientRuntimeRepository, keyof AgentClientRuntimeRepository>;
-export type AgentConversationAuditRepositoryContract = Pick<AgentConversationAuditRepository, keyof AgentConversationAuditRepository>;
+// Existing private hosts may retain their v1 adapter without implementing v2.
+export type AgentConversationAuditRepositoryContract = Omit<Pick<AgentConversationAuditRepository, keyof AgentConversationAuditRepository>, 'createCrossBinding' | 'supportsCrossBindingMembers'>
+  & Partial<Pick<AgentConversationAuditRepository, 'createCrossBinding' | 'supportsCrossBindingMembers'>>;
 
 export interface ConfigStoreContract {
   readonly routes: RouteRepositoryContract;
