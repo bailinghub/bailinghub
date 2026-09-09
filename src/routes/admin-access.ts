@@ -7,6 +7,7 @@ import type { Client, ExecutorToken } from '../core/contracts/types';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { maskKey } from './admin-format';
+import { clientAgentSetupView } from '../core/config/client-agent-setup';
 
 export interface AdminAccessApiDeps {
   configStore: ConfigStoreContract | null;
@@ -55,6 +56,42 @@ export async function handleAdminAccessApiFor(
     await configStore.executorTokens.delete(decodeURIComponent(path.slice('/admin/api/executor-tokens/'.length)));
     send(res, 200, { ok: true });
     return true;
+  }
+
+  const setupMatch = path.match(/^\/admin\/api\/clients\/([a-z0-9][a-z0-9_-]{1,63})\/agent-setup$/);
+  if (setupMatch && (method === 'GET' || method === 'PUT')) {
+    if (!can(principal, method === 'GET' ? 'clients:read' : 'clients:write')) {
+      send(res, 403, { error: 'forbidden' }); return true;
+    }
+    const current = await configStore.clients.get(setupMatch[1]!);
+    if (!current) { send(res, 404, { error: 'client_not_found' }); return true; }
+    if (method === 'GET') { send(res, 200, clientAgentSetupView(current)); return true; }
+    if (!configStore.clients.updateAgentSetup) { send(res, 503, { error: 'agent_setup_unsupported' }); return true; }
+    let raw: unknown;
+    try { raw = await readBody(req, 32 * 1024); }
+    catch { send(res, 400, { error: 'invalid_agent_setup' }); return true; }
+    const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : null;
+    if (!body || Object.keys(body).length !== 4 || Object.keys(body).some((key) => !['expected_revision', 'enabled', 'agent_authorize_url', 'allowed_routes'].includes(key))
+      || typeof body['expected_revision'] !== 'string' || !/^[a-f0-9]{64}$/.test(body['expected_revision'])
+      || typeof body['enabled'] !== 'boolean'
+      || !(body['agent_authorize_url'] === null || typeof body['agent_authorize_url'] === 'string')
+      || !Array.isArray(body['allowed_routes']) || body['allowed_routes'].length > 256
+      || !body['allowed_routes'].every((value) => typeof value === 'string' && /^(?:\*|[a-z0-9][a-z0-9_-]{1,63})$/.test(value))) {
+      send(res, 400, { error: 'invalid_agent_setup' }); return true;
+    }
+    const prepared = prepareClientConfig({ ...current,
+      enabled: body['enabled'], agent_authorize_url: body['agent_authorize_url'] as string | undefined,
+      allowed_routes: body['allowed_routes'] as string[],
+    });
+    if (!prepared.ok) { send(res, 400, { error: prepared.error }); return true; }
+    const result = await configStore.clients.updateAgentSetup(current.app_id, body['expected_revision'], {
+      enabled: prepared.value.enabled, agent_authorize_url: prepared.value.agent_authorize_url || null,
+      allowed_routes: prepared.value.allowed_routes,
+    });
+    if (result !== 'updated') { send(res, result === 'conflict' ? 409 : 404, { error: result === 'conflict' ? 'agent_setup_conflict' : 'client_not_found' }); return true; }
+    const saved = await configStore.clients.get(current.app_id);
+    if (!saved) { send(res, 404, { error: 'client_not_found' }); return true; }
+    send(res, 200, clientAgentSetupView(saved)); return true;
   }
 
   if (path === '/admin/api/clients') {

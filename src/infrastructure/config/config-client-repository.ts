@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { dt, rowClient } from '../../core/config/config-codec';
 import type { Client } from '../../core/contracts/types';
+import { clientAgentSetupRevision, type ClientAgentSetup } from '../../core/config/client-agent-setup';
 
 export class ClientRepository {
   constructor(private readonly poolOf: () => any) {}
@@ -21,6 +22,26 @@ export class ClientRepository {
     if (!token || token.length < 16) return null;
     const [rows] = await this.pool.query('SELECT * FROM bz_clients WHERE token=? LIMIT 1', [token]);
     return rows[0] ? rowClient(rows[0]) : null;
+  }
+
+  /** Narrow, optimistic update; unrelated settings and the current token are untouched. */
+  async updateAgentSetup(appId: string, expectedRevision: string, settings: ClientAgentSetup): Promise<'updated' | 'conflict' | 'not_found'> {
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [rows] = await connection.query('SELECT * FROM bz_clients WHERE app_id=? LIMIT 1 FOR UPDATE', [appId]);
+      if (!rows[0]) { await connection.rollback(); return 'not_found'; }
+      if (clientAgentSetupRevision(rowClient(rows[0])) !== expectedRevision) { await connection.rollback(); return 'conflict'; }
+      await connection.query(
+        'UPDATE bz_clients SET enabled=?,agent_authorize_url=?,allowed_routes=?,updated_at=? WHERE app_id=?',
+        [settings.enabled ? 1 : 0, settings.agent_authorize_url || null, JSON.stringify(settings.allowed_routes), dt(), appId],
+      );
+      await connection.commit();
+      return 'updated';
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally { connection.release(); }
   }
 
   async upsert(c: Omit<Client, 'token'>, rotateToken = false): Promise<string> {

@@ -9,6 +9,7 @@ import { resolvePrincipal } from '../core/runtime/identity-runtime';
 import { previewAutoRoute } from '../core/runtime/routing-runtime';
 import type { AppConfig } from '../core/config/config';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import { handleAdminAgentSetupFor } from './admin-agent-setup';
 
 export interface AdminDispatchConfigApiDeps {
   configStore: ConfigStoreContract | null;
@@ -27,6 +28,7 @@ export async function handleAdminDispatchConfigApiFor(
   if (!deps.configStore) return false;
   const configStore = deps.configStore;
   const targetRegistry = deps.targetRegistry ?? defaultTargetRegistry;
+  if (await handleAdminAgentSetupFor(deps, method, path, req, res)) return true;
 
   if (path === '/admin/api/projects') {
     if (method === 'GET') { send(res, 200, await configStore.projects.list()); return true; }

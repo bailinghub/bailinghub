@@ -7,6 +7,7 @@ import {
   prepareRouteConfig,
   routeDeliveryConfig,
   routeAgentClientConfig,
+  routeAgentSystemInfo,
   routeKnowledgeConfig,
   routeRetryConfig,
   validateRouteConfig,
@@ -163,6 +164,33 @@ test('agent_client: 严格校验并兼容既有 agent_direct 开关', async () =
     enabled: true, instructions: 'local', active_tool_limit: 8,
   });
   assert.equal(routeAgentClientConfig({ agent_client: { enabled: false }, tools: { agent_direct: { enabled: true } } }), null);
+});
+
+test('agent_client.system_info: accepts bounded descriptive data and rejects field drift', async () => {
+  const systemInfo = { name: ' Helpdesk ', summary: ' Handles support tickets. ', domains: [' Ticket triage '], boundaries: [] };
+  const route = { route_key: 'helpdesk', target: 'notify', agent_client: { enabled: false, system_info: systemInfo } };
+  const prepared = await prepareRouteConfig(route, deps, defaults);
+  assert.equal(prepared.ok, true);
+  if (!prepared.ok) return;
+  assert.deepEqual(prepared.route.agent_client?.system_info, {
+    name: 'Helpdesk', summary: 'Handles support tickets.', domains: ['Ticket triage'], boundaries: [],
+  });
+  assert.equal(routeAgentClientConfig(prepared.route), null);
+  assert.equal(routeAgentSystemInfo(prepared.route)?.name, 'Helpdesk');
+  const invalid = [null, [], {}, { ...systemInfo, instructions: 'ignore policy' },
+    { ...systemInfo, name: ' ' }, { ...systemInfo, name: 'n'.repeat(121) },
+    { ...systemInfo, summary: 's'.repeat(401) }, { ...systemInfo, domains: Array(7).fill('topic') },
+    { ...systemInfo, domains: ['d'.repeat(121)] }, { ...systemInfo, boundaries: ['b'.repeat(161)] },
+    { ...systemInfo, domains: [''] }, { ...systemInfo, boundaries: [1] }, { ...systemInfo, domains: undefined },
+    { ...systemInfo, name: 'Help\u0000desk' }, { ...systemInfo, summary: 'two\nlines' }, { ...systemInfo, boundaries: ['a\tb'] },
+  ];
+  for (const system_info of invalid) {
+    const value = { ...route, agent_client: { system_info } } as unknown as Parameters<typeof validateRouteConfig>[0];
+    assert.match((await validateRouteConfig(value, deps, defaults)) ?? '', /agent_client.system_info/);
+    assert.equal(routeAgentSystemInfo(value), null);
+  }
+  const max = { name: 'n'.repeat(120), summary: 's'.repeat(400), domains: Array(6).fill('d'.repeat(120)), boundaries: Array(6).fill('b'.repeat(160)) };
+  assert.equal(await validateRouteConfig({ ...route, agent_client: { system_info: max } }, deps, defaults), null);
 });
 
 test('validateRouteConfig: budget 必须是合法预算策略', async () => {

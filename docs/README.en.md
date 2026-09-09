@@ -13,6 +13,10 @@ This directory contains public documentation for the open-source BailingHub proj
 | [INDEPENDENT_VALIDATION.md](INDEPENDENT_VALIDATION.md) | Chinese independent validation task. |
 | [AGENT_CLIENT_QUICKSTART.en.md](AGENT_CLIENT_QUICKSTART.en.md) | End-to-end Agent Client setup and configuration ownership. |
 | [AGENT_CLIENT_QUICKSTART.md](AGENT_CLIENT_QUICKSTART.md) | Chinese Agent Client integration guide. |
+| [LOCAL_AGENT_SETUP.en.md](LOCAL_AGENT_SETUP.en.md) | Four-step console setup: authorization, descriptions, tools/approvals, and connection checks. |
+| [LOCAL_AGENT_SETUP.md](LOCAL_AGENT_SETUP.md) | Chinese local-agent setup guide. |
+| [AGENT_SYSTEM_INFO.en.md](AGENT_SYSTEM_INFO.en.md) | Controlled descriptions before first tool discovery, with original binding and compatibility rules. |
+| [AGENT_SYSTEM_INFO.md](AGENT_SYSTEM_INFO.md) | Chinese system-information contract. |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | Agent Auth v1, PKCE, trusted business identity, and revocation. |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Chinese Agent Auth v1 protocol. |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | Agent Client Runtime v1 workspaces, turns, tools, and completion contract. |

@@ -1,6 +1,7 @@
 <template>
   <div class="agent-clients-page">
-    <el-card shadow="never">
+    <div class="page-navigation"><div><b>本地智能体</b><span>配置接入与管理授权设备</span></div><el-radio-group v-model="pageTab"><el-radio-button value="setup">接入配置</el-radio-button><el-radio-button value="activity">设备与运行</el-radio-button></el-radio-group></div>
+    <el-card v-if="pageTab === 'activity'" shadow="never">
       <template #header>
         <div class="head">
           <div>
@@ -8,7 +9,7 @@
             <HelpTip title="和执行器有什么区别">
               <p><b>智能体客户端</b>在本地理解用户意图、选择能力并完成多步编排；中枢继续负责业务身份、授权、审批、执行与审计。</p>
               <p><b>执行器</b>是中枢下发 Job、由本地运行时执行本地任务后回报结果。两者是独立概念。</p>
-              <p>本页聚合现有接入方、Agent Session 和 Agent Run，不创建第二套接入方配置。</p>
+              <p>在“配置接入”中集中设置授权入口、系统说明和工具范围；设置仍保存在原接入方与业务路由中。</p>
               <p>每个接入方只配置一个不绑定账号、租户或门店的业务授权入口；账号切换与租户选择由业务授权页完成。</p>
             </HelpTip>
           </div>
@@ -33,42 +34,48 @@
       </div>
     </el-card>
 
-    <el-card shadow="never">
+    <el-card v-if="pageTab === 'setup'" shadow="never" class="setup-intro">
+      <div><span class="intro-kicker">从接入到业务操作</span><h2>把一个业务系统接给本地智能体</h2><p>选中下方应用，按顺序完成授权入口、系统说明和工具范围。连接、业务授权与实际执行分别检查。</p></div>
+      <div class="intro-flow"><span>1 授权入口</span><i>→</i><span>2 系统说明</span><i>→</i><span>3 工具与审批</span><i>→</i><span>4 检查连接</span></div>
+    </el-card>
+
+    <el-card v-if="pageTab === 'setup'" shadow="never">
       <template #header>
         <div class="section-head">
-          <div><b>客户端应用</b><span>复用“接入方”配置；只有设置 Agent 授权页后才能发起浏览器登录。</span></div>
-          <el-button size="small" @click="router.push('/clients')">管理接入方</el-button>
+          <div><b>业务系统接入</b><span>在一个入口完成本地智能体配置；授权记录与用量请切换到“设备与运行”。</span></div>
+          <el-button size="small" @click="router.push('/clients')">新建接入方</el-button>
         </div>
       </template>
-      <el-empty v-if="!applications.length" description="还没有接入方" />
-      <el-table v-else :data="applications" size="small">
+      <p v-if="pageRoute.query.workspace" class="muted">以下为允许使用工作空间 {{ pageRoute.query.workspace }} 的接入方，请选择要配置的应用。<el-button link @click="router.replace('/agent-clients')">显示全部</el-button></p>
+      <el-empty v-if="!visibleApplications.length" description="当前没有匹配的接入方，请先创建接入方并关联工作空间。" />
+      <el-table v-else :data="visibleApplications" size="small">
         <el-table-column label="应用" :width="180">
           <template #default="{ row }"><div class="stack"><b>{{ row.name || row.app_id }}</b><code>{{ row.app_id }}</code></div></template>
         </el-table-column>
-        <el-table-column label="Agent 登录" :min-width="240" show-overflow-tooltip>
+        <el-table-column label="接入配置状态" :min-width="270">
           <template #default="{ row }">
             <div class="stack">
-              <div><el-tag size="small" effect="plain" :type="row.enabled && row.agent_auth_enabled ? 'success' : 'info'">{{ row.enabled && row.agent_auth_enabled ? '可授权' : '未开放' }}</el-tag></div>
-              <span class="muted mono">{{ row.agent_authorize_url || '未配置授权页' }}</span>
+              <div><el-tag size="small" effect="plain" :type="connectionReady(row) ? 'success' : 'warning'">{{ connectionReady(row) ? '连接条件已配置' : '待完成配置' }}</el-tag></div>
+              <span class="muted">{{ setupReason(row) }}</span>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="允许 Workspace" :width="180">
+        <el-table-column label="工作空间" :width="180">
           <template #default="{ row }"><div class="tags"><el-tag v-for="route in previewRoutes(row.allowed_routes)" :key="route" size="small" effect="plain" type="info">{{ route }}</el-tag></div></template>
         </el-table-column>
         <el-table-column label="近期开销" :width="150" align="right">
           <template #default="{ row }"><div class="stack right"><span>{{ int(row.stats.runs) }} Run / {{ int(row.stats.tool_calls) }} 调用</span><span class="muted">{{ int(row.stats.total_tokens) }} Token</span></div></template>
         </el-table-column>
-        <el-table-column :width="160" align="right">
+        <el-table-column :width="210" align="right">
           <template #default="{ row }">
-            <el-button link type="primary" :disabled="!row.agent_auth_enabled || !eligibleWorkspaces(row).length" @click="openConnection(row)">生成连接配置</el-button>
-            <el-button link @click="router.push('/clients')">编辑</el-button>
+            <el-button size="small" type="primary" plain @click="openSetup(row)">配置接入</el-button>
+            <el-tooltip :content="connectionReady(row) ? '复制公开连接信息，随后在客户端登录授权' : setupReason(row)"><span><el-button link :disabled="!connectionReady(row)" @click="openConnection(row)">连接配置</el-button></span></el-tooltip>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
 
-    <el-card shadow="never">
+    <el-card v-if="pageTab === 'activity'" shadow="never">
       <template #header>
         <div class="section-head">
           <div><b>授权设备与 Agent Session</b><span>远程撤销后，后续 access/refresh token 都会失效；本地客户端需要重新登录。</span></div>
@@ -109,6 +116,8 @@
       </div>
     </el-card>
 
+    <AgentSetupPanel v-model="setup.open" :app-id="setup.appId" :initial-workspace="setup.workspace" :workspaces="setupWorkspaces" @saved="loadOverview" @connect="connectFromSetup" />
+
     <el-dialog v-model="connection.open" title="生成智能体客户端连接配置" width="620px">
       <el-alert type="info" :closable="false" show-icon title="这里只生成公开连接元数据，不包含业务 URL、业务身份、Client Token、Agent Token 或模型密钥。" />
       <p class="connection-note"><code>connectionName</code> 只是本机连接选择器。登录时会统一打开接入方配置的业务授权页，由该页面确认当前账号与租户。</p>
@@ -131,23 +140,33 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import HelpTip from '../components/HelpTip.vue';
+import AgentSetupPanel from '../components/AgentSetupPanel.vue';
 import { kernelFetch, kernelOrigin } from '../runtime-path';
 
 interface Workspace { route: string; name: string; description?: string }
+interface SetupWorkspace extends Workspace { enabled: boolean; runtime_enabled: boolean; direct_enabled: boolean; source_count: number; system_info_configured: boolean }
 interface Stats { runs: number; conversations: number; completed: number; failed: number; tool_calls: number; total_tokens: number; approvals: Record<string, number> }
 interface Application { app_id: string; name: string; enabled: boolean; agent_auth_enabled: boolean; agent_authorize_url?: string | null; allowed_routes: string[]; last_used_at?: string | null; stats: Stats }
 interface SessionRow { session_id: string; client_app_id: string; device_label: string; principal?: { id?: string; tenant?: string; roles?: string[] }; on_behalf_of: string; allowed_routes: string[]; last_seen_at?: string; refresh_expires_at: string; state: 'active' | 'expired' | 'revoked' }
 
 const router = useRouter();
+const pageRoute = useRoute();
+const pageTab = ref('setup');
 const days = ref(30);
 const loading = ref(false);
 const sessionsLoading = ref(false);
 const revoking = ref('');
 const applications = ref<Application[]>([]);
+const visibleApplications = computed(() => {
+  const workspace = pageRoute.query.workspace;
+  return typeof workspace === 'string' ? applications.value.filter((app) => app.allowed_routes.includes('*') || app.allowed_routes.includes(workspace)) : applications.value;
+});
 const workspaces = ref<Workspace[]>([]);
+const setupWorkspaces = ref<SetupWorkspace[]>([]);
+const setup = reactive({ open: false, appId: '', workspace: '' });
 const sessions = ref<SessionRow[]>([]);
 const sessionTotal = ref(0);
 const sessionPage = ref(1);
@@ -168,7 +187,26 @@ function fmtTime(value?: string | null): string { return value ? new Date(value)
 function stateText(value: SessionRow['state']): string { return value === 'active' ? '有效' : value === 'expired' ? '已过期' : '已撤销'; }
 function stateType(value: SessionRow['state']): 'success' | 'warning' | 'info' { return value === 'active' ? 'success' : value === 'expired' ? 'warning' : 'info'; }
 function previewRoutes(routes: string[]): string[] { return routes.includes('*') ? ['全部 Workspace'] : routes.slice(0, 4); }
-function eligibleWorkspaces(app: Application): Workspace[] { return workspaces.value.filter((workspace) => app.allowed_routes.includes('*') || app.allowed_routes.includes(workspace.route)); }
+function allowedWorkspaces(app: Application): SetupWorkspace[] { return setupWorkspaces.value.filter((workspace) => app.allowed_routes.includes('*') || app.allowed_routes.includes(workspace.route)); }
+function eligibleWorkspaces(app: Application): Workspace[] { return allowedWorkspaces(app).filter((workspace) => workspace.enabled && workspace.runtime_enabled); }
+function connectionReady(app: Application): boolean { return app.enabled && app.agent_auth_enabled && eligibleWorkspaces(app).length > 0; }
+function setupReason(app: Application): string {
+  if (!app.enabled) return '接入方已停用，需先恢复接入';
+  if (!app.agent_auth_enabled) return '尚未配置业务授权入口';
+  const choices = allowedWorkspaces(app);
+  if (!choices.length) return '尚未关联现有工作空间';
+  const active = choices.filter((w) => w.enabled && w.runtime_enabled);
+  if (!active.length) return '尚无已启用本地智能体的工作空间';
+  if (!active.some((w) => w.direct_enabled)) return '连接入口已准备好；业务工具调用尚未开启';
+  if (!active.some((w) => w.direct_enabled && w.source_count)) return '工具通道已开启；尚需配置业务工具源';
+  if (active.some((w) => !w.system_info_configured)) return '建议补充系统说明，帮助智能体首次选择目标';
+  return '连接与工具通道已配置；实际可用动作以业务授权为准';
+}
+function openSetup(app: Application, workspace = ''): void { setup.appId = app.app_id; setup.workspace = workspace; setup.open = true; }
+function connectFromSetup(value: { app_id: string; workspace: string }): void {
+  const app = applications.value.find((item) => item.app_id === value.app_id); if (!app) return;
+  openConnection(app); connection.workspace = value.workspace;
+}
 
 async function loadOverview(): Promise<void> {
   loading.value = true;
@@ -178,6 +216,7 @@ async function loadOverview(): Promise<void> {
     const data = await response.json();
     applications.value = data.applications || [];
     workspaces.value = data.workspaces || [];
+    setupWorkspaces.value = data.setup_workspaces || [];
     Object.assign(summary, data.summary || {});
   } catch (error) { ElMessage.error(error instanceof Error ? error.message : '加载智能体客户端失败'); }
   finally { loading.value = false; }
@@ -224,11 +263,20 @@ async function revoke(row: SessionRow): Promise<void> {
   finally { revoking.value = ''; }
 }
 
-onMounted(refreshAll);
+onMounted(async () => {
+  await refreshAll();
+  const key = typeof pageRoute.query.workspace === 'string' ? pageRoute.query.workspace : '';
+  const appId = typeof pageRoute.query.app === 'string' ? pageRoute.query.app : '';
+  const matching = applications.value.filter((app) => appId ? app.app_id === appId : key && (app.allowed_routes.includes('*') || app.allowed_routes.includes(key)));
+  if (matching.length === 1) openSetup(matching[0]!, key);
+});
 </script>
 
 <style scoped>
 .agent-clients-page { display: grid; gap: 16px; }
+.page-navigation{display:flex;justify-content:space-between;align-items:center;gap:16px}.page-navigation b{font-size:20px}.page-navigation span{display:block;font-size:13px;color:var(--el-text-color-secondary);margin-top:7px}
+.setup-intro{border-color:var(--el-color-primary-light-7);background:linear-gradient(120deg,var(--el-color-primary-light-9),var(--el-bg-color) 70%)}
+.intro-kicker{font-size:12px;color:var(--el-color-primary);font-weight:600}.setup-intro h2{font-size:21px;margin:8px 0 10px}.setup-intro p{font-size:13px;color:var(--el-text-color-secondary);line-height:1.7;margin:0}.intro-flow{display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin-top:22px;font-size:13px}.intro-flow span{padding:7px 11px;background:var(--el-bg-color);border:1px solid var(--el-border-color-lighter);border-radius:6px}.intro-flow i{font-style:normal;color:var(--el-text-color-placeholder)}
 .head, .section-head, .actions { display: flex; align-items: center; gap: 10px; }
 .head, .section-head { justify-content: space-between; }
 .section-head > div:first-child { display: flex; align-items: baseline; gap: 10px; }

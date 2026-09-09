@@ -14,6 +14,7 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { authenticateAgentAccess } from './agent-auth';
 import { handleAgentConversationAuditFor } from './agent-conversation-audit';
+import { getAgentSystemInfoFor } from '../app/agent-system-info';
 import type { KbService } from '../services/kb';
 import {
   completeAgentRunFor,
@@ -93,6 +94,12 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
   const principal: Principal = { kind: 'agent', session: auth.session, client: auth.client };
   const method = req.method ?? 'GET';
   if (await handleAgentConversationAuditFor(deps.configStore, auth, req, res, path)) return true;
+  const systemInfoMatch = method === 'GET' ? path.match(/^\/agent-api\/v1\/workspaces\/([a-z0-9][a-z0-9_-]{1,63})\/system-info$/) : null;
+  if (systemInfoMatch) {
+    try { send(res, 200, await getAgentSystemInfoFor(deps.configStore, auth, systemInfoMatch[1]!)); }
+    catch (error) { sendAgentToolError(res, error); }
+    return true;
+  }
   const runtimeDeps = (): AgentClientRuntimeDeps | null => deps.toolProxyDeps
     ? { toolProxyDeps: deps.toolProxyDeps, kbService: deps.kbService ?? null, stateStore: deps.stateStore }
     : null;

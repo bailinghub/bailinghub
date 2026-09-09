@@ -207,6 +207,8 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [Docker Demo](docs/DEMO.en.md) — complete the sample business-operation loop.
 - [Integration Guide](docs/INTEGRATION.en.md) — connect an existing application.
 - [Agent Client v1](docs/AGENT_CLIENT_QUICKSTART.en.md) — browser authorization and local planning.
+- [Local Agent Setup](docs/LOCAL_AGENT_SETUP.en.md) — configure authorization, descriptions, tools, and connection checks in one place.
+- [System Information](docs/AGENT_SYSTEM_INFO.en.md) — explain selected systems before searching for tools.
 - [Business Tools and Governance](docs/TOOLS.en.md) — declare, sign, approve, and audit tools.
 - [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
 - [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.

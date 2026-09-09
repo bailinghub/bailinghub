@@ -52,8 +52,9 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column width="162" align="right">
+      <el-table-column width="256" align="right">
         <template #default="{ row }">
+          <el-button link type="primary" @click="router.push({ path: '/agent-clients', query: { workspace: row.route_key } })">本地智能体配置</el-button>
           <el-button link type="primary" @click="openCode(row)">调用代码</el-button>
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-popconfirm title="删除该路由？业务侧再调用会报未知 route。" width="240" @confirm="del(row.route_key)">
@@ -66,6 +67,7 @@
 
   <!-- 新建/编辑路由 -->
   <el-drawer v-model="open" :title="editing ? '编辑路由' : '新建路由'" size="640px">
+    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px" title="配置本地智能体时，可使用“智能体客户端 → 接入配置”，集中设置授权入口、系统说明、工具与审批。本页保留业务路由及高级治理设置。" />
     <el-form label-position="top">
       <el-tabs v-model="routeFormTab" class="console-tabs route-form-tabs">
         <el-tab-pane label="基础与大脑" name="basic">
@@ -374,6 +376,8 @@
         </HelpTip></template>
         <el-input v-model="mem.summary_model" placeholder="留空=用本路由凭证默认模型" class="mono" />
       </el-form-item>
+      <el-collapse><el-collapse-item title="本地智能体运行设置（高级）" name="agent-runtime">
+      <p class="muted hint">日常接入请使用“智能体客户端 → 接入配置”。以下是同一工作空间的底层设置。</p>
       <el-form-item>
         <template #label>本地 Agent Runtime <HelpTip title="本地 Agent Runtime">
           <p>开启后，已通过业务网页授权的本地 Agent 可以读取本路由的安全运行档、会话记忆和按需工具定义，并在本地完成编排。</p>
@@ -391,6 +395,7 @@
           <div class="muted hint">每轮只返回最相关的完整 typed tools；其余授权能力可通过搜索按需发现，避免全量 schema 撑大上下文。</div>
         </el-form-item>
       </template>
+      </el-collapse-item></el-collapse>
       <el-form-item>
         <template #label>成本预算闸 <HelpTip title="成本预算闸">
           <p>按本路由在指定窗口内的历史用量做入口硬限。达到成本或 token 上限后，新任务会直接记为 <code>rejected</code>，不会再进入模型、执行器或工具链路。</p>
@@ -595,6 +600,7 @@
         </el-form-item>
       </div>
       <template v-if="agentClient.enabled || agentDirect.configured || agentDirect.enabled">
+      <el-collapse><el-collapse-item title="本地智能体工具设置（高级）" name="agent-direct">
       <div class="form-section-title agent-direct-title">
         <span>本地 Agent 直连工具</span>
         <HelpTip title="本地 Agent 直连工具">
@@ -658,6 +664,7 @@
           </el-select>
         </el-form-item>
       </template>
+      </el-collapse-item></el-collapse>
       </template>
       <template v-if="tl.sources.length">
         <el-form-item label="单任务业务工具调用上限">
@@ -858,6 +865,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { WarningFilled } from '@element-plus/icons-vue';
@@ -872,6 +880,7 @@ import { kernelOrigin } from '../runtime-path';
 import { EXACT_OPERATION_ID_RE, includesAllCurrentOperationIds, mergeExactOperationIds } from '../agent-direct-selection';
 
 const s = useMe();
+const router = useRouter();
 const routeSchema = useConfigSchema('route');
 const list = ref<any[]>([]);
 const projectNames = ref<string[]>([]);

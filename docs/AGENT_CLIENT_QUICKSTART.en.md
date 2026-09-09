@@ -11,6 +11,8 @@ direct business API endpoints.
 This guide separates the responsibilities of the BailingHub deployer, the business-system
 developer, and the local Agent user. They do not share one credential or configuration file.
 
+For the current console flow, start with [Local Agent Setup](LOCAL_AGENT_SETUP.en.md): authorization, descriptions, tools/approvals, and connection checks share one entry point under Agent Clients. The sections below explain configuration ownership and advanced integration details.
+
 ## 1. Component relationship
 
 ```text

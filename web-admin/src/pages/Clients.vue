@@ -70,8 +70,9 @@
         </HelpTip></template>
         <template #default="{ row }"><span class="muted">{{ fmtTime(row.last_used_at) }}</span></template>
       </el-table-column>
-      <el-table-column width="146" align="right">
+      <el-table-column width="244" align="right">
         <template #default="{ row }">
+          <el-button link type="primary" @click="router.push({ path: '/agent-clients', query: { app: row.app_id } })">本地智能体配置</el-button>
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-popconfirm title="换钥？旧 token 立即作废，业务侧需同步更新。" width="240" @confirm="rotate(row)">
             <template #reference><el-button link type="warning">换钥</el-button></template>
@@ -180,6 +181,7 @@
 
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
@@ -189,6 +191,7 @@ import HelpTip from '../components/HelpTip.vue';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
 
 const s = useMe();
+const router = useRouter();
 const clientSchema = useConfigSchema('client');
 const list = ref<any[]>([]);
 const routeKeys = ref<string[]>([]);

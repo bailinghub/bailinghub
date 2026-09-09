@@ -78,6 +78,17 @@ test('Config JSON Schemas: 路由、目标和工具治理关键契约对齐', ()
   assert.equal(route.properties.retry.properties.max.maximum, 5);
   assert.equal(route.properties.retry.properties.backoff_ms.minimum, 500);
   assert.equal(route.properties.retry.properties.backoff_ms.maximum, 300000);
+  const systemInfo = route.properties.agent_client.properties.system_info;
+  assert.equal(systemInfo.additionalProperties, false);
+  assert.deepEqual(systemInfo.required, ['name', 'summary', 'domains', 'boundaries']);
+  assert.equal(systemInfo.properties.name.maxLength, 120);
+  assert.equal(systemInfo.properties.summary.maxLength, 400);
+  assert.equal(systemInfo.properties.domains.maxItems, 6);
+  assert.equal(systemInfo.properties.boundaries.items.maxLength, 160);
+  const plainText = new RegExp(systemInfo.properties.summary.pattern, 'u');
+  assert.equal(plainText.test('Support ticket operations.'), true);
+  assert.equal(plainText.test(' '), false);
+  assert.equal(plainText.test('two\nlines'), false);
 
   assert.deepEqual(target.properties.kind.enum, ['inhub', 'executor']);
   assert.equal(target.properties.timeout_ms.maximum, 3600000);

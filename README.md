@@ -195,6 +195,7 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 | 跑通公开 Demo | [Docker Demo](docs/DEMO.md) |
 | 接入现有业务 | [第三方对接指南](docs/第三方对接指南.md) |
 | 接入本地智能体 | [Agent Client v1 指南](docs/AGENT_CLIENT_QUICKSTART.md) |
+| 集中开启本地智能体与工具 | [四步配置指南](docs/LOCAL_AGENT_SETUP.md) · [系统说明](docs/AGENT_SYSTEM_INFO.md) |
 | 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |
 | 理解架构与长期取舍 | [架构](docs/ARCHITECTURE.md) · [项目愿景](VISION.md) |
 | 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.6.1 Release Notes](docs/RELEASE_NOTES_v0.6.1.md) |

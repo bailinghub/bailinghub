@@ -2,11 +2,14 @@
 
 本版本化接口让已完成 Agent Auth 网页授权的本地智能体在本地承担规划，同时继续复用 BailingHub 的身份重验、工具治理、审批、审计与对话总账。它不替代现有 `/run`、聊天入口或执行器协议。配套的部署、业务授权页和宿主接入步骤见 [Agent Client v1 接入指南](AGENT_CLIENT_QUICKSTART.md)，身份授权契约见 [Agent Auth v1](AGENT_AUTH_API.md)。
 
-所有接口只接受 `Authorization: Bearer <Agent access token>`，响应均 `Cache-Control: no-store`。工作区授权面始终取以下交集：Client `allowed_routes` ∩ Agent Session `allowed_routes` ∩ 启用且 audience 允许的 route ∩ `tools.agent_direct`。`agent_client.enabled=false` 只关闭本页接口，不关闭旧 `/agent-api/v1/tools`。
+所有接口只接受 `Authorization: Bearer <Agent access token>`，响应均 `Cache-Control: no-store`。业务运行与能力接口的工作区授权面始终取以下交集：Client `allowed_routes` ∩ Agent Session `allowed_routes` ∩ 启用且 audience 允许的 route ∩ `tools.agent_direct`。`agent_client.enabled=false` 关闭 Runtime 工作区、上下文与能力接口，不关闭旧 `/agent-api/v1/tools`。
+
+首次选择业务目标所需的[系统说明](AGENT_SYSTEM_INFO.md)采用同一身份与路由边界，但读取说明不要求开启 Runtime 或工具直调，也不会加载工具或创建业务运行。
 
 ## 端点
 
 - `GET /agent-api/v1/workspaces`
+- `GET /agent-api/v1/workspaces/:route/system-info`
 - `GET /agent-api/v1/workspaces/:route/bootstrap`
 - `POST /agent-api/v1/workspaces/:route/turns`
 - `POST /agent-api/v1/workspaces/:route/capabilities/search`
