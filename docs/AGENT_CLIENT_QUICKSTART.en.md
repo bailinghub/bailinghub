@@ -11,6 +11,8 @@ direct business API endpoints.
 This guide separates the responsibilities of the BailingHub deployer, the business-system
 developer, and the local Agent user. They do not share one credential or configuration file.
 
+For the current console flow, start with [Local Agent Setup](LOCAL_AGENT_SETUP.en.md): authorization, descriptions, tools/approvals, and connection checks share one entry point under Agent Clients. The sections below explain configuration ownership and advanced integration details.
+
 ## 1. Component relationship
 
 ```text
@@ -159,6 +161,30 @@ return redirect($result['redirect_uri']);
 Other languages can implement the Agent Auth v1 HTTP contract directly. The Client Token stays
 in the backend `Authorization: Bearer <BUSINESS_CLIENT_TOKEN>` header and is never sent to the
 browser.
+
+### 4.1 Inspect and withdraw access (unpublished candidate)
+
+The lifecycle additions in this branch let a business backend identify the device session created
+by an authorization and find sessions for an operator or tenant before withdrawing access. Tool
+declarations and the existing consent page need no redesign. The new methods require matching
+candidate Core / PHP SDK sources; public stable Core v0.6.1 does not yet provide them.
+
+```php
+// Derive filters from the backend's validated management permission and tenant scope.
+$page = $agentAuth->listSessions(['tenant' => (string) $tenantId, 'limit' => 20]);
+// Keep the same filters and pass next_cursor for the next page; null means no next page.
+$context = $agentAuth->context($authorizationId);
+$session = $context['session'] ?? null; // Reliable link on consumed records only; never guess.
+$result = $agentAuth->revokeAuthorization($authorizationId);
+```
+
+An operator filter requires both `principal_id` and `tenant`; use `tenant => ''` for no tenant.
+`active` describes the session ledger, not current business-account permission; expiry follows the
+refresh/session lifetime. Revocation and exchange are atomic, and repeated revocation of the same
+authorization is idempotent. A 503/timeout, or a 404 for a consumed record with no valid mapping,
+does not prove revocation. Keep the failure and retry or investigate the original ID.
+Use the existing `revokeSession()` when the exact Session ID is already known. See the
+[Agent Auth contract](AGENT_AUTH_API.en.md) for pagination and compatibility details.
 
 ## 5. Local Agent user: install and authorize
 

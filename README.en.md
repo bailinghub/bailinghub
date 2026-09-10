@@ -39,6 +39,14 @@ This experience uses **BailingHub 0.6.1 + MCP/Agent Client SDK 0.4.0 + DSH plugi
 
 [Start with the user guide](docs/user-guide/conversations.en.md) · [Upgrade and compatible versions](docs/RELEASE_NOTES_v0.6.1.en.md)
 
+## Next release in development: check stock, then update and list a product
+
+This source tree adds conversations across separately authorized systems on one Hub. For example, check a tumbler in an inventory system, then use the shop authorization to change its price and list the corresponding product. System descriptions, business-supplied authorization names and centralized setup accompany this extension. Existing permissions and approvals still apply.
+
+**These features are not in the published packages.** The stable 0.6.1 / 0.4.0 pairing above does not include them. Source integration requires matching Core, SDK and DSH revisions; the plugin dependency will change during package release. Business actions must already be exposed and product mappings confirmed.
+
+[Scenarios, changes and upgrade preparation](docs/RELEASE_NOTES_NEXT.en.md)
+
 ## Operate the System by Conversation
 
 Most business software already has the data, permission model, and APIs it needs. What it lacks is a safe bridge between a natural-language request and the exact operation the current user is allowed to perform.
@@ -207,6 +215,8 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [Docker Demo](docs/DEMO.en.md) — complete the sample business-operation loop.
 - [Integration Guide](docs/INTEGRATION.en.md) — connect an existing application.
 - [Agent Client v1](docs/AGENT_CLIENT_QUICKSTART.en.md) — browser authorization and local planning.
+- [Local Agent Setup](docs/LOCAL_AGENT_SETUP.en.md) — configure authorization, descriptions, tools, and connection checks in one place.
+- [System Information](docs/AGENT_SYSTEM_INFO.en.md) — explain selected systems before searching for tools.
 - [Business Tools and Governance](docs/TOOLS.en.md) — declare, sign, approve, and audit tools.
 - [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
 - [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.

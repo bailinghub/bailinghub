@@ -29,11 +29,54 @@ final class AgentAuth
     }
 
     /**
+     * 查询当前接入方的授权会话；principal_id 必须同时指定 tenant。
+     * tenant='' 精确选择无租户主体，省略 tenant 则不按租户过滤。
+     *
+     * @param array{authorization_id?:string,on_behalf_of?:string,principal_id?:string,tenant?:string,state?:string,limit?:int,cursor?:string} $filters
+     * @return array<string,mixed>
+     */
+    public function listSessions(array $filters = []): array
+    {
+        $allowed = ['authorization_id', 'on_behalf_of', 'principal_id', 'tenant', 'state', 'limit', 'cursor'];
+        foreach ($filters as $key => $value) {
+            if (!in_array($key, $allowed, true)) {
+                throw new InvalidArgumentException('未知会话筛选字段');
+            }
+            if ($key === 'authorization_id') {
+                if (!is_string($value) || !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iD', $value)) {
+                    throw new InvalidArgumentException('authorization_id 必须是 UUID');
+                }
+            } elseif (in_array($key, ['on_behalf_of', 'principal_id', 'tenant'], true)) {
+                self::assertFilterString($value, $key, $key === 'on_behalf_of' ? 191 : 128, $key === 'tenant');
+            } elseif ($key === 'state' && !in_array($value, ['active', 'expired', 'revoked'], true)) {
+                throw new InvalidArgumentException('state 必须是 active、expired 或 revoked');
+            } elseif ($key === 'limit' && (!is_int($value) || $value < 1 || $value > 100)) {
+                throw new InvalidArgumentException('limit 必须是 1 到 100 的整数');
+            } elseif ($key === 'cursor' && (!is_string($value) || strlen($value) > 2048 || !preg_match('/^[A-Za-z0-9_-]+$/D', $value))) {
+                throw new InvalidArgumentException('cursor 必须是非空、不带填充的 base64url 字符串，长度不超过 2048');
+            }
+        }
+        if (array_key_exists('principal_id', $filters) && !array_key_exists('tenant', $filters)) {
+            throw new InvalidArgumentException('principal_id 必须同时指定 tenant');
+        }
+        $query = http_build_query($filters, '', '&', PHP_QUERY_RFC3986);
+        return $this->hub->get('/agent-auth/v1/sessions' . ($query === '' ? '' : '?' . $query));
+    }
+
+    /** @return array<string,mixed> */
+    public function revokeAuthorization(string $authorizationId): array
+    {
+        self::assertId($authorizationId, 'authorizationId');
+        return $this->hub->post('/agent-auth/v1/authorizations/' . rawurlencode($authorizationId) . '/revoke', []);
+    }
+
+    /**
      * @param array{id:string,tenant?:string,roles?:array<int,string>,audience?:string,channel?:string} $principal
+     * @param array{name:string}|null $subjectDisplay Optional server-sourced display name; never an identity key.
      * @param array<int,string> $allowedRoutes
      * @return array<string,mixed>
      */
-    public function approve(string $authorizationId, array $principal, string $onBehalfOf, array $allowedRoutes): array
+    public function approve(string $authorizationId, array $principal, string $onBehalfOf, array $allowedRoutes, ?array $subjectDisplay = null): array
     {
         self::assertId($authorizationId, 'authorizationId');
         if (!isset($principal['id']) || trim((string) $principal['id']) === '') {
@@ -48,11 +91,16 @@ final class AgentAuth
         if (!isset($principal['roles'])) {
             $principal['roles'] = [];
         }
-        return $this->hub->post('/agent-auth/v1/authorizations/' . rawurlencode($authorizationId) . '/approve', [
+        $body = [
             'principal' => $principal,
             'on_behalf_of' => $onBehalfOf,
             'allowed_routes' => array_values($allowedRoutes),
-        ]);
+        ];
+        // Existing four-argument calls keep their original HTTP shape for older Core versions.
+        if (func_num_args() >= 5) {
+            $body['subject_display'] = self::normalizeSubjectDisplay($subjectDisplay);
+        }
+        return $this->hub->post('/agent-auth/v1/authorizations/' . rawurlencode($authorizationId) . '/approve', $body);
     }
 
     /** @return array<string,mixed> */
@@ -69,10 +117,58 @@ final class AgentAuth
         return $this->hub->post('/agent-auth/v1/sessions/' . rawurlencode($sessionId) . '/revoke', []);
     }
 
+    /**
+     * 同步当前接入方已有有效授权的显示名称；不修改身份、权限或有效期。
+     * @param array{name:string}|null $subjectDisplay 业务服务端读取的名称，null 表示清除
+     * @return array
+     */
+    public function updateSubjectDisplay(string $sessionId, ?array $subjectDisplay): array
+    {
+        self::assertId($sessionId, 'sessionId');
+        return $this->hub->request('PUT', '/agent-auth/v1/sessions/' . rawurlencode($sessionId) . '/subject-display', [
+            'subject_display' => self::normalizeSubjectDisplay($subjectDisplay),
+        ]);
+    }
+
+    private static function normalizeSubjectDisplay(mixed $value): ?array
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (!is_array($value) || array_keys($value) !== ['name'] || !is_string($value['name'])) {
+            throw new InvalidArgumentException('subjectDisplay 只能包含字符串 name');
+        }
+        $name = $value['name'];
+        // Reject controls before trimming; line breaks must not become a valid one-line name.
+        if (preg_match('//u', $name) !== 1 || preg_match('/[\x00-\x1f\x7f-\x9f\x{2028}\x{2029}]/u', $name)) {
+            throw new InvalidArgumentException('subjectDisplay.name 必须是无控制字符的单行文本');
+        }
+        $name = preg_replace('/^[\p{Z}\x{FEFF}]+|[\p{Z}\x{FEFF}]+$/u', '', $name);
+        self::assertFilterString($name, 'subjectDisplay.name', 120, false);
+        return ['name' => $name];
+    }
+
     private static function assertId(string $value, string $name): void
     {
-        if (!preg_match('/^[0-9a-f-]{36}$/i', $value)) {
+        if (!preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iD', $value)) {
             throw new InvalidArgumentException($name . ' 必须是 UUID');
+        }
+    }
+
+    private static function assertFilterString(mixed $value, string $name, int $max, bool $allowEmpty): void
+    {
+        if (!is_string($value) || (!$allowEmpty && $value === '') ||
+            preg_match('/[\x00-\x1f\x7f]|^[\p{Z}\x{FEFF}]|[\p{Z}\x{FEFF}]$/u', $value) ||
+            preg_match_all('/./us', $value, $characters) === false) {
+            throw new InvalidArgumentException($name . ' 必须是无首尾空白或控制字符的有效字符串');
+        }
+        // 与 HTTP 服务端的 UTF-16 长度一致，不依赖 mbstring 扩展。
+        $length = 0;
+        foreach ($characters[0] as $character) {
+            $length += strlen($character) > 3 ? 2 : 1;
+        }
+        if ($length > $max) {
+            throw new InvalidArgumentException($name . ' 长度超出限制');
         }
     }
 }

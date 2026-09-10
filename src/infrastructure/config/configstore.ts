@@ -29,8 +29,10 @@ import { AgentClientRuntimeRepository } from './config-agent-client-runtime-repo
 import { AgentConversationAuditRepository } from './config-agent-conversation-audit-repository';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
-export type RouteRepositoryContract = Pick<RouteRepository, keyof RouteRepository>;
-export type ClientRepositoryContract = Pick<ClientRepository, keyof ClientRepository>;
+export type RouteRepositoryContract = Omit<Pick<RouteRepository, keyof RouteRepository>, 'compareAndSetAgentSetup'>
+  & Partial<Pick<RouteRepository, 'compareAndSetAgentSetup'>>;
+export type ClientRepositoryContract = Omit<Pick<ClientRepository, keyof ClientRepository>, 'updateAgentSetup'>
+  & Partial<Pick<ClientRepository, 'updateAgentSetup'>>;
 export type CredentialRepositoryContract = Pick<CredentialRepository, keyof CredentialRepository>;
 export type ChannelRepositoryContract = Pick<ChannelRepository, keyof ChannelRepository>;
 /** 新增的探针窄更新对旧扩展仓储保持可选；运行时可回退到既有 upsert。 */
@@ -61,7 +63,9 @@ export type ObservabilityLedgerContract =
   Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>
   & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>>;
 export type AgentClientRuntimeRepositoryContract = Pick<AgentClientRuntimeRepository, keyof AgentClientRuntimeRepository>;
-export type AgentConversationAuditRepositoryContract = Pick<AgentConversationAuditRepository, keyof AgentConversationAuditRepository>;
+// Existing private hosts may retain their v1 adapter without implementing v2.
+export type AgentConversationAuditRepositoryContract = Omit<Pick<AgentConversationAuditRepository, keyof AgentConversationAuditRepository>, 'createCrossBinding' | 'supportsCrossBindingMembers'>
+  & Partial<Pick<AgentConversationAuditRepository, 'createCrossBinding' | 'supportsCrossBindingMembers'>>;
 
 export interface ConfigStoreContract {
   readonly routes: RouteRepositoryContract;

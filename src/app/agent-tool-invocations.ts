@@ -295,16 +295,24 @@ function probeJob(auth: AgentToolAuthContext, route: Route, now: string): Job {
   };
 }
 
-async function resolveDirectRoute(deps: ToolProxyDeps, auth: AgentToolAuthContext, routeKey: string): Promise<Route> {
+/** Shared identity/route boundary. Metadata reads do not require the direct-tool switch. */
+export async function resolveAgentRouteFor(
+  deps: Pick<ToolProxyDeps, 'configStore'>,
+  auth: AgentToolAuthContext,
+  routeKey: string,
+  options: { requireDirectTools?: boolean } = {},
+): Promise<Route> {
   if (!deps.configStore) throw new AgentToolApiError(503, 'agent_tools_unavailable', 'Agent tools require the MySQL control plane.');
   if (!ROUTE_RE.test(routeKey) || routeKey === 'auto') throw new AgentToolApiError(400, 'invalid_route', 'The configured route is invalid.');
-  if (!clientAllowsRoute(auth.client, routeKey) || !sessionAllowsRoute(auth.session, routeKey)) {
+  if (auth.session.client_app_id !== auth.client.app_id || !clientAllowsRoute(auth.client, routeKey) || !sessionAllowsRoute(auth.session, routeKey)) {
     throw new AgentToolApiError(403, 'route_not_allowed', 'The Agent Session is not allowed to use this route.');
   }
   const route = await deps.configStore.routes.get(routeKey);
   if (!route?.enabled) throw new AgentToolApiError(404, 'route_unavailable', 'The configured route is unavailable.');
-  const direct = agentDirectToolsConfig(route.tools);
-  if (!direct) throw new AgentToolApiError(403, 'agent_direct_disabled', 'Direct Agent tools are not enabled for this route.');
+  // Keep the existing direct-tool rejection order before audience evaluation.
+  if (options.requireDirectTools && !agentDirectToolsConfig(route.tools)) {
+    throw new AgentToolApiError(403, 'agent_direct_disabled', 'Direct Agent tools are not enabled for this route.');
+  }
   const principal = {
     ...auth.session.principal,
     roles: [...auth.session.principal.roles],
@@ -314,6 +322,10 @@ async function resolveDirectRoute(deps: ToolProxyDeps, auth: AgentToolAuthContex
   const audience = audienceAllows(route.audience, principal);
   if (!audience.ok) throw new AgentToolApiError(403, 'audience_not_allowed', 'The business identity is not allowed to use this route.');
   return route;
+}
+
+async function resolveDirectRoute(deps: ToolProxyDeps, auth: AgentToolAuthContext, routeKey: string): Promise<Route> {
+  return resolveAgentRouteFor(deps, auth, routeKey, { requireDirectTools: true });
 }
 
 async function resolveSurface(deps: ToolProxyDeps, auth: AgentToolAuthContext, routeKey: string): Promise<AgentToolSurface> {

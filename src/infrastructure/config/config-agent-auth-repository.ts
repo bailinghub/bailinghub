@@ -1,8 +1,9 @@
 import type { Pool, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import { dt, dtIso } from '../../core/config/config-codec';
-import type { AgentBusinessPrincipal, AgentSession } from '../../core/contracts/types';
+import type { AgentBusinessPrincipal, AgentSession, AgentSubjectDisplay } from '../../core/contracts/types';
+import { agentSubjectDisplayView, readAgentSubjectDisplay, validateAgentSubjectDisplay } from '../../core/contracts/agent-subject-display';
 
-export type AgentAuthorizationStatus = 'pending' | 'approved' | 'consumed' | 'denied' | 'expired';
+export type AgentAuthorizationStatus = 'pending' | 'approved' | 'consumed' | 'denied' | 'expired' | 'revoked';
 
 export interface AgentAuthorization {
   authorization_id: string;
@@ -11,6 +12,7 @@ export interface AgentAuthorization {
   state: string;
   requested_routes: string[];
   device_label: string;
+  subject_display?: AgentSubjectDisplay | null;
   code_challenge: string;
   status: AgentAuthorizationStatus;
   principal?: AgentBusinessPrincipal;
@@ -19,6 +21,7 @@ export interface AgentAuthorization {
   created_at: string;
   expires_at: string;
   code_expires_at?: string;
+  session_id?: string;
 }
 
 export type AuthorizationMutationResult =
@@ -29,9 +32,17 @@ export type AuthorizationExchangeResult =
   | { ok: true; session: AgentSession }
   | { ok: false; reason: 'invalid_grant' };
 
+export type AuthorizationRevocationResult =
+  | { ok: true; authorization: AgentAuthorization; sessionId?: string }
+  | { ok: false; reason: 'not_found' | 'wrong_client' };
+
 export type RefreshRotationResult =
   | { ok: true; session: AgentSession }
   | { ok: false; reason: 'invalid_grant' | 'replayed' };
+
+export type SubjectDisplayUpdateResult =
+  | { ok: true; session: AgentBusinessSessionRecord }
+  | { ok: false; reason: 'not_found' | 'inactive' };
 
 export type AgentSessionAdminState = 'active' | 'expired' | 'revoked';
 
@@ -43,6 +54,32 @@ export interface AgentSessionAdminRecord extends AgentSession {
 export interface AgentSessionAdminList {
   list: AgentSessionAdminRecord[];
   total: number;
+}
+
+export interface AgentBusinessSessionRecord extends AgentSessionAdminRecord {
+  authorization_id?: string;
+}
+
+export interface AgentBusinessSessionCursor {
+  createdAt: string;
+  sessionId: string;
+}
+
+export interface AgentBusinessSessionListInput {
+  clientAppId: string;
+  authorizationId?: string;
+  onBehalfOf?: string;
+  principalId?: string;
+  /** Undefined leaves tenant unfiltered; an empty string selects no tenant. */
+  tenant?: string;
+  state?: AgentSessionAdminState | 'all';
+  limit: number;
+  cursor?: AgentBusinessSessionCursor;
+}
+
+export interface AgentBusinessSessionList {
+  list: AgentBusinessSessionRecord[];
+  nextCursor?: AgentBusinessSessionCursor;
 }
 
 export interface AgentSessionAdminSummary {
@@ -81,6 +118,7 @@ function authorizationRow(row: any): AgentAuthorization {
     state: String(row.state_value),
     requested_routes: stringArray(row.requested_routes),
     device_label: String(row.device_label),
+    subject_display: readAgentSubjectDisplay(row.subject_display),
     code_challenge: String(row.code_challenge),
     status: String(row.status) as AgentAuthorizationStatus,
     ...(row.principal_json ? { principal: jsonObject<AgentBusinessPrincipal>(row.principal_json) } : {}),
@@ -89,6 +127,7 @@ function authorizationRow(row: any): AgentAuthorization {
     created_at: iso(row.created_at),
     expires_at: iso(row.expires_at),
     ...(row.code_expires_at ? { code_expires_at: iso(row.code_expires_at) } : {}),
+    ...(row.session_id ? { session_id: String(row.session_id) } : {}),
   };
 }
 
@@ -97,6 +136,7 @@ function sessionRow(row: any): AgentSession {
     session_id: String(row.session_id),
     client_app_id: String(row.client_app_id),
     device_label: String(row.device_label),
+    subject_display: readAgentSubjectDisplay(row.subject_display),
     principal: jsonObject<AgentBusinessPrincipal>(row.principal_json),
     on_behalf_of: String(row.on_behalf_of),
     allowed_routes: stringArray(row.allowed_routes),
@@ -115,10 +155,35 @@ function sessionAdminState(row: any, now: Date): AgentSessionAdminState {
 function sessionAdminRow(row: any, now: Date): AgentSessionAdminRecord {
   return {
     ...sessionRow(row),
+    ...agentSubjectDisplayView(row.subject_display),
     ...(row.last_seen_at ? { last_seen_at: iso(row.last_seen_at) } : {}),
     state: sessionAdminState(row, now),
   };
 }
+
+function businessSessionRow(row: any, now: Date): AgentBusinessSessionRecord {
+  const principal = jsonObject<Record<string, unknown>>(row.principal_json);
+  if (typeof principal.id !== 'string' || !Array.isArray(principal.roles) ||
+    !principal.roles.every((role) => typeof role === 'string')) throw new Error('Business Session principal is invalid.');
+  return {
+    ...sessionAdminRow(row, now),
+    principal: {
+      id: principal.id, roles: [...principal.roles] as string[],
+      ...(typeof principal.tenant === 'string' ? { tenant: principal.tenant } : {}),
+      ...(typeof principal.audience === 'string' ? { audience: principal.audience } : {}),
+      ...(typeof principal.channel === 'string' ? { channel: principal.channel } : {}),
+    },
+    ...(row.authorization_id ? { authorization_id: String(row.authorization_id) } : {}),
+  };
+}
+
+// Correlated aggregation preserves one row per Session, even if old/corrupt
+// authorization data contains duplicate links. Ambiguous links are not guessed.
+const BUSINESS_SESSION_COLUMNS = 's.session_id,s.client_app_id,s.device_label,s.subject_display,s.principal_json,s.on_behalf_of,s.allowed_routes,' +
+  's.access_expires_at,s.refresh_expires_at,s.created_at,s.updated_at,s.last_seen_at,s.revoked_at,' +
+  "DATE_FORMAT(s.created_at,'%Y-%m-%dT%H:%i:%s.000Z') AS cursor_created_at," +
+  '(SELECT CASE WHEN COUNT(*)=1 THEN MIN(a.authorization_id) ELSE NULL END FROM bz_agent_authorizations a ' +
+  "WHERE a.session_id=s.session_id AND a.client_app_id=s.client_app_id AND a.status='consumed') AS authorization_id";
 
 async function rollback(connection: PoolConnection): Promise<void> {
   await connection.rollback().catch(() => undefined);
@@ -156,11 +221,14 @@ export class AgentAuthRepository {
     authorizationId: string;
     clientAppId: string;
     principal: AgentBusinessPrincipal;
+    subjectDisplay?: AgentSubjectDisplay | null;
     onBehalfOf: string;
     allowedRoutes: string[];
     codeHash: string;
     codeExpiresAt: string;
   }): Promise<AuthorizationMutationResult> {
+    const display = validateAgentSubjectDisplay(input.subjectDisplay);
+    if (!display.ok) throw new Error('Invalid authorization subject display.');
     const connection = await this.pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -175,8 +243,9 @@ export class AgentAuthRepository {
       }
       if (String(row.status) !== 'pending') { await rollback(connection); return { ok: false, reason: 'invalid_state' }; }
       const [result] = await connection.query<ResultSetHeader>(
-        'UPDATE bz_agent_authorizations SET status=\'approved\',principal_json=?,on_behalf_of=?,allowed_routes=?,code_hash=?,code_expires_at=?,approved_at=? WHERE authorization_id=? AND status=\'pending\'',
-        [JSON.stringify(input.principal), input.onBehalfOf, JSON.stringify(input.allowedRoutes), input.codeHash, dtIso(input.codeExpiresAt), dt(), input.authorizationId],
+        'UPDATE bz_agent_authorizations SET status=\'approved\',principal_json=?,on_behalf_of=?,allowed_routes=?,code_hash=?,code_expires_at=?,approved_at=?,subject_display=? WHERE authorization_id=? AND status=\'pending\'',
+        [JSON.stringify(input.principal), input.onBehalfOf, JSON.stringify(input.allowedRoutes), input.codeHash, dtIso(input.codeExpiresAt), dt(),
+         display.value ? JSON.stringify(display.value) : null, input.authorizationId],
       );
       if (result.affectedRows !== 1) { await rollback(connection); return { ok: false, reason: 'invalid_state' }; }
       const [updated] = await connection.query('SELECT * FROM bz_agent_authorizations WHERE authorization_id=? LIMIT 1', [input.authorizationId]);
@@ -216,6 +285,43 @@ export class AgentAuthRepository {
     }
   }
 
+  /** Competes with code exchange on the same authorization row, before any Session mutation. */
+  async revokeAuthorization(input: { authorizationId: string; clientAppId: string }): Promise<AuthorizationRevocationResult> {
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [rows] = await connection.query('SELECT * FROM bz_agent_authorizations WHERE authorization_id=? FOR UPDATE', [input.authorizationId]);
+      const row = (rows as any[])[0];
+      if (!row) { await rollback(connection); return { ok: false, reason: 'not_found' }; }
+      if (String(row.client_app_id) !== input.clientAppId) { await rollback(connection); return { ok: false, reason: 'wrong_client' }; }
+      let sessionId: string | undefined;
+      if (row.status === 'consumed') {
+        if (!row.session_id) { await rollback(connection); return { ok: false, reason: 'not_found' }; }
+        const [sessions] = await connection.query('SELECT session_id,client_app_id FROM bz_agent_sessions WHERE session_id=? LIMIT 1 FOR UPDATE', [row.session_id]);
+        const session = (sessions as any[])[0];
+        if (!session) { await rollback(connection); return { ok: false, reason: 'not_found' }; }
+        if (String(session.client_app_id) !== input.clientAppId) { await rollback(connection); return { ok: false, reason: 'wrong_client' }; }
+        sessionId = String(session.session_id);
+        const stamp = dt();
+        await connection.query('UPDATE bz_agent_sessions SET revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE session_id=?', [stamp, stamp, sessionId]);
+        await connection.query('UPDATE bz_agent_refresh_tokens SET status=\'revoked\',used_at=COALESCE(used_at,?) WHERE session_id=? AND status=\'active\'', [stamp, sessionId]);
+      } else if (row.status === 'pending' || row.status === 'approved') {
+        await connection.query("UPDATE bz_agent_authorizations SET status='revoked',code_hash=NULL,code_expires_at=NULL WHERE authorization_id=?", [input.authorizationId]);
+      } else if (!['revoked', 'denied', 'expired'].includes(String(row.status))) {
+        throw new Error('Agent authorization lifecycle state is invalid.');
+      }
+      const [updated] = await connection.query('SELECT * FROM bz_agent_authorizations WHERE authorization_id=? LIMIT 1', [input.authorizationId]);
+      const authorization = authorizationRow((updated as any[])[0]);
+      await connection.commit();
+      return { ok: true, authorization, ...(sessionId ? { sessionId } : {}) };
+    } catch (error) {
+      await rollback(connection);
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
   async exchangeAuthorizationCode(input: {
     codeHash: string;
     clientAppId: string;
@@ -240,10 +346,11 @@ export class AgentAuthRepository {
       }
       const createdAt = dt();
       await connection.query(
-        'INSERT INTO bz_agent_sessions (session_id,client_app_id,device_label,principal_json,on_behalf_of,allowed_routes,access_token_hash,access_expires_at,refresh_expires_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO bz_agent_sessions (session_id,client_app_id,device_label,principal_json,on_behalf_of,allowed_routes,access_token_hash,access_expires_at,refresh_expires_at,created_at,updated_at,subject_display) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
         [input.sessionId, input.clientAppId, row.device_label, typeof row.principal_json === 'string' ? row.principal_json : JSON.stringify(row.principal_json),
          row.on_behalf_of, typeof row.allowed_routes === 'string' ? row.allowed_routes : JSON.stringify(row.allowed_routes), input.accessTokenHash,
-         dtIso(input.accessExpiresAt), dtIso(input.refreshExpiresAt), createdAt, createdAt],
+         dtIso(input.accessExpiresAt), dtIso(input.refreshExpiresAt), createdAt, createdAt,
+         readAgentSubjectDisplay(row.subject_display) ? JSON.stringify(readAgentSubjectDisplay(row.subject_display)) : null],
       );
       await connection.query(
         'INSERT INTO bz_agent_refresh_tokens (token_hash,session_id,status,created_at,expires_at) VALUES (?,? ,\'active\',?,?)',
@@ -276,6 +383,80 @@ export class AgentAuthRepository {
     return sessionRow(row);
   }
 
+  /** Client Token callers supply their authenticated App, never a model-selected scope. */
+  async getBusinessSession(clientAppId: string, sessionId: string): Promise<AgentBusinessSessionRecord | null> {
+    if (!clientAppId) throw new Error('Business Session queries require an authenticated Client App.');
+    const [rows] = await this.pool.query(`SELECT ${BUSINESS_SESSION_COLUMNS} FROM bz_agent_sessions s WHERE s.client_app_id=? AND s.session_id=? LIMIT 1`, [clientAppId, sessionId]);
+    const row = (rows as any[])[0];
+    return row && row.client_app_id === clientAppId && row.session_id === sessionId ? businessSessionRow(row, new Date()) : null;
+  }
+
+  /** Update presentation under the same Session lock as refresh/revoke. No identity or audit writes. */
+  async updateSubjectDisplay(input: {
+    clientAppId: string; sessionId: string; subjectDisplay: AgentSubjectDisplay | null;
+  }): Promise<SubjectDisplayUpdateResult> {
+    const display = validateAgentSubjectDisplay(input.subjectDisplay);
+    if (!input.clientAppId || !input.sessionId || !display.ok) throw new Error('Invalid subject display update.');
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [rows] = await connection.query('SELECT * FROM bz_agent_sessions WHERE session_id=? AND client_app_id=? LIMIT 1 FOR UPDATE',
+        [input.sessionId, input.clientAppId]);
+      const row = (rows as any[])[0];
+      if (!row || row.client_app_id !== input.clientAppId || row.session_id !== input.sessionId) {
+        await rollback(connection); return { ok: false, reason: 'not_found' };
+      }
+      if (sessionAdminState(row, new Date()) !== 'active') { await rollback(connection); return { ok: false, reason: 'inactive' }; }
+      await connection.query('UPDATE bz_agent_sessions SET subject_display=?,updated_at=? WHERE session_id=? AND client_app_id=?',
+        [display.value ? JSON.stringify(display.value) : null, dt(), input.sessionId, input.clientAppId]);
+      const [updated] = await connection.query(`SELECT ${BUSINESS_SESSION_COLUMNS} FROM bz_agent_sessions s WHERE s.client_app_id=? AND s.session_id=? LIMIT 1`,
+        [input.clientAppId, input.sessionId]);
+      const session = businessSessionRow((updated as any[])[0], new Date());
+      await connection.commit();
+      return { ok: true, session };
+    } catch (error) {
+      await rollback(connection);
+      throw error;
+    } finally { connection.release(); }
+  }
+
+  async listBusinessSessions(input: AgentBusinessSessionListInput): Promise<AgentBusinessSessionList> {
+    if (!input.clientAppId) throw new Error('Business Session queries require an authenticated Client App.');
+    const now = new Date();
+    const limit = Math.min(Math.max(Math.floor(Number(input.limit) || 50), 1), 100);
+    const where = ['s.client_app_id=?'];
+    const params: unknown[] = [input.clientAppId];
+    if (input.authorizationId !== undefined) {
+      where.push("EXISTS (SELECT 1 FROM bz_agent_authorizations matched WHERE matched.authorization_id=? AND matched.client_app_id=s.client_app_id AND matched.session_id=s.session_id AND matched.status='consumed')");
+      params.push(input.authorizationId);
+    }
+    if (input.onBehalfOf !== undefined) { where.push('BINARY s.on_behalf_of=BINARY ?'); params.push(input.onBehalfOf); }
+    if (input.principalId !== undefined) {
+      where.push("BINARY JSON_UNQUOTE(JSON_EXTRACT(s.principal_json,'$.id'))=BINARY ?"); params.push(input.principalId);
+    }
+    if (input.tenant !== undefined) {
+      where.push("BINARY (CASE WHEN JSON_EXTRACT(s.principal_json,'$.tenant') IS NULL OR JSON_TYPE(JSON_EXTRACT(s.principal_json,'$.tenant'))='NULL' THEN '' ELSE JSON_UNQUOTE(JSON_EXTRACT(s.principal_json,'$.tenant')) END)=BINARY ?");
+      params.push(input.tenant);
+    }
+    if (input.state === 'active') { where.push('s.revoked_at IS NULL AND s.refresh_expires_at>?'); params.push(dtIso(now.toISOString())); }
+    else if (input.state === 'expired') { where.push('s.revoked_at IS NULL AND s.refresh_expires_at<=?'); params.push(dtIso(now.toISOString())); }
+    else if (input.state === 'revoked') where.push('s.revoked_at IS NOT NULL');
+    if (input.cursor) {
+      where.push('(s.created_at<? OR (s.created_at=? AND s.session_id<?))');
+      params.push(dtIso(input.cursor.createdAt), dtIso(input.cursor.createdAt), input.cursor.sessionId);
+    }
+    const [rows] = await this.pool.query(`SELECT ${BUSINESS_SESSION_COLUMNS} FROM bz_agent_sessions s WHERE ${where.join(' AND ')} ORDER BY s.created_at DESC,s.session_id DESC LIMIT ?`, [...params, limit + 1]);
+    const records = rows as any[];
+    if (records.some((row) => row.client_app_id !== input.clientAppId)) throw new Error('Business Session ownership mismatch.');
+    const selected = records.slice(0, limit);
+    const last = selected.at(-1);
+    if (records.length > limit && last && typeof last.cursor_created_at !== 'string') throw new Error('Business Session cursor timestamp is invalid.');
+    // Use a DB-formatted UTC literal for the cursor rather than reparsing a
+    // driver's local-time Date; the cursor must round-trip the stored DATETIME.
+    return { list: selected.map((row) => businessSessionRow(row, now)),
+      ...(records.length > limit && last ? { nextCursor: { createdAt: String(last.cursor_created_at), sessionId: String(last.session_id) } } : {}) };
+  }
+
   /** Admin-only projection. Token hashes and refresh-token rows never leave the repository. */
   async listSessionsForAdmin(input: {
     clientAppId?: string;
@@ -305,7 +486,7 @@ export class AgentAuthRepository {
     const predicate = where.length ? ` WHERE ${where.join(' AND ')}` : '';
     const [countRows] = await this.pool.query(`SELECT COUNT(*) AS total FROM bz_agent_sessions${predicate}`, params);
     const [rows] = await this.pool.query(
-      `SELECT session_id,client_app_id,device_label,principal_json,on_behalf_of,allowed_routes,access_expires_at,refresh_expires_at,created_at,updated_at,last_seen_at,revoked_at FROM bz_agent_sessions${predicate} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+      `SELECT session_id,client_app_id,device_label,subject_display,principal_json,on_behalf_of,allowed_routes,access_expires_at,refresh_expires_at,created_at,updated_at,last_seen_at,revoked_at FROM bz_agent_sessions${predicate} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
       [...params, limit, offset],
     );
     return {
@@ -316,7 +497,7 @@ export class AgentAuthRepository {
 
   async getSessionForAdmin(sessionId: string, now = new Date()): Promise<AgentSessionAdminRecord | null> {
     const [rows] = await this.pool.query(
-      'SELECT session_id,client_app_id,device_label,principal_json,on_behalf_of,allowed_routes,access_expires_at,refresh_expires_at,created_at,updated_at,last_seen_at,revoked_at FROM bz_agent_sessions WHERE session_id=? LIMIT 1',
+      'SELECT session_id,client_app_id,device_label,subject_display,principal_json,on_behalf_of,allowed_routes,access_expires_at,refresh_expires_at,created_at,updated_at,last_seen_at,revoked_at FROM bz_agent_sessions WHERE session_id=? LIMIT 1',
       [sessionId],
     );
     return (rows as any[])[0] ? sessionAdminRow((rows as any[])[0], now) : null;
@@ -351,12 +532,17 @@ export class AgentAuthRepository {
     const connection = await this.pool.getConnection();
     try {
       await connection.beginTransaction();
-      const [tokenRows] = await connection.query('SELECT * FROM bz_agent_refresh_tokens WHERE token_hash=? FOR UPDATE', [input.refreshTokenHash]);
-      const tokenRow = (tokenRows as any[])[0];
-      if (!tokenRow) { await rollback(connection); return { ok: false, reason: 'invalid_grant' }; }
-      const [sessionRows] = await connection.query('SELECT * FROM bz_agent_sessions WHERE session_id=? FOR UPDATE', [tokenRow.session_id]);
+      // Locate without locking, then lock Session before refresh rows just like
+      // revocation. Revalidate the token's original owner after both locks.
+      const [located] = await connection.query('SELECT session_id FROM bz_agent_refresh_tokens WHERE token_hash=? LIMIT 1', [input.refreshTokenHash]);
+      const sessionId = (located as any[])[0]?.session_id;
+      if (!sessionId) { await rollback(connection); return { ok: false, reason: 'invalid_grant' }; }
+      const [sessionRows] = await connection.query('SELECT * FROM bz_agent_sessions WHERE session_id=? FOR UPDATE', [sessionId]);
       const session = (sessionRows as any[])[0];
       if (!session || String(session.client_app_id) !== input.clientAppId) { await rollback(connection); return { ok: false, reason: 'invalid_grant' }; }
+      const [tokenRows] = await connection.query('SELECT * FROM bz_agent_refresh_tokens WHERE token_hash=? FOR UPDATE', [input.refreshTokenHash]);
+      const tokenRow = (tokenRows as any[])[0];
+      if (!tokenRow || String(tokenRow.session_id) !== String(sessionId)) { await rollback(connection); return { ok: false, reason: 'invalid_grant' }; }
       if (String(tokenRow.status) !== 'active') {
         const stamp = dt();
         await connection.query('UPDATE bz_agent_sessions SET revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE session_id=?', [stamp, stamp, session.session_id]);
@@ -408,12 +594,14 @@ export class AgentAuthRepository {
     const connection = await this.pool.getConnection();
     try {
       await connection.beginTransaction();
-      const [rows] = await connection.query(
-        'SELECT s.session_id FROM bz_agent_refresh_tokens r JOIN bz_agent_sessions s ON s.session_id=r.session_id WHERE r.token_hash=? AND s.client_app_id=? LIMIT 1 FOR UPDATE',
-        [refreshTokenHash, clientAppId],
-      );
-      const sessionId = (rows as any[])[0]?.session_id;
+      const [located] = await connection.query('SELECT session_id FROM bz_agent_refresh_tokens WHERE token_hash=? LIMIT 1', [refreshTokenHash]);
+      const sessionId = (located as any[])[0]?.session_id;
       if (!sessionId) { await rollback(connection); return false; }
+      const [sessions] = await connection.query('SELECT session_id,client_app_id FROM bz_agent_sessions WHERE session_id=? LIMIT 1 FOR UPDATE', [sessionId]);
+      const session = (sessions as any[])[0];
+      if (!session || String(session.client_app_id) !== clientAppId) { await rollback(connection); return false; }
+      const [tokens] = await connection.query('SELECT * FROM bz_agent_refresh_tokens WHERE token_hash=? FOR UPDATE', [refreshTokenHash]);
+      if (!(tokens as any[])[0] || String((tokens as any[])[0].session_id) !== String(sessionId)) { await rollback(connection); return false; }
       const stamp = dt();
       await connection.query('UPDATE bz_agent_sessions SET revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE session_id=?', [stamp, stamp, sessionId]);
       await connection.query('UPDATE bz_agent_refresh_tokens SET status=\'revoked\',used_at=COALESCE(used_at,?) WHERE session_id=? AND status=\'active\'', [stamp, sessionId]);
@@ -450,4 +638,6 @@ export class AgentAuthRepository {
   }
 }
 
-export type AgentAuthRepositoryContract = Pick<AgentAuthRepository, keyof AgentAuthRepository>;
+type AgentAuthLifecycleMethod = 'getBusinessSession' | 'listBusinessSessions' | 'revokeAuthorization' | 'updateSubjectDisplay';
+export type AgentAuthRepositoryContract = Omit<Pick<AgentAuthRepository, keyof AgentAuthRepository>, AgentAuthLifecycleMethod> &
+  Partial<Pick<AgentAuthRepository, AgentAuthLifecycleMethod>>;

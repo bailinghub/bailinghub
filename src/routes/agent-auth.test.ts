@@ -249,7 +249,7 @@ test('Agent Auth v1: context is redacted, PKCE binds client/redirect, query toke
   assert.equal(token.statusCode, 200);
   assert.equal(token.headers['cache-control'], 'no-store');
   assert.equal(token.headers['pragma'], 'no-cache');
-  assert.deepEqual(Object.keys(token.json()).sort(), ['access_token', 'client_app_id', 'expires_in', 'refresh_expires_in', 'refresh_token', 'session_id', 'token_type'].sort());
+  assert.deepEqual(Object.keys(token.json()).sort(), ['access_token', 'client_app_id', 'expires_in', 'refresh_expires_in', 'refresh_token', 'session_id', 'token_type', 'subject_display', 'subject_display_status'].sort());
   const accessToken = String(token.json().access_token);
 
   const queryAccess = await call(store, 'GET', `/agent-auth/v1/session?token=${encodeURIComponent(accessToken)}`);

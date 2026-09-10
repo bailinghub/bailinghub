@@ -108,6 +108,17 @@ export async function handleAdminAgentClientsApiFor(
         name: route.name,
         description: route.description ?? '',
       })),
+      setup_workspaces: routes.map((route) => {
+        const direct = route.tools?.['agent_direct'] as Record<string, unknown> | undefined;
+        return {
+        route: route.route_key, name: route.name, enabled: route.enabled,
+        runtime_enabled: Boolean(routeAgentClientConfig(route)),
+        direct_enabled: direct?.['enabled'] === true,
+        system_info_configured: Boolean(route.agent_client?.system_info),
+        source_count: Array.isArray(route.tools?.sources) ? route.tools.sources.length : 0,
+        write_tool_count: Array.isArray(direct?.['write_tools']) ? direct['write_tools'].length : 0,
+        permission: route.permission || null,
+      }; }),
       summary: {
         applications: applications.length,
         agent_auth_enabled: applications.filter((item) => item.agent_auth_enabled).length,

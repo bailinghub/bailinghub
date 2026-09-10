@@ -2,6 +2,11 @@
 
 [中文版](AGENT_CONVERSATION_AUDIT.md)
 
+> This page retains the existing v1 protocol and describes an **unreleased
+> candidate increment for cross-system member bindings**. v2 identifies only the
+> explicit create-request schema; existing v1 creation, events, headers and admin
+> response schemas remain unchanged. This is not a claim of released support.
+
 This optional API records the complete **visible** conversation managed by a local
 Agent, and links its turns to separately authorized BailingHub runs. It does not
 merge Agent Sessions, business identities, threads, runtime memory, tool grants,
@@ -16,8 +21,9 @@ write and admin read endpoints then report `conversation_audit_unavailable`.
 
 - Every Agent request uses the existing `Authorization: Bearer <Agent access token>`
   authentication. Tokens are never fields in the archive or event DTOs.
-- A creator freezes the exact member Agent Session UUIDs, client application,
-  route and original `client_conversation_id`. The creator must be a member.
+- A v1 creator freezes the exact member Agent Session UUIDs, common client
+  application and route, and original `client_conversation_id`. The creator must
+  be a member. v1 does not acquire cross-application or cross-route scope.
 - Each other member confirms with **its own** authenticated bearer. A caller
   cannot confirm a session ID supplied in a body. All members must confirm before
   any event, including the first visible message, can be stored.
@@ -39,7 +45,7 @@ write and admin read endpoints then report `conversation_audit_unavailable`.
   memory. An authorized multi-store conversation is not copied into each store's
   model context. Existing run completion records keep their original purpose.
 
-## Create and confirm membership
+## v1 creation and member confirmation
 
 `POST /agent-api/v1/conversation-audits`
 
@@ -74,7 +80,96 @@ Both operations return schema `bailing.agent-conversation-audit.v1` and the
 conversation header described below. `state` is `enrolling` until all members
 confirm, then `ready`. It describes enrollment, not a permanent guarantee that
 all authorizations remain active; every subsequent write revalidates them.
+It also does not establish that all visible history was uploaded or verified as complete.
 Replies contain no transcript text, credentials, identity hashes or tool data.
+
+## Unreleased candidate: cross-system member bindings
+
+### Probe capability first
+
+`GET /agent-api/v1/conversation-audits/capabilities` uses the existing
+`Authorization: Bearer <Agent access token>` authentication and returns
+`Cache-Control: no-store`:
+
+```json
+{
+  "schema": "bailing.agent-conversation-audit-capabilities.v1",
+  "cross_binding_members": true,
+  "member_bindings": "session-client-route.v1"
+}
+```
+
+This is capability metadata only: no transcript, member list, account names,
+Session identifiers, credentials or tool data are exposed. `cross_binding_members`
+is `false` when the archive repository is absent, an older Host omits either
+optional `createCrossBinding` / `supportsCrossBindingMembers` method, or the Core
+database lacks any of migration 058's new columns. A failed probe is not proof of
+support. When an older Core returns `404`, the client must reject cross-binding
+use, without trying to send text or downgrading a cross-binding request to v1.
+Existing common-binding v1 features retain their original checks and protocol.
+The `member_bindings` string in a false response does not enable the feature.
+
+### Explicit v2 creation
+
+Before sending, the SDK must verify that all selected connections belong to the
+**same Hub**, and validate each connection's own authorization, App and route.
+Each target retains an independent Agent Session. A shared Hub does not permit
+combining repositories or queries across Host tenant data domains.
+After confirming capability, send to the same `POST /agent-api/v1/conversation-audits`:
+
+```json
+{
+  "schema": "bailing.agent-conversation-audit-create.v2",
+  "client_archive_id": "323e4567-e89b-42d3-a456-426614174001",
+  "client_conversation_id": "conversation-stable-id",
+  "members": [
+    {"session_id":"123e4567-e89b-42d3-a456-426614174001","client_app_id":"crm-demo","route":"customers","label":"CRM account"},
+    {"session_id":"123e4567-e89b-42d3-a456-426614174002","client_app_id":"erp-demo","route":"orders","label":"ERP account"}
+  ]
+}
+```
+
+`members` contains 1–64 entries. Each requires `session_id`, `client_app_id` and
+`route`; only `label` is optional. App IDs and routes use the lowercase resource
+key pattern `^[a-z0-9][a-z0-9_-]{1,63}$`; route cannot be `auto`. Labels are display
+text of at most 128 characters. A Session may occur only once and bind one route,
+even when that Session is authorized for several routes. Use a separate authorized
+Session for another target. v2 rejects mixed-in top-level `route`,
+`member_session_ids` or `member_labels` fields.
+
+The member matching the **creating bearer** is the writer (creator), must be in
+the member list, and must match that bearer's App. It is not the first sorted
+member: sorting only makes validation deterministic. The idempotency key remains
+`creator_session_id + writer route + client_archive_id`; the entire frozen input
+must match on retry. A header's `client_app_id` / `route_key` describes **only the
+writer**, not the sole system or a shared authorization for the whole group.
+For example, if the ERP member's bearer creates the example above, that member
+is the writer and the header contains `erp-demo` / `orders`.
+
+v2 creation validates every member's own Session/App/route and confirms only the
+writer. Each other member still calls the original confirm endpoint with **its
+own bearer** and `{}`. The writer cannot confirm on another member's behalf.
+Confirmation and every append batch revalidate the whole group, including each
+confirmed identity snapshot. Revocation, refresh expiry, identity changes or lost
+route permission for any selected member reject the group write. Do not silently
+drop that member, choose another account or save only the remaining group's text.
+Only the writer appends events. Each run link is checked against the member named
+by `member_session_id`, its own App/route and the original run's conversation/turn;
+the writer's binding is not substituted. Business permissions, approvals,
+invocations and original trace links remain independent for each member.
+
+### Host packaging and migration
+
+The cross-binding candidate additionally requires explicit application of
+`sql/058_agent_conversation_member_bindings.sql`. It only adds the archive
+`membership_version` and member `client_app_id`, `route_key`, `client_name` columns.
+057 remains unchanged; no Sessions, runs, invocations or text are moved, and
+existing identity and text content are not rewritten. Older records remain v1 with NULL in the new member columns. A
+deployment with only 057 can continue using v1 but cannot advertise cross-binding
+support. Hosts must include the official SQL in their release artifacts and run
+their existing explicit migration process. Runtime code upgrades or startup do
+not migrate automatically. Each Host retains its own database and tenant boundary;
+do not combine stores across tenants.
 
 ## Append visible events
 
@@ -132,6 +227,8 @@ Hosts should persist the archive UUID, creator/member binding, stable event IDs,
 ordered events and acknowledged sequence before claiming successful archival.
 Lost acknowledgements can be retried unchanged. Restoring an audit queue does not
 restore invocation execution state or grant permission to resume unknown IDs.
+Upload retries do not repeat business execution. A synchronization ACK confirms
+the received event cursor; it does not erase unsaved events or missing history.
 
 ## Administrator read API
 
@@ -159,6 +256,12 @@ event kinds and must not be displayed as message counts.
 `session_id`, `display_label`, `confirmed`, and, once confirmed, the frozen
 `principal` and `on_behalf_of`. Event views contain the submitted visible fields,
 server `created_at`, and server-derived numeric `thread_id` on run links.
+The cross-binding candidate optionally adds `client_app_id`, `client_name` and
+`route_key` to member views while retaining the v1 admin response schema.
+`client_name` is a display snapshot, not identity evidence. Older v1 responses may
+omit these fields, and legacy database NULL values do not prove a member binding.
+A UI falling back to the header must explicitly mark it as legacy header-only
+information, not evidence of separately recorded member systems and routes.
 Read the next page using `next_after_sequence`; no fixed first-1000-message cutoff
 is imposed. Responses use `Cache-Control: no-store`.
 
@@ -186,9 +289,11 @@ than truncate an allegedly complete transcript.
 | 409 | `conversation_audit_conflict` | Frozen membership, event sequence/content, turn or run association conflicts. |
 | 413 | `conversation_audit_limit` | No partial or truncated events were saved. |
 | 503 | `conversation_audit_unavailable` | Optional archive repository is not available. |
+| 503 | `conversation_audit_cross_binding_unavailable` | Methods or migration for the unreleased v2 create candidate are unavailable. |
 | 500 | `conversation_audit_internal_error` | Storage/internal failure; raw exception details are not returned. |
 
-Unknown endpoints, including every Agent transcript GET, return `404`. An older
+The metadata-only capabilities GET is the sole Agent archive GET exception;
+transcript reads and unknown endpoints return `404`. An older
 Core without these routes may also return `404`; adapters must report archival
 as unsupported, not claim that a complete conversation was uploaded. An archive
 failure must remain visible independently of a successful business operation.

@@ -5,6 +5,7 @@ import {
   assertAuditMemberActive, auditError, auditHash, auditIdentityHash,
   CONVERSATION_AUDIT_MAX_BYTES, CONVERSATION_AUDIT_MAX_EVENTS,
   type CreateConversationAuditInput, type ConversationAuditEventInput,
+  type CreateCrossBindingConversationAuditInput,
 } from '../../core/runtime/agent-conversation-audit';
 
 type Auth = { session: AgentSession; client: Client };
@@ -52,6 +53,17 @@ export class AgentConversationAuditRepository {
   constructor(private readonly poolOf: () => any) {}
   private get pool(): any { return this.poolOf(); }
 
+  /** Advertise support only after the separately applied additive migration. */
+  async supportsCrossBindingMembers(): Promise<boolean> {
+    const [rows] = await this.pool.query(`SELECT TABLE_NAME AS table_name,COLUMN_NAME AS column_name
+      FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND
+      ((TABLE_NAME='bz_agent_conversation_audits' AND COLUMN_NAME='membership_version') OR
+       (TABLE_NAME='bz_agent_conversation_members' AND COLUMN_NAME IN ('client_app_id','route_key','client_name')))`);
+    const present = new Set((rows as Row[]).map((row) => `${row.table_name}.${row.column_name}`));
+    return ['bz_agent_conversation_audits.membership_version', 'bz_agent_conversation_members.client_app_id',
+      'bz_agent_conversation_members.route_key', 'bz_agent_conversation_members.client_name'].every((column) => present.has(column));
+  }
+
   private async transaction<T>(work: (connection: any) => Promise<T>): Promise<T> {
     const connection = await this.pool.getConnection();
     try {
@@ -68,12 +80,49 @@ export class AgentConversationAuditRepository {
 
   /** Lock the authorization configuration until commit, including revoke/refresh rows. */
   private async lockedBinding(connection: any, clientAppId: string, routeKey: string): Promise<{ client: Client; route: Route }> {
-    const [clients] = await connection.query(
-      'SELECT app_id,name,agent_authorize_url,allowed_routes,allowed_channels,enabled FROM bz_clients WHERE app_id=? FOR UPDATE', [clientAppId],
-    );
-    const [routes] = await connection.query('SELECT * FROM bz_routes WHERE route_key=? FOR UPDATE', [routeKey]);
-    if (!clients[0] || !routes[0]) auditError('conversation_audit_authorization_invalid', 403);
-    return { client: rowClient(clients[0]), route: rowRoute(routes[0]) };
+    return (await this.lockedBindings(connection, [{ client_app_id: clientAppId, route_key: routeKey }])).get(`${clientAppId}\0${routeKey}`)!;
+  }
+
+  private async lockedBindings(connection: any, bindings: Array<{ client_app_id: string; route_key: string }>): Promise<Map<string, { client: Client; route: Route }>> {
+    const clients = new Map<string, Client>();
+    const routes = new Map<string, Route>();
+    // All clients, then all routes, then all sessions: one order across groups,
+    // including overlapping v1 groups, instead of a per-member lock inversion.
+    for (const id of [...new Set(bindings.map((binding) => binding.client_app_id))].sort()) {
+      const [rows] = await connection.query(
+        'SELECT app_id,name,agent_authorize_url,allowed_routes,allowed_channels,enabled FROM bz_clients WHERE app_id=? FOR UPDATE', [id]);
+      if (!rows[0] || rows[0].app_id !== id) auditError('conversation_audit_authorization_invalid', 403);
+      clients.set(id, rowClient(rows[0]));
+    }
+    for (const key of [...new Set(bindings.map((binding) => binding.route_key))].sort()) {
+      const [rows] = await connection.query('SELECT * FROM bz_routes WHERE route_key=? FOR UPDATE', [key]);
+      if (!rows[0] || rows[0].route_key !== key) auditError('conversation_audit_authorization_invalid', 403);
+      routes.set(key, rowRoute(rows[0]));
+    }
+    return new Map(bindings.map((binding) => [`${binding.client_app_id}\0${binding.route_key}`,
+      { client: clients.get(binding.client_app_id)!, route: routes.get(binding.route_key)! }]));
+  }
+
+  private memberBinding(row: Row, member: Row): { client_app_id: string; route_key: string } {
+    if (Number(row.membership_version ?? 1) === 1) return { client_app_id: row.client_app_id, route_key: row.route_key };
+    if (Number(row.membership_version) !== 2 || typeof member.client_app_id !== 'string' || !member.client_app_id ||
+      typeof member.route_key !== 'string' || !member.route_key) auditError('conversation_audit_authorization_invalid', 403);
+    return { client_app_id: member.client_app_id, route_key: member.route_key };
+  }
+
+  private async lockedGroup(connection: any, row: Row, members: Row[]): Promise<Map<string, { session: AgentSession; client: Client; route: Route }>> {
+    if (!members.length || members.length !== Number(row.member_count) ||
+      new Set(members.map((member) => member.session_id)).size !== members.length) auditError('conversation_audit_authorization_invalid', 403);
+    const bindings = await this.lockedBindings(connection, members.map((member) => this.memberBinding(row, member)));
+    const result = new Map<string, { session: AgentSession; client: Client; route: Route }>();
+    for (const member of [...members].sort((a, b) => a.session_id.localeCompare(b.session_id))) {
+      const identity = this.memberBinding(row, member);
+      const binding = bindings.get(`${identity.client_app_id}\0${identity.route_key}`)!;
+      if (member.confirmed_at && !member.identity_hash) auditError('conversation_audit_authorization_invalid', 403);
+      const session = await this.lockedSession(connection, member.session_id, binding, member.identity_hash ?? undefined);
+      result.set(member.session_id, { ...binding, session });
+    }
+    return result;
   }
 
   private async lockedSession(connection: any, id: string, binding: { client: Client; route: Route }, expectedIdentity?: string): Promise<AgentSession> {
@@ -87,12 +136,60 @@ export class AgentConversationAuditRepository {
   private async lockedConversation(connection: any, id: string, auth: Auth, creatorOnly: boolean): Promise<{ row: Row; members: Row[] }> {
     const [rows] = await connection.query('SELECT * FROM bz_agent_conversation_audits WHERE conversation_id=? FOR UPDATE', [id]);
     const row = rows[0] as Row | undefined;
-    if (!row || row.client_app_id !== auth.client.app_id || (creatorOnly && row.creator_session_id !== auth.session.session_id)) {
+    if (!row || (creatorOnly && row.creator_session_id !== auth.session.session_id)) {
       auditError('conversation_audit_not_found', 404);
     }
     const [members] = await connection.query('SELECT * FROM bz_agent_conversation_members WHERE conversation_id=? ORDER BY session_id FOR UPDATE', [id]);
-    if (!(members as Row[]).some((member) => member.session_id === auth.session.session_id)) auditError('conversation_audit_not_found', 404);
+    const member = (members as Row[]).find((candidate) => candidate.session_id === auth.session.session_id);
+    if (!member || this.memberBinding(row, member).client_app_id !== auth.client.app_id || auth.session.client_app_id !== auth.client.app_id) {
+      auditError('conversation_audit_not_found', 404);
+    }
     return { row, members };
+  }
+
+  async createCrossBinding(auth: Auth, input: CreateCrossBindingConversationAuditInput): Promise<Row> {
+    if (!await this.supportsCrossBindingMembers()) auditError('conversation_audit_cross_binding_unavailable', 503);
+    const creatorMember = input.members.find((member) => member.session_id === auth.session.session_id);
+    if (!creatorMember || creatorMember.client_app_id !== auth.client.app_id) auditError('conversation_audit_not_found', 404);
+    return this.transaction(async (connection) => {
+      const at = dt();
+      const enrollmentHash = auditHash(input);
+      const row: Row = {
+        conversation_id: randomUUID(), creator_session_id: auth.session.session_id, client_app_id: auth.client.app_id,
+        route_key: creatorMember.route, membership_version: 2,
+        client_archive_id: input.client_archive_id, client_conversation_id: input.client_conversation_id,
+        enrollment_hash: enrollmentHash, state: input.members.length === 1 ? 'ready' : 'enrolling',
+        member_count: input.members.length, confirmed_count: 1, last_sequence: 0, content_bytes: 0,
+        message_count: 0, turn_count: 0, last_turn_id: null, last_turn_status: null, created_at: at, updated_at: at,
+      };
+      await connection.query('INSERT INTO bz_agent_conversation_audits SET ? ON DUPLICATE KEY UPDATE conversation_id=conversation_id', [row]);
+      const [existing] = await connection.query(
+        'SELECT * FROM bz_agent_conversation_audits WHERE creator_session_id=? AND route_key=? AND client_archive_id=? FOR UPDATE',
+        [auth.session.session_id, creatorMember.route, input.client_archive_id]);
+      const stored = existing[0];
+      if (!stored || stored.client_app_id !== auth.client.app_id || stored.enrollment_hash !== enrollmentHash || Number(stored.membership_version) !== 2) auditError();
+      let members: Row[] = input.members.map((member) => ({
+        session_id: member.session_id, client_app_id: member.client_app_id, route_key: member.route,
+        display_label: member.label ?? member.session_id,
+      }));
+      if (stored.conversation_id !== row.conversation_id) {
+        [members] = await connection.query('SELECT * FROM bz_agent_conversation_members WHERE conversation_id=? ORDER BY session_id FOR UPDATE', [stored.conversation_id]);
+      }
+      const group = await this.lockedGroup(connection, stored, members);
+      const creator = group.get(auth.session.session_id)!.session;
+      if (auditIdentityHash(creator) !== auditIdentityHash(auth.session)) auditError('conversation_audit_authorization_invalid', 403);
+      if (stored.conversation_id !== row.conversation_id) return head(stored);
+      for (const member of members) {
+        const confirmed = member.session_id === creator.session_id;
+        await connection.query('INSERT INTO bz_agent_conversation_members SET ?', [{
+          conversation_id: row.conversation_id, ...member, client_name: group.get(member.session_id)!.client.name,
+          identity_hash: confirmed ? auditIdentityHash(creator) : null,
+          principal_json: confirmed ? JSON.stringify(creator.principal) : null,
+          on_behalf_of: confirmed ? creator.on_behalf_of : null, confirmed_at: confirmed ? at : null,
+        }]);
+      }
+      return head(row);
+    });
   }
 
   async create(auth: Auth, input: CreateConversationAuditInput): Promise<Row> {
@@ -135,9 +232,9 @@ export class AgentConversationAuditRepository {
   async confirm(auth: Auth, conversationId: string): Promise<Row> {
     return this.transaction(async (connection) => {
       const { row, members } = await this.lockedConversation(connection, conversationId, auth, false);
-      const binding = await this.lockedBinding(connection, row.client_app_id, row.route_key);
       const member = members.find((candidate) => candidate.session_id === auth.session.session_id)!;
-      const session = await this.lockedSession(connection, member.session_id, binding, member.identity_hash ?? auditIdentityHash(auth.session));
+      const group = await this.lockedGroup(connection, row, members);
+      const session = group.get(member.session_id)!.session;
       if (auditIdentityHash(session) !== auditIdentityHash(auth.session)) auditError('conversation_audit_authorization_invalid', 403);
       const at = dt();
       if (!member.confirmed_at) {
@@ -149,9 +246,6 @@ export class AgentConversationAuditRepository {
         member.confirmed_at = at;
       }
       const confirmed = members.filter((candidate) => candidate.confirmed_at).length;
-      if (confirmed === members.length) {
-        for (const candidate of members) await this.lockedSession(connection, candidate.session_id, binding, candidate.identity_hash);
-      }
       row.confirmed_count = confirmed;
       row.state = confirmed === members.length ? 'ready' : 'enrolling';
       row.updated_at = at;
@@ -167,13 +261,8 @@ export class AgentConversationAuditRepository {
       if (row.state !== 'ready' || members.length !== Number(row.member_count) || members.some((member) => !member.confirmed_at)) {
         auditError('conversation_audit_not_ready');
       }
-      const binding = await this.lockedBinding(connection, row.client_app_id, row.route_key);
-      for (const member of members) {
-        const session = await this.lockedSession(connection, member.session_id, binding, member.identity_hash);
-        if (session.session_id === auth.session.session_id && auditIdentityHash(session) !== auditIdentityHash(auth.session)) {
-          auditError('conversation_audit_authorization_invalid', 403);
-        }
-      }
+      const group = await this.lockedGroup(connection, row, members);
+      if (auditIdentityHash(group.get(auth.session.session_id)!.session) !== auditIdentityHash(auth.session)) auditError('conversation_audit_authorization_invalid', 403);
       const at = dt();
       for (const event of events) {
         const eventHash = auditHash(event);
@@ -203,12 +292,14 @@ export class AgentConversationAuditRepository {
         } else if (row.last_turn_status !== 'running' || row.last_turn_id !== event.client_turn_id) auditError();
         let threadId: number | null = null;
         if (event.kind === 'run_link') {
-          if (!members.some((member) => member.session_id === event.member_session_id)) auditError();
+          const member = members.find((candidate) => candidate.session_id === event.member_session_id);
+          if (!member) auditError();
+          const binding = this.memberBinding(row, member);
           const [runs] = await connection.query(
             'SELECT run_id,session_id,client_app_id,route_key,thread_id,client_conversation_id,client_turn_id FROM bz_agent_client_runs WHERE run_id=? FOR UPDATE', [event.run_id],
           );
           const run = runs[0];
-          if (!run || run.session_id !== event.member_session_id || run.client_app_id !== row.client_app_id || run.route_key !== row.route_key ||
+          if (!run || run.session_id !== event.member_session_id || run.client_app_id !== binding.client_app_id || run.route_key !== binding.route_key ||
             run.client_conversation_id !== row.client_conversation_id || run.client_turn_id !== event.client_turn_id || !Number(run.thread_id)) auditError();
           threadId = Number(run.thread_id);
         }
@@ -243,12 +334,15 @@ export class AgentConversationAuditRepository {
     if (!rows[0]) return null;
     const n = Math.min(Math.max(Math.floor(limit) || 100, 1), 200);
     const after = Math.max(Math.floor(afterSequence) || 0, 0);
-    const [members] = await this.pool.query('SELECT session_id,display_label,principal_json,on_behalf_of,confirmed_at FROM bz_agent_conversation_members WHERE conversation_id=? ORDER BY session_id', [conversationId]);
+    const [members] = await this.pool.query('SELECT * FROM bz_agent_conversation_members WHERE conversation_id=? ORDER BY session_id', [conversationId]);
     const [rowsOfEvents] = await this.pool.query('SELECT * FROM bz_agent_conversation_events WHERE conversation_id=? AND sequence>? ORDER BY sequence LIMIT ?', [conversationId, after, n + 1]);
     const events = (rowsOfEvents as Row[]).slice(0, n).map(eventView);
     return {
       conversation: head(rows[0]), members: (members as Row[]).map((member) => ({
         session_id: member.session_id, display_label: member.display_label, confirmed: Boolean(member.confirmed_at),
+        ...(Number(rows[0].membership_version) === 2 ? {
+          client_app_id: member.client_app_id, client_name: member.client_name, route_key: member.route_key,
+        } : {}),
         ...(member.confirmed_at ? { principal: json(member.principal_json), on_behalf_of: member.on_behalf_of } : {}),
       })), events, has_more: rowsOfEvents.length > n,
       next_after_sequence: events.length ? events.at(-1)!.sequence : after,

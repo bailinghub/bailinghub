@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { checkAgentAuthLifecycle } from './sdk-agent-auth-lifecycle-check.mjs';
 import {
   HubClient,
   authzProbeResponse,
@@ -103,7 +104,7 @@ ok('PHP protected spec response is private/no-store', php.status === 0 && php.st
 ok('PHP explicit public spec helper works', php.status === 0 && php.stdout.split('\n')[4] === 'public-helper', php.stderr || php.stdout);
 ok('PHP legacy null-public signature remains compatible', php.status === 0 && php.stdout.split('\n')[5] === 'legacy-null', php.stderr || php.stdout);
 
-const php7 = run('php', ['-r', `
+const php7 = run(process.env.BAILING_SDK_PHP7_BINARY || 'php', ['-r', `
 require '${root}/sdk/php7/src/Ticket.php';
 require '${root}/sdk/php7/src/HubClient.php';
 require '${root}/sdk/php7/src/AgentAuth.php';
@@ -176,7 +177,7 @@ let php7AgentAuth;
 try {
   const address = agentAuthServer.address();
   const baseUrl = `http://127.0.0.1:${address.port}`;
-  php7AgentAuth = await runAsync('php', ['-r', `
+  php7AgentAuth = await runAsync(process.env.BAILING_SDK_PHP7_BINARY || 'php', ['-r', `
 require '${root}/sdk/php7/src/HubClient.php';
 require '${root}/sdk/php7/src/AgentAuth.php';
 $authorizationId = '${authorizationId}';
@@ -260,6 +261,8 @@ ok('PHP7 AgentAuth keeps Client Token in the backend Authorization header',
 ok('PHP7 HubClient does not follow a Bearer-authenticated redirect',
   php7AgentAuthData?.redirect === 'HTTP 302'
     && !agentAuthRequests.some((request) => request.url === '/agent-auth-leak'));
+
+await checkAgentAuthLifecycle({ root, runAsync, ok, closeServer });
 
 console.log(`\n结果：通过 ${pass} / 失败 ${fail}`);
 process.exit(fail ? 1 : 0);

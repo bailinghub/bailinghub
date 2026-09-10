@@ -9,6 +9,8 @@ BailingHub 负责可信业务身份、能力裁剪、审批、幂等、业务调
 本指南面向三类角色：BailingHub 部署者、业务系统开发者和本地智能体使用者。三者需要填写的
 配置不同，不应共享同一份密钥或配置文件。
 
+使用当前控制台集中配置时，先看[四步本地智能体配置](LOCAL_AGENT_SETUP.md)：授权入口、系统说明、工具与审批和连接检查都从“智能体客户端 → 接入配置”开始。本页后续说明各项配置的归属和高级接口。
+
 ## 1. 组件关系
 
 ```text
@@ -148,6 +150,27 @@ return redirect($result['redirect_uri']);
 
 非 PHP 项目可直接实现相同的 Agent Auth v1 HTTP 契约。Client Token 始终放在服务端
 `Authorization: Bearer <BUSINESS_CLIENT_TOKEN>` 请求头中，不得下发到浏览器。
+
+### 4.2 核对授权并收回访问（未发布候选）
+
+本分支的生命周期增量让业务后端能回答“这次授权生成了哪个设备会话”，也能查找某个操作人或
+租户的授权会话，在离职、设备丢失等场景收回访问。无需修改能力声明或重新设计授权页；新增
+方法需要配套候选 Core / PHP SDK，公开稳定 Core v0.6.1 尚未提供。
+
+```php
+// 查询参数必须来自后端已校验的管理权限与租户范围。
+$page = $agentAuth->listSessions(['tenant' => (string) $tenantId, 'limit' => 20]);
+// 下一页保持原筛选条件，再传 $page['next_cursor']；null 表示没有下一页。
+$context = $agentAuth->context($authorizationId);
+$session = $context['session'] ?? null; // consumed 记录才有可靠原会话投影；null 不能猜。
+$result = $agentAuth->revokeAuthorization($authorizationId);
+```
+
+按操作人筛选时必须同时提供 `principal_id` 与 `tenant`，无租户主体用 `tenant => ''`。`active`
+表示会话账本状态，业务账号是否有效仍由业务系统判断；有效期是 refresh/session 寿命。
+撤销和换码原子互斥，重复撤销同一授权幂等。503/超时或 consumed 映射缺失返回 404 都不能当成
+撤销成功；后端应保留失败并按原 ID 重试或核查。已有确切 Session ID 时仍可调用
+`revokeSession()`。完整分页和兼容边界见 [Agent Auth v1](AGENT_AUTH_API.md)。
 
 ## 5. 本地智能体使用者：安装并授权
 

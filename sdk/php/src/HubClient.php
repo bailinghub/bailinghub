@@ -90,7 +90,8 @@ final class HubClient
         $headers = ['Authorization: Bearer ' . $this->token];
         $content = '';
         if ($body !== null) {
-            $content = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}';
+            // Hub API 请求顶层是对象，空参数也发送 {}（例如 deny/revoke）。
+            $content = $body === [] ? '{}' : (json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '{}');
             $headers[] = 'Content-Type: application/json';
         }
         $http = [

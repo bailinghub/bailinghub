@@ -6,6 +6,7 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [RELEASE_NOTES_NEXT.en.md](RELEASE_NOTES_NEXT.en.md) | Unreleased source: shop/inventory scenarios, changes, upgrade preparation and limits. |
 | [user-guide/conversations.en.md](user-guide/conversations.en.md) | Multi-account conversations, full-text review and offline recovery for users. |
 | [QUICKSTART.en.md](QUICKSTART.en.md) | Install BailingHub, run the Docker demo, create the first route, and connect the first business tool. |
 | [DEMO.en.md](DEMO.en.md) | Docker demo walkthrough: hub, MySQL, demo business system, tool provider, audit, and trace. |
@@ -13,6 +14,11 @@ This directory contains public documentation for the open-source BailingHub proj
 | [INDEPENDENT_VALIDATION.md](INDEPENDENT_VALIDATION.md) | Chinese independent validation task. |
 | [AGENT_CLIENT_QUICKSTART.en.md](AGENT_CLIENT_QUICKSTART.en.md) | End-to-end Agent Client setup and configuration ownership. |
 | [AGENT_CLIENT_QUICKSTART.md](AGENT_CLIENT_QUICKSTART.md) | Chinese Agent Client integration guide. |
+| [LOCAL_AGENT_SETUP.en.md](LOCAL_AGENT_SETUP.en.md) | Four-step console setup: authorization, descriptions, tools/approvals, and connection checks. |
+| [LOCAL_AGENT_SETUP.md](LOCAL_AGENT_SETUP.md) | Chinese local-agent setup guide. |
+| [AGENT_SYSTEM_INFO.en.md](AGENT_SYSTEM_INFO.en.md) | Controlled descriptions before first tool discovery, with original binding and compatibility rules. |
+| [AGENT_SYSTEM_INFO.md](AGENT_SYSTEM_INFO.md) | Chinese system-information contract. |
+| [AGENT_SUBJECT_DISPLAY.en.md](AGENT_SUBJECT_DISPLAY.en.md) | Business authorization display names: responsibilities, new approvals and existing-session synchronization. |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | Agent Auth v1, PKCE, trusted business identity, and revocation. |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Chinese Agent Auth v1 protocol. |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | Agent Client Runtime v1 workspaces, turns, tools, and completion contract. |

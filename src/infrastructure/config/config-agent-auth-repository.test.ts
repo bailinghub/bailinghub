@@ -33,6 +33,7 @@ test('AgentAuthRepository refresh rotation keeps the original absolute refresh e
     rollback: async () => undefined,
     release: () => undefined,
     async query(sql: string, params: unknown[] = []) {
+      if (sql.startsWith('SELECT session_id FROM bz_agent_refresh_tokens')) return [[{ session_id: row.session_id }], []];
       if (sql.startsWith('SELECT * FROM bz_agent_refresh_tokens')) {
         return [[{ token_hash: 'r'.repeat(64), session_id: row.session_id, status: 'active', expires_at: originalRefreshExpiry }], []];
       }
@@ -79,6 +80,7 @@ test('AgentAuthRepository refresh replay revokes the whole session fail closed',
     rollback: async () => undefined,
     release: () => undefined,
     async query(sql: string) {
+      if (sql.startsWith('SELECT session_id FROM bz_agent_refresh_tokens')) return [[{ session_id: row.session_id }], []];
       if (sql.startsWith('SELECT * FROM bz_agent_refresh_tokens')) {
         return [[{ token_hash: 'r'.repeat(64), session_id: row.session_id, status: 'used', expires_at: row.refresh_expires_at }], []];
       }

@@ -21,8 +21,28 @@ export interface AuditMember {
   session_id: string;
   display_label: string;
   confirmed: boolean;
+  client_app_id?: string;
+  client_name?: string;
+  route_key?: string;
   principal: { id: string; tenant?: string; roles: string[] };
   on_behalf_of?: string;
+}
+
+/** The conversation header identifies its writer, not every member's business system. */
+export function auditMemberContext(member: AuditMember | undefined, conversation: Pick<AuditConversation, 'client_app_id' | 'route_key'> | null): {
+  systemLabel: string;
+  routeLabel: string;
+  source: 'member' | 'legacy_header' | 'unavailable';
+} {
+  if (!member) return { systemLabel: '未记录', routeLabel: '未记录', source: 'unavailable' };
+  const hasMemberContext = [member.client_app_id, member.client_name, member.route_key].some(value => typeof value === 'string');
+  if (!hasMemberContext && conversation) {
+    return { systemLabel: conversation.client_app_id || '未记录', routeLabel: conversation.route_key || '未记录', source: 'legacy_header' };
+  }
+  const systemLabel = member.client_name && member.client_app_id
+    ? `${member.client_name} · ${member.client_app_id}`
+    : member.client_name || member.client_app_id || '未记录';
+  return { systemLabel, routeLabel: member.route_key || '未记录', source: hasMemberContext ? 'member' : 'unavailable' };
 }
 
 export interface AuditEvent {

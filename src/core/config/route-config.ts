@@ -1,4 +1,4 @@
-import type { Route, SessionPolicy, TargetKind } from '../contracts/types';
+import type { AgentSystemInfo, Route, SessionPolicy, TargetKind } from '../contracts/types';
 import { validateRouteToolsConfig, type ToolProviderExists } from './tools-config';
 import { normalizeTargetConfig, validateTargetConfig } from './target-config';
 import { validateBudgetPolicy } from '../runtime/budget-runtime';
@@ -45,6 +45,7 @@ export interface RouteAgentClientConfig {
   enabled: boolean;
   instructions?: string;
   active_tool_limit: number;
+  system_info?: AgentSystemInfo;
 }
 
 const SESSION_POLICIES: SessionPolicy[] = ['new', 'fixed', 'per_key', 'passthrough'];
@@ -158,18 +159,52 @@ function validateMemoryConfig(v: unknown): string | null {
     ?? intInRange(m.summary_max_chars, 'memory.summary_max_chars', 200, 8000);
 }
 
+export function validateAgentSystemInfo(v: unknown): string | null {
+  const value = record(v);
+  const prefix = 'agent_client.system_info';
+  if (!value) return `${prefix} 必须是对象`;
+  const fields = ['name', 'summary', 'domains', 'boundaries'];
+  if (Object.keys(value).some((key) => !fields.includes(key))) return `${prefix} 包含未声明字段`;
+  for (const [key, maximum] of [['name', 120], ['summary', 400]] as const) {
+    const text = value[key];
+    if (typeof text !== 'string' || !text.trim() || text.length > maximum || /[\u0000-\u001f\u007f]/.test(text)) {
+      return `${prefix}.${key} 必须是 1..${maximum} 字符的非空单行字符串，不含控制字符`;
+    }
+  }
+  for (const [key, maximum] of [['domains', 120], ['boundaries', 160]] as const) {
+    const items = value[key];
+    if (!Array.isArray(items) || items.length > 6 || items.some((item) => typeof item !== 'string' || !item.trim() || item.length > maximum || /[\u0000-\u001f\u007f]/.test(item))) {
+      return `${prefix}.${key} 必须是最多 6 项的数组，每项为 1..${maximum} 字符的非空单行字符串，不含控制字符`;
+    }
+  }
+  return null;
+}
+
+/** Invalid stored metadata degrades to missing; it never becomes runtime instructions. */
+export function routeAgentSystemInfo(route: Pick<Route, 'agent_client'>): AgentSystemInfo | null {
+  const value = record(record(route.agent_client)?.system_info);
+  if (!value || validateAgentSystemInfo(value)) return null;
+  return {
+    name: (value.name as string).trim(),
+    summary: (value.summary as string).trim(),
+    domains: (value.domains as string[]).map((item) => item.trim()),
+    boundaries: (value.boundaries as string[]).map((item) => item.trim()),
+  };
+}
+
 function validateAgentClientConfig(v: unknown): string | null {
   if (v === undefined || v === null) return null;
   const cfg = record(v);
   if (!cfg) return 'agent_client 必须是对象';
-  const known = new Set(['enabled', 'instructions', 'active_tool_limit']);
+  const known = new Set(['enabled', 'instructions', 'active_tool_limit', 'system_info']);
   const unknown = Object.keys(cfg).filter((key) => !known.has(key));
   if (unknown.length) return `agent_client 包含未声明字段: ${unknown.join(',')}`;
   if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean') return 'agent_client.enabled 必须是布尔值';
   if (cfg.instructions !== undefined && (typeof cfg.instructions !== 'string' || cfg.instructions.length > 20_000)) {
     return 'agent_client.instructions 必须是最长 20000 字符的字符串';
   }
-  return intInRange(cfg.active_tool_limit, 'agent_client.active_tool_limit', 1, 12);
+  return (cfg.system_info === undefined ? null : validateAgentSystemInfo(cfg.system_info))
+    ?? intInRange(cfg.active_tool_limit, 'agent_client.active_tool_limit', 1, 12);
 }
 
 export async function validateRouteConfig(input: Partial<Route>, deps: RouteConfigDeps, defaults: RouteConfigDefaults): Promise<string | null> {
@@ -205,6 +240,8 @@ export function normalizeRouteConfig(input: Partial<Route>, defaults: RouteConfi
   const targetConfig = normalizeTargetConfig(target, input.target_config);
   const sessionPolicy = (cleanString(input.session_policy) ?? 'new') as SessionPolicy;
   const tools = nonEmptyRecord(input.tools);
+  const agentClient = nonEmptyRecord(input.agent_client);
+  const systemInfo = routeAgentSystemInfo(input);
   return {
     route_key: routeKey,
     name: cleanString(input.name) ?? routeKey,
@@ -224,7 +261,7 @@ export function normalizeRouteConfig(input: Partial<Route>, defaults: RouteConfi
     tools,
     audience: normalizeAudiencePolicy(input.audience),
     memory: nonEmptyRecord(input.memory),
-    agent_client: nonEmptyRecord(input.agent_client) as Route['agent_client'],
+    agent_client: agentClient ? { ...agentClient, ...(systemInfo ? { system_info: systemInfo } : {}) } as Route['agent_client'] : undefined,
     budget: nonEmptyRecord(input.budget),
     description: input.description,
   };
@@ -237,10 +274,12 @@ export function routeAgentClientConfig(route: Pick<Route, 'agent_client' | 'tool
   const enabled = raw?.enabled === false ? false : raw?.enabled === true || direct?.enabled === true;
   if (!enabled) return null;
   const instructions = typeof raw?.instructions === 'string' ? raw.instructions.trim().slice(0, 20_000) : '';
+  const systemInfo = routeAgentSystemInfo(route);
   return {
     enabled: true,
     ...(instructions ? { instructions } : {}),
     active_tool_limit: intValue(raw?.active_tool_limit, 8, 1, 12),
+    ...(systemInfo ? { system_info: systemInfo } : {}),
   };
 }
 

@@ -137,6 +137,11 @@ export interface Client {
   last_used_at?: string;
 }
 
+/** Business-supplied presentation only; never a principal, routing or deduplication key. */
+export interface AgentSubjectDisplay {
+  name: string;
+}
+
 /** 业务后端在 Agent 授权时提交的可信业务主体。 */
 export interface AgentBusinessPrincipal {
   id: string;
@@ -154,6 +159,7 @@ export interface AgentSession {
   session_id: string;
   client_app_id: string;
   device_label: string;
+  subject_display?: AgentSubjectDisplay | null;
   principal: AgentBusinessPrincipal;
   on_behalf_of: string;
   allowed_routes: string[];
@@ -255,6 +261,14 @@ export interface ExecutorCapabilities {
   labels?: string[];          // 部署方自定义标签（可选，便于人识别这台机器的角色）
 }
 
+/** 受控产品定位。仅作为描述数据，不授予能力，也不作为模型系统指令。 */
+export interface AgentSystemInfo {
+  name: string;
+  summary: string;
+  domains: string[];
+  boundaries: string[];
+}
+
 /** 触发路由：某业务场景 → 发给哪个 target / 哪个项目 / 哪个会话策略 / 哪个能力档 */
 export interface Route {
   route_key: string;
@@ -286,6 +300,7 @@ export interface Route {
     enabled?: boolean;
     instructions?: string;
     active_tool_limit?: number;
+    system_info?: AgentSystemInfo;
   };
   budget?: Record<string, unknown>;   // 成本预算闸：{window/window_hours, hard_cost_usd?, hard_tokens?, ...}
   description?: string;

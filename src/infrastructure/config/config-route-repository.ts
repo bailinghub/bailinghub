@@ -1,5 +1,6 @@
 import { dt, rowRoute } from '../../core/config/config-codec';
 import type { Route } from '../../core/contracts/types';
+import { agentSetupRevision, type AgentSetupUpdate, type AgentSetupUpdateResult } from '../../core/config/agent-setup';
 
 export class RouteRepository {
   constructor(private readonly poolOf: () => any) {}
@@ -18,6 +19,29 @@ export class RouteRepository {
 
   async upsert(r: Route): Promise<void> {
     await this.write(r, true);
+  }
+
+  /** Lock, compare and update only Agent setup; never overwrite unrelated route configuration. */
+  async compareAndSetAgentSetup(key: string, expectedRevision: string, update: AgentSetupUpdate): Promise<AgentSetupUpdateResult> {
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [rows] = await connection.query('SELECT * FROM bz_routes WHERE route_key=? FOR UPDATE', [key]);
+      if (!rows[0]) { await connection.rollback(); return { status: 'not_found' }; }
+      const route = rowRoute(rows[0]);
+      if (agentSetupRevision(route) !== expectedRevision) { await connection.rollback(); return { status: 'conflict' }; }
+      const encode = (value: object | undefined) => value && Object.keys(value).length ? JSON.stringify(value) : null;
+      await connection.query('UPDATE bz_routes SET agent_client=?,tools=?,updated_at=? WHERE route_key=?', [
+        encode(update.agent_client), encode(update.tools), dt(), key,
+      ]);
+      await connection.commit();
+      return { status: 'updated', route: { ...route, agent_client: update.agent_client, tools: update.tools } };
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   }
 
   /** Insert-only variant for ownership-sensitive bootstrap flows. */

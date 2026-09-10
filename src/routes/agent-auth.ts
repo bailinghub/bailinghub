@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { namedRateLimitedFor } from '../app/auth';
 import { ipOf, readBody, send } from '../app/http';
 import type { AgentBusinessPrincipal, AgentSession, Client } from '../core/contracts/types';
+import { agentSubjectDisplayView, validateAgentSubjectDisplay } from '../core/contracts/agent-subject-display';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 
 export const AGENT_AUTHORIZATION_TTL_SEC = 10 * 60;
@@ -16,6 +17,19 @@ const PKCE_VERIFIER_RE = /^[A-Za-z0-9._~-]{43,128}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type RecordValue = Record<string, unknown>;
+type BusinessSession = AgentSession & {
+  state: 'active' | 'expired' | 'revoked';
+  authorization_id?: string;
+  last_seen_at?: string;
+};
+type SessionListFilters = {
+  authorizationId?: string;
+  onBehalfOf?: string;
+  principalId?: string;
+  tenant?: string;
+  state?: BusinessSession['state'];
+};
+type SessionCursor = { createdAt: string; sessionId: string };
 
 export interface AgentAuthHttpDeps {
   configStore: ConfigStoreContract | null;
@@ -144,6 +158,7 @@ function publicSession(session: AgentSession): RecordValue {
     session_id: session.session_id,
     client_app_id: session.client_app_id,
     device_label: session.device_label,
+    ...agentSubjectDisplayView(session.subject_display),
     principal: session.principal,
     on_behalf_of: session.on_behalf_of,
     allowed_routes: session.allowed_routes,
@@ -151,6 +166,107 @@ function publicSession(session: AgentSession): RecordValue {
     expires_at: session.access_expires_at,
     refresh_expires_at: session.refresh_expires_at,
   };
+}
+
+/** Business metadata never includes credential material, including unknown nested fields. */
+function businessSessionMetadata(session: BusinessSession): RecordValue {
+  const source = session.principal;
+  const principal = parsePrincipal({
+    id: source.id, tenant: source.tenant, roles: source.roles, audience: source.audience, channel: source.channel,
+  });
+  const allowedRoutes = stringList(session.allowed_routes);
+  if (!principal || !allowedRoutes || !UUID_RE.test(session.session_id) || !['active', 'expired', 'revoked'].includes(session.state)) {
+    throw new Error('Invalid business session metadata');
+  }
+  return {
+    session_id: session.session_id,
+    ...(session.authorization_id ? { authorization_id: session.authorization_id } : {}),
+    client_app_id: session.client_app_id,
+    device_label: session.device_label,
+    ...agentSubjectDisplayView(session.subject_display),
+    principal,
+    on_behalf_of: session.on_behalf_of,
+    allowed_routes: allowedRoutes,
+    state: session.state,
+    created_at: session.created_at,
+    expires_at: session.refresh_expires_at,
+    ...(session.last_seen_at ? { last_seen_at: session.last_seen_at } : {}),
+    ...(session.revoked_at ? { revoked_at: session.revoked_at } : {}),
+  };
+}
+
+function sessionCursorBinding(clientAppId: string, filters: SessionListFilters): string {
+  // This digest binds pagination to public filters; it is not a credential or authorization grant.
+  return createHash('sha256').update(JSON.stringify([
+    clientAppId, filters.authorizationId ?? null, filters.onBehalfOf ?? null,
+    filters.principalId ?? null, filters.tenant ?? null, filters.state ?? null,
+  ])).digest('hex');
+}
+
+function parseSessionList(url: URL, clientAppId: string): { filters: SessionListFilters; limit: number; cursor?: SessionCursor; binding: string } | null {
+  const params = url.searchParams;
+  const fields = ['authorization_id', 'on_behalf_of', 'principal_id', 'tenant', 'state', 'limit', 'cursor'];
+  for (const key of params.keys()) if (!fields.includes(key) || params.getAll(key).length !== 1) return null;
+  const filters: SessionListFilters = {};
+  if (params.has('authorization_id')) {
+    const value = params.get('authorization_id')!;
+    if (!UUID_RE.test(value)) return null;
+    filters.authorizationId = value.toLowerCase();
+  }
+  for (const [key, property, max] of [
+    ['on_behalf_of', 'onBehalfOf', 191], ['principal_id', 'principalId', 128], ['tenant', 'tenant', 128],
+  ] as const) {
+    if (!params.has(key)) continue;
+    const value = params.get(key)!;
+    if ((key !== 'tenant' && !value) || value.length > max || value !== value.trim() || /[\u0000-\u001f\u007f]/.test(value)) return null;
+    filters[property] = value;
+  }
+  if (filters.principalId !== undefined && filters.tenant === undefined) return null;
+  if (params.has('state')) {
+    const state = params.get('state')!;
+    if (state !== 'active' && state !== 'expired' && state !== 'revoked') return null;
+    filters.state = state;
+  }
+  const rawLimit = params.get('limit') ?? '20';
+  if (!/^[1-9][0-9]{0,2}$/.test(rawLimit) || Number(rawLimit) > 100) return null;
+  const binding = sessionCursorBinding(clientAppId, filters);
+  let cursor: SessionCursor | undefined;
+  if (params.has('cursor')) {
+    const raw = params.get('cursor')!;
+    if (!raw || raw.length > 2048 || !/^[A-Za-z0-9_-]+$/.test(raw)) return null;
+    try {
+      const bytes = Buffer.from(raw, 'base64url');
+      if (bytes.toString('base64url') !== raw) return null;
+      const value = record(JSON.parse(bytes.toString('utf8')));
+      if (!value || !allowedFields(value, ['v', 'binding', 'created_at', 'session_id']) || value['v'] !== 1 || value['binding'] !== binding ||
+          typeof value['created_at'] !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value['created_at']) ||
+          new Date(value['created_at']).toISOString() !== value['created_at'] || typeof value['session_id'] !== 'string' || !UUID_RE.test(value['session_id'])) return null;
+      cursor = { createdAt: value['created_at'], sessionId: value['session_id'].toLowerCase() };
+    } catch { return null; }
+  }
+  return { filters, limit: Number(rawLimit), ...(cursor ? { cursor } : {}), binding };
+}
+
+async function businessListSessions(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+  try {
+    const repository = deps.configStore?.agentAuth;
+    if (!repository) { send(res, 503, { error: 'agent_auth_unavailable' }); return; }
+    const client = await businessClient(deps, req, url);
+    if (!client) { send(res, 401, { error: 'unauthorized' }); return; }
+    const input = parseSessionList(url, client.app_id);
+    if (!input) { send(res, 400, { error: 'invalid_request' }); return; }
+    if (typeof repository.listBusinessSessions !== 'function') { send(res, 503, { error: 'agent_auth_lifecycle_unavailable' }); return; }
+    const result = await repository.listBusinessSessions({ clientAppId: client.app_id, ...input.filters, limit: input.limit, cursor: input.cursor });
+    if (result.list.length > input.limit || result.list.some((session) => session.client_app_id !== client.app_id)) {
+      throw new Error('Invalid business session scope');
+    }
+    send(res, 200, {
+      list: result.list.map(businessSessionMetadata),
+      next_cursor: result.nextCursor ? Buffer.from(JSON.stringify({
+        v: 1, binding: input.binding, created_at: result.nextCursor.createdAt, session_id: result.nextCursor.sessionId,
+      })).toString('base64url') : null,
+    });
+  } catch { send(res, 503, { error: 'agent_auth_lifecycle_unavailable' }); }
 }
 
 async function createAuthorization(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -194,20 +310,50 @@ async function createAuthorization(deps: AgentAuthHttpDeps, req: IncomingMessage
 }
 
 async function authorizationContext(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL, authorizationId: string): Promise<void> {
-  if (!deps.configStore?.agentAuth) { send(res, 503, { error: 'agent_auth_unavailable' }); return; }
-  const client = await businessClient(deps, req, url);
-  if (!client) { send(res, 401, { error: 'unauthorized' }); return; }
-  const item = await deps.configStore.agentAuth.getAuthorization(authorizationId);
-  if (!item || item.client_app_id !== client.app_id) { send(res, 404, { error: 'not_found' }); return; }
-  const status = item.status === 'pending' && Date.parse(item.expires_at) <= Date.now() ? 'expired' : item.status;
-  send(res, 200, {
-    authorization_id: item.authorization_id,
-    client: { app_id: client.app_id, name: client.name },
-    device: { name: item.device_label },
-    requested_routes: item.requested_routes,
-    status,
-    expires_at: item.expires_at,
-  });
+  try {
+    if (!deps.configStore?.agentAuth) { send(res, 503, { error: 'agent_auth_unavailable' }); return; }
+    const client = await businessClient(deps, req, url);
+    if (!client) { send(res, 401, { error: 'unauthorized' }); return; }
+    const item = await deps.configStore.agentAuth.getAuthorization(authorizationId);
+    if (!item || item.client_app_id !== client.app_id) { send(res, 404, { error: 'not_found' }); return; }
+    const status = item.status === 'pending' && Date.parse(item.expires_at) <= Date.now() ? 'expired' : item.status;
+    let session: RecordValue | null = null;
+    if (item.status === 'consumed' && item.session_id && typeof deps.configStore.agentAuth.getBusinessSession === 'function') {
+      const linked = await deps.configStore.agentAuth.getBusinessSession(client.app_id, item.session_id);
+      if (linked) {
+        if (linked.client_app_id !== client.app_id || linked.session_id !== item.session_id) throw new Error('Invalid business session scope');
+        const metadata = businessSessionMetadata(linked);
+        session = { session_id: linked.session_id, state: metadata['state'], expires_at: metadata['expires_at'],
+          ...agentSubjectDisplayView(linked.subject_display),
+          ...(linked.revoked_at ? { revoked_at: linked.revoked_at } : {}) };
+      }
+    }
+    send(res, 200, {
+      authorization_id: item.authorization_id,
+      client: { app_id: client.app_id, name: client.name },
+      device: { name: item.device_label },
+      requested_routes: item.requested_routes,
+      status,
+      expires_at: item.expires_at,
+      ...(item.status === 'consumed' ? { session } : {}),
+    });
+  } catch { send(res, 503, { error: 'agent_auth_lifecycle_unavailable' }); }
+}
+
+async function businessRevokeAuthorization(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL, authorizationId: string): Promise<void> {
+  try {
+    const repository = deps.configStore?.agentAuth;
+    if (!repository) { send(res, 503, { error: 'agent_auth_unavailable' }); return; }
+    const client = await businessClient(deps, req, url);
+    if (!client) { send(res, 401, { error: 'unauthorized' }); return; }
+    const body = record(await readBody(req, 4096).catch(() => null));
+    if (!body || !allowedFields(body, [])) { send(res, 400, { error: 'invalid_request' }); return; }
+    if (typeof repository.revokeAuthorization !== 'function') { send(res, 503, { error: 'agent_auth_lifecycle_unavailable' }); return; }
+    const result = await repository.revokeAuthorization({ authorizationId, clientAppId: client.app_id });
+    if (!result.ok) { send(res, 404, { error: 'not_found' }); return; }
+    if (result.authorization.authorization_id !== authorizationId || result.authorization.client_app_id !== client.app_id) throw new Error('Invalid authorization scope');
+    send(res, 200, { authorization_id: authorizationId, revoked: true, ...(result.sessionId ? { session_id: result.sessionId } : {}) });
+  } catch { send(res, 503, { error: 'agent_auth_lifecycle_unavailable' }); }
 }
 
 async function approveAuthorization(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL, authorizationId: string): Promise<void> {
@@ -215,7 +361,12 @@ async function approveAuthorization(deps: AgentAuthHttpDeps, req: IncomingMessag
   const client = await businessClient(deps, req, url);
   if (!client) { send(res, 401, { error: 'unauthorized' }); return; }
   const body = record(await readBody(req).catch(() => null));
-  if (!body || !allowedFields(body, ['principal', 'on_behalf_of', 'allowed_routes'])) { send(res, 400, { error: 'invalid_request' }); return; }
+  if (!body || !allowedFields(body, ['principal', 'on_behalf_of', 'allowed_routes', 'subject_display'])) { send(res, 400, { error: 'invalid_request' }); return; }
+  const display = validateAgentSubjectDisplay(body['subject_display']);
+  if (!display.ok) { send(res, 400, { error: 'invalid_request' }); return; }
+  if (display.value && typeof deps.configStore.agentAuth.updateSubjectDisplay !== 'function') {
+    send(res, 503, { error: 'subject_display_unavailable' }); return;
+  }
   const principal = parsePrincipal(body['principal']);
   const onBehalfOf = typeof body['on_behalf_of'] === 'string' ? body['on_behalf_of'].trim() : '';
   const allowedRoutes = stringList(body['allowed_routes']);
@@ -230,6 +381,7 @@ async function approveAuthorization(deps: AgentAuthHttpDeps, req: IncomingMessag
     authorizationId,
     clientAppId: client.app_id,
     principal: { ...principal },
+    subjectDisplay: display.value,
     onBehalfOf,
     allowedRoutes,
     codeHash: tokenHash(code),
@@ -265,6 +417,7 @@ function tokenResponse(session: AgentSession, accessToken: string, refreshToken:
     refresh_expires_in: Math.max(0, Math.floor((Date.parse(session.refresh_expires_at) - Date.now()) / 1000)),
     session_id: session.session_id,
     client_app_id: session.client_app_id,
+    ...agentSubjectDisplayView(session.subject_display),
   };
 }
 
@@ -368,6 +521,29 @@ async function businessRevokeSession(deps: AgentAuthHttpDeps, req: IncomingMessa
   send(res, 200, { revoked: true });
 }
 
+async function businessUpdateSubjectDisplay(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL, sessionId: string): Promise<void> {
+  const repository = deps.configStore?.agentAuth;
+  if (!repository) { send(res, 503, { error: 'agent_auth_unavailable' }); return; }
+  const client = await businessClient(deps, req, url);
+  if (!client) { send(res, 401, { error: 'unauthorized' }); return; }
+  const body = record(await readBody(req, 4096).catch(() => null));
+  if (!body || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'subject_display')) {
+    send(res, 400, { error: 'invalid_request' }); return;
+  }
+  const display = validateAgentSubjectDisplay(body['subject_display']);
+  if (!display.ok) { send(res, 400, { error: 'invalid_request' }); return; }
+  if (typeof repository.updateSubjectDisplay !== 'function') { send(res, 503, { error: 'subject_display_unavailable' }); return; }
+  try {
+    const result = await repository.updateSubjectDisplay({ clientAppId: client.app_id, sessionId, subjectDisplay: display.value });
+    if (!result.ok) {
+      send(res, result.reason === 'not_found' ? 404 : 409, { error: result.reason === 'not_found' ? 'not_found' : 'session_inactive' });
+      return;
+    }
+    if (result.session.client_app_id !== client.app_id || result.session.session_id !== sessionId) throw new Error('Invalid subject display binding.');
+    send(res, 200, businessSessionMetadata(result.session));
+  } catch { send(res, 503, { error: 'subject_display_unavailable' }); }
+}
+
 /** Returns true when the request belongs to the dedicated Agent Auth surface. */
 export async function handleAgentAuthHttpFor(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   const method = req.method ?? 'GET';
@@ -376,7 +552,7 @@ export async function handleAgentAuthHttpFor(deps: AgentAuthHttpDeps, req: Incom
   res.setHeader('cache-control', 'no-store');
   if (path === '/agent-auth/v1/token') res.setHeader('pragma', 'no-cache');
   if (method === 'POST' && path === '/agent-auth/v1/authorizations') { await createAuthorization(deps, req, res); return true; }
-  const authorizationMatch = path.match(/^\/agent-auth\/v1\/authorizations\/([0-9a-f-]{36})(?:\/(approve|deny))?$/i);
+  const authorizationMatch = path.match(/^\/agent-auth\/v1\/authorizations\/([0-9a-f-]{36})(?:\/(approve|deny|revoke))?$/i);
   if (authorizationMatch) {
     const id = authorizationMatch[1]!;
     const action = authorizationMatch[2];
@@ -384,10 +560,24 @@ export async function handleAgentAuthHttpFor(deps: AgentAuthHttpDeps, req: Incom
     if (method === 'GET' && !action) { await authorizationContext(deps, req, res, url, id); return true; }
     if (method === 'POST' && action === 'approve') { await approveAuthorization(deps, req, res, url, id); return true; }
     if (method === 'POST' && action === 'deny') { await denyAuthorization(deps, req, res, url, id); return true; }
+    if (method === 'POST' && action === 'revoke') { await businessRevokeAuthorization(deps, req, res, url, id.toLowerCase()); return true; }
     send(res, 405, { error: 'method_not_allowed' }); return true;
   }
   if (method === 'POST' && path === '/agent-auth/v1/token') { await exchangeToken(deps, req, res); return true; }
   if (method === 'GET' && path === '/agent-auth/v1/session') { await readSession(deps, req, res, url); return true; }
+  if (path === '/agent-auth/v1/sessions') {
+    if (method === 'GET') await businessListSessions(deps, req, res, url);
+    else send(res, 405, { error: 'method_not_allowed' });
+    return true;
+  }
+  const displayMatch = path.match(/^\/agent-auth\/v1\/sessions\/([0-9a-f-]{36})\/subject-display$/i);
+  if (displayMatch) {
+    const sessionId = displayMatch[1]!.toLowerCase();
+    if (!UUID_RE.test(sessionId)) { send(res, 404, { error: 'not_found' }); return true; }
+    if (method === 'PUT') await businessUpdateSubjectDisplay(deps, req, res, url, sessionId);
+    else send(res, 405, { error: 'method_not_allowed' });
+    return true;
+  }
   if (method === 'POST' && path === '/agent-auth/v1/revoke') { await revokeSession(deps, req, res, url); return true; }
   const revokeMatch = method === 'POST' ? path.match(/^\/agent-auth\/v1\/sessions\/([0-9a-f-]{36})\/revoke$/i) : null;
   if (revokeMatch) { await businessRevokeSession(deps, req, res, url, revokeMatch[1]!); return true; }

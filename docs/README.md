@@ -8,6 +8,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [RELEASE_NOTES_NEXT.md](RELEASE_NOTES_NEXT.md) | 未发布源码：商城与库存场景、变化、配套升级和限制。 |
 | [user-guide/conversations.md](user-guide/conversations.md) | 普通用户的多账户对话、完整沟通追溯和离线恢复指南。 |
 | [QUICKSTART.md](QUICKSTART.md) | 从零部署百灵中枢，适合准备接入真实业务系统的开发者。 |
 | [QUICKSTART.en.md](QUICKSTART.en.md) | English quickstart for Docker demo, first route, and first business tool. |
@@ -17,6 +18,11 @@
 | [INDEPENDENT_VALIDATION.en.md](INDEPENDENT_VALIDATION.en.md) | English independent validation task, pass criteria, and report path. |
 | [AGENT_CLIENT_QUICKSTART.md](AGENT_CLIENT_QUICKSTART.md) | 智能体客户端从 Core、业务授权页、通用 SDK 到本地宿主插件的完整接入路径。 |
 | [AGENT_CLIENT_QUICKSTART.en.md](AGENT_CLIENT_QUICKSTART.en.md) | English end-to-end Agent Client integration guide and configuration ownership. |
+| [LOCAL_AGENT_SETUP.md](LOCAL_AGENT_SETUP.md) | 管理员四步集中配置：授权入口、系统说明、工具与审批、连接检查。 |
+| [LOCAL_AGENT_SETUP.en.md](LOCAL_AGENT_SETUP.en.md) | English local-agent setup guide and narrow configuration APIs. |
+| [AGENT_SYSTEM_INFO.md](AGENT_SYSTEM_INFO.md) | 首次能力搜索前的受控系统定位，包含授权绑定与兼容降级契约。 |
+| [AGENT_SYSTEM_INFO.en.md](AGENT_SYSTEM_INFO.en.md) | English selected-system descriptions and host read contract. |
+| [AGENT_SUBJECT_DISPLAY.md](AGENT_SUBJECT_DISPLAY.md) | 业务授权显示名称：三方职责、新授权与旧会话名称同步。 |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Agent Auth v1：业务登录态绑定、PKCE、Token 交换与会话撤销的语言无关契约。 |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | English Agent Auth v1 protocol and trusted business-identity boundary. |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Agent Client Runtime v1：工作区、turn、能力搜索、工具执行与完成回传。 |
