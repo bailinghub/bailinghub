@@ -8,7 +8,7 @@
 
 | 文档 | 用途 |
 |---|---|
-| [RELEASE_NOTES_NEXT.md](RELEASE_NOTES_NEXT.md) | 未发布源码：商城与库存场景、变化、配套升级和限制。 |
+| [RELEASE_NOTES_v0.7.0.md](RELEASE_NOTES_v0.7.0.md) · [English](RELEASE_NOTES_v0.7.0.en.md) | v0.7.0：商城与库存场景、配套升级和限制。 |
 | [user-guide/conversations.md](user-guide/conversations.md) | 普通用户的多账户对话、完整沟通追溯和离线恢复指南。 |
 | [QUICKSTART.md](QUICKSTART.md) | 从零部署百灵中枢，适合准备接入真实业务系统的开发者。 |
 | [QUICKSTART.en.md](QUICKSTART.en.md) | English quickstart for Docker demo, first route, and first business tool. |

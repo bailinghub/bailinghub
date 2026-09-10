@@ -9,9 +9,9 @@ Agent Session。BailingHub 提供协议与服务端 SDK 方法；业务系统负
 完整组件关系见 [Agent Client v1 接入指南](AGENT_CLIENT_QUICKSTART.md)。本协议不承载套餐、付费、
 模型凭据或业务 API Secret。
 
-本分支新增的**授权生命周期候选尚未发布**：业务后端可以核对某次授权对应的设备会话、分页查找
+**Core 0.7.0 新增授权生命周期管理**：业务后端可以核对某次授权对应的设备会话、分页查找
 某个操作人或租户的会话，再按原授权记录收回访问。新增列表、授权撤销与 `context.session`
-需要配套候选 Core / PHP SDK；公开稳定版 v0.6.1 尚不包含这些增量。
+需要 Core 0.7.0 及其配套 PHP/PHP7 SDK；Core 0.6.1 不包含这些增量。
 
 ## 1. 参与方与凭据
 
@@ -106,7 +106,7 @@ Authorization: Bearer <BUSINESS_CLIENT_TOKEN>
 
 响应只包含应用名、设备名、请求的 routes、状态和过期时间，不包含 PKCE、callback 或 token。
 
-生命周期候选保留上述字段；`status=consumed` 时增加 `session`，用于确认换码后生成的原会话：
+生命周期接口保留上述字段；`status=consumed` 时增加 `session`，用于确认换码后生成的原会话：
 
 ```json
 {
@@ -188,7 +188,7 @@ access token 默认 15 分钟有效，refresh session 默认 30 天有效；每�
 员工离职、租户禁用、设备丢失或业务权限撤销时，业务系统应主动撤销相关会话。即使会话尚未撤销，
 业务工具端点仍必须在每次调用时按当前权限表重新裁决。
 
-### 4.6 业务后端：分页查询会话（未发布候选）
+### 4.6 业务后端：分页查询会话（Core 0.7.0）
 
 `GET /agent-auth/v1/sessions`，使用业务后端 Client Token。只查询该 Token 所属 Client App，
 不能通过 query 指定其他接入方。业务后端还须校验自己的用户是否有权查看相应租户和操作人，
@@ -237,7 +237,7 @@ BailingHub 不解释业务系统自己的用户/门店编号，也不代替其�
 `expired` 按 refresh/session 寿命判断，短期 access token 到期不会单独把会话标成 `expired`。
 `active` 只说明会话账本未过期或撤销，不保证业务账号当前有效，业务侧仍须逐次校验权限。
 
-### 4.7 业务后端：按原授权撤销（未发布候选）
+### 4.7 业务后端：按原授权撤销（Core 0.7.0）
 
 `POST /agent-auth/v1/authorizations/{authorization_id}/revoke`，业务 Client Token，JSON body `{}`。
 
@@ -255,15 +255,14 @@ BailingHub 不解释业务系统自己的用户/门店编号，也不代替其�
 应用时返回 404，不能把“查不到 Session”当成已经撤销。
 已有 `revokeSession(sessionId)` 继续适用于业务系统已经持有确切 Session ID 的情况。
 
-候选 PHP 8.1+ / PHP 7.3 SDK 提供 `listSessions(array $filters = [])` 与
+配套 PHP 8.1+ / PHP 7.3 SDK 提供 `listSessions(array $filters = [])` 与
 `revokeAuthorization($authorizationId)`；`context()` 原样返回新增字段。Node / Python 当前没有
 独立 `AgentAuth` 模块，可用服务端 HTTP 调用相同契约，无需引入第二套授权协议。
 
 旧 Core 可能返回 404；旧 Host 未实现生命周期仓储方法时，新列表/撤销返回
 `503 agent_auth_lifecycle_unavailable`。查询或撤销失败必须明确保留失败状态，不能伪装成空列表、
 已撤销或改用更高权限凭据。503 或超时不代表撤销成功，可用同一 `authorization_id` 幂等重试。
-本次生命周期增量不增加 SQL 迁移；组合候选仍包含此前跨系统归档的 058 迁移。接入方应先在
-隔离候选环境验收，再单独安排正式升级。
+生命周期接口本身不增加 SQL 迁移；Core 0.7.0 组合升级包括跨系统归档的 058 和主体展示的 059。接入方应先在隔离环境验收，再按运维指南升级。
 
 ## 5. 业务授权页实现规则
 
@@ -296,6 +295,6 @@ BailingHub 不解释业务系统自己的用户/门店编号，也不代替其�
 可恢复状态并返回 `cleanupRequired`：此时不要重复授权，应先按返回信息清理旧连接。Core 不把该
 本机去重规则提升为跨设备的全局会话唯一约束。
 
-## 可选授权显示名称（未发布候选）
+## 可选授权显示名称（Core 0.7.0）
 
 approve 可选 `subject_display: {name} | null`，支持由业务 Client Token 调用 `PUT /agent-auth/v1/sessions/{session_id}/subject-display` 更新自己有效会话的名称。显示信息不进入 `principal`，不更换身份、权限或会话。完整字段、错误和兼容规则见 [授权后显示业务名称](AGENT_SUBJECT_DISPLAY.md)。

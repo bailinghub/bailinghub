@@ -4,9 +4,11 @@
 
 If you manage stores A and B in the same business system, you can select both authorizations for a conversation, then let the agent use the appropriate account for each action. Stores are an example: these may be any two authorized accounts in the same system.
 
+On one Hub you can also select shop and inventory authorizations: check stock, then perform permitted shop price or listing actions. System descriptions explain the roles and authorization names identify the business subjects. Product mappings must be confirmed; see [v0.7.0 scenarios](../RELEASE_NOTES_v0.7.0.en.md).
+
 ## What you need
 
-Deploy **BailingHub 0.6.1** and use **dsh-bailinghub 0.4.0**, which depends on the independent **bailinghub-mcp-server 0.4.0** SDK. A custom client must integrate conversation scope, original visible history and archive APIs. Upgrading only the Hub does not make an older client upload a full transcript.
+Deploy **BailingHub 0.7.0** and use **dsh-bailinghub 0.5.0**, which depends on the independent **bailinghub-mcp-server 0.5.0** SDK. A custom client must integrate conversation scope, original visible history and archive APIs. Upgrading only the Hub does not make an older client upload a full transcript.
 
 Your business system must already expose the operations you need, and you must authorize A and B separately. This upgrade does not require rewriting existing business capabilities or approval rules. Start with the [public Docker demo](../DEMO.en.md) to learn query, approval and execution; that demo does not replace client installation and account authorization.
 
@@ -37,4 +39,4 @@ Full text belongs to the deployed Hub's administration audit domain, readable by
 
 The archive currently covers visible text and original execution links, not hidden reasoning, attachments or arbitrary local tool output. Older records containing only execution summaries continue to identify missing transcript text.
 
-See the [v0.6.1 upgrade notes](../RELEASE_NOTES_v0.6.1.en.md). Client developers can continue with the [integration guide](../AGENT_CLIENT_QUICKSTART.en.md) and [conversation archive API](../AGENT_CONVERSATION_AUDIT.en.md).
+See the [v0.7.0 upgrade notes](../RELEASE_NOTES_v0.7.0.en.md). Client developers can continue with the [integration guide](../AGENT_CLIENT_QUICKSTART.en.md) and [conversation archive API](../AGENT_CONVERSATION_AUDIT.en.md).

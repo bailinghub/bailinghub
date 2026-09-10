@@ -47,7 +47,7 @@ BailingHub Client Token、Tool Provider Secret 或业务系统密码的步骤。
 
 ### 3.1 部署 Core 并执行数据库迁移
 
-完整对话归档使用 BailingHub0.6.1、Agent Client SDK0.4.0及兼容客户端。Core需要已有迁移055/056及新增057；由一个部署步骤执行迁移，运行时启动不会自动迁移。
+完整对话归档使用 BailingHub0.7.0、Agent Client SDK0.5.0及兼容客户端。Core需要按账本应用全部未执行迁移，包括055/056/057及本版058/059；由一个部署步骤执行迁移，运行时启动不会自动迁移。
 升级后先确认：
 
 - `/health` 和 `/health/ready` 正常；
@@ -151,11 +151,11 @@ return redirect($result['redirect_uri']);
 非 PHP 项目可直接实现相同的 Agent Auth v1 HTTP 契约。Client Token 始终放在服务端
 `Authorization: Bearer <BUSINESS_CLIENT_TOKEN>` 请求头中，不得下发到浏览器。
 
-### 4.2 核对授权并收回访问（未发布候选）
+### 4.2 核对授权并收回访问（Core 0.7.0）
 
-本分支的生命周期增量让业务后端能回答“这次授权生成了哪个设备会话”，也能查找某个操作人或
+Core 0.7.0 的生命周期接口让业务后端能回答“这次授权生成了哪个设备会话”，也能查找某个操作人或
 租户的授权会话，在离职、设备丢失等场景收回访问。无需修改能力声明或重新设计授权页；新增
-方法需要配套候选 Core / PHP SDK，公开稳定 Core v0.6.1 尚未提供。
+方法需要 Core 0.7.0 与配套 PHP/PHP7 SDK。
 
 ```php
 // 查询参数必须来自后端已校验的管理权限与租户范围。
@@ -228,7 +228,7 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 /bailinghub login
 ```
 
-连接切换是用户命令，不是模型工具；它选择连接管理和登录的目标，不会为新会话自动授予业务范围。DSH0.4.0在首消息前必须另外显式选择本次授权，已有会话保持原范围。
+连接切换是用户命令，不是模型工具；它选择连接管理和登录的目标，不会为新会话自动授予业务范围。DSH0.5.0在首消息前必须另外显式选择本次授权，已有会话保持原范围。
 `/bailinghub use <workspace>` 只在当前授权已经允许的 workspace 内切换，不能替代多连接选择。
 删除连接时使用 `/bailinghub connections remove <名称>`：SDK 会先远程撤销 Agent Session，成功
 后再删除该实例的本地凭据；远程撤销失败则保留该实例和凭据供重试。不要复制 access/refresh token
@@ -249,13 +249,13 @@ DSH 的模型提供方和模型 API Key 需要在 DSH 自己的模型设置中�
 /bailinghub scope
 ```
 
-这里使用实际返回的连接key，不使用示例占位符或门店名。只选择A就只能使用A；`/bailinghub scope none`表示只聊天，不访问Hub。确认选择成功后再发送业务请求。DSH0.4.0只接受同一Hub/clientAppId/workspace下的授权集合，不组合不同系统或路由。
+这里使用实际返回的连接key，不使用示例占位符或门店名。只选择A就只能使用A；`/bailinghub scope none`表示只聊天，不访问Hub。确认选择成功后再发送业务请求。DSH0.5.0可选择同一Hub、同一审计域内不同Client App/workspace的独立原Agent Session；旧同系统范围仍可使用，不会自动扩大。
 
 第一条用户消息后范围固定；改选需要新会话。自研宿主使用`setSessionScope/getSessionScope/restoreSessionScope`，恢复失败不能回退到默认或剩余授权。
 
 ### 6.2 查看完整对话与重试同步
 
-支持的宿主通过SDK0.4.0归档真实可见文本，保留原Session、持久历史与独立待传记录。管理员在“任务→会话→客户端完整对话”阅读沟通并打开各授权的原执行记录。
+支持的宿主通过SDK0.5.0归档真实可见文本，保留原Session、持久历史与独立待传记录。管理员在“任务→会话→客户端完整对话”阅读沟通并打开各授权的原执行记录。
 
 DSH使用`/bailinghub archive status`查看状态，`/bailinghub archive sync`补传。离线重开后联网，可在同一runtime、同一Session重试原范围核验与同步；原授权明确撤销仍整组阻断。保存失败或历史缺口要单独显示，不能靠重复发消息或重执行业务来补账。归档恢复不等于恢复跨进程丢失的invocation。详见[使用者指南](user-guide/conversations.md)与[归档接口](AGENT_CONVERSATION_AUDIT.md)。
 

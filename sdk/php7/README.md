@@ -215,8 +215,7 @@ $result = $agentAuth->approve(
 
 完整关系与 HTTP 契约见中枢文档 `docs/AGENT_CLIENT_QUICKSTART.md` 和 `docs/AGENT_AUTH_API.md`。
 
-**未发布的生命周期候选**还支持核对和收回现有授权，需配套候选 Core；公开稳定 Core v0.6.1
-及其下载包尚不包含本增量。PHP 7.3 版与 PHP 8.1+ 版方法和语义一致：
+**Core 0.7.0 配套的生命周期接口**支持核对和收回现有授权。请同时升级本 SDK 下载包与 Core。PHP 7.3 版与 PHP 8.1+ 版方法和语义一致：
 
 ```php
 $page = $agentAuth->listSessions(array('tenant' => (string) $tenantId, 'limit' => 20));
@@ -232,9 +231,9 @@ $revoked = $agentAuth->revokeAuthorization($authorizationId);
 再调用这些方法；Client Token 不进入浏览器。完整字段见
 [Agent Auth v1](../../docs/AGENT_AUTH_API.md)。
 
-### 授权后显示业务名称（未发布候选）
+### 授权后显示业务名称
 
-配套候选 Core 支持批准授权时附上服务端读取的业务名称。原四参数调用保持兼容；第五参数可选，名称可用于门店、公司、项目等业务对象。
+Core 0.7.0 支持批准授权时附上服务端读取的业务名称。原四参数调用保持兼容；第五参数可选，名称可用于门店、公司、项目等业务对象。
 
 ```php
 $result = $agentAuth->approve($authorizationId, $principal, $onBehalfOf, $allowedRoutes, array('name' => $accountName));

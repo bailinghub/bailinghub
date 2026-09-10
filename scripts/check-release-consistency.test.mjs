@@ -38,8 +38,8 @@ function updateJson(root, relativePath, update) {
 test('current release surface is internally consistent', () => {
   const result = checkReleaseConsistency({ root: repoRoot });
   assert.deepEqual(result.findings, []);
-  assert.equal(result.version, '0.6.1');
-  assert.equal(result.stableVersion, '0.6.1');
+  assert.equal(result.version, '0.7.0');
+  assert.equal(result.stableVersion, '0.7.0');
   assert.equal(result.publishTag, 'latest');
 });
 

@@ -161,12 +161,12 @@ public function memberQuery(): void
 }
 ```
 
-## Agent authorization lifecycle (unpublished candidate)
+## Agent authorization lifecycle (Core 0.7.0)
 
 PHP 8.1+ and PHP 7.3 provide the optional server-side `AgentAuth` helper for browser consent.
 The additions in this branch let the business backend find the device session created by an
 authorization and withdraw access when a device is lost or an operator leaves. They require
-matching candidate Core sources; public stable Core v0.6.1 and its SDK bundles do not include them.
+Core 0.7.0 and the matching PHP/PHP7 SDK bundles. Core 0.6.1 does not include these lifecycle methods.
 
 ```php
 $auth = new \Bailing\Connect\AgentAuth('https://hub.example.com', $clientToken);
