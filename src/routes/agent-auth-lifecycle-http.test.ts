@@ -115,7 +115,7 @@ test('HTTP and real repository: approved authorization links to a scoped session
   assert.equal(f.ledger.rows.authorization.get(authorization.id)?.session_id, sessionId);
   const context = await f.call(`/authorizations/${authorization.id}`, 'GET', undefined, A.token);
   assert.equal(context.status, 200); assert.equal(context.body.status, 'consumed');
-  assert.deepEqual(Object.keys(context.body.session).sort(), ['expires_at', 'session_id', 'state']);
+  assert.deepEqual(Object.keys(context.body.session).sort(), ['expires_at', 'session_id', 'state', 'subject_display', 'subject_display_status']);
   assert.equal(context.body.session.session_id, sessionId); assert.equal(context.body.session.state, 'active');
   assert.doesNotMatch(JSON.stringify(context.body), /code_hash|code_challenge|redirect_uri|access_token|refresh_token|principal/);
 

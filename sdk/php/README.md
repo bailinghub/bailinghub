@@ -236,6 +236,21 @@ $revoked = $agentAuth->revokeAuthorization($authorizationId);
 生命周期判断。撤销可按同一授权 ID 幂等重试，503/超时或 consumed 映射缺失的 404 不代表成功。
 Client Token 与管理权限判断均留在业务后端；字段规则见上方 Agent Auth 契约。
 
+### 授权后显示业务名称（未发布候选）
+
+配套候选 Core 支持批准授权时附上服务端读取的业务名称。原四参数调用保持兼容；第五参数可选，名称可用于门店、公司、项目等业务对象。
+
+```php
+$result = $agentAuth->approve($authorizationId, $principal, $onBehalfOf, $allowedRoutes, array('name' => $accountName));
+$session = $agentAuth->updateSubjectDisplay($sessionId, array('name' => $accountName));
+// 仅清除显示信息，不撤销或替换授权：
+$session = $agentAuth->updateSubjectDisplay($sessionId, null);
+```
+
+名称由业务后端从真实记录读取，不参与身份或权限判断；更新只允许当前接入方自己的有效会话。
+旧授权没有名称时显示待同步，不需要重新登录或重建连接。详见
+[授权名称与三方职责](../../docs/AGENT_SUBJECT_DISPLAY.md)。
+
 ## CI 集成
 
 ```bash

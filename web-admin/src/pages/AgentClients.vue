@@ -78,7 +78,7 @@
     <el-card v-if="pageTab === 'activity'" shadow="never">
       <template #header>
         <div class="section-head">
-          <div><b>授权设备与 Agent Session</b><span>远程撤销后，后续 access/refresh token 都会失效；本地客户端需要重新登录。</span></div>
+          <div><b>业务授权与设备</b><span>授权名称由业务系统同步；设备名称用于区分使用端。远程撤销后需要重新登录授权。</span></div>
           <div class="actions">
             <el-select v-model="sessionFilter.client_app_id" clearable filterable size="small" placeholder="全部应用" style="width: 190px" @change="resetSessions">
               <el-option v-for="app in applications" :key="app.app_id" :label="app.name || app.app_id" :value="app.app_id" />
@@ -93,7 +93,10 @@
         </div>
       </template>
       <el-empty v-if="!sessions.length" description="当前筛选下没有 Agent Session" />
-      <el-table v-else v-loading="sessionsLoading" :data="sessions" size="small">
+      <el-table v-else v-loading="sessionsLoading" :data="sessions" size="small" row-key="session_id">
+        <el-table-column label="授权名称" :min-width="180">
+          <template #default="{ row }"><div class="stack"><b class="subject-name">{{ subjectName(row) || '待同步' }}</b><span class="muted">{{ subjectName(row) ? '业务系统提供' : '业务系统尚未提供名称' }}</span></div></template>
+        </el-table-column>
         <el-table-column label="设备" :width="170">
           <template #default="{ row }"><div class="stack"><b>{{ row.device_label || '未命名设备' }}</b><code>{{ shortId(row.session_id) }}</code></div></template>
         </el-table-column>
@@ -107,14 +110,31 @@
           <template #default="{ row }"><div class="stack"><span>活跃 {{ fmtTime(row.last_seen_at) }}</span><span class="muted">到期 {{ fmtTime(row.refresh_expires_at) }}</span></div></template>
         </el-table-column>
         <el-table-column label="状态" :width="80"><template #default="{ row }"><el-tag size="small" effect="plain" :type="stateType(row.state)">{{ stateText(row.state) }}</el-tag></template></el-table-column>
-        <el-table-column :width="90" align="right">
-          <template #default="{ row }"><el-button v-if="row.state !== 'revoked'" link type="danger" :loading="revoking === row.session_id" @click="revoke(row)">远程撤销</el-button><span v-else class="muted">已处理</span></template>
+        <el-table-column :width="130" align="right">
+          <template #default="{ row }"><el-button link @click="sessionDetail = row">详情</el-button><el-button v-if="row.state !== 'revoked'" link type="danger" :loading="revoking === row.session_id" @click="revoke(row)">远程撤销</el-button><span v-else class="muted">已处理</span></template>
         </el-table-column>
       </el-table>
       <div v-if="sessionTotal > sessionPageSize" class="pagination">
         <el-pagination v-model:current-page="sessionPage" :page-size="sessionPageSize" :total="sessionTotal" layout="prev, pager, next, total" @current-change="loadSessions" />
       </div>
     </el-card>
+
+    <el-dialog :model-value="Boolean(sessionDetail)" title="业务授权详情" width="min(640px, 94vw)" @update:model-value="value => { if (!value) sessionDetail = null; }">
+      <template v-if="sessionDetail">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="授权名称"><span class="subject-name">{{ subjectName(sessionDetail) || '待同步' }}</span></el-descriptions-item>
+          <el-descriptions-item label="名称来源">{{ subjectName(sessionDetail) ? '业务系统提供' : '业务系统尚未提供；旧授权可由原业务系统同步名称' }}</el-descriptions-item>
+          <el-descriptions-item label="设备名称">{{ sessionDetail.device_label || '未命名设备' }}</el-descriptions-item>
+          <el-descriptions-item label="接入应用"><code>{{ sessionDetail.client_app_id }}</code></el-descriptions-item>
+          <el-descriptions-item label="授权记录"><code>{{ sessionDetail.session_id }}</code></el-descriptions-item>
+          <el-descriptions-item label="业务主体">{{ sessionDetail.principal?.id || sessionDetail.on_behalf_of }}</el-descriptions-item>
+          <el-descriptions-item label="租户">{{ sessionDetail.principal?.tenant || '未声明租户' }}</el-descriptions-item>
+          <el-descriptions-item label="工作空间">{{ sessionDetail.allowed_routes.join('、') }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{ stateText(sessionDetail.state) }}</el-descriptions-item>
+        </el-descriptions>
+        <p class="connection-note">名称只帮助识别授权。相同名称可能对应不同授权，权限、会话范围和执行记录仍按原授权绑定。名称更新不修改历史对话中的标签。</p>
+      </template>
+    </el-dialog>
 
     <AgentSetupPanel v-model="setup.open" :app-id="setup.appId" :initial-workspace="setup.workspace" :workspaces="setupWorkspaces" @saved="loadOverview" @connect="connectFromSetup" />
 
@@ -150,7 +170,7 @@ interface Workspace { route: string; name: string; description?: string }
 interface SetupWorkspace extends Workspace { enabled: boolean; runtime_enabled: boolean; direct_enabled: boolean; source_count: number; system_info_configured: boolean }
 interface Stats { runs: number; conversations: number; completed: number; failed: number; tool_calls: number; total_tokens: number; approvals: Record<string, number> }
 interface Application { app_id: string; name: string; enabled: boolean; agent_auth_enabled: boolean; agent_authorize_url?: string | null; allowed_routes: string[]; last_used_at?: string | null; stats: Stats }
-interface SessionRow { session_id: string; client_app_id: string; device_label: string; principal?: { id?: string; tenant?: string; roles?: string[] }; on_behalf_of: string; allowed_routes: string[]; last_seen_at?: string; refresh_expires_at: string; state: 'active' | 'expired' | 'revoked' }
+interface SessionRow { subject_display?: { name: string } | null; subject_display_status?: 'provided' | 'missing'; session_id: string; client_app_id: string; device_label: string; principal?: { id?: string; tenant?: string; roles?: string[] }; on_behalf_of: string; allowed_routes: string[]; last_seen_at?: string; refresh_expires_at: string; state: 'active' | 'expired' | 'revoked' }
 
 const router = useRouter();
 const pageRoute = useRoute();
@@ -168,6 +188,7 @@ const workspaces = ref<Workspace[]>([]);
 const setupWorkspaces = ref<SetupWorkspace[]>([]);
 const setup = reactive({ open: false, appId: '', workspace: '' });
 const sessions = ref<SessionRow[]>([]);
+const sessionDetail = ref<SessionRow | null>(null);
 const sessionTotal = ref(0);
 const sessionPage = ref(1);
 const sessionPageSize = 50;
@@ -179,6 +200,10 @@ const approvalTotal = computed(() => Object.values(summary.approvals || {}).redu
 const connectionJson = computed(() => JSON.stringify({ hubUrl: hubUrl.value, clientAppId: connection.app_id, workspace: connection.workspace, connectionName: connection.name.trim() || 'default' }, null, 2));
 const connectionCommand = computed(() => `/bailinghub connections add ${quote(connection.name.trim() || 'default')} ${quote(hubUrl.value)} ${quote(connection.app_id)} ${quote(connection.workspace)}`);
 
+function subjectName(row: SessionRow): string {
+  const name = row.subject_display?.name;
+  return row.subject_display_status === 'provided' && typeof name === 'string' ? name : '';
+}
 function quote(value: string): string { return JSON.stringify(value); }
 function int(value: unknown): string { return new Intl.NumberFormat('zh-CN').format(Number(value || 0)); }
 function percent(value: unknown): string { return `${(Number(value || 0) * 100).toFixed(1)}%`; }
@@ -288,6 +313,7 @@ onMounted(async () => {
 .metric.primary { border-color: color-mix(in srgb, var(--el-color-primary) 34%, transparent); background: color-mix(in srgb, var(--el-color-primary) 7%, transparent); }
 .metric.danger b { color: var(--el-color-danger); }
 .stack { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.subject-name { overflow-wrap: anywhere; white-space: pre-wrap; }
 .stack.right { align-items: flex-end; }
 .mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }

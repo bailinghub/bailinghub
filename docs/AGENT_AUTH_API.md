@@ -295,3 +295,7 @@ BailingHub 不解释业务系统自己的用户/门店编号，也不代替其�
 本机连接；不同 `on_behalf_of` 保持独立。若新授权已成功、但旧会话撤销或本地清理失败，SDK 应保留
 可恢复状态并返回 `cleanupRequired`：此时不要重复授权，应先按返回信息清理旧连接。Core 不把该
 本机去重规则提升为跨设备的全局会话唯一约束。
+
+## 可选授权显示名称（未发布候选）
+
+approve 可选 `subject_display: {name} | null`，支持由业务 Client Token 调用 `PUT /agent-auth/v1/sessions/{session_id}/subject-display` 更新自己有效会话的名称。显示信息不进入 `principal`，不更换身份、权限或会话。完整字段、错误和兼容规则见 [授权后显示业务名称](AGENT_SUBJECT_DISPLAY.md)。

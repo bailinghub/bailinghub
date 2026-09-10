@@ -18,6 +18,21 @@ A small immutable catalog records the filename, original byte checksum, and leng
 
 Duplicate-column or duplicate-index errors are tolerated only when the live object exactly matches the official `ADD COLUMN` or `ADD INDEX` statement. Other SQL errors remain fatal.
 
+## Unreleased candidate: 059 authorization subject display
+
+`059_agent_subject_display.sql` adds one nullable JSON column named `subject_display`,
+with a NULL default, to each of `bz_agent_authorizations` and `bz_agent_sessions`.
+Existing rows stay NULL (name pending sync); device names, local aliases and identity
+values are not used to invent names. No principal, scope, credential, Session or
+archive record is rewritten. Business backends can later name the original session
+through the [authorization name API](../docs/AGENT_SUBJECT_DISPLAY.en.md).
+
+Explicitly apply 059 through the existing migration entry point before starting this
+candidate runtime. Custom Hosts must package the official SQL and implement the optional
+display-update repository method. An older Host explicitly reports unavailable for
+new naming operations while accepting the original approval request without a name.
+These candidate files do not indicate that a deployment or migration has occurred.
+
 ## Migration Rules
 
 Schema files are part of the deployment safety boundary.

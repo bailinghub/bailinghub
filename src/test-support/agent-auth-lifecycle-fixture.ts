@@ -162,6 +162,12 @@ export class LedgerFixture {
       const row = this.row('session', p[0], tx);
       return [row && (!sql.includes('AND client_app_id=?') || row.client_app_id === p[1]) ? [row] : []];
     }
+    if (sql.startsWith('SELECT ') && sql.includes('FROM bz_agent_sessions s WHERE s.client_app_id=? AND s.session_id=? LIMIT 1')) {
+      const row = this.row('session', p[1], tx);
+      if (!row || row.client_app_id !== p[0]) return [[]];
+      const linked = this.all('authorization', tx).filter((a) => a.session_id === row.session_id && a.client_app_id === row.client_app_id && a.status === 'consumed');
+      return [[{ ...row, authorization_id: linked.length === 1 ? linked[0]!.authorization_id : null }]];
+    }
     if (sql.startsWith('SELECT ') && sql.includes('FROM bz_agent_refresh_tokens WHERE token_hash=?')) {
       if (sql.endsWith('FOR UPDATE')) await this.lock(tx, `token:${p[0]}`);
       const row = this.row('token', p[0], tx);
@@ -173,10 +179,11 @@ export class LedgerFixture {
     }
     if (sql.startsWith('UPDATE bz_agent_sessions SET last_seen_at=')) return [{ affectedRows: 1 }];
     if (sql.startsWith("UPDATE bz_agent_authorizations SET status='approved'")) {
-      const row = this.row('authorization', p[6], tx);
+      assert.equal(p.length, 8);
+      const row = this.row('authorization', p[7], tx);
       if (!row || row.status !== 'pending') return [{ affectedRows: 0 }];
-      Object.assign(row, { status: 'approved', principal_json: p[0], on_behalf_of: p[1], allowed_routes: p[2], code_hash: p[3], code_expires_at: p[4], approved_at: p[5] });
-      await this.save(tx, 'authorization', p[6], row);
+      Object.assign(row, { status: 'approved', principal_json: p[0], on_behalf_of: p[1], allowed_routes: p[2], code_hash: p[3], code_expires_at: p[4], approved_at: p[5], subject_display: p[6] });
+      await this.save(tx, 'authorization', p[7], row);
       return [{ affectedRows: 1 }];
     }
     if (sql.startsWith("UPDATE bz_agent_authorizations SET status='revoked'")) {
@@ -194,7 +201,7 @@ export class LedgerFixture {
     }
     if (sql.startsWith('INSERT INTO bz_agent_sessions ')) {
       assert.equal(this.row('session', p[0], tx), undefined, 'duplicate session');
-      const names = ['session_id', 'client_app_id', 'device_label', 'principal_json', 'on_behalf_of', 'allowed_routes', 'access_token_hash', 'access_expires_at', 'refresh_expires_at', 'created_at', 'updated_at'];
+      const names = ['session_id', 'client_app_id', 'device_label', 'principal_json', 'on_behalf_of', 'allowed_routes', 'access_token_hash', 'access_expires_at', 'refresh_expires_at', 'created_at', 'updated_at', 'subject_display'];
       await this.save(tx, 'session', p[0], { ...Object.fromEntries(names.map((name, i) => [name, p[i]])), revoked_at: null });
       return [{ affectedRows: 1 }];
     }
@@ -214,6 +221,13 @@ export class LedgerFixture {
       if (!row || row.revoked_at) return [{ affectedRows: 0 }];
       Object.assign(row, { access_token_hash: p[0], access_expires_at: p[1], updated_at: p[2] });
       await this.save(tx, 'session', p[3], row);
+      return [{ affectedRows: 1 }];
+    }
+    if (sql === 'UPDATE bz_agent_sessions SET subject_display=?,updated_at=? WHERE session_id=? AND client_app_id=?') {
+      const row = this.row('session', p[2], tx);
+      if (!row || row.client_app_id !== p[3]) return [{ affectedRows: 0 }];
+      Object.assign(row, { subject_display: p[0], updated_at: p[1] });
+      await this.save(tx, 'session', p[2], row);
       return [{ affectedRows: 1 }];
     }
     if (sql.startsWith("UPDATE bz_agent_refresh_tokens SET status='used'")) {

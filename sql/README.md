@@ -29,6 +29,18 @@ Host 需把官方 SQL 一起打包，并通过现有迁移入口显式执行；�
 跨系统只在同一 Hub 和同一 Host 数据域内组合独立授权，不能跨租户拼库。
 完整候选协议见 [Agent 对话审计](../docs/AGENT_CONVERSATION_AUDIT.md#未发布候选跨系统成员绑定)。
 
+## 未发布候选：059 授权主体展示信息
+
+`059_agent_subject_display.sql` 给 `bz_agent_authorizations` 和 `bz_agent_sessions`
+各增加一个可空、默认 NULL 的 JSON 列 `subject_display`，独立保存授权主体的展示名称。
+旧记录保留 NULL，表示名称待同步；不从设备名、用户备注或身份标识推断名称。
+不改写 principal、授权范围、凭据、Session 或归档记录。业务后端以后可通过
+[授权名称接口](../docs/AGENT_SUBJECT_DISPLAY.md) 为原会话补名。
+
+升级到此候选运行时前，先通过现有迁移入口显式应用 059；自定义 Host 也需打包官方 SQL，
+并实现可选的名称更新仓储方法。旧 Host 不支持新命名操作时明确返回 unavailable，
+仍可使用原不带名称的授权请求。此目录提供候选结构，不代表已经部署或执行迁移。
+
 ## 写结构文件的铁律
 
 结构文件是部署方数据安全的边界。守住这三条，发布后的结构同步才可预期。

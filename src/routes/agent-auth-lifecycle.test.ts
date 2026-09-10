@@ -76,6 +76,7 @@ test('business session list uses Client bearer only and projects nested metadata
     session_id: sessionId, authorization_id: authorizationId, client_app_id: f.client.app_id,
     device_label: 'Example device', principal: { id: 'operator', tenant: 'tenant-A', roles: ['admin'] },
     on_behalf_of: 'tenant-A:operator', allowed_routes: ['orders'], state: 'active', created_at: createdAt, expires_at: expiry,
+    subject_display: null, subject_display_status: 'missing',
   });
   assert.doesNotMatch(result.body, /secret|token_hash|refresh_token|access_token/);
   assert.equal((await f.call('/agent-auth/v1/sessions', 'GET', undefined, f.other.token)).json().list.length, 0);
@@ -142,7 +143,7 @@ test('consumed authorization exposes only linked own-session metadata; authoriza
   assert.equal(result.statusCode, 200);
   assert.equal(result.json().status, 'consumed');
   assert.equal(result.json().expires_at, createdAt);
-  assert.deepEqual(result.json().session, { session_id: sessionId, state: 'active', expires_at: expiry });
+  assert.deepEqual(result.json().session, { session_id: sessionId, state: 'active', expires_at: expiry, subject_display: null, subject_display_status: 'missing' });
   assert.doesNotMatch(result.body, /secret|code_hash|challenge|redirect_uri|principal/);
   f.session.state = 'revoked'; f.session.revoked_at = createdAt;
   assert.equal((await f.call(path)).json().session.state, 'revoked');

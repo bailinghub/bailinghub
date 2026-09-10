@@ -246,6 +246,49 @@ test('Core Schema Migrator: a partial 058 replay verifies actual column definiti
   }
 });
 
+test('Core Schema Migrator: 059 adds only nullable display columns, preserves the ledger and skips replay', async () => {
+  const connection = new FakeMigrationConnection();
+  seedLedgerWithCurrentChecksums(connection);
+  const migration = '059_agent_subject_display.sql';
+  connection.ledger.delete(migration);
+  const prior = new Map(connection.ledger);
+  const result = await migrateBailingHubCoreSchema({ mysql: MYSQL_CONFIG, connection });
+  assert.deepEqual(result.appliedFiles, [migration]);
+  assert.equal(connection.migrationStatements.length, 2);
+  for (const sql of connection.migrationStatements) {
+    assert.match(sql, /^ALTER TABLE `bz_agent_(authorizations|sessions)` ADD COLUMN `subject_display` JSON DEFAULT NULL/);
+    assert.doesNotMatch(sql, /\b(?:UPDATE|DELETE|DROP|MODIFY|RENAME)\b/i);
+  }
+  for (const [name, checksum] of prior) assert.equal(connection.ledger.get(name), checksum);
+  const rerun = await migrateBailingHubCoreSchema({ mysql: MYSQL_CONFIG, connection });
+  assert.deepEqual(rerun.appliedFiles, []);
+  assert.equal(connection.migrationStatements.length, 2);
+});
+
+test('Core Schema Migrator: partial 059 replay verifies JSON type, nullability and default', async () => {
+  const migration = '059_agent_subject_display.sql';
+  for (const shape of [
+    { Type: 'json', Null: 'YES', Default: null },
+    { Type: 'text', Null: 'YES', Default: null },
+    { Type: 'json', Null: 'NO', Default: null },
+    { Type: 'json', Null: 'YES', Default: '{}' },
+  ]) {
+    const connection = new FakeMigrationConnection();
+    seedLedgerWithCurrentChecksums(connection);
+    connection.ledger.delete(migration);
+    connection.statementFaults = [{ pattern: /ADD COLUMN `subject_display`/, errno: 1060 }];
+    connection.fullColumns.set('bz_agent_authorizations', [{ Field: 'subject_display', ...shape }]);
+    if (shape.Type === 'json' && shape.Null === 'YES' && shape.Default === null) {
+      const result = await migrateBailingHubCoreSchema({ mysql: MYSQL_CONFIG, connection });
+      assert.deepEqual(result.appliedFiles, [migration]);
+      assert.equal(result.toleratedStatements, 1);
+    } else {
+      await assert.rejects(migrateBailingHubCoreSchema({ mysql: MYSQL_CONFIG, connection }), /059_agent_subject_display\.sql 执行失败/);
+      assert.equal(connection.ledger.has(migration), false);
+    }
+  }
+});
+
 test('Core Schema Migrator: 兼容文件名旧账本，补录摘要但绝不重放已记账 SQL', async () => {
   const connection = new FakeMigrationConnection();
   const official = officialMigrations();

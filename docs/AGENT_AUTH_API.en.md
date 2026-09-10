@@ -297,3 +297,7 @@ authorization succeeded but revoking or removing the older connection failed, th
 a recoverable state and return `cleanupRequired`. Do not reauthorize in that state; clean up the
 reported old connection first. Core does not turn this local deduplication rule into a global
 cross-device session-uniqueness constraint.
+
+## Optional subject display names (unpublished candidate)
+
+Approval accepts optional `subject_display: {name} | null`. The owning business Client Token can call `PUT /agent-auth/v1/sessions/{session_id}/subject-display` to update an active session. Display metadata does not enter `principal` or change identity, permissions or sessions. See [business names after authorization](AGENT_SUBJECT_DISPLAY.en.md) for fields, errors and compatibility.

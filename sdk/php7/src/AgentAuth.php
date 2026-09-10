@@ -71,9 +71,10 @@ final class AgentAuth
     /**
      * @param array $principal     业务后端从当前登录态推导的主体，必须包含 id
      * @param array $allowedRoutes 本次授权允许的路由标识
+     * @param array|null $subjectDisplay 业务服务端提供的显示名称，不参与身份判定
      * @return array
      */
-    public function approve($authorizationId, array $principal, $onBehalfOf, array $allowedRoutes)
+    public function approve($authorizationId, array $principal, $onBehalfOf, array $allowedRoutes, $subjectDisplay = null)
     {
         self::assertId($authorizationId, 'authorizationId');
         if (!isset($principal['id']) || trim((string) $principal['id']) === '') {
@@ -88,11 +89,16 @@ final class AgentAuth
         if (!isset($principal['roles'])) {
             $principal['roles'] = array();
         }
-        return $this->hub->post('/agent-auth/v1/authorizations/' . rawurlencode($authorizationId) . '/approve', array(
+        $body = array(
             'principal' => $principal,
             'on_behalf_of' => $onBehalfOf,
             'allowed_routes' => array_values($allowedRoutes),
-        ));
+        );
+        // Existing four-argument calls keep their original HTTP shape for older Core versions.
+        if (func_num_args() >= 5) {
+            $body['subject_display'] = self::normalizeSubjectDisplay($subjectDisplay);
+        }
+        return $this->hub->post('/agent-auth/v1/authorizations/' . rawurlencode($authorizationId) . '/approve', $body);
     }
 
     /** @return array */
@@ -107,6 +113,37 @@ final class AgentAuth
     {
         self::assertId($sessionId, 'sessionId');
         return $this->hub->post('/agent-auth/v1/sessions/' . rawurlencode($sessionId) . '/revoke', array());
+    }
+
+    /**
+     * 同步当前接入方已有有效授权的显示名称；不修改身份、权限或有效期。
+     * @param array{name:string}|null $subjectDisplay 业务服务端读取的名称，null 表示清除
+     * @return array
+     */
+    public function updateSubjectDisplay($sessionId, $subjectDisplay)
+    {
+        self::assertId($sessionId, 'sessionId');
+        return $this->hub->request('PUT', '/agent-auth/v1/sessions/' . rawurlencode($sessionId) . '/subject-display', array(
+            'subject_display' => self::normalizeSubjectDisplay($subjectDisplay),
+        ));
+    }
+
+    private static function normalizeSubjectDisplay($value)
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (!is_array($value) || array_keys($value) !== array('name') || !is_string($value['name'])) {
+            throw new InvalidArgumentException('subjectDisplay 只能包含字符串 name');
+        }
+        $name = $value['name'];
+        // Reject controls before trimming; line breaks must not become a valid one-line name.
+        if (preg_match('//u', $name) !== 1 || preg_match('/[\x00-\x1f\x7f-\x9f\x{2028}\x{2029}]/u', $name)) {
+            throw new InvalidArgumentException('subjectDisplay.name 必须是无控制字符的单行文本');
+        }
+        $name = preg_replace('/^[\p{Z}\x{FEFF}]+|[\p{Z}\x{FEFF}]+$/u', '', $name);
+        self::assertFilterString($name, 'subjectDisplay.name', 120, false);
+        return array('name' => $name);
     }
 
     private static function assertId($value, $name)

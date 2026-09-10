@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { namedRateLimitedFor } from '../app/auth';
 import { ipOf, readBody, send } from '../app/http';
 import type { AgentBusinessPrincipal, AgentSession, Client } from '../core/contracts/types';
+import { agentSubjectDisplayView, validateAgentSubjectDisplay } from '../core/contracts/agent-subject-display';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 
 export const AGENT_AUTHORIZATION_TTL_SEC = 10 * 60;
@@ -157,6 +158,7 @@ function publicSession(session: AgentSession): RecordValue {
     session_id: session.session_id,
     client_app_id: session.client_app_id,
     device_label: session.device_label,
+    ...agentSubjectDisplayView(session.subject_display),
     principal: session.principal,
     on_behalf_of: session.on_behalf_of,
     allowed_routes: session.allowed_routes,
@@ -181,6 +183,7 @@ function businessSessionMetadata(session: BusinessSession): RecordValue {
     ...(session.authorization_id ? { authorization_id: session.authorization_id } : {}),
     client_app_id: session.client_app_id,
     device_label: session.device_label,
+    ...agentSubjectDisplayView(session.subject_display),
     principal,
     on_behalf_of: session.on_behalf_of,
     allowed_routes: allowedRoutes,
@@ -321,6 +324,7 @@ async function authorizationContext(deps: AgentAuthHttpDeps, req: IncomingMessag
         if (linked.client_app_id !== client.app_id || linked.session_id !== item.session_id) throw new Error('Invalid business session scope');
         const metadata = businessSessionMetadata(linked);
         session = { session_id: linked.session_id, state: metadata['state'], expires_at: metadata['expires_at'],
+          ...agentSubjectDisplayView(linked.subject_display),
           ...(linked.revoked_at ? { revoked_at: linked.revoked_at } : {}) };
       }
     }
@@ -357,7 +361,12 @@ async function approveAuthorization(deps: AgentAuthHttpDeps, req: IncomingMessag
   const client = await businessClient(deps, req, url);
   if (!client) { send(res, 401, { error: 'unauthorized' }); return; }
   const body = record(await readBody(req).catch(() => null));
-  if (!body || !allowedFields(body, ['principal', 'on_behalf_of', 'allowed_routes'])) { send(res, 400, { error: 'invalid_request' }); return; }
+  if (!body || !allowedFields(body, ['principal', 'on_behalf_of', 'allowed_routes', 'subject_display'])) { send(res, 400, { error: 'invalid_request' }); return; }
+  const display = validateAgentSubjectDisplay(body['subject_display']);
+  if (!display.ok) { send(res, 400, { error: 'invalid_request' }); return; }
+  if (display.value && typeof deps.configStore.agentAuth.updateSubjectDisplay !== 'function') {
+    send(res, 503, { error: 'subject_display_unavailable' }); return;
+  }
   const principal = parsePrincipal(body['principal']);
   const onBehalfOf = typeof body['on_behalf_of'] === 'string' ? body['on_behalf_of'].trim() : '';
   const allowedRoutes = stringList(body['allowed_routes']);
@@ -372,6 +381,7 @@ async function approveAuthorization(deps: AgentAuthHttpDeps, req: IncomingMessag
     authorizationId,
     clientAppId: client.app_id,
     principal: { ...principal },
+    subjectDisplay: display.value,
     onBehalfOf,
     allowedRoutes,
     codeHash: tokenHash(code),
@@ -407,6 +417,7 @@ function tokenResponse(session: AgentSession, accessToken: string, refreshToken:
     refresh_expires_in: Math.max(0, Math.floor((Date.parse(session.refresh_expires_at) - Date.now()) / 1000)),
     session_id: session.session_id,
     client_app_id: session.client_app_id,
+    ...agentSubjectDisplayView(session.subject_display),
   };
 }
 
@@ -510,6 +521,29 @@ async function businessRevokeSession(deps: AgentAuthHttpDeps, req: IncomingMessa
   send(res, 200, { revoked: true });
 }
 
+async function businessUpdateSubjectDisplay(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL, sessionId: string): Promise<void> {
+  const repository = deps.configStore?.agentAuth;
+  if (!repository) { send(res, 503, { error: 'agent_auth_unavailable' }); return; }
+  const client = await businessClient(deps, req, url);
+  if (!client) { send(res, 401, { error: 'unauthorized' }); return; }
+  const body = record(await readBody(req, 4096).catch(() => null));
+  if (!body || Object.keys(body).length !== 1 || !Object.hasOwn(body, 'subject_display')) {
+    send(res, 400, { error: 'invalid_request' }); return;
+  }
+  const display = validateAgentSubjectDisplay(body['subject_display']);
+  if (!display.ok) { send(res, 400, { error: 'invalid_request' }); return; }
+  if (typeof repository.updateSubjectDisplay !== 'function') { send(res, 503, { error: 'subject_display_unavailable' }); return; }
+  try {
+    const result = await repository.updateSubjectDisplay({ clientAppId: client.app_id, sessionId, subjectDisplay: display.value });
+    if (!result.ok) {
+      send(res, result.reason === 'not_found' ? 404 : 409, { error: result.reason === 'not_found' ? 'not_found' : 'session_inactive' });
+      return;
+    }
+    if (result.session.client_app_id !== client.app_id || result.session.session_id !== sessionId) throw new Error('Invalid subject display binding.');
+    send(res, 200, businessSessionMetadata(result.session));
+  } catch { send(res, 503, { error: 'subject_display_unavailable' }); }
+}
+
 /** Returns true when the request belongs to the dedicated Agent Auth surface. */
 export async function handleAgentAuthHttpFor(deps: AgentAuthHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   const method = req.method ?? 'GET';
@@ -533,6 +567,14 @@ export async function handleAgentAuthHttpFor(deps: AgentAuthHttpDeps, req: Incom
   if (method === 'GET' && path === '/agent-auth/v1/session') { await readSession(deps, req, res, url); return true; }
   if (path === '/agent-auth/v1/sessions') {
     if (method === 'GET') await businessListSessions(deps, req, res, url);
+    else send(res, 405, { error: 'method_not_allowed' });
+    return true;
+  }
+  const displayMatch = path.match(/^\/agent-auth\/v1\/sessions\/([0-9a-f-]{36})\/subject-display$/i);
+  if (displayMatch) {
+    const sessionId = displayMatch[1]!.toLowerCase();
+    if (!UUID_RE.test(sessionId)) { send(res, 404, { error: 'not_found' }); return true; }
+    if (method === 'PUT') await businessUpdateSubjectDisplay(deps, req, res, url, sessionId);
     else send(res, 405, { error: 'method_not_allowed' });
     return true;
   }

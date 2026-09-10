@@ -17,6 +17,7 @@ This directory contains public documentation for the open-source BailingHub proj
 | [LOCAL_AGENT_SETUP.md](LOCAL_AGENT_SETUP.md) | Chinese local-agent setup guide. |
 | [AGENT_SYSTEM_INFO.en.md](AGENT_SYSTEM_INFO.en.md) | Controlled descriptions before first tool discovery, with original binding and compatibility rules. |
 | [AGENT_SYSTEM_INFO.md](AGENT_SYSTEM_INFO.md) | Chinese system-information contract. |
+| [AGENT_SUBJECT_DISPLAY.en.md](AGENT_SUBJECT_DISPLAY.en.md) | Business authorization display names: responsibilities, new approvals and existing-session synchronization. |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | Agent Auth v1, PKCE, trusted business identity, and revocation. |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Chinese Agent Auth v1 protocol. |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | Agent Client Runtime v1 workspaces, turns, tools, and completion contract. |

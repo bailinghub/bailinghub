@@ -21,6 +21,7 @@
 | [LOCAL_AGENT_SETUP.en.md](LOCAL_AGENT_SETUP.en.md) | English local-agent setup guide and narrow configuration APIs. |
 | [AGENT_SYSTEM_INFO.md](AGENT_SYSTEM_INFO.md) | 首次能力搜索前的受控系统定位，包含授权绑定与兼容降级契约。 |
 | [AGENT_SYSTEM_INFO.en.md](AGENT_SYSTEM_INFO.en.md) | English selected-system descriptions and host read contract. |
+| [AGENT_SUBJECT_DISPLAY.md](AGENT_SUBJECT_DISPLAY.md) | 业务授权显示名称：三方职责、新授权与旧会话名称同步。 |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Agent Auth v1：业务登录态绑定、PKCE、Token 交换与会话撤销的语言无关契约。 |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | English Agent Auth v1 protocol and trusted business-identity boundary. |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Agent Client Runtime v1：工作区、turn、能力搜索、工具执行与完成回传。 |

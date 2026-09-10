@@ -137,6 +137,11 @@ export interface Client {
   last_used_at?: string;
 }
 
+/** Business-supplied presentation only; never a principal, routing or deduplication key. */
+export interface AgentSubjectDisplay {
+  name: string;
+}
+
 /** 业务后端在 Agent 授权时提交的可信业务主体。 */
 export interface AgentBusinessPrincipal {
   id: string;
@@ -154,6 +159,7 @@ export interface AgentSession {
   session_id: string;
   client_app_id: string;
   device_label: string;
+  subject_display?: AgentSubjectDisplay | null;
   principal: AgentBusinessPrincipal;
   on_behalf_of: string;
   allowed_routes: string[];

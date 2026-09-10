@@ -33,6 +33,12 @@ export async function checkAgentAuthLifecycle({ root, runAsync, ok, closeServer 
     { cursor: '' }, { cursor: null }, { cursor: 'with=' }, { cursor: 'with+' },
     { cursor: 'with/' }, { cursor: 'next\n' }, { cursor: 'a'.repeat(2049) },
   ];
+  const invalidDisplays = [
+    {}, { name: '' }, { name: '   ' }, { name: 42 }, { name: 'a', scope: '*' },
+    { name: 'a'.repeat(121) }, { name: '😀'.repeat(61) }, { name: 'a\nb' },
+    { name: '\ta' }, { name: 'a\u007f' }, { name: 'a\u0085' }, { name: 'a\u2028b' },
+    { name: 'a\u2029b' }, [], 'Account A',
+  ];
   const requests = [];
   const server = createServer(async (req, res) => {
     let body = '';
@@ -48,6 +54,11 @@ export async function checkAgentAuthLifecycle({ root, runAsync, ok, closeServer 
       res.end(JSON.stringify({ list: [item], next_cursor: url.search ? null : 'next_page-1' }));
     } else if (url.pathname === `/agent-auth/v1/authorizations/${authorizationId}/revoke`) {
       res.end(JSON.stringify({ authorization_id: authorizationId, revoked: true, session_id: sessionId }));
+    } else if (url.pathname === `/agent-auth/v1/authorizations/${authorizationId}/approve`) {
+      res.end(JSON.stringify({ redirect_uri: 'http://127.0.0.1:12345/callback?code=synthetic-code' }));
+    } else if (url.pathname === `/agent-auth/v1/sessions/${sessionId}/subject-display`) {
+      const display = JSON.parse(body).subject_display;
+      res.end(JSON.stringify({ ...item, state: 'active', subject_display: display, subject_display_status: display ? 'provided' : 'missing' }));
     } else if (url.pathname.endsWith('/deny') || url.pathname.endsWith('/revoke') || url.pathname === '/body-check') {
       res.end('{}');
     } else {
@@ -79,6 +90,24 @@ $auth->revokeSession('${sessionId}');
 $hub = new Bailing\\Connect\\HubClient('http://127.0.0.1:${server.address().port}', 'synthetic-client-token');
 $hub->post('/body-check', array('nested' => array(), 'value' => 'kept'));
 $hub->post('/body-check', array('nonempty-list'));
+$principal = array('id' => 'user-a', 'tenant' => 'tenant-a');
+$out['approveOld'] = $auth->approve('${authorizationId}', $principal, 'tenant-a:user-a', array('staff-route'));
+$out['approveNamed'] = $auth->approve('${authorizationId}', $principal, 'tenant-a:user-a', array('staff-route'), array('name' => '  Account A  '));
+$out['approveMissing'] = $auth->approve('${authorizationId}', $principal, 'tenant-a:user-a', array('staff-route'), null);
+$out['named'] = $auth->updateSubjectDisplay('${sessionId}', array('name' => '　Account A　'));
+$out['cleared'] = $auth->updateSubjectDisplay('${sessionId}', null);
+$out['unicodeName'] = $auth->updateSubjectDisplay('${sessionId}', array('name' => str_repeat('😀', 60)));
+$out['invalidDisplays'] = array();
+foreach (json_decode(base64_decode('${encoded(invalidDisplays)}'), true) as $display) {
+    try { $auth->updateSubjectDisplay('${sessionId}', $display); $out['invalidDisplays'][] = false; }
+    catch (Throwable $e) { $out['invalidDisplays'][] = true; }
+    try { $auth->approve('${authorizationId}', $principal, 'tenant-a:user-a', array('staff-route'), $display); $out['invalidDisplays'][] = false; }
+    catch (Throwable $e) { $out['invalidDisplays'][] = true; }
+}
+try { $auth->updateSubjectDisplay('${sessionId}', array('name' => "\\xFF")); $out['invalidDisplayUtf8'] = false; }
+catch (Throwable $e) { $out['invalidDisplayUtf8'] = true; }
+try { $auth->updateSubjectDisplay('not-a-uuid', null); $out['invalidDisplayId'] = false; }
+catch (Throwable $e) { $out['invalidDisplayId'] = true; }
 $out['invalid'] = array();
 foreach (json_decode(base64_decode('${encoded(invalid)}'), true) as $filters) {
     try { $auth->listSessions($filters); $out['invalid'][] = false; }
@@ -112,7 +141,7 @@ echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
           && new URL(listRequests[3]?.url ?? '/', 'http://fixture.invalid').searchParams.get('tenant') === '😀'.repeat(64));
       ok(`${label} rejects ${invalid.length + 2} invalid filters/IDs before HTTP`,
         data?.invalid?.length === invalid.length && data.invalid.every(Boolean)
-          && data?.invalidUtf8 === true && data?.invalidId === true && captured.length === 12);
+          && data?.invalidUtf8 === true && data?.invalidId === true && captured.length === 18);
       ok(`${label} uses idempotent revoke-authorization path and empty object bodies`,
         JSON.stringify(data?.revoke) === JSON.stringify({ authorization_id: authorizationId, revoked: true, session_id: sessionId })
           && JSON.stringify(data?.repeat) === JSON.stringify(data?.revoke)
@@ -121,6 +150,24 @@ echo json_encode($out, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
           && captured[7]?.url === captured[6]?.url);
       ok(`${label} keeps non-empty HubClient bodies unchanged`,
         captured[10]?.body === '{"nested":[],"value":"kept"}' && captured[11]?.body === '["nonempty-list"]');
+      const approvals = captured.filter((request) => request.url.endsWith('/approve'));
+      ok(`${label} keeps four-argument approval compatible and transmits explicit display/null`,
+        approvals.length === 3 && approvals.every((request) => request.method === 'POST')
+          && !Object.hasOwn(JSON.parse(approvals[0].body), 'subject_display')
+          && JSON.stringify(JSON.parse(approvals[1].body).subject_display) === JSON.stringify({ name: 'Account A' })
+          && JSON.parse(approvals[2].body).subject_display === null
+          && JSON.parse(approvals[1].body).principal.id === 'user-a');
+      const updates = captured.filter((request) => request.url.endsWith('/subject-display'));
+      ok(`${label} updates only display via PUT and preserves returned session metadata`,
+        updates.length === 3 && updates.every((request) => request.method === 'PUT'
+          && Object.keys(JSON.parse(request.body)).join(',') === 'subject_display')
+          && data?.named?.subject_display?.name === 'Account A' && data?.named?.subject_display_status === 'provided'
+          && data?.named?.session_id === sessionId && data?.named?.principal?.id === item.principal.id
+          && data?.cleared?.subject_display === null && data?.cleared?.subject_display_status === 'missing'
+          && data?.unicodeName?.subject_display?.name === '😀'.repeat(60));
+      ok(`${label} rejects invalid display objects, controls, length, UTF-8 and IDs before HTTP`,
+        data?.invalidDisplays?.length === invalidDisplays.length * 2 && data.invalidDisplays.every(Boolean)
+          && data?.invalidDisplayUtf8 === true && data?.invalidDisplayId === true && captured.length === 18);
       ok(`${label} sends only server-side Client Token headers`, captured.every((request) =>
         request.headers.authorization === 'Bearer synthetic-client-token'
           && !request.url.includes('synthetic-client-token') && !request.body.includes('synthetic-client-token')));

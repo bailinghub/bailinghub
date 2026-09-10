@@ -232,6 +232,21 @@ $revoked = $agentAuth->revokeAuthorization($authorizationId);
 再调用这些方法；Client Token 不进入浏览器。完整字段见
 [Agent Auth v1](../../docs/AGENT_AUTH_API.md)。
 
+### 授权后显示业务名称（未发布候选）
+
+配套候选 Core 支持批准授权时附上服务端读取的业务名称。原四参数调用保持兼容；第五参数可选，名称可用于门店、公司、项目等业务对象。
+
+```php
+$result = $agentAuth->approve($authorizationId, $principal, $onBehalfOf, $allowedRoutes, array('name' => $accountName));
+$session = $agentAuth->updateSubjectDisplay($sessionId, array('name' => $accountName));
+// 仅清除显示信息，不撤销或替换授权：
+$session = $agentAuth->updateSubjectDisplay($sessionId, null);
+```
+
+名称由业务后端从真实记录读取，不参与身份或权限判断；更新只允许当前接入方自己的有效会话。
+旧授权没有名称时显示待同步，不需要重新登录或重建连接。详见
+[授权名称与三方职责](../../docs/AGENT_SUBJECT_DISPLAY.md)。
+
 ## 范例
 
 - `examples/build-spec.php`：完整 builder 范例（覆盖全部字段；与 8.x 版同源，跑同一个跨语言契约测试）
