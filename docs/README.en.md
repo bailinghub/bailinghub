@@ -6,6 +6,7 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [RELEASE_NOTES_NEXT.en.md](RELEASE_NOTES_NEXT.en.md) | Unreleased source: shop/inventory scenarios, changes, upgrade preparation and limits. |
 | [user-guide/conversations.en.md](user-guide/conversations.en.md) | Multi-account conversations, full-text review and offline recovery for users. |
 | [QUICKSTART.en.md](QUICKSTART.en.md) | Install BailingHub, run the Docker demo, create the first route, and connect the first business tool. |
 | [DEMO.en.md](DEMO.en.md) | Docker demo walkthrough: hub, MySQL, demo business system, tool provider, audit, and trace. |

@@ -12,6 +12,8 @@ For the current integration contract, use:
 
 ## Recording Rules
 
+Lead each release with a familiar shop, product-maintenance or inventory scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the next-release scenario notes](RELEASE_NOTES_NEXT.en.md).
+
 Each public version should describe:
 
 - new capabilities;
@@ -20,16 +22,18 @@ Each public version should describe:
 - validation commands;
 - related docs.
 
-## Unreleased
+## Unreleased — cross-system conversations, authorization names and centralized setup
 
-- **Authorization lifecycle candidate**: a business backend can page through its own app's sessions by tenant, operator or original authorization. Consumed authorization context exposes a reliable Session link, and access can be withdrawn using the original authorization ID. Revocation and code exchange are atomic; repeated revocation is idempotent.
-- **SDK and consumption**: PHP 8.1+ / PHP 7.3 add `listSessions()` and `revokeAuthorization()` while preserving `context()`. No business UI or tool declarations change. Pages reflect current state, expiry follows the refresh lifetime, and active state does not replace business permission checks. Missing mappings, 503s and timeouts are not proof of revocation.
-- **Lifecycle compatibility**: no new SQL migration. Hosts without the optional repository methods return 503 for new list/revoke operations; existing context remains readable with a null missing mapping. This is an unpublished source candidate, absent from public stable v0.6.1 and its download bundles. See the [authorization contract](AGENT_AUTH_API.en.md) and [quickstart](AGENT_CLIENT_QUICKSTART.en.md).
+See [check stock, then update and list a shop product](RELEASE_NOTES_NEXT.en.md) for the user scenario. These are source changes, absent from published Core 0.6.1 and SDK/DSH 0.4.0 packages.
 
-- **Cross-system conversation candidate**: explicit capability discovery and v2 membership can associate independent authorized Sessions from different Client Apps and workspaces on one Hub with a visible conversation. Each member proves its own authority and the whole group is revalidated; execution, approvals, invocations and memory keep their original ownership.
-- **Console**: members and execution cards show their own system and workspace. The conversation header identifies only the archive writer; missing per-member fields on legacy records are labelled explicitly.
-- **Consumption and schema**: only additive migration `058_agent_conversation_member_bindings.sql` is new; 057 remains unchanged. New repository methods are optional for private Hosts. Missing methods or columns disable cross-system support while v1 remains usable. Clients must negotiate support explicitly; one Session cannot represent two workspaces, and cross-Hub membership is unsupported.
-- **Validation**: real HTTP authentication and transactional repository tests cover member proofs, a writer that is not the first sorted member, forged App/route/run ownership, whole-group revocation, ACK deduplication, old Host/v1 compatibility and additive migration replay. This candidate is unpublished and undeployed; its unchanged package version does not identify the candidate. See the [archive contract](AGENT_CONVERSATION_AUDIT.en.md).
+- **New: cross-system conversation associations on one Hub.** Distinct original Sessions from different Client Apps/workspaces confirm independently, with whole-group identity checks. Execution, approval, invocation and memory ownership remain separate. Existing same-system scope and visible archives continue to work.
+- **New: system descriptions before first capability search.** Controlled metadata explains selling versus inventory responsibilities for selected targets only. Description reads send no user text, create no business run and grant no tool permissions.
+- **New: generic authorization subject display.** Backends provide a name at approval or update an original active Session. Clients and the console can display an organization, account, project or location separately from system purpose, device label and identity. Duplicate names and renames preserve authorizations and historical associations.
+- **Improved: centralized setup.** Agent Clients → Setup brings authorization, descriptions, tools/approvals and connection checks together while retaining the original Client/route and administrator permissions. It does not enable writes automatically.
+- **New: authorization lifecycle lookup and revocation.** Applications can page through their own Sessions, obtain a consumed authorization's Session link and revoke by original authorization. Revocation and exchange are atomic. Backends integrate account-disable events themselves; queries return no credentials.
+- **SDK and upgrade impact.** PHP/PHP7 retain the existing `approve()` arguments and add optional names, `updateSubjectDisplay()`, `listSessions()` and `revokeAuthorization()`. Display and cross-system experiences require matched SDK/hosts. Missing old-version support remains explicit and never widens authority.
+- **Database.** Relative to 0.6.1, only 058 member bindings and 059's two nullable JSON columns are added. Existing migrations are unchanged and old names are not guessed. Apply all outstanding migrations through the official migrator. Custom hosts must check optional repository support; unavailable features remain disabled.
+- **Validation.** Regression coverage includes original bindings, per-system execution, revocation/offline recovery, ACK idempotency, cancellation, display rename/duplicate cases, old-version behavior, SDKs and console. Final artifacts and CI remain release gates; tests are not production-adoption evidence.
 
 ## v0.6.1 - Conversation Release and Package Source Verification
 
