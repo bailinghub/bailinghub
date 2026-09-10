@@ -2,9 +2,9 @@
 
 [English protocol and examples](AGENT_CONVERSATION_AUDIT.en.md)
 
-> 本页保留既有 v1 协议，并记录**尚未发布的跨系统成员绑定候选增量**。
+> 本页保留既有 v1 协议，并说明 **Core 0.7.0 的跨系统成员绑定扩展**。
 > v2 仅是显式创建请求的 schema，不改变现有 v1 创建、事件、会话头或管理员响应 schema，
-> 也不表示已发布版本已经支持跨系统会话。
+> 旧 v1 请求不会因此获得跨系统范围；新功能需要配套 SDK/客户端。
 
 本接口归档本地智能体与用户之间的**可见对话**，将每轮沟通关联到各授权独立的 run。
 它不合并 Agent Session、业务身份、thread、记忆、工具授权、审批或 invocation，也不上传隐藏推理。
@@ -43,7 +43,7 @@ v1 成员仍限定在同一个 Client App 和同一个 route；不能用 v1 请�
 复核所有成员未撤销、refresh 生命周期有效、原主体快照未改变，且 client/session 的路由白名单交集、
 路由启用和 audience 仍允许访问。access token 刷新可以沿用同一 Session，替换身份不能替换旧成员。
 
-## 未发布候选：跨系统成员绑定
+## Core 0.7.0：跨系统成员绑定
 
 ### 先探测能力
 
@@ -106,7 +106,7 @@ App、route 和原 run 的 conversation/turn，不按 writer 的 App/route 推�
 
 ### Host 与迁移
 
-跨绑定候选另需显式应用 `sql/058_agent_conversation_member_bindings.sql`。
+跨绑定扩展另需显式应用 `sql/058_agent_conversation_member_bindings.sql`。
 058 只增加归档 `membership_version` 和成员 `client_app_id` / `route_key` / `client_name` 列；
 原 057 文件保持不变，不移动 Session、run、invocation 或正文，也不改写既有身份和正文内容。旧记录保持 v1，成员新增列为 NULL。
 仅应用 057 的部署可继续使用 v1，不能宣告跨绑定支持。
@@ -158,7 +158,7 @@ state、member_count、confirmed_count、last_sequence、message_count、turn_co
 `GET /admin/api/conversation-audits/:id?after_sequence=0&limit=100` 返回 schema
 `bailing.agent-conversation-audit-detail.v1`、`conversation`、`members`、`events`、has_more、next_after_sequence。
 成员包含 session_id/display_label/confirmed；确认后有冻结的 principal/on_behalf_of。
-跨绑定候选的成员视图可选增加 `client_app_id`、`client_name`、`route_key`，管理员响应仍为 v1。
+跨绑定扩展的成员视图可选增加 `client_app_id`、`client_name`、`route_key`，管理员响应仍为 v1。
 client_name 是显示快照，不能作身份依据。旧 v1 响应可缺少这些字段，旧数据库 NULL 也不是成员系统的证明；
 界面如回退会话头，必须标注“旧记录：仅有归档头部信息”，不能冒充逐成员绑定证据。
 事件包含提交的可见字段、服务端 created_at，run_link 还有数值 thread_id。
@@ -185,7 +185,7 @@ conversation_audit_id 和 client_turn_id，用于返回完整对话。
 | 409 | `conversation_audit_conflict` | 成员、幂等内容、序号、轮次或 run 关联冲突。 |
 | 413 | `conversation_audit_limit` | 超限，整批未落库。 |
 | 503 | `conversation_audit_unavailable` | 可选归档仓储未提供。 |
-| 503 | `conversation_audit_cross_binding_unavailable` | 未发布 v2 创建候选所需方法或迁移未就绪。 |
+| 503 | `conversation_audit_cross_binding_unavailable` | v2 跨系统创建所需方法或迁移未就绪。 |
 | 500 | `conversation_audit_internal_error` | 内部失败，不返回原始数据库或异常详情。 |
 
 旧 Core 未提供接口时也可能返回 `404`，适配器必须显示不支持归档。

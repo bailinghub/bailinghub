@@ -50,8 +50,9 @@ the end user to paste a BailingHub Client Token, Tool Provider Secret, or busine
 
 ### 3.1 Deploy Core and apply migrations
 
-Full conversation archives require BailingHub0.6.1, Agent Client SDK0.4.0 and a compatible client.
-Apply migrations055/056 and the new057 from one deployment step; runtime startup does not apply them.
+For the complete cross-system flow, use BailingHub 0.7.0, Agent Client SDK 0.5.0 and DSH 0.5.0
+or a compatible client. Apply all outstanding migrations, including 055–059, as part of the
+deployment; runtime startup does not apply them.
 Confirm that health and readiness pass, no migration is pending, the console can edit
 Agent Client settings, and production traffic uses HTTPS.
 
@@ -162,12 +163,12 @@ Other languages can implement the Agent Auth v1 HTTP contract directly. The Clie
 in the backend `Authorization: Bearer <BUSINESS_CLIENT_TOKEN>` header and is never sent to the
 browser.
 
-### 4.1 Inspect and withdraw access (unpublished candidate)
+### 4.1 Inspect and withdraw access (Core 0.7.0)
 
 The lifecycle additions in this branch let a business backend identify the device session created
 by an authorization and find sessions for an operator or tenant before withdrawing access. Tool
 declarations and the existing consent page need no redesign. The new methods require matching
-candidate Core / PHP SDK sources; public stable Core v0.6.1 does not yet provide them.
+Core 0.7.0 and its matching PHP/PHP7 SDKs.
 
 ```php
 // Derive filters from the backend's validated management permission and tenant scope.
@@ -246,7 +247,7 @@ on the same public binding, use a console-generated command or run these user co
 ```
 
 Connection selection is a user command, not a model tool. It selects the connection-management and
-login target; it does not grant business scope to a new conversation. DSH0.4.0 requires a separate
+login target; it does not grant business scope to a new conversation. DSH0.5.0 requires a separate
 explicit scope selection before the first message. Existing conversations retain their original scope. `/bailinghub use
 <workspace>` moves only within workspaces already granted to the current authorization and is not
 a multi-connection selector. `/bailinghub connections remove <name>` first revokes the remote
@@ -271,13 +272,13 @@ Authorize the intended accounts separately, then obtain each `connectionKey` fro
 /bailinghub scope
 ```
 
-Use the actual returned keys, not these placeholders or account labels. Select only A to allow only A; `/bailinghub scope none` means ordinary chat without Hub access. Wait for successful selection before sending business requests. DSH0.4.0 accepts one Hub/clientAppId/workspace binding, not a cross-system or cross-route group.
+Use the actual returned keys, not these placeholders or account labels. Select only A to allow only A; `/bailinghub scope none` means ordinary chat without Hub access. Wait for successful selection before sending business requests. DSH0.5.0 accepts distinct original Agent Sessions from different Client Apps/workspaces on one Hub and audit domain. Existing same-system scopes remain supported and never expand automatically.
 
 The first user message fixes the scope; changing it requires a new conversation. Custom hosts use `setSessionScope/getSessionScope/restoreSessionScope`. Failed restoration must never select a default or remaining subset.
 
 ### 6.2 Read the conversation and retry synchronization
 
-Compatible hosts use SDK0.4.0 to capture actual visible text, preserving the original Session, durable history and separate pending records. Administrators open Tasks → Conversations → Client conversations and follow each turn into the original account's execution record.
+Compatible hosts use SDK0.5.0 to capture actual visible text, preserving the original Session, durable history and separate pending records. Administrators open Tasks → Conversations → Client conversations and follow each turn into the original account's execution record.
 
 Use `/bailinghub archive status` to inspect synchronization and `/bailinghub archive sync` to retry. After reopening offline, the same runtime and Session can revalidate the original scope and synchronize when connectivity returns. Confirmed revocation keeps the whole group blocked. Show storage failures and history gaps separately; never resend user messages or repeat business actions merely to repair the archive. Restoring an archive does not restore an invocation lost across process restarts. See the [user guide](user-guide/conversations.en.md) and [archive API](AGENT_CONVERSATION_AUDIT.en.md).
 

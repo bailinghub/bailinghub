@@ -2,10 +2,10 @@
 
 [中文版](AGENT_CONVERSATION_AUDIT.md)
 
-> This page retains the existing v1 protocol and describes an **unreleased
-> candidate increment for cross-system member bindings**. v2 identifies only the
+> This page retains the existing v1 protocol and describes **Core 0.7.0 cross-system member bindings**. v2 identifies only the
 > explicit create-request schema; existing v1 creation, events, headers and admin
-> response schemas remain unchanged. This is not a claim of released support.
+> response schemas remain unchanged. Cross-system use requires matching SDK and client support;
+> upgrading Core alone does not expand an existing v1 scope.
 
 This optional API records the complete **visible** conversation managed by a local
 Agent, and links its turns to separately authorized BailingHub runs. It does not
@@ -83,7 +83,7 @@ all authorizations remain active; every subsequent write revalidates them.
 It also does not establish that all visible history was uploaded or verified as complete.
 Replies contain no transcript text, credentials, identity hashes or tool data.
 
-## Unreleased candidate: cross-system member bindings
+## Core 0.7.0: cross-system member bindings
 
 ### Probe capability first
 
@@ -160,7 +160,7 @@ invocations and original trace links remain independent for each member.
 
 ### Host packaging and migration
 
-The cross-binding candidate additionally requires explicit application of
+The cross-binding extension additionally requires explicit application of
 `sql/058_agent_conversation_member_bindings.sql`. It only adds the archive
 `membership_version` and member `client_app_id`, `route_key`, `client_name` columns.
 057 remains unchanged; no Sessions, runs, invocations or text are moved, and
@@ -256,7 +256,7 @@ event kinds and must not be displayed as message counts.
 `session_id`, `display_label`, `confirmed`, and, once confirmed, the frozen
 `principal` and `on_behalf_of`. Event views contain the submitted visible fields,
 server `created_at`, and server-derived numeric `thread_id` on run links.
-The cross-binding candidate optionally adds `client_app_id`, `client_name` and
+The cross-binding extension optionally adds `client_app_id`, `client_name` and
 `route_key` to member views while retaining the v1 admin response schema.
 `client_name` is a display snapshot, not identity evidence. Older v1 responses may
 omit these fields, and legacy database NULL values do not prove a member binding.
@@ -289,7 +289,7 @@ than truncate an allegedly complete transcript.
 | 409 | `conversation_audit_conflict` | Frozen membership, event sequence/content, turn or run association conflicts. |
 | 413 | `conversation_audit_limit` | No partial or truncated events were saved. |
 | 503 | `conversation_audit_unavailable` | Optional archive repository is not available. |
-| 503 | `conversation_audit_cross_binding_unavailable` | Methods or migration for the unreleased v2 create candidate are unavailable. |
+| 503 | `conversation_audit_cross_binding_unavailable` | Methods or migration for v2 cross-system creation are unavailable. |
 | 500 | `conversation_audit_internal_error` | Storage/internal failure; raw exception details are not returned. |
 
 The metadata-only capabilities GET is the sole Agent archive GET exception;

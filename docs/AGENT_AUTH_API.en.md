@@ -11,11 +11,10 @@ See the [Agent Client v1 Integration Guide](AGENT_CLIENT_QUICKSTART.en.md) for t
 relationship. This protocol does not carry subscription, billing, model credentials, or business
 API secrets.
 
-The **authorization lifecycle additions in this branch are unpublished candidates**. A business
+**Core 0.7.0 adds authorization lifecycle management**. A business
 backend can identify the device session created by an authorization, page through sessions for an
 operator or tenant, and withdraw access using the original authorization record. Session listing,
-authorization revocation and `context.session` require matching candidate Core / PHP SDK sources;
-the public stable Core v0.6.1 does not include these additions.
+authorization revocation and `context.session` require Core 0.7.0 and its matching PHP/PHP7 SDKs; Core 0.6.1 does not include these additions.
 
 ## 1. Parties and credentials
 
@@ -96,7 +95,7 @@ Authorization: Bearer <BUSINESS_CLIENT_TOKEN>
 
 The response exposes only client name, device name, requested routes, status, and expiry metadata.
 
-The lifecycle candidate preserves those fields and adds `session` when `status=consumed`, linking
+The lifecycle API preserves those fields and adds `session` when `status=consumed`, linking
 the authorization to the original session created by code exchange. Example `session` value:
 
 ```json
@@ -178,7 +177,7 @@ secure credential store, never in connection metadata or plugin settings.
 Revoke sessions when an employee leaves, a tenant is disabled, a device is lost, or business
 authority changes. Business tool endpoints still revalidate current permission on every call.
 
-### 4.6 List business sessions (unpublished candidate)
+### 4.6 List business sessions (Core 0.7.0)
 
 `GET /agent-auth/v1/sessions` uses the business backend Client Token and is restricted to its
 Client App. A query cannot select another app. The backend must also enforce its own caller's
@@ -231,7 +230,7 @@ execution text is returned. Expiry and the `expired` state follow the refresh/se
 not the short-lived access token. `active` describes the session ledger; it does not guarantee that
 the business account is currently valid. Per-call business permission checks remain mandatory.
 
-### 4.7 Revoke an authorization (unpublished candidate)
+### 4.7 Revoke an authorization (Core 0.7.0)
 
 `POST /agent-auth/v1/authorizations/{authorization_id}/revoke` uses the business Client Token and
 an empty JSON object `{}`.
@@ -252,7 +251,7 @@ creates or selects a replacement session. An unexchanged request may omit `sessi
 failure to find a session must never be treated as proof of revocation.
 Existing `revokeSession(sessionId)` remains appropriate when the exact Session ID is already known.
 
-The candidate PHP 8.1+ / PHP 7.3 SDKs expose `listSessions(array $filters = [])` and
+The matching PHP 8.1+ / PHP 7.3 SDKs expose `listSessions(array $filters = [])` and
 `revokeAuthorization($authorizationId)`; `context()` passes through the new fields. Node / Python
 currently have no separate `AgentAuth` module and can use the same server-side HTTP contract.
 
@@ -260,9 +259,9 @@ Older Core versions may return 404. A Host without the lifecycle repository meth
 `503 agent_auth_lifecycle_unavailable` for the new list/revoke operations. Keep failures explicit;
 do not report an empty list or successful revocation, or fall back to stronger credentials.
 A 503 or timeout does not prove revocation; retry idempotently with the same `authorization_id`.
-This lifecycle addition adds no SQL migration; the combined candidate still includes the earlier
-cross-system archive migration 058. Validate matching candidates in isolation before arranging a
-separate production upgrade.
+The lifecycle APIs add no SQL migration themselves. The combined Core 0.7.0 upgrade includes
+cross-system archive migration 058 and subject display migration 059. Validate the matched
+versions in an isolated environment before upgrading your deployment.
 
 ## 5. Business-page rules
 
@@ -298,6 +297,6 @@ a recoverable state and return `cleanupRequired`. Do not reauthorize in that sta
 reported old connection first. Core does not turn this local deduplication rule into a global
 cross-device session-uniqueness constraint.
 
-## Optional subject display names (unpublished candidate)
+## Optional subject display names (Core 0.7.0)
 
 Approval accepts optional `subject_display: {name} | null`. The owning business Client Token can call `PUT /agent-auth/v1/sessions/{session_id}/subject-display` to update an active session. Display metadata does not enter `principal` or change identity, permissions or sessions. See [business names after authorization](AGENT_SUBJECT_DISPLAY.en.md) for fields, errors and compatibility.

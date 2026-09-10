@@ -221,8 +221,7 @@ $result = $agentAuth->approve(
 
 `principal` 和 `on_behalf_of` 必须由业务后端从当前登录态生成，不得从前端表单原样透传。该协议只绑定业务身份、路由与设备会话，不承载套餐、付费或权益字段。
 
-**未发布的生命周期候选**还支持核对和收回现有授权，需配套候选 Core；公开稳定 Core v0.6.1
-及其下载包尚不包含本增量。业务后端可以先查询自己有权管理的租户，再按原授权记录撤销：
+**Core 0.7.0 配套的生命周期接口**支持核对和收回现有授权。请同时升级本 SDK 下载包与 Core。业务后端可以先查询自己有权管理的租户，再按原授权记录撤销：
 
 ```php
 $page = $agentAuth->listSessions(['tenant' => (string) $tenantId, 'limit' => 20]);
@@ -236,9 +235,9 @@ $revoked = $agentAuth->revokeAuthorization($authorizationId);
 生命周期判断。撤销可按同一授权 ID 幂等重试，503/超时或 consumed 映射缺失的 404 不代表成功。
 Client Token 与管理权限判断均留在业务后端；字段规则见上方 Agent Auth 契约。
 
-### 授权后显示业务名称（未发布候选）
+### 授权后显示业务名称
 
-配套候选 Core 支持批准授权时附上服务端读取的业务名称。原四参数调用保持兼容；第五参数可选，名称可用于门店、公司、项目等业务对象。
+Core 0.7.0 支持批准授权时附上服务端读取的业务名称。原四参数调用保持兼容；第五参数可选，名称可用于门店、公司、项目等业务对象。
 
 ```php
 $result = $agentAuth->approve($authorizationId, $principal, $onBehalfOf, $allowedRoutes, array('name' => $accountName));

@@ -2,9 +2,9 @@
 
 English | [简体中文](AGENT_SUBJECT_DISPLAY.md)
 
-When a user approves “Account A” on a business authorization page, their agent client should be able to show that name without asking for another connection label. This candidate adds optional `subject_display` metadata supplied by the business backend, bound by BailingHub to the original Agent Session, and read by a matching client. The subject can be a store, company, project, or another business account.
+When a user approves “Account A” on a business authorization page, their agent client should be able to show that name without asking for another connection label. Core 0.7.0 adds optional `subject_display` metadata supplied by the business backend, bound by BailingHub to the original Agent Session, and read by a matching client. The subject can be a store, company, project, or another business account.
 
-**This addition is unpublished and requires matching candidate Core, Agent Client SDK and client plugin builds.** An older authorization without a name shows “Pending synchronization”. Its existing local note may remain separate, without posing as a business-confirmed name or changing business access.
+**Use Core 0.7.0, Agent Client SDK 0.5.0 and DSH 0.5.0, or a custom host implementing the same interfaces.** An older authorization without a name shows “Pending synchronization”. Its existing local note may remain separate, without posing as a business-confirmed name or changing business access.
 
 ## Responsibilities
 

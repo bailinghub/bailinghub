@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar shop, product-maintenance or inventory scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the next-release scenario notes](RELEASE_NOTES_NEXT.en.md).
+Lead each release with a familiar shop, product-maintenance or inventory scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.7.0.en.md).
 
 Each public version should describe:
 
@@ -22,9 +22,9 @@ Each public version should describe:
 - validation commands;
 - related docs.
 
-## Unreleased — cross-system conversations, authorization names and centralized setup
+## v0.7.0 - cross-system conversations, authorization names and centralized setup
 
-See [check stock, then update and list a shop product](RELEASE_NOTES_NEXT.en.md) for the user scenario. These are source changes, absent from published Core 0.6.1 and SDK/DSH 0.4.0 packages.
+Release date: 2026-09-10. These additions extend Core 0.6.1 and pair with SDK/DSH 0.5.0. See [shop and inventory scenarios](RELEASE_NOTES_v0.7.0.en.md).
 
 - **New: cross-system conversation associations on one Hub.** Distinct original Sessions from different Client Apps/workspaces confirm independently, with whole-group identity checks. Execution, approval, invocation and memory ownership remain separate. Existing same-system scope and visible archives continue to work.
 - **New: system descriptions before first capability search.** Controlled metadata explains selling versus inventory responsibilities for selected targets only. Description reads send no user text, create no business run and grant no tool permissions.

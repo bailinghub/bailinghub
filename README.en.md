@@ -29,23 +29,17 @@ You choose which business APIs become available. BailingHub connects the convers
   <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
 </picture>
 
-## v0.6.1: Follow the Conversation Through Its Business Actions
+## v0.7.0: check stock, then update and list a shop product
 
-Select accounts A and B from the same business system in a compatible client, then ask: “Check orders for both stores, but update the contact for Store A only.” The agent can choose the corresponding authorization for each action within that selection. Your business system must expose those operations and still decides whether each call is allowed.
+> “Check tumbler stock. If available, change the corresponding shop product's price to 59 and list it.”
 
-In **Tasks → Conversations**, administrators can read the text synchronized by the client—user requests, intermediate explanations and final replies—then open each account's original calls and approvals. Unsynchronized text and missing history are identified separately from business results.
+Select inventory and shop authorizations on one Hub. The Agent uses each system's tools and authority for the right step. Controlled system descriptions explain their roles, business-supplied names identify the approved subjects, and centralized setup and visible records help administrators configure and trace the work.
 
-This experience uses **BailingHub 0.6.1 + MCP/Agent Client SDK 0.4.0 + DSH plugin 0.4.0**, or your own client implementing the same host APIs. These are separate packages. Multi-account scope currently covers one business system and one workspace.
+The business APIs and product mapping must already exist. Original approvals apply; a stock read is not a reservation, and a completed price change is not an approved listing.
 
-[Start with the user guide](docs/user-guide/conversations.en.md) · [Upgrade and compatible versions](docs/RELEASE_NOTES_v0.6.1.en.md)
+Full pairing: **Core 0.7.0 + MCP / Agent Client SDK 0.5.0 + DSH 0.5.0**, or a custom host implementing the same interfaces. Existing same-system conversations remain supported; cross-system scope stays within one Hub and audit domain.
 
-## Next release in development: check stock, then update and list a product
-
-This source tree adds conversations across separately authorized systems on one Hub. For example, check a tumbler in an inventory system, then use the shop authorization to change its price and list the corresponding product. System descriptions, business-supplied authorization names and centralized setup accompany this extension. Existing permissions and approvals still apply.
-
-**These features are not in the published packages.** The stable 0.6.1 / 0.4.0 pairing above does not include them. Source integration requires matching Core, SDK and DSH revisions; the plugin dependency will change during package release. Business actions must already be exposed and product mappings confirmed.
-
-[Scenarios, changes and upgrade preparation](docs/RELEASE_NOTES_NEXT.en.md)
+[Changes and upgrade steps](docs/RELEASE_NOTES_v0.7.0.en.md) · [Get started](docs/user-guide/conversations.en.md) · [Centralized setup](docs/LOCAL_AGENT_SETUP.en.md)
 
 ## Operate the System by Conversation
 
