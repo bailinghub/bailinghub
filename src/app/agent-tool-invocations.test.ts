@@ -440,6 +440,60 @@ test('Agent direct: 工具限流不消费批准，同 invocation 可安全重试
   assert.equal(businessCalls, 1);
 });
 
+test('Agent direct: transport uncertainty and lost client receipts resume the original result without redispatch', async (t) => {
+  for (const kind of ['readonly', 'idempotent_write', 'non_idempotent_write'] as const) {
+    for (const failure of ['fetch_rejected', 'response_body_lost', 'client_receipt_lost'] as const) {
+      await t.test(`${kind}: ${failure}`, async (t) => {
+        let attempts = 0;
+        t.mock.method(globalThis, 'fetch', async () => {
+          attempts++;
+          if (failure === 'fetch_rejected') throw new TypeError('synthetic transport failure');
+          if (failure === 'client_receipt_lost') return new Response('{"ok":true}', { status: 200 });
+          return { status: 200, text: async () => { throw new TypeError('synthetic response body loss'); } } as unknown as Response;
+        });
+        const fx = fixture('https://business.invalid');
+        if (kind === 'idempotent_write') {
+          const declaration = JSON.parse(spec());
+          declaration.paths['/staff/edit'].post['x-agent-capability'].execution = { readonly: false, idempotent: true };
+          fx.setSpec(JSON.stringify(declaration));
+        }
+        const caller = auth();
+        const catalog = await listAgentToolsFor(fx.deps, caller, 'tenant-agent');
+        const tool = kind === 'readonly' ? 'staff_list' : 'staff_edit';
+        const definition = catalog.tools.find((item) => item.name === tool)!;
+        assert.equal(definition.readonly, kind === 'readonly');
+        assert.equal(definition.idempotent, kind !== 'non_idempotent_write');
+        const input = {
+          invocation_id: invocationId('a'), route: 'tenant-agent', capability_revision: catalog.capability_revision,
+          agent_run_id: AGENT_RUN_ID, tool,
+          arguments: kind === 'readonly' ? { keyword: 'Synthetic' } : { id: 1, name: 'Synthetic' },
+        };
+        // For a lost client receipt the business result is already persisted; the client only
+        // retains its invocation ID and must recover it instead of submitting another operation.
+        const first = await invokeAgentToolFor(fx.deps, caller, input);
+        const confirmed = failure === 'client_receipt_lost';
+        assert.equal(first.state, confirmed ? 'executed' : 'reconciliation_required');
+        assert.equal(first.auto_retry_allowed, false);
+        assert.equal(first.ok, confirmed);
+        assert.equal(first.business_status, confirmed ? 200 : undefined, 'only a trusted business response confirms business status');
+        assert.equal(attempts, 1);
+
+        assert.deepEqual(await resumeAgentToolFor(fx.deps, caller, { invocation_id: input.invocation_id }), first);
+        assert.deepEqual(await invokeAgentToolFor(fx.deps, caller, input), first);
+        assert.equal(attempts, 1, 'resume and same-invocation replay must never dispatch a replacement request');
+        assert.equal(fx.state.jobs.size, 1);
+
+        caller.session.allowed_routes = [];
+        await assert.rejects(
+          resumeAgentToolFor(fx.deps, caller, { invocation_id: input.invocation_id }),
+          (error) => error instanceof AgentToolApiError && error.code === 'route_not_allowed',
+        );
+        assert.equal(attempts, 1, 'uncertainty never bypasses the current authorization boundary');
+      });
+    }
+  }
+});
+
 test('Agent direct: capability revision 变更、参数漂移和未开启路由均失败关闭', async () => {
   const fx = fixture('https://business.invalid');
   const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');

@@ -376,4 +376,9 @@ test('Agent Runtime HTTP: 客户端文本与 renderers 非法时 400，空搜索
   await handleAgentApiHttpFor(fx.deps, request('POST', headers, { run_id: 'a23e4567-e89b-42d3-a456-426614174000' }), search as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/workspaces/allowed/capabilities/search'));
   assert.equal(search.statusCode, 200, JSON.stringify(search.json()));
   assert.equal(search.json()['query'], '查询员工');
+  assert.deepEqual(search.json()['discovery'], {
+    mode: 'ranked_candidates', scope: 'current_authorization', returned_count: 1, authorized_total: 1,
+    matched_total: null, matched_total_exact: false, limit: 1, truncated: false, has_more: false,
+    truncation_scope: 'authorized_catalog', pagination: 'unsupported',
+  }, 'HTTP serialization must preserve discovery semantics for SDK and host consumers');
 });

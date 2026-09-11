@@ -741,6 +741,23 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
           }).catch(() => undefined);
           return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
         }
+        // fetch (including response body consumption) has already been attempted. Readonly or
+        // declared-idempotent tools do not use the execution journal, but a missing response
+        // still cannot prove that dispatch was rejected. Agent invocations persist this state
+        // and resume the original result instead of dispatching a replacement call.
+        await d.audit('tool_reconciliation_required', {
+          tool: name,
+          scope: t.scope,
+          state: 'uncertain',
+          reason: error,
+        }).catch(() => undefined);
+        return {
+          ok: false,
+          text: `工具 ${name} 的请求已尝试发出，但未取得可信响应，执行结果未知。禁止自动重试或新建调用；请恢复原调用，必要时人工核实结果。`,
+          status: 0,
+          governance_state: 'reconciliation_required',
+          auto_retry_allowed: false,
+        };
       }
       // 回流给模型的：受上下文预算 truncateBytes 截断（与审计留存解耦）
       const text = modelFacingToolResponse(fullText, status, d.truncateBytes, responseContentType);

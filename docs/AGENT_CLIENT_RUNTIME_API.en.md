@@ -121,12 +121,56 @@ Capability search returns no more than 12 complete typed tools under
 any source is unavailable, the whole search deterministically falls back to lexical ordering. A
 search needs a non-empty query or a valid `run_id` from the same Agent Session and route.
 
+Search responses may include the following optional `discovery` metadata. This example returns
+the first 12 ranked candidates from a currently authorized catalog of 14:
+
+```json
+{
+  "discovery": {
+    "mode": "ranked_candidates",
+    "scope": "current_authorization",
+    "returned_count": 12,
+    "authorized_total": 14,
+    "matched_total": null,
+    "matched_total_exact": false,
+    "limit": 12,
+    "truncated": true,
+    "has_more": true,
+    "truncation_scope": "authorized_catalog",
+    "pagination": "unsupported"
+  }
+}
+```
+
+`authorized_total` uses the same authorized surface, route and capability revision as the returned
+tools, after session, route, subject and direct-tool policy checks. It is neither the system's
+global capability count nor the host session's shared loaded-tool count. `returned_count` equals
+`tools.length`; `limit` is the effective result limit. `truncated` and `has_more` only indicate
+authorized candidates omitted by that limit, not additional confirmed matches or a next page.
+
+Search ranks candidates without filtering zero-score entries. An inventory query can therefore
+still return an authorized order tool. Match totals remain unknown (`matched_total: null`,
+`matched_total_exact: false`), never zero or the returned count. An empty authorized catalog has
+zero authorized and returned candidates; it says nothing about capabilities in other scopes.
+This additive v1 field may be ignored by older clients. New clients must treat missing metadata
+from an older server as unknown. Core does not change authorization or approval rules; the host
+owns dynamic tool replacement/append behavior and the current loaded-tool set.
+
 ## Tool invocation and recovery
 
 Invoke only a tool projected by the current bootstrap/search result. Core revalidates the Agent
 Session, route, operation ID, ACC declaration, approval state, limits, and business authorization
 on every invocation. When the result is pending, in progress, or uncertain, resume the original
 `invocation_id`; do not create a replacement write call.
+
+If a request was attempted but transport or response-body reading fails, Core reports
+`reconciliation_required` with `auto_retry_allowed: false`, including for readonly and
+declared-idempotent tools. It must not report `rejected_before_dispatch`: neither execution nor
+non-execution has been confirmed. Keep the original invocation and authorization binding. Resume
+revalidates authorization and replays the saved result without redispatch; a still-uncertain result
+requires reconciliation. Do not create another inventory adjustment or order update, switch
+authorization, or use another tool to repeat it. Capability rediscovery does not retry a business
+operation. Existing approvals and execution journals remain in force.
 
 The Hub records visible governance milestones, operation IDs, parameter key names, approval state,
 and business status. It does not receive model hidden reasoning, complete sensitive arguments, or

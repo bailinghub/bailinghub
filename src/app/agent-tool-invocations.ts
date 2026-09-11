@@ -61,12 +61,28 @@ export interface AgentToolCatalog {
 }
 
 export const AGENT_TOOL_SEARCH_SCHEMA = 'bailing.agent-capability-search.v1';
+export interface AgentToolDiscovery {
+  mode: 'ranked_candidates';
+  scope: 'current_authorization';
+  returned_count: number;
+  authorized_total: number;
+  matched_total: null;
+  matched_total_exact: false;
+  limit: number;
+  truncated: boolean;
+  has_more: boolean;
+  truncation_scope: 'authorized_catalog';
+  pagination: 'unsupported';
+}
+
 export interface AgentToolSearchResult {
   schema_version: typeof AGENT_TOOL_SEARCH_SCHEMA;
   route: string;
   capability_revision: string;
   query: string;
   tools: AgentToolCatalogItem[];
+  /** Optional for compatibility with earlier v1 responses; counts share this result's authorized surface. */
+  discovery?: AgentToolDiscovery;
 }
 
 export interface AgentToolInvocationResult {
@@ -426,12 +442,27 @@ export async function searchAgentToolsFor(
         || a.name.localeCompare(b.name));
     }
   }
+  const tools = ordered.slice(0, limit);
+  const truncated = surface.tools.length > tools.length;
   return {
     schema_version: AGENT_TOOL_SEARCH_SCHEMA,
     route: surface.route.route_key,
     capability_revision: surface.revision,
     query: cleanQuery,
-    tools: ordered.slice(0, limit),
+    tools,
+    discovery: {
+      mode: 'ranked_candidates',
+      scope: 'current_authorization',
+      returned_count: tools.length,
+      authorized_total: surface.tools.length,
+      matched_total: null,
+      matched_total_exact: false,
+      limit,
+      truncated,
+      has_more: truncated,
+      truncation_scope: 'authorized_catalog',
+      pagination: 'unsupported',
+    },
   };
 }
 
