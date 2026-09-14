@@ -1,3 +1,4 @@
+import { effectiveToolRateLimit, type RateLimitRequest, type RateLimitDecision } from './tool-rate-limits';
 // 工具插座运行时治理核心——设计与安全边界见 docs/TOOLS_DESIGN.md
 // 职责：消费 ToolDefinition → 白名单/主体/审批/限流/审计/签名 → 给大脑可调用的运行时句柄。
 // 中枢只做 reach（白名单/风险闸/限流/签名/审计）；authority（这个人能不能做）永远由业务侧验签后裁决。
@@ -233,44 +234,39 @@ function modelFacingToolResponse(fullText: string, status: number, truncateBytes
 
 // ---- 限流（进程内滑窗，三层：每任务 max_calls 由调用方计数 / 每工具 ACC execution.rate_limit / 工具源总闸）----
 export class LocalSlidingWindowRateLimiter {
-  private readonly buckets = new Map<string, number[]>();
+  private readonly buckets = new Map<string, { timestamps: number[]; windowMs: number }>();
   private lastSweepAt = 0;
-
   constructor(private readonly now: () => number = Date.now) {}
 
-  consume(key: string, perMin: number): boolean {
-    if (perMin <= 0) return false;
+  consume(key: string, limit: number, windowSec = 60): boolean {
+    return this.consumeAll([{ bucket: key, limit, windowSec }]).limited;
+  }
+  consumeAll(requests: RateLimitRequest[]): RateLimitDecision {
     const now = this.now();
-    this.sweep(now);
-    const timestamps = (this.buckets.get(key) ?? []).filter((timestamp) => now - timestamp < 60_000);
-    if (timestamps.length >= perMin) {
-      this.buckets.set(key, timestamps);
-      return true;
+    if (now - this.lastSweepAt >= 60_000) {
+      this.lastSweepAt = now;
+      for (const [key, bucket] of this.buckets) {
+        if (!bucket.timestamps.some((ts) => now - ts < bucket.windowMs)) this.buckets.delete(key);
+      }
     }
-    timestamps.push(now);
-    this.buckets.set(key, timestamps);
-    return false;
-  }
-
-  bucketCount(): number {
-    return this.buckets.size;
-  }
-
-  private sweep(now: number): void {
-    if (now - this.lastSweepAt < 60_000) return;
-    this.lastSweepAt = now;
-    for (const [key, timestamps] of this.buckets) {
-      const active = timestamps.filter((timestamp) => now - timestamp < 60_000);
-      if (active.length) this.buckets.set(key, active);
-      else this.buckets.delete(key);
+    const active = requests.filter((r) => r.limit > 0).map((r) => {
+      const windowMs = r.windowSec * 1000;
+      const timestamps = (this.buckets.get(r.bucket)?.timestamps ?? []).filter((ts) => now - ts < windowMs);
+      return { ...r, windowMs, timestamps };
+    });
+    for (const r of active) {
+      if (r.timestamps.length >= r.limit) {
+        const expires = r.timestamps[r.timestamps.length - r.limit]! + r.windowMs;
+        return { limited: true, bucket: r.bucket, retryAfterMs: Math.max(1, expires - now) };
+      }
     }
+    // Check every gate before charging any of them.
+    for (const r of active) this.buckets.set(r.bucket, { timestamps: [...r.timestamps, now], windowMs: r.windowMs });
+    return { limited: false };
   }
+  bucketCount(): number { return this.buckets.size; }
 }
-
 const localRateLimiter = new LocalSlidingWindowRateLimiter();
-function allowRate(key: string, perMin: number): boolean {
-  return !localRateLimiter.consume(key, perMin);
-}
 
 /** 渐进式披露阈值：白名单内工具数 ≤ 此值全量内联（省一次往返）；超过则目录+按需取定义（防几百个工具定义灌爆上下文）。 */
 export const TOOL_INLINE_MAX = 12;
@@ -315,12 +311,22 @@ export type ToolGovernanceState =
   | 'reconciliation_required';
 
 /** 工具调用的受治理结果；旧调用方仍可只读 ok/text/status。 */
+export interface ToolRateLimitFeedback {
+  level: 'tool' | 'provider';
+  count: number;
+  window_sec: number;
+  scope: 'tool_provider_shared';
+  source: string;
+}
+
 export interface ToolInvokeResult {
   ok: boolean;
   text: string;
   status: number;
   governance_state?: ToolGovernanceState;
   auto_retry_allowed?: boolean;
+  retry_after_ms?: number;
+  rate_limit?: ToolRateLimitFeedback;
   approval_id?: number;
 }
 
@@ -437,6 +443,7 @@ export interface ToolRuntimeDeps {
   };
   /** 集中限速器：返回 true = 已触发限流；不注入时退回进程内滑窗。 */
   rateLimit?: (bucket: string, limit: number, windowSec: number) => Promise<boolean>;
+  rateLimitAll?: (requests: RateLimitRequest[]) => Promise<RateLimitDecision>;
 }
 
 export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
@@ -557,19 +564,34 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       }
       // 前置调度闸：任何可重试的限流都必须发生在审批单消费前。
       // 请求尚未出站，不能把 429 伪装成业务拒绝，也不能白白用掉人工批准。
-      const toolLimited = d.rateLimit
-        ? await d.rateLimit(`tool:${d.provider.name}:${name}`, t.rateLimitPerMin, 60)
-        : !allowRate(`tool:${d.provider.name}:${name}`, t.rateLimitPerMin);
-      const providerLimited = d.rateLimit
-        ? await d.rateLimit(`provider:${d.provider.name}`, d.provider.rate_limit_per_min, 60)
-        : !allowRate(`provider:${d.provider.name}`, d.provider.rate_limit_per_min);
-      if (toolLimited || providerLimited) {
+      const effective = effectiveToolRateLimit(t, d.provider.tool_rate_limits);
+      const gates: RateLimitRequest[] = [
+        { bucket: `tool:${d.provider.name}:${name}`, limit: effective.enabled ? effective.count : 0, windowSec: effective.window_sec || 60 },
+        { bucket: `provider:${d.provider.name}`, limit: d.provider.rate_limit_per_min, windowSec: 60 },
+      ].filter((gate) => gate.limit > 0);
+      let limitDecision: RateLimitDecision;
+      if (d.rateLimitAll) limitDecision = await d.rateLimitAll(gates);
+      else if (d.rateLimit) {
+        // Compatibility for external runtime assemblers that implement only the legacy single gate callback.
+        limitDecision = { limited: false };
+        for (const gate of gates) {
+          if (await d.rateLimit(gate.bucket, gate.limit, gate.windowSec)) {
+            limitDecision = { limited: true, bucket: gate.bucket, retryAfterMs: gate.windowSec * 1000 };
+            break;
+          }
+        }
+      } else limitDecision = localRateLimiter.consumeAll(gates);
+      if (limitDecision.limited) {
+        const gate = gates.find((candidate) => candidate.bucket === limitDecision.bucket) ?? gates[0]!;
+        const level = gate.bucket.startsWith('provider:') ? 'provider' : 'tool';
         return {
           ok: false,
-          text: `工具 ${name} 触发限流，稍后使用同一调用标识重试。`,
+          text: `工具 ${name} 达到${level === 'tool' ? '单工具' : '工具源总'}限额（该工具源下的用户与会话共享）。调用未派发；等待后通过原 invocation_id 恢复，不要创建新调用。`,
           status: 429,
           governance_state: 'rejected_before_dispatch',
           auto_retry_allowed: true,
+          retry_after_ms: limitDecision.retryAfterMs ?? gate.windowSec * 1000,
+          rate_limit: { level, count: gate.limit, window_sec: gate.windowSec, scope: 'tool_provider_shared', source: level === 'tool' ? effective.source : 'provider_total' },
         };
       }
       // 闸2：风险闸 + 审批车道（B 方案：先撤再来）。high / confirm-required 的调用：

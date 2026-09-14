@@ -421,6 +421,7 @@ export interface ToolApproval {
 
 /** 工具源：业务系统的 Agent 可调接口清单（OpenAPI + x-agent-capability 契约）。secret 用于 v2 调用签名，不回显。 */
 export interface ToolProvider {
+  tool_rate_limits?: import('./tool-rate-limits').ToolRateLimitPolicies;
   name: string;
   base_url: string;
   spec_source: 'url' | 'inline';

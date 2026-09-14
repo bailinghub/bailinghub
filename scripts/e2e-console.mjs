@@ -57,6 +57,7 @@ const fixtures = {
     },
     authz_probe: { status: 'pass' },
     auto_refresh_min: 60,
+    rate_limit_per_min: 120, timeout_ms: 10000, log_payload: false,
   }],
   clients: [{ app_id: 'demo-app', name: 'Demo 业务系统', token: '****oken', allowed_routes: ['demo_support'], allowed_channels: [], rate_limit_per_min: 60, enabled: true }],
   routes: [{ route_key: 'demo_support', name: 'Demo 售后助手', target: 'demo-agent', enabled: true, tools: { sources: [{ provider: 'demo-business', allow: ['demo.*'] }], max_calls: 5 } }],
@@ -292,7 +293,15 @@ async function mockApi(context) {
     }
     if (url.pathname === '/admin/api/credentials') return route.fulfill({ json: fixtures.credentials });
     if (url.pathname === '/admin/api/targets') return route.fulfill({ json: fixtures.targets });
-    if (url.pathname === '/admin/api/tool-providers') return route.fulfill({ json: fixtures.providers });
+    if (url.pathname === '/admin/api/tool-providers') {
+      if (route.request().method() === 'POST') {
+        const payload = route.request().postDataJSON();
+        Object.assign(fixtures.providers[0], payload);
+        return route.fulfill({ json: { ok: true } });
+      }
+      return route.fulfill({ json: fixtures.providers });
+    }
+    if (/^\/admin\/api\/tool-providers\/[^/]+\/tools$/.test(url.pathname)) return route.fulfill({ json: { tools: [{ name: 'list_demo_orders', scope: 'demo.order.read' }] } });
     if (url.pathname === '/admin/api/clients') return route.fulfill({ json: fixtures.clients });
     if (url.pathname === '/admin/api/routes') return route.fulfill({ json: fixtures.routes });
     if (url.pathname === '/admin/api/runs') return route.fulfill({ json: fixtures.runs });
@@ -400,6 +409,27 @@ try {
   await page.getByRole('button', { name: '采用实测结果：签名保护' }).click();
   if (!await signedPolicy.isChecked()) throw new Error('采用实测结果后应选择签名保护');
   await page.getByRole('button', { name: '取消' }).click();
+
+  await page.getByRole('button', { name: '编辑' }).first().click();
+  await page.getByRole('tab', { name: '治理', exact: true }).click();
+  await expectVisible(page, '工具源总限额');
+  await expectVisible(page, '用户、授权和会话共用');
+  const defaultPolicy = page.locator('.limit-editor').first();
+  await defaultPolicy.locator('.el-select__wrapper').first().click();
+  await page.getByRole('option', { name: '自定义中枢限额', exact: true }).click();
+  await defaultPolicy.getByRole('spinbutton').fill('1000');
+  await page.getByRole('button', { name: '添加工具覆盖', exact: true }).click();
+  await page.getByText('选择或输入工具名', { exact: true }).click();
+  await page.getByRole('option', { name: 'list_demo_orders', exact: true }).last().click();
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await expectVisible(page, '已保存');
+  if (fixtures.providers[0].tool_rate_limits.default.count !== 1000 || fixtures.providers[0].tool_rate_limits.default.window !== '1h') throw new Error('custom hour policy not saved');
+  if (fixtures.providers[0].tool_rate_limits.overrides.list_demo_orders.mode !== 'inherit') throw new Error('per-tool override not saved');
+  await page.getByRole('button', { name: '编辑' }).first().click();
+  await page.getByRole('tab', { name: '治理', exact: true }).click();
+  if (await page.locator('.limit-editor').first().getByRole('spinbutton').inputValue() !== '1000') throw new Error('saved policy did not restore');
+  if (process.env.BAILING_RATE_SCREENSHOT) await page.screenshot({ path: process.env.BAILING_RATE_SCREENSHOT, fullPage: true });
+  await page.getByRole('button', { name: '取消', exact: true }).click();
 
   await page.getByRole('menuitem', { name: '任务' }).click();
   const auditRadio = page.getByRole('radio', { name: '客户端完整对话', exact: true });

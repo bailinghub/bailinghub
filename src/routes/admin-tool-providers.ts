@@ -1,3 +1,4 @@
+import { effectiveToolRateLimit } from '../core/contracts/tool-rate-limits';
 // 后台工具源 API：业务系统 OpenAPI/ToolDefinition 的注册、对账、索引和调试入口。
 // 这里是“AI 调业务工具”这条核心卖点的控制台边界，不放在通用 admin 分发器里。
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -48,6 +49,13 @@ export async function handleAdminToolProviderApiFor(
       if (!prepared.ok) { send(res, 400, { error: prepared.error }); return true; }
       const prov = prepared.value;
       await configStore.toolProviders.upsert(prov);
+      if (old?.rate_limit_per_min !== prov.rate_limit_per_min || JSON.stringify(old?.tool_rate_limits) !== JSON.stringify(prov.tool_rate_limits)) {
+        await deps.stateStore.appendAudit({ ts: deps.now(), job_id: '-', request_id: 'config', event: 'tool_rate_limit_policy_updated',
+          detail: { provider: prov.name, by: principal.kind === 'admin' ? principal.username ?? 'token' : 'client',
+            before: { total_per_min: old?.rate_limit_per_min ?? null, tools: old?.tool_rate_limits ?? null },
+            after: { total_per_min: prov.rate_limit_per_min, tools: prov.tool_rate_limits ?? null }, scope: 'tool_provider_shared' },
+        }).catch(() => undefined);
+      }
       // 注册期 authorize 探针（只读、不阻断；得 suspect = 疑似只验签未授权，控制台据 authz_probe 标红）
       const authz_probe = await probeAuthorizeFor(configStore, deps.stateStore, prov, deps.cfg, deps.now, deps.sleep).catch(() => undefined);
       // 配齐了 embedding 坐标系且有 spec → 顺手建/增量重建工具检索索引（失败不阻塞保存，控制台用 index_result 提示）
@@ -172,7 +180,7 @@ export async function handleAdminToolProviderApiFor(
     if (!p.spec_json) { send(res, 200, { tools: [], diagnostics: [], skipped: [], warnings: [], note: '尚无 spec（粘贴或刷新）' }); return true; }
     const { tools, diagnostics } = compileOpenApiTools(p.spec_json);
     // 全量字段：工具清单是注解的"对账面"——业务侧标了什么、中枢派生成了什么，必须全部可见可核对
-    send(res, 200, { tools: tools.map((t) => ({ name: t.name, source: t.source, schema_version: t.schemaVersion, method: t.method, path: t.path, scope: t.scope, risk: t.risk, confirm_required: t.confirmRequired, confirm_when: t.confirmWhen ?? [], requires_subject: t.requiresSubject, sensitive: t.sensitive, readonly: t.readonly, idempotent: t.idempotent, timeout_ms: t.timeoutMs, rate_limit_per_min: t.rateLimitPerMin, confirm_prompt: t.confirmPrompt, context: t.context, extensions: t.extensions, parameters: t.inputSchema, param_in: t.paramIn, description: t.description })), diagnostics, skipped: skippedDiagnostics(diagnostics), warnings: warningDiagnostics(diagnostics) });
+    send(res, 200, { tools: tools.map((t) => ({ name: t.name, source: t.source, schema_version: t.schemaVersion, method: t.method, path: t.path, scope: t.scope, risk: t.risk, confirm_required: t.confirmRequired, confirm_when: t.confirmWhen ?? [], requires_subject: t.requiresSubject, sensitive: t.sensitive, readonly: t.readonly, idempotent: t.idempotent, timeout_ms: t.timeoutMs, rate_limit_per_min: t.rateLimitPerMin, rate_limit: t.rateLimit ?? null, effective_rate_limit: effectiveToolRateLimit(t, p.tool_rate_limits), confirm_prompt: t.confirmPrompt, context: t.context, extensions: t.extensions, parameters: t.inputSchema, param_in: t.paramIn, description: t.description })), diagnostics, skipped: skippedDiagnostics(diagnostics), warnings: warningDiagnostics(diagnostics) });
     return true;
   }
 

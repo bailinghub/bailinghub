@@ -91,6 +91,7 @@ export async function assembleResolvedToolRuntimeFor(
         markUncertain: (tool, hash, error) => config.toolCalls.markUncertain(job.job_id, tool, hash, error),
         markEvidenceDegraded: (tool, hash, error) => config.toolCalls.markEvidenceDegraded(job.job_id, tool, hash, error),
       } : undefined,
+      rateLimitAll: config?.rateLimits?.consumeAll ? (requests) => config.rateLimits.consumeAll!(requests) : undefined,
       rateLimit: config ? (bucket, limit, windowSec) => config.rateLimits.consume(bucket, limit, windowSec) : undefined,
       audit: async (event, detail) => {
         await state.appendAudit({ ts: nowFn(), job_id: job.job_id, request_id: job.request_id, event, detail });

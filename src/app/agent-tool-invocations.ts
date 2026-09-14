@@ -1,3 +1,5 @@
+import { openInvocationArguments, sealInvocationArguments } from './agent-invocation-snapshot';
+import type { ToolRateLimitFeedback } from '../core/contracts/tools';
 import { createHash, randomUUID } from 'node:crypto';
 import { agentDirectToolsConfig } from '../core/config/tools-config';
 import type { ToolDefinition } from '../core/contracts/tool-definition';
@@ -93,6 +95,8 @@ export interface AgentToolInvocationResult {
   state: AgentToolInvocationState;
   ok: boolean;
   auto_retry_allowed: boolean;
+  retry_after_ms?: number;
+  rate_limit?: ToolRateLimitFeedback;
   text: string;
   business_status?: number;
   approval_id?: number;
@@ -493,6 +497,8 @@ function publicResult(input: {
   ok: boolean;
   text: string;
   autoRetryAllowed?: boolean;
+  retryAfterMs?: number;
+  rateLimit?: ToolRateLimitFeedback;
   businessStatus?: number;
   approvalId?: number;
 }): AgentToolInvocationResult {
@@ -505,12 +511,14 @@ function publicResult(input: {
     ok: input.ok,
     auto_retry_allowed: input.autoRetryAllowed ?? false,
     text: safeText(input.text, 8192),
+    ...(input.retryAfterMs !== undefined ? { retry_after_ms: input.retryAfterMs } : {}),
+    ...(input.rateLimit ? { rate_limit: input.rateLimit } : {}),
     ...(input.businessStatus !== undefined ? { business_status: input.businessStatus } : {}),
     ...(input.approvalId !== undefined ? { approval_id: input.approvalId } : {}),
   };
 }
 
-function isStableInvocationResult(result: AgentToolInvocationResult | null): result is AgentToolInvocationResult {
+function isStableInvocationResult(result: AgentToolInvocationResult | null): result is AgentToolInvocationResult & { auto_retry_allowed: false } {
   return !!result
     && !['in_progress', 'awaiting_approval'].includes(result.state)
     && result.auto_retry_allowed !== true;
@@ -603,6 +611,7 @@ function syntheticJob(
     metadata: {
       agent_tool_job_marker: AGENT_TOOL_JOB_MARKER,
       agent_tool_call_v1: true,
+      agent_dispatch_attempted: false,
       agent_invocation_id: input.invocation_id,
       agent_run_id: input.agent_run_id,
       agent_route: input.route,
@@ -647,7 +656,12 @@ function fromJournal(input: FrozenInvocationCoordinates, tool: string, entry: To
 }
 
 async function persistResult(deps: ToolProxyDeps, job: Job, result: AgentToolInvocationResult): Promise<void> {
-  await deps.stateStore.updateJob(job.job_id, { status: 'done', result: { ...result }, error: undefined });
+  const metadata = { ...job.metadata };
+  if (isStableInvocationResult(result)) delete metadata.agent_frozen_arguments;
+  const saved = await deps.stateStore.updateJob(job.job_id, { metadata, status: 'done', result: { ...result }, error: undefined });
+  if (!saved) throw new AgentToolApiError(503, 'invocation_storage_unavailable', 'The original invocation state could not be saved.');
+  job.metadata = metadata;
+  job.result = { ...result };
   await deps.stateStore.appendAudit({
     ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event: 'agent_tool_invocation_state',
     detail: { invocation_id: result.invocation_id, route: result.route, tool: result.tool, state: result.state, ok: result.ok, business_status: result.business_status ?? null },
@@ -669,7 +683,7 @@ async function invokeExisting(
   if (!surface.context.allowed.some((candidate) => candidate.name === tool)) {
     throw new AgentToolApiError(409, 'capability_changed', 'The tool is no longer available; refresh the capability catalog.');
   }
-  const journal = await deps.configStore!.toolCalls.get(job.job_id, tool, hash).catch(() => null);
+  const journal = await deps.configStore!.toolCalls.get(job.job_id, tool, hash);
   if (journal) {
     const result = fromJournal(input, tool, journal);
     await persistResult(deps, job, result);
@@ -685,6 +699,16 @@ async function invokeExisting(
     const result = publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'awaiting_approval', ok: false, text: 'The governed tool invocation is awaiting approval.', approvalId: approval.id });
     await persistResult(deps, job, result);
     return result;
+  }
+  // Only an affirmative pre-dispatch result permits another dispatch attempt.
+  // A persisted in-progress attempt without a terminal journal may have reached the business system.
+  if (job.metadata.agent_dispatch_attempted !== false && cached?.state === 'in_progress') {
+    const result = publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'reconciliation_required', ok: false, text: 'The original dispatch outcome is unknown; reconcile the original invocation. Do not submit a new write.' });
+    await persistResult(deps, job, result);
+    return result;
+  }
+  if (!args && ((cached?.state === 'rejected_before_dispatch' && cached.auto_retry_allowed) || job.metadata.agent_dispatch_attempted === false)) {
+    args = openInvocationArguments(job, deps.cfg.server.token);
   }
   if (!args && approval?.status === 'approved' && approval.args_json) {
     try {
@@ -705,6 +729,9 @@ async function invokeExisting(
   if (!runtime || runtime === 'subject_locked') {
     throw new AgentToolApiError(409, 'capability_changed', 'The tool surface is no longer available; refresh the capability catalog.');
   }
+  job = { ...job, metadata: { ...job.metadata, agent_dispatch_attempted: true } };
+  // Persist the attempt fence before allowing HTTP dispatch, including resumed idempotent writes.
+  await persistResult(deps, job, publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'in_progress', ok: false, text: 'The original governed invocation is in progress.' }));
   const out = await runtime.invoke(tool, args);
   const uncertainty = runtime.executionUncertainty();
   const state: AgentToolInvocationState = uncertainty || out.governance_state === 'reconciliation_required'
@@ -724,6 +751,8 @@ async function invokeExisting(
     ok: out.ok,
     text: out.text,
     autoRetryAllowed: out.auto_retry_allowed ?? false,
+    retryAfterMs: out.retry_after_ms,
+    rateLimit: out.rate_limit,
     ...(out.status > 0 && out.governance_state !== 'rejected_before_dispatch' ? { businessStatus: out.status } : {}),
     ...(out.approval_id !== undefined ? { approvalId: out.approval_id } : {}),
   });
@@ -733,6 +762,7 @@ async function invokeExisting(
 
 export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAuthContext, input: InvokeAgentToolInput): Promise<AgentToolInvocationResult> {
   assertInvocationInput(input);
+  input = { ...input, arguments: JSON.parse(JSON.stringify(input.arguments)) as Record<string, unknown> };
   const runtimeRun = await deps.configStore?.agentClientRuntime?.findRunForInvocation(input.agent_run_id) ?? null;
   if (runtimeRun && (
     runtimeRun.session_id !== auth.session.session_id
@@ -763,9 +793,6 @@ export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
     }
     surface = await resolveSurface(deps, auth, input.route);
     if (!job) {
-      if (await rateLimitedFor(deps.configStore, auth.client)) {
-        return publicResult({ invocationId: input.invocation_id, route: input.route, tool: input.tool, state: 'rejected_before_dispatch', ok: false, text: 'The Agent client rate limit was exceeded.', autoRetryAllowed: true });
-      }
       if (surface.revision !== input.capability_revision) {
         throw new AgentToolApiError(409, 'capability_changed', 'The capability catalog changed; refresh tools before calling.');
       }
@@ -775,11 +802,17 @@ export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
         throw new AgentToolApiError(404, 'tool_not_found', 'The tool is not available in the current capability catalog.');
       }
       job = syntheticJob(auth, surface, input, hash, toolFingerprint, runtimeRun, deps.now());
+      job.metadata.agent_frozen_arguments = sealInvocationArguments(job, input.arguments, deps.cfg.server.token);
       await deps.stateStore.createJob(job);
       await deps.stateStore.appendAudit({
         ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event: 'agent_tool_invocation_created',
         detail: { invocation_id: input.invocation_id, agent_run_id: input.agent_run_id, agent_thread_id: runtimeRun?.thread_id ?? null, route: input.route, tool: input.tool, args_hash: hash, execution_fingerprint: toolFingerprint, client_app_id: auth.client.app_id, agent_session_id: auth.session.session_id },
       });
+      if (await rateLimitedFor(deps.configStore, auth.client)) {
+        const result = publicResult({ invocationId: input.invocation_id, route: input.route, tool: input.tool, state: 'rejected_before_dispatch', ok: false, text: 'The Agent client shared rate limit was exceeded; resume this invocation after waiting.', autoRetryAllowed: true, retryAfterMs: 60_000 });
+        await persistResult(deps, job, result);
+        return result;
+      }
     } else {
       assertCurrentToolExecution(job, surface, input.tool);
       if (await rateLimitedFor(deps.configStore, auth.client)) {

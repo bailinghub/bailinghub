@@ -35,6 +35,6 @@ The [configuration and HTTP contract](GENERATED_ARTIFACTS.md) includes exact met
 
 ## Known issues tracked separately
 
-Core business recovery after a retryable pre-dispatch rejection can fail when the original arguments are unavailable. Hour/day tool limits are currently normalized to per-minute limits, which can constrain bursts. These issues do not invalidate a ready attachment URL, but this candidate does not promise automatic completion of every downstream batch operation.
+The matching candidate adds [configurable tool limits and original-invocation recovery](TOOL_RATE_LIMITS.md). Hour/day windows retain their original duration; newly recorded pre-dispatch rejections retain encrypted arguments. Uncertain writes are never replayed, and missing arguments from historical calls are never reconstructed. Ready attachment URLs remain reusable independently.
 
 DSH may simplify some artifact-list source errors to unknown_failure; hosts should preserve their own storage_error and recovery_gap diagnostics. Per-image upload results remain separate.

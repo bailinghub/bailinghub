@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import test from 'node:test';
+import { LocalSlidingWindowRateLimiter } from '../core/contracts/tools';
 import type { AppConfig } from '../core/config/config';
 import type { ToolExecutionJournalEntry } from '../core/contracts/tools';
 import type { AgentSession, Client, Job, Route, ToolApproval, ToolProvider } from '../core/contracts/types';
@@ -181,7 +182,7 @@ function fixture(baseUrl: string) {
     approvals,
     setRoute: (value: Route) => { currentRoute = value; },
     setSpec: (value: string) => { currentSpec = value; },
-    setToolRateLimited: (value: boolean) => { toolRateLimited = value; },
+    setToolRateLimited: (value: boolean) => { toolRateLimited = value; provider.tool_rate_limits = { default: { mode: 'custom', count: 120, window: '1h' }, overrides: {} }; },
     setRuntimeRun: (value: AgentClientRunRecord | null) => { runtimeRun = value; },
   };
 }
@@ -492,6 +493,113 @@ test('Agent direct: transport uncertainty and lost client receipts resume the or
       });
     }
   }
+});
+
+test('Agent direct: an unapproved rate-limited write resumes its sealed original arguments after restart and lost ACK', async (t) => {
+  const received: unknown[] = [];
+  const business = createServer(async (req, res) => {
+    let raw = ''; for await (const chunk of req) raw += String(chunk);
+    received.push(JSON.parse(raw));
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"ok":true}');
+  });
+  const port = await listen(business); t.after(() => close(business));
+  const fx = fixture(`http://127.0.0.1:${port}`);
+  fx.setToolRateLimited(true);
+  const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
+  const invocation_id = invocationId('9');
+  const limited = await invokeAgentToolFor(fx.deps, auth(), {
+    invocation_id, route: 'tenant-agent', capability_revision: catalog.capability_revision,
+    agent_run_id: AGENT_RUN_ID, tool: 'staff_edit', arguments: { id: 7, name: 'Synthetic name' },
+  });
+  assert.equal(limited.state, 'rejected_before_dispatch');
+  assert.equal(limited.retry_after_ms, 3_600_000);
+  assert.equal(limited.rate_limit?.scope, 'tool_provider_shared');
+  assert.equal(received.length, 0);
+  assert.equal(fx.approvals.length, 0);
+  assert.doesNotMatch(JSON.stringify([...fx.state.jobs.values()]), /Synthetic name/);
+  assert.equal((await resumeAgentToolFor(fx.deps, auth(), { invocation_id })).auto_retry_allowed, true);
+  // New coordinator, JSON round trip of the persisted jobs, original Session/run/invocation.
+  const restarted = fixture(`http://127.0.0.1:${port}`);
+  for (const job of fx.state.jobs.values()) await restarted.state.createJob(JSON.parse(JSON.stringify(job)));
+  const result = await resumeAgentToolFor(restarted.deps, auth(), { invocation_id });
+  assert.equal(result.state, 'executed');
+  assert.deepEqual(received, [{ id: 7, name: 'Synthetic name' }]);
+  assert.deepEqual(await resumeAgentToolFor(restarted.deps, auth(), { invocation_id }), result);
+  assert.equal(received.length, 1);
+  assert.ok([...restarted.state.jobs.values()].every((job) => !job.metadata.agent_frozen_arguments));
+});
+
+test('Agent direct: the third burst write under 120/hour reaches business; closing Hub tool limits keeps the provider gate', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response('{"ok":true}'); });
+  const fx = fixture('https://business.invalid');
+  const definition = JSON.parse(spec());
+  definition.paths['/staff/edit'].post['x-agent-capability'].execution = { rate_limit: { count: 120, window: '1h' } };
+  fx.setSpec(JSON.stringify(definition));
+  const limiter = new LocalSlidingWindowRateLimiter(() => 0);
+  fx.deps.configStore!.rateLimits.consumeAll = async (gates) => limiter.consumeAll(gates);
+  const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
+  const invoke = (id: string) => invokeAgentToolFor(fx.deps, auth(), { invocation_id: invocationId(id), route: 'tenant-agent', capability_revision: catalog.capability_revision,
+    agent_run_id: AGENT_RUN_ID, tool: 'staff_edit', arguments: { id: 7, name: id } });
+  for (const id of ['1', '2', '3']) assert.equal((await invoke(id)).state, 'executed');
+  assert.equal(calls, 3);
+  const provider = (await fx.deps.configStore!.toolProviders.get('example-business'))!;
+  provider.tool_rate_limits = { default: { mode: 'disabled' }, overrides: {} };
+  provider.rate_limit_per_min = 1;
+  assert.equal((await invoke('4')).state, 'executed');
+  const blocked = await invoke('5');
+  assert.equal(blocked.rate_limit?.level, 'provider');
+  assert.equal(calls, 4);
+  provider.rate_limit_per_min = 0;
+  assert.equal((await resumeAgentToolFor(fx.deps, auth(), { invocation_id: invocationId('5') })).state, 'executed');
+  assert.equal(calls, 5);
+});
+
+test('Agent direct: corrupt snapshot and uncertain dispatch fence never replay a write', async (t) => {
+  for (const failure of ['corrupt_snapshot', 'rotated_key', 'dispatch_in_progress', 'journal_unavailable'] as const) {
+    await t.test(failure, async (t) => {
+      let calls = 0;
+      t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response('{"ok":true}'); });
+      const fx = fixture('https://business.invalid'); fx.setToolRateLimited(true);
+      const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
+      const invocation_id = invocationId('8');
+      await invokeAgentToolFor(fx.deps, auth(), { invocation_id, route: 'tenant-agent', capability_revision: catalog.capability_revision,
+        agent_run_id: AGENT_RUN_ID, tool: 'staff_edit', arguments: { id: 7, name: 'Synthetic name' } });
+      fx.setToolRateLimited(false);
+      const job = [...fx.state.jobs.values()][0]!;
+      if (failure === 'corrupt_snapshot') job.metadata.agent_frozen_arguments = 'v1.invalid.snapshot';
+      if (failure === 'rotated_key') fx.deps.cfg.server.token = 'rotated-synthetic-key';
+      if (failure === 'dispatch_in_progress') {
+        job.metadata.agent_dispatch_attempted = true;
+        job.result = { ...job.result, state: 'in_progress', auto_retry_allowed: false };
+      }
+      if (failure === 'journal_unavailable') {
+        fx.deps.configStore!.toolCalls.get = async () => { throw new Error('synthetic_storage_unavailable'); };
+        await assert.rejects(resumeAgentToolFor(fx.deps, auth(), { invocation_id }), /synthetic_storage_unavailable/);
+      } else {
+        const result = await resumeAgentToolFor(fx.deps, auth(), { invocation_id });
+        assert.equal(result.auto_retry_allowed, false);
+        assert.equal(result.state, failure === 'dispatch_in_progress' ? 'reconciliation_required' : 'rejected_before_dispatch');
+      }
+      assert.equal(calls, 0);
+    });
+  }
+});
+
+test('Agent direct: failure to persist the dispatch fence makes zero business requests and remains recoverable', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => { calls++; return new Response('{"ok":true}'); });
+  const fx = fixture('https://business.invalid');
+  const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
+  const update = t.mock.method(fx.state, 'updateJob', async () => null);
+  const invocation_id = invocationId('7');
+  await assert.rejects(invokeAgentToolFor(fx.deps, auth(), { invocation_id, route: 'tenant-agent', capability_revision: catalog.capability_revision,
+    agent_run_id: AGENT_RUN_ID, tool: 'staff_edit', arguments: { id: 7, name: 'Synthetic' } }),
+    (error) => error instanceof AgentToolApiError && error.code === 'invocation_storage_unavailable');
+  assert.equal(calls, 0);
+  update.mock.restore();
+  assert.equal((await resumeAgentToolFor(fx.deps, auth(), { invocation_id })).state, 'executed');
+  assert.equal(calls, 1);
 });
 
 test('Agent direct: capability revision 变更、参数漂移和未开启路由均失败关闭', async () => {

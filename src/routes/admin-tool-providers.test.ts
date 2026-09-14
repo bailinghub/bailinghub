@@ -64,6 +64,28 @@ function deps(old: ToolProvider, upserts: ToolProvider[]) {
   };
 }
 
+test('admin policy edits persist without changing the business declaration or legacy access intent', async () => {
+  const old = historicalProvider();
+  const upserts: ToolProvider[] = [];
+  const policy = { default: { mode: 'disabled' }, overrides: { images_update: { mode: 'custom', count: 1000, window: '1h' } } };
+  const payload = { name: old.name, base_url: old.base_url, spec_source: old.spec_source, spec_url: old.spec_url, rate_limit_per_min: 0, tool_rate_limits: policy };
+  const res = new FakeResponse();
+  await handleAdminToolProviderApiFor(deps(old, upserts), 'POST', '/admin/api/tool-providers', request(payload), res as unknown as ServerResponse, { kind: 'admin', via: 'token' });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(upserts[0]!.tool_rate_limits, policy);
+  assert.equal(upserts[0]!.rate_limit_per_min, 0);
+  assert.equal(upserts[0]!.spec_access_policy, 'legacy_unverified');
+  assert.equal(upserts[0]!.secret, old.secret);
+  const after = new FakeResponse();
+  const { tool_rate_limits: _omitted, ...unchanged } = payload;
+  await handleAdminToolProviderApiFor(deps(upserts[0]!, upserts), 'POST', '/admin/api/tool-providers', request(unchanged), after as unknown as ServerResponse, { kind: 'admin', via: 'token' });
+  assert.deepEqual(upserts[1]!.tool_rate_limits, policy);
+  const invalid = new FakeResponse();
+  await handleAdminToolProviderApiFor(deps(upserts[1]!, upserts), 'POST', '/admin/api/tool-providers', request({ ...payload, tool_rate_limits: { default: { mode: 'custom', count: 0, window: '1h' } } }), invalid as unknown as ServerResponse, { kind: 'admin', via: 'token' });
+  assert.equal(invalid.statusCode, 400);
+  assert.equal(upserts.length, 2);
+});
+
 test('admin tool-provider route: 直接 API 不能绕过历史 URL 源的策略确认', async () => {
   const upserts: ToolProvider[] = [];
   const old = historicalProvider();

@@ -1,3 +1,4 @@
+import { normalizeToolRateLimitPolicies } from '../contracts/tool-rate-limits';
 import type { PageRule } from '../platform/pagecontext';
 import type { AlertRule, Channel, ChatEntry, Client, Credential, ExecutorToken, ProjectReg, Route, StorageBucket, TargetDef, ToolApproval, ToolProvider, TraceSeverity, TraceStage } from '../contracts/types';
 
@@ -155,6 +156,7 @@ export function rowToolProvider(r: any): ToolProvider {
     : undefined;
   return {
     name: r.name, base_url: r.base_url,
+    tool_rate_limits: r.tool_rate_limits_json ? normalizeToolRateLimitPolicies(parseOptionalJson(r.tool_rate_limits_json)) : undefined,
     spec_source: specSource,
     spec_access_policy: specAccessPolicy,
     spec_url: r.spec_url ?? undefined, spec_json: r.spec_json ?? undefined,

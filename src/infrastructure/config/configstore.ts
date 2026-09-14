@@ -47,7 +47,8 @@ export type TargetRepositoryContract = Pick<TargetRepository, keyof TargetReposi
 export type StorageBucketRepositoryContract = Pick<StorageBucketRepository, keyof StorageBucketRepository>;
 export type AlertRuleRepositoryContract = Pick<AlertRuleRepository, keyof AlertRuleRepository>;
 export type ChatConfigRepositoryContract = Pick<ChatConfigRepository, keyof ChatConfigRepository>;
-export type RateLimitLedgerContract = Pick<RateLimitLedger, keyof RateLimitLedger>;
+export type RateLimitLedgerContract = Omit<Pick<RateLimitLedger, keyof RateLimitLedger>, 'consumeAll'>
+  & Partial<Pick<RateLimitLedger, 'consumeAll'>>;
 export type ApprovalLedgerContract =
   Omit<Pick<ApprovalLedger, keyof ApprovalLedger>, 'forJobs'>
   & Partial<Pick<ApprovalLedger, 'forJobs'>>;
