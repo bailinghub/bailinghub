@@ -63,6 +63,14 @@
                 <el-form label-position="top" :disabled="savingRoute || !me.can('routes:write')">
                   <el-form-item label="允许本地智能体调用工具"><el-switch v-model="direct.enabled" /></el-form-item>
                   <el-alert v-if="runtime.enabled && !direct.enabled" title="本地会话已启用，但业务工具调用未开启。用户可以完成授权，暂时无法通过此空间发现或操作业务工具。" type="warning" :closable="false" show-icon />
+                  <el-divider content-position="left">生成图片上传</el-divider>
+                  <el-form-item label="允许上传生成图片"><el-switch v-model="artifacts.enabled" /><div class="field-note">将智能体生成的图片保存到所选媒体存储，返回 URL 供商品等业务使用。上传不等于已修改业务数据。</div></el-form-item>
+                  <template v-if="artifacts.enabled">
+                    <el-form-item label="保存到哪个媒体存储"><el-select v-model="artifacts.bucket" filterable allow-create placeholder="选择已登记的存储" style="width:100%"><el-option v-for="b in storageOptions" :key="b.name" :value="b.name" :label="`${b.name} · ${b.kind}${b.enabled ? '' : '（已停用）'}`" :disabled="!b.enabled" /></el-select><div class="field-note"><router-link to="/storage">前往媒体存储配置 COS／OSS 或本地存储</router-link>。此处不填写密钥。文件由部署方管理，不随会话结束清理。</div></el-form-item>
+                    <el-form-item label="单张图片大小上限（字节）"><el-input-number v-model="artifacts.max_bytes" :min="1" :max="6291456" /><span class="inline-note">默认 6 MiB</span></el-form-item>
+                    <el-form-item label="允许的图片类型"><el-select v-model="artifacts.allowed_mimes" multiple><el-option v-for="m in ['image/png','image/jpeg','image/webp']" :key="m" :label="m" :value="m" /></el-select></el-form-item>
+                  </template>
+                  <el-divider content-position="left">业务工具</el-divider>
                   <div class="source-heading"><b>使用哪些工具源</b><el-button size="small" :disabled="savingRoute || !me.can('routes:write')" @click="addSource">添加工具源</el-button></div>
                   <p v-if="providerError" class="inline-error">{{ providerError }}</p>
                   <el-empty v-if="!sources.length" description="尚未关联工具源。添加已有业务工具源并选择范围。" :image-size="56" />
@@ -120,6 +128,8 @@ const step = ref(0); const loading = ref(false); const loadError = ref('');
 const client = ref<ClientSetup | null>(null); const persistedClient = ref<ClientSetup | null>(null);
 const clientBaseline = ref(''); const savingClient = ref(false);
 const workspaceKey = ref(''); const route = ref<any>(null); const routeBaseline = ref(''); const routeLoading = ref(false); const routeError = ref(''); const savingRoute = ref(false);
+const storageOptions = ref<Array<{ name: string; kind: string; enabled: boolean }>>([]);
+const artifacts = reactive({ enabled: false, bucket: '', max_bytes: 6291456, allowed_mimes: ['image/png', 'image/jpeg', 'image/webp'] });
 const runtime = reactive({ enabled: false, instructions: '', active_tool_limit: 8 });
 const info = reactive({ name: '', summary: '', domains: [] as string[], boundaries: [] as string[] });
 const direct = reactive({ enabled: false, write_tools: [] as string[], force_approval_tools: [] as string[] });
@@ -133,6 +143,7 @@ const savedWorkspaces = computed(() => props.workspaces.filter((w) => persistedC
 const hasInfo = () => Boolean(info.name || info.summary || info.domains.length || info.boundaries.length);
 function routeValue(): any {
   const agent = { ...(route.value?.agent_client || {}), ...runtime };
+  if (artifacts.enabled || route.value?.agent_client?.artifact_upload) agent.artifact_upload = { ...clone(artifacts), bucket: artifacts.bucket || undefined };
   if (hasInfo()) agent.system_info = clone(info); else delete agent.system_info;
   const d = { ...(route.value?.agent_direct || {}), enabled: direct.enabled };
   delete d.unattended_write_tools;
@@ -196,11 +207,13 @@ async function selectWorkspace(key: string): Promise<void> {
     if (id !== requestId || !props.modelValue) return;
     hydrateRoute(value);
     void loadProviders(id);
+    if (me.can('storage:read')) void api('/admin/api/storage-buckets').then(values => { if (id === requestId) storageOptions.value = values.map((b: any) => ({ name: b.name, kind: b.kind, enabled: b.enabled })); }).catch(() => {});
   } catch (e) { if (id === requestId) routeError.value = message(e); }
   finally { if (id === requestId) { routeLoading.value = false; loading.value = false; } }
 }
 function hydrateRoute(value: any): void {
   route.value = value;
+  Object.assign(artifacts, { enabled: false, bucket: '', max_bytes: 6291456, allowed_mimes: ['image/png', 'image/jpeg', 'image/webp'] }, clone(value.agent_client?.artifact_upload || {}));
     Object.assign(runtime, { enabled: value.agent_client?.enabled ?? value.agent_direct?.enabled === true, instructions: value.agent_client?.instructions || '', active_tool_limit: value.agent_client?.active_tool_limit || 8 });
     Object.assign(info, clone(value.agent_client?.system_info || { name: '', summary: '', domains: [], boundaries: [] }));
     const d = value.agent_direct || {}; const writes: string[] = d.write_tools || [];

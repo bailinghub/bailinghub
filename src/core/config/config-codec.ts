@@ -189,7 +189,7 @@ export function rowCredential(r: any): Credential {
 
 export function rowStorageBucket(r: any): StorageBucket {
   return {
-    name: r.name, kind: (r.kind === 'oss' ? 'oss' : r.kind === 's3' ? 's3' : 'cos'),
+    name: r.name, kind: (r.kind === 'local' ? 'local' : r.kind === 'oss' ? 'oss' : r.kind === 's3' ? 's3' : 'cos'),
     region: r.region ?? '', bucket: r.bucket, endpoint: r.endpoint ?? undefined,
     access_key: r.access_key, secret_key: r.secret_key,
     public_base_url: r.public_base_url ?? '', path_prefix: r.path_prefix ?? 'bailing/chat',

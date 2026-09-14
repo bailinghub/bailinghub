@@ -301,6 +301,7 @@ export interface Route {
     instructions?: string;
     active_tool_limit?: number;
     system_info?: AgentSystemInfo;
+    artifact_upload?: import('../config/artifact-config').AgentArtifactConfig;
   };
   budget?: Record<string, unknown>;   // 成本预算闸：{window/window_hours, hard_cost_usd?, hard_tokens?, ...}
   description?: string;
@@ -343,7 +344,7 @@ export interface ChatAppearance {
 /** 媒体存储登记：聊天上传的图片/语音/附件落盘或落桶取永久 URL。local 开箱即用；业务桶=业务 CDN、加商品零转存。secret_key 不回显。 */
 export interface StorageBucket {
   name: string;
-  kind: 'local' | 'cos' | 'oss' | 's3'; // 当前实现 local/cos
+  kind: 'local' | 'cos' | 'oss' | 's3'; // 当前实现 local/cos/oss
   region: string;              // ap-shanghai
   bucket: string;              // 桶名（COS 带 appid 后缀）
   endpoint?: string;           // 自定义 endpoint；留空按 kind+region 拼

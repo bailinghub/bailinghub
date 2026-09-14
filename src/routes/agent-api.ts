@@ -1,3 +1,4 @@
+import { handleAgentArtifacts } from './agent-artifacts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PayloadTooLargeError, readBody, send } from '../app/http';
 import type { Principal } from '../app/auth';
@@ -33,6 +34,7 @@ export interface AgentApiHttpDeps {
   /** 未注入时仅关闭新的无模型直调面，保持旧宿主的 Agent Auth / run 兼容。 */
   toolProxyDeps?: ToolProxyDeps;
   kbService?: KbService | null;
+  artifactRoot?: string;
 }
 
 // 64000 个 UTF-16 code units 在 JSON 中最坏可被转义为约 384 KB；512 KiB 还可容纳
@@ -93,6 +95,7 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
   if (!auth) { send(res, 401, { error: 'unauthorized' }); return true; }
   const principal: Principal = { kind: 'agent', session: auth.session, client: auth.client };
   const method = req.method ?? 'GET';
+  if (await handleAgentArtifacts({ configStore: deps.configStore, root: deps.artifactRoot, isPaused: deps.isPaused }, auth, req, res, path)) return true;
   if (await handleAgentConversationAuditFor(deps.configStore, auth, req, res, path)) return true;
   const systemInfoMatch = method === 'GET' ? path.match(/^\/agent-api\/v1\/workspaces\/([a-z0-9][a-z0-9_-]{1,63})\/system-info$/) : null;
   if (systemInfoMatch) {

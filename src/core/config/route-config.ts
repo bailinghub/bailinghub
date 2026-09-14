@@ -1,3 +1,4 @@
+import { validateArtifactConfig } from './artifact-config';
 import type { AgentSystemInfo, Route, SessionPolicy, TargetKind } from '../contracts/types';
 import { validateRouteToolsConfig, type ToolProviderExists } from './tools-config';
 import { normalizeTargetConfig, validateTargetConfig } from './target-config';
@@ -196,14 +197,14 @@ function validateAgentClientConfig(v: unknown): string | null {
   if (v === undefined || v === null) return null;
   const cfg = record(v);
   if (!cfg) return 'agent_client 必须是对象';
-  const known = new Set(['enabled', 'instructions', 'active_tool_limit', 'system_info']);
+  const known = new Set(['enabled', 'instructions', 'active_tool_limit', 'system_info', 'artifact_upload']);
   const unknown = Object.keys(cfg).filter((key) => !known.has(key));
   if (unknown.length) return `agent_client 包含未声明字段: ${unknown.join(',')}`;
   if (cfg.enabled !== undefined && typeof cfg.enabled !== 'boolean') return 'agent_client.enabled 必须是布尔值';
   if (cfg.instructions !== undefined && (typeof cfg.instructions !== 'string' || cfg.instructions.length > 20_000)) {
     return 'agent_client.instructions 必须是最长 20000 字符的字符串';
   }
-  return (cfg.system_info === undefined ? null : validateAgentSystemInfo(cfg.system_info))
+  return validateArtifactConfig(cfg.artifact_upload) ?? (cfg.system_info === undefined ? null : validateAgentSystemInfo(cfg.system_info))
     ?? intInRange(cfg.active_tool_limit, 'agent_client.active_tool_limit', 1, 12);
 }
 

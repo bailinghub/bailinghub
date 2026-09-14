@@ -63,8 +63,8 @@
         <template #label>类型 <span class="field-required">必填</span></template>
         <el-select v-model="form.kind" style="width: 100%">
           <el-option value="local" label="服务器本地（开箱可用）" />
-          <el-option value="cos" label="腾讯云 COS（当前已实现）" />
-          <el-option value="oss" label="阿里云 OSS（预留，未实现）" disabled />
+          <el-option value="cos" label="腾讯云 COS" />
+          <el-option value="oss" label="阿里云 OSS" />
           <el-option value="s3" label="AWS S3 / 兼容（预留，未实现）" disabled />
         </el-select>
       </el-form-item>
@@ -75,11 +75,11 @@
       </el-form-item>
       <el-form-item v-if="form.kind !== 'local'">
         <template #label>地域 <span class="field-required">必填</span></template>
-        <el-input v-model="form.region" placeholder="如 ap-shanghai" class="mono" />
+        <el-input v-model="form.region" placeholder="COS：ap-shanghai；OSS：cn-shanghai" class="mono" />
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="访问凭证" name="secret">
-      <el-alert v-if="form.kind === 'local'" title="本地存储不需要 AccessKey、SecretKey 或公开访问域名。" type="info" :closable="false" />
+      <el-alert v-if="form.kind === 'local'" title="本地存储不需要 AccessKey 或 SecretKey。用于生成图片交付时，请填写指向 /uploads 的公开访问地址。" type="info" :closable="false" />
       <template v-else>
       <el-form-item>
         <template #label>AccessKeyId <span class="field-required">必填</span> <HelpTip title="AccessKeyId">
@@ -93,6 +93,7 @@
         </HelpTip></template>
         <el-input v-model="form.secret_key" type="password" show-password autocomplete="off" />
       </el-form-item>
+      </template>
       <el-form-item>
         <template #label>公开访问域名 <span class="field-required">必填</span> <HelpTip title="公开访问域名">
           <p>上传成功后返回给聊天、视觉模型和业务工具的 URL 前缀。可填 COS 原生域名或业务 CDN 域名，不带尾斜杠。</p>
@@ -105,8 +106,7 @@
         </HelpTip></template>
         <el-input v-model="form.path_prefix" placeholder="bailing/chat" class="mono" />
       </el-form-item>
-      <el-form-item label="自定义 endpoint"><el-input v-model="form.endpoint" placeholder="一般留空，留空按类型 + 地域拼接" class="mono" /></el-form-item>
-      </template>
+      <el-form-item v-if="form.kind !== 'local'" label="自定义 endpoint"><el-input v-model="form.endpoint" placeholder="一般留空，留空按类型 + 地域拼接" class="mono" /></el-form-item>
         </el-tab-pane>
         <el-tab-pane label="发布" name="publish">
       <el-form-item label="说明（可选）"><el-input v-model="form.description" /></el-form-item>

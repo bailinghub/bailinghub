@@ -25,6 +25,7 @@ import { MysqlKbDatasourceRepository, MysqlKnowledgeRepository } from './config-
 import { InstanceBrandingRepository } from './config-instance-branding-repository';
 import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
 import { AgentAuthRepository, type AgentAuthRepositoryContract } from './config-agent-auth-repository';
+import { AgentArtifactRepository } from './config-agent-artifact-repository';
 import { AgentClientRuntimeRepository } from './config-agent-client-runtime-repository';
 import { AgentConversationAuditRepository } from './config-agent-conversation-audit-repository';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
@@ -92,6 +93,7 @@ export interface ConfigStoreContract {
   readonly deliveryDlq: DeliveryDlqLedgerContract;
   readonly observability: ObservabilityLedgerContract;
   /** 新 Agent Auth 能力对旧宿主仓储保持可选；缺失时 HTTP 面 fail closed。 */
+  readonly agentArtifacts?: Pick<AgentArtifactRepository, keyof AgentArtifactRepository>;
   readonly agentAuth?: AgentAuthRepositoryContract;
   /** Agent Client Runtime v1 对旧宿主保持可选；缺失时新 API fail closed。 */
   readonly agentClientRuntime?: AgentClientRuntimeRepositoryContract;
@@ -130,6 +132,7 @@ export class ConfigStore implements ConfigStoreContract {
   readonly deliveryDlq = new DeliveryDlqLedger(() => this.pool);
   readonly observability = new ObservabilityLedger(() => this.pool);
   readonly agentAuth = new AgentAuthRepository(() => this.pool);
+  readonly agentArtifacts = new AgentArtifactRepository(() => this.pool);
   readonly agentClientRuntime = new AgentClientRuntimeRepository(() => this.pool);
   readonly agentConversationAudit = new AgentConversationAuditRepository(() => this.pool);
 

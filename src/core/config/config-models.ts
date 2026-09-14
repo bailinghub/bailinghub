@@ -147,6 +147,7 @@ export function prepareStorageBucketConfig(input: Partial<StorageBucket>): Prepa
   const publicBaseUrl = str(input.public_base_url).replace(/\/+$/, '');
   if (kind !== 'local' && !publicBaseUrl) return fail('公开访问域名 public_base_url 必填（拼最终媒体 URL 用）');
   const region = str(input.region);
+  if (kind === 'oss' && !region) return fail('OSS 必须填地域 region（如 cn-shanghai）');
   if (kind === 'cos' && !region) return fail('COS 必须填地域 region（如 ap-shanghai）');
   return {
     ok: true,

@@ -1,5 +1,6 @@
+import { ossPutHeaders } from './oss-signature';
 // 媒体存储适配（聊天图片/语音/附件落盘或落桶取永久 URL）。
-// 默认 local：开箱即用，写到本机 data/uploads 并由 /uploads/* 公开读取；生产可切 COS，oss/s3 预留。
+// 默认 local：开箱即用，写到本机 data/uploads 并由 /uploads/* 公开读取；生产可切 COS，OSS 也支持；S3 预留。
 // 设计：业务桶则 URL 即业务 CDN 地址（加商品零转存），中枢桶/本地存储则中枢掌控留存；URL 永久不清理，供完整追溯 + 多模态读图/听音。
 // COS 请求签名(q-sign-algorithm=sha1)按官方算法手写(零依赖,避免上线 npm install)。
 // ⚠ 签名为纯计算、本机无真桶可验——首次接真桶上传若 403，对照 COS 返回的 XML 报文核对 host/header-list 即可。
@@ -110,7 +111,7 @@ export function localObjectFile(root: string, key: string): { file: string; cont
   return { file, contentType: MIME_BY_EXT[extname(file).toLowerCase()] ?? 'application/octet-stream' };
 }
 
-/** 上传字节到存储，返回永久公开 URL。local 开箱即用；cos 已实现；oss/s3 预留。 */
+/** 上传字节到存储，返回永久公开 URL。local 开箱即用；cos 已实现；OSS 也支持；S3 预留。 */
 export async function putObject(b: StorageBucket, key: string, body: Buffer, contentType: string, opts: { root?: string } = {}): Promise<string> {
   if (b.kind === 'local') {
     if (!opts.root) throw new Error('本地媒体存储需要 root');
@@ -121,12 +122,23 @@ export async function putObject(b: StorageBucket, key: string, body: Buffer, con
     const base = (b.public_base_url || LOCAL_UPLOAD_URL_PREFIX).replace(/\/+$/, '');
     return `${base}/${key}`;
   }
+  if (b.kind === 'oss') {
+    const endpoint = b.endpoint || `https://${b.bucket}.oss-${b.region.replace(/^oss-/, '')}.aliyuncs.com`;
+    const target = new URL(endpoint.includes('://') ? endpoint : `https://${endpoint}`);
+    if (target.protocol !== 'https:' || target.username || target.password || target.search || target.hash || target.pathname !== '/') throw new Error('Invalid OSS endpoint');
+    const path = key.split('/').map(rfc3986).join('/');
+    const response = await fetch(`${target.origin}/${path}`, { method: 'PUT', redirect: 'error',
+      headers: ossPutHeaders(b, key, body, contentType), body, signal: AbortSignal.timeout(20000) });
+    if (!response.ok) { await response.body?.cancel(); throw new Error(`OSS PUT ${response.status}`); }
+    await response.body?.cancel();
+    return `${(b.public_base_url || target.origin).replace(/\/+$/, '')}/${path}`;
+  }
   if (b.kind !== 'cos') throw new Error(`对象存储类型 ${b.kind} 暂未实现（当前支持 cos）`);
   const host = cosHost(b);
   const signed = { host, 'content-type': contentType, 'x-cos-acl': 'public-read' };
   const auth = cosAuth(b, 'put', key, signed, Math.floor(Date.now() / 1000));
   const r = await fetch(`https://${host}/${key}`, {
-    method: 'PUT',
+    method: 'PUT', redirect: 'error',
     headers: { authorization: auth, 'content-type': contentType, 'x-cos-acl': 'public-read' },
     body,
     signal: AbortSignal.timeout(20000),
