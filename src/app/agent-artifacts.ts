@@ -54,7 +54,10 @@ export async function uploadAgentArtifact(deps: ArtifactDeps, auth: AgentToolAut
   if (body.length > (policy.max_bytes ?? ARTIFACT_MAX_BYTES)) return artifactError(413, 'artifact_too_large');
   if (metadata.run_id) {
     const run = await deps.configStore?.agentClientRuntime?.getRun(metadata.run_id, auth.session.session_id, auth.client.app_id);
-    if (!run || run.session_id !== auth.session.session_id || run.route_key !== workspace || run.client_conversation_id !== metadata.client_conversation_id || run.client_turn_id !== metadata.client_turn_id) return artifactError(403, 'artifact_run_mismatch');
+    if (!run || run.run_id !== metadata.run_id || run.session_id !== auth.session.session_id || run.client_app_id !== auth.client.app_id || run.route_key !== workspace || run.client_conversation_id !== metadata.client_conversation_id) return artifactError(403, 'artifact_run_mismatch');
+    // Only a proven turn-only mismatch can repair a stale optional run link.
+    // Unknown runs or any identity mismatch remain non-recoverable here.
+    if (run.client_turn_id !== metadata.client_turn_id) return artifactError(403, id(run.client_turn_id, 128) ? 'artifact_run_turn_mismatch' : 'artifact_run_mismatch');
   }
   const requestHash = hash(JSON.stringify([workspace, metadata]));
   const old = await repo.get(auth.session.session_id, uploadId);

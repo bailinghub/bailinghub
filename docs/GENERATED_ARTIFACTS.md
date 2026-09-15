@@ -74,6 +74,10 @@
 
 可附 `run_id`，必须属于同一原 Session、workspace、会话和轮次。没有业务 run 时可直接上传，以会话/轮次关联记录，上传不会向其他系统广播正文或创建业务 run。
 
+`artifact_run_turn_mismatch` 是严格限定的拒绝原因：Core 已确认该 run 属于同一原 Agent Session、接入方、workspace 和会话，且 run 的轮次有效，但与上传轮次不同。此请求在上传记录预留和文件存储之前被拒绝；错误回执不会返回其他轮次的标识或正文。缺失 run、身份/路由/会话不符或旧 run 缺少有效轮次，仍返回 `artifact_run_mismatch`。
+
+配套 DSH 仅在收到这个精确错误、查询原 upload_id 明确不存在、原身份和文件仍有效时，才持久保存纠正记录：保留原上传 ID、内容、目标、会话与轮次，移除被确认属于另一轮的可选 run 关联，再补传同一上传。原本地记录仍保留。已有 ready/pending 回执、网络结果不明、泛化 `artifact_run_mismatch` 或恢复记录损坏均不能触发该纠正；上传成功不代表业务动作已执行。旧 SDK 未识别新错误时应保持阻断，升级配套候选后再恢复。
+
 返回 `schema_version=bailing.agent-artifact.v1`、原标识/元数据、`visibility=public`、`state=ready|pending`。ready 包含 URL 与 `next_action=use_url`；pending 为 `retry_same_upload`。资源记录不返回桶配置、密钥或服务端诊断正文。
 
 同一 Session 的同一 upload_id 固定元数据、内容与存储目标。相同请求重放返回原记录；更换内容或目标返回冲突。网络回包丢失先 GET；ready 直接使用原 URL，pending/未写入才补传原文件。若文件已保存但数据库确认失败，补传可能再次 PUT 同一对象键和相同字节，不生成另一条图片引用；若桶启用版本管理，可能留下存储版本，这是存储层行为。
@@ -83,6 +87,8 @@
 | artifact_upload_pending / 网络中断 | 查询原 upload_id；必要时补传同一文件到原授权 |
 | artifact_content_mismatch / artifact_type_not_allowed / artifact_too_large | 修正文件或配置；不要把无效数据当成功 |
 | artifact_conflict / artifact_storage_changed | 保留原记录，核对原文件或存储配置，不自动换桶 |
+| artifact_run_turn_mismatch | 使用配套 DSH 的原记录纠正流程；不改文件名、不换授权或新建上传 ID |
+| artifact_run_mismatch | 原执行关联无法确认；保持阻断，不根据错误猜测图片来源或移除关联 |
 | artifact_upload_disabled / artifact_storage_unavailable | 在上述集中入口检查开关与存储 |
 | artifact_unsupported | 安装配套版本；已有业务工具流程不受影响 |
 | 授权失效 | 阻断本会话整组；不换授权重试 |

@@ -33,6 +33,12 @@ The existing APIs remain uploadArtifact/getArtifact in the SDK and list_generate
 
 The [configuration and HTTP contract](GENERATED_ARTIFACTS.md) includes exact metadata, original-target validation and error handling.
 
+## Stale optional run links
+
+Core returns `artifact_run_turn_mismatch` only when the referenced run is verified to belong to the same original Agent Session, client, workspace and conversation, but its valid turn differs from the upload turn. The request is rejected before reserving an upload or storing bytes. Missing runs, mismatched identity/route/conversation, or a legacy run without a valid turn retain `artifact_run_mismatch`. Neither error exposes another turn's identifiers or content.
+
+The matching DSH candidate may repair this specific rejected link only after a lookup confirms that the original upload ID does not exist, while the original identity and file remain valid. It durably records the correction, retains the original local record, upload ID, content, destination, conversation and turn, and removes only the optional run link proven to belong to another turn. Ready or pending receipts, uncertain network outcomes, generic run mismatches and damaged recovery records do not allow this correction. Older SDKs that do not recognize the precise error must remain blocked until upgraded. Upload recovery never executes a business action.
+
 ## Known issues tracked separately
 
 The matching candidate adds [configurable tool limits and original-invocation recovery](TOOL_RATE_LIMITS.md). Hour/day windows retain their original duration; newly recorded pre-dispatch rejections retain encrypted arguments. Uncertain writes are never replayed, and missing arguments from historical calls are never reconstructed. Ready attachment URLs remain reusable independently.
