@@ -5,6 +5,8 @@ import type { Principal } from '../app/auth';
 import type { ToolProxyDeps } from '../app/tool-proxy';
 import {
   AgentToolApiError,
+  agentInvocationInspectionCapabilities,
+  inspectAgentToolInvocationFor,
   invokeAgentToolFor,
   listAgentToolsFor,
   resumeAgentToolFor,
@@ -199,6 +201,20 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
     if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
     const route = String(url.searchParams.get('route') ?? '');
     try { send(res, 200, await listAgentToolsFor(deps.toolProxyDeps, auth, route)); }
+    catch (error) { sendAgentToolError(res, error); }
+    return true;
+  }
+  if (method === 'GET' && path === '/agent-api/v1/tool-invocations/inspection-capabilities') {
+    if (!deps.toolProxyDeps || !deps.configStore) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
+    if (url.search) { send(res, 400, { error: 'invalid_request', message: 'Invocation inspection does not accept query parameters.' }); return true; }
+    send(res, 200, agentInvocationInspectionCapabilities());
+    return true;
+  }
+  const receiptMatch = method === 'GET' ? path.match(/^\/agent-api\/v1\/tool-invocations\/([a-f0-9]{64})\/receipt$/) : null;
+  if (receiptMatch) {
+    if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
+    if (url.search) { send(res, 400, { error: 'invalid_request', message: 'Invocation inspection does not accept query parameters.' }); return true; }
+    try { send(res, 200, await inspectAgentToolInvocationFor(deps.toolProxyDeps, auth, { invocation_id: receiptMatch[1]! })); }
     catch (error) { sendAgentToolError(res, error); }
     return true;
   }

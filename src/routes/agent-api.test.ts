@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import test from 'node:test';
@@ -191,6 +192,74 @@ test('Agent Tool API: pause 在读取请求与工具治理链前拦截 invoke/re
   assert.equal(resume.json()['error'], 'hub_paused');
 });
 
+test('Agent receipt HTTP: authenticated capability negotiation and inspection work during global pause', async () => {
+  const fx = runtimeHttpFixture();
+  const headers = { authorization: `Bearer ${fx.token}` };
+  const session = (await fx.deps.configStore.agentAuth!.getSessionByAccessHash(tokenHash(fx.token)))!;
+  const invocationId = 'a'.repeat(64);
+  const runId = '22222222-2222-4222-8222-222222222222';
+  const requestId = `agent-tool:${createHash('sha256').update(`bailing.agent-tool.v1\0${session.session_id}\0${invocationId}`).digest('hex')}`;
+  const job: Job = {
+    job_id: '33333333-3333-4333-8333-333333333333', request_id: requestId, target: 'agent-tool-v1',
+    status: 'done', profile: 'general', project: '', source: `agent-tool:${session.client_app_id}`,
+    client_app_id: session.client_app_id, agent_session_id: session.session_id, session_id: runId,
+    on_behalf_of: session.on_behalf_of, input_preview: 'Synthetic invocation',
+    metadata: {
+      agent_tool_job_marker: 'bailing.agent-tool-job.v1', agent_tool_call_v1: true,
+      agent_invocation_id: invocationId, agent_run_id: runId, agent_route: 'allowed', agent_tool: 'staff_list',
+      agent_args_hash: 'b'.repeat(64), agent_capability_revision: 'c'.repeat(64), agent_execution_fingerprint: 'd'.repeat(64),
+      agent_dispatch_attempted: true, principal: session.principal,
+    },
+    dispatch: { route_key: 'allowed' },
+    result: {
+      schema_version: 'bailing.agent-tool-invocation.v1', invocation_id: invocationId, route: 'allowed', tool: 'staff_list',
+      state: 'executed', ok: true, auto_retry_allowed: false, text: 'Synthetic result', business_status: 200,
+    },
+    created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z',
+  };
+  const before = JSON.stringify(job);
+  let stateReads = 0;
+  fx.deps.stateStore.findByRequestId = async (id: string) => { stateReads++; return id === requestId ? job : null; };
+  fx.deps.configStore.toolCalls.get = async () => null;
+  fx.deps.configStore.approvals.forJob = async () => [];
+  const denied = async () => { throw new Error('unexpected_inspection_mutation'); };
+  fx.deps.stateStore.createJob = denied;
+  fx.deps.stateStore.updateJob = denied;
+  fx.deps.stateStore.acquireRuntimeLock = denied;
+  fx.deps.stateStore.appendAudit = denied;
+  fx.deps.isPaused = () => true;
+  const capabilityUrl = new URL('https://hub.example.com/agent-api/v1/tool-invocations/inspection-capabilities');
+  const receiptUrl = new URL(`https://hub.example.com/agent-api/v1/tool-invocations/${invocationId}/receipt`);
+  const capabilities = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('GET', headers), capabilities as unknown as ServerResponse, capabilityUrl);
+  assert.deepEqual(capabilities.json(), {
+    schema_version: 'bailing.agent-invocation-inspection-capabilities.v1',
+    receipt_schema: 'bailing.agent-invocation-receipt.v1', read_only: true,
+  });
+  assert.equal(stateReads, 0);
+  const response = new FakeResponse();
+  await handleAgentApiHttpFor(fx.deps, request('GET', headers), response as unknown as ServerResponse, receiptUrl);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.headers['cache-control'], 'no-store');
+  assert.equal(response.json()['read_only'], true);
+  assert.equal(response.json()['business_operation_performed'], false);
+  assert.equal((response.json()['result'] as Record<string, unknown>)['text'], 'Synthetic result');
+  assert.equal(stateReads, 1);
+  assert.equal(JSON.stringify(job), before);
+
+  for (const url of [capabilityUrl, receiptUrl]) {
+    const anonymous = new FakeResponse();
+    await handleAgentApiHttpFor(fx.deps, request('GET'), anonymous as unknown as ServerResponse, url);
+    assert.equal(anonymous.statusCode, 401);
+    const changed = new URL(url);
+    changed.searchParams.set('route', 'another-target');
+    const parameters = new FakeResponse();
+    await handleAgentApiHttpFor(fx.deps, request('GET', headers), parameters as unknown as ServerResponse, changed);
+    assert.equal(parameters.statusCode, 400);
+  }
+  assert.equal(stateReads, 1, 'rejected inspection envelopes must not read invocation records');
+});
+
 function runtimeHttpFixture() {
   const token = `bha_${'r'.repeat(43)}`;
   const client: Client = {
@@ -264,6 +333,8 @@ function runtimeHttpFixture() {
     toolProviders: { get: async () => provider },
     conversations: { getThreadMemory: async () => ({ summary: null, summary_upto_id: 0 }), recentMessagesAfter: async () => [] },
     agentClientRuntime: runtimeRepo,
+    toolCalls: { get: async () => null },
+    approvals: { forJob: async () => [] },
   } as unknown as ConfigStoreContract;
   const stateStore = { appendAudit: async () => undefined } as unknown as RuntimeStateStore;
   const toolProxyDeps: ToolProxyDeps = {

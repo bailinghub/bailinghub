@@ -22,6 +22,19 @@ Each public version should describe:
 - validation commands;
 - related docs.
 
+## Unreleased candidate: inspect an original invocation without continuing it
+
+For example, a shop listing may have been approved but not dispatched. Refreshing
+its status should report that fact without listing the product. The new receipt
+API reads the original result, approval and execution journal; existing `resume`
+can still continue the original business operation.
+
+Original identity and current tool permission remain required. Inspection works
+while global dispatch is paused, without invoking a tool, consuming approval or
+updating invocation state. Existing authentication activity tracking may still
+occur. No migration is required; matched SDK support is negotiated explicitly.
+This adds no task budget or task pause interface. See [the receipt contract](INVOCATION_RECEIPTS.md).
+
 ## v0.7.0 - cross-system conversations, authorization names and centralized setup
 
 Release date: 2026-09-10. These additions extend Core 0.6.1 and pair with SDK/DSH 0.5.0. See [shop and inventory scenarios](RELEASE_NOTES_v0.7.0.en.md).

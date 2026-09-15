@@ -28,6 +28,8 @@ const INVOCATION_LOCK_TTL_MS = 15 * 60_000;
 
 export const AGENT_TOOL_CATALOG_SCHEMA = 'bailing.agent-tool-catalog.v1';
 export const AGENT_TOOL_INVOCATION_SCHEMA = 'bailing.agent-tool-invocation.v1';
+export const AGENT_INVOCATION_RECEIPT_SCHEMA = 'bailing.agent-invocation-receipt.v1';
+export const AGENT_INVOCATION_INSPECTION_SCHEMA = 'bailing.agent-invocation-inspection-capabilities.v1';
 const AGENT_TOOL_EXECUTION_FINGERPRINT_SCHEMA = 'bailing.agent-tool-execution.v1';
 
 export type AgentToolInvocationState =
@@ -100,6 +102,31 @@ export interface AgentToolInvocationResult {
   text: string;
   business_status?: number;
   approval_id?: number;
+}
+
+/** Observations of the original call, never permission to dispatch or replay it. */
+export interface AgentInvocationReceipt {
+  schema_version: typeof AGENT_INVOCATION_RECEIPT_SCHEMA;
+  read_only: true;
+  business_operation_performed: false;
+  invocation_id: string;
+  agent_run_id: string;
+  route: string;
+  tool: string;
+  observed_at: string;
+  result: AgentToolInvocationResult | null;
+  result_source: 'job' | 'journal' | 'none';
+  dispatch_state: 'not_dispatched' | 'attempted' | 'unknown';
+  approval: { status: 'none' | 'pending' | 'approved' | 'denied'; approval_id?: number };
+  journal_state: 'absent' | 'dispatching' | 'response_recorded' | 'completed' | 'uncertain' | 'evidence_degraded' | 'unknown';
+}
+
+export function agentInvocationInspectionCapabilities() {
+  return {
+    schema_version: AGENT_INVOCATION_INSPECTION_SCHEMA,
+    receipt_schema: AGENT_INVOCATION_RECEIPT_SCHEMA,
+    read_only: true as const,
+  };
 }
 
 export class AgentToolApiError extends Error {
@@ -868,4 +895,107 @@ export async function resumeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
   } finally {
     await deps.stateStore.releaseRuntimeLock(lockKey, owner).catch(() => undefined);
   }
+}
+
+/** An allowlisted result copy. Stored JSON is data, including when its schema marker is valid. */
+function receiptResult(job: Job): AgentToolInvocationResult | null {
+  const saved = parseInvocationResult(job);
+  if (!saved) return null;
+  const limit = saved.rate_limit;
+  const rateLimit = isRecord(limit)
+    && (limit['level'] === 'tool' || limit['level'] === 'provider')
+    && Number.isSafeInteger(limit['count']) && Number(limit['count']) > 0
+    && Number.isSafeInteger(limit['window_sec']) && Number(limit['window_sec']) > 0
+    && limit['scope'] === 'tool_provider_shared' && typeof limit['source'] === 'string'
+    ? {
+      level: limit['level'], count: Number(limit['count']), window_sec: Number(limit['window_sec']),
+      scope: 'tool_provider_shared' as const, source: safeText(limit['source'], 128),
+    } : undefined;
+  return publicResult({
+    invocationId: saved.invocation_id, route: saved.route, tool: saved.tool, state: saved.state,
+    ok: saved.ok, text: saved.text, autoRetryAllowed: saved.auto_retry_allowed,
+    ...(Number.isSafeInteger(saved.retry_after_ms) && Number(saved.retry_after_ms) >= 0 ? { retryAfterMs: saved.retry_after_ms } : {}),
+    ...(rateLimit ? { rateLimit } : {}),
+    ...(saved.business_status !== undefined ? { businessStatus: saved.business_status } : {}),
+    ...(saved.approval_id !== undefined ? { approvalId: saved.approval_id } : {}),
+  });
+}
+
+/**
+ * Reads local evidence only. In particular this must not call invokeExisting: resume may
+ * consume an approved request and perform its first business dispatch.
+ * The observations are not an atomic dispatch decision and confer no permission to replay.
+ */
+export async function inspectAgentToolInvocationFor(
+  deps: ToolProxyDeps, auth: AgentToolAuthContext, input: ResumeAgentToolInput,
+): Promise<AgentInvocationReceipt> {
+  if (!INVOCATION_RE.test(input.invocation_id)) {
+    throw new AgentToolApiError(400, 'invalid_request', 'The original invocation identifier is invalid.');
+  }
+  if (!deps.configStore) throw new AgentToolApiError(503, 'agent_tools_unavailable', 'Invocation inspection requires the control plane.');
+  const requestId = invocationRequestId(auth.session.session_id, input.invocation_id);
+  const stored = await deps.stateStore.findByRequestId(requestId);
+  if (!stored || !isAgentToolInvocationJob(stored)
+    || stored.agent_session_id !== auth.session.session_id || stored.client_app_id !== auth.client.app_id) {
+    throw new AgentToolApiError(404, 'invocation_not_found', 'The original governed invocation was not found.');
+  }
+  // Freeze the observation even for in-memory repository implementations.
+  const job = JSON.parse(JSON.stringify(stored)) as Job;
+  const metadata = job.metadata;
+  const route = String(metadata['agent_route'] ?? '');
+  const tool = String(metadata['agent_tool'] ?? '');
+  const runId = String(metadata['agent_run_id'] ?? '');
+  const revision = String(metadata['agent_capability_revision'] ?? '');
+  const hash = String(metadata['agent_args_hash'] ?? '');
+  const originalPrincipal = metadata['principal'];
+  if (job.request_id !== requestId || !ROUTE_RE.test(route) || !AGENT_RUN_RE.test(runId)
+    || !REVISION_RE.test(revision) || !REVISION_RE.test(hash) || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(tool)
+    || job.session_id !== runId || job.on_behalf_of !== auth.session.on_behalf_of
+    || !isRecord(originalPrincipal) || originalPrincipal['id'] !== auth.session.principal.id
+    || originalPrincipal['tenant'] !== auth.session.principal.tenant
+    || !sameInvocation(job, auth, { invocation_id: input.invocation_id, route, tool, args_hash: hash, capability_revision: revision, agent_run_id: runId })) {
+    throw new AgentToolApiError(409, 'invocation_conflict', 'The original invocation binding could not be verified.');
+  }
+  const runtimeRun = await deps.configStore.agentClientRuntime?.findRunForInvocation(runId) ?? null;
+  if (runtimeRun && (runtimeRun.run_id !== runId || runtimeRun.session_id !== auth.session.session_id
+    || runtimeRun.client_app_id !== auth.client.app_id || runtimeRun.route_key !== route
+    || (job.thread_id !== undefined && runtimeRun.thread_id !== job.thread_id))) {
+    throw new AgentToolApiError(409, 'agent_run_conflict', 'The original runtime run belongs to a different binding.');
+  }
+  // Current authorization is required, but the historical execution/schema fingerprint
+  // need not remain current merely to inspect a result. No business context or run is created.
+  const surface = await resolveSurface(deps, auth, route);
+  assertCurrentToolAuthorized(surface, tool);
+  const journal = await deps.configStore.toolCalls.get(job.job_id, tool, hash);
+  const current = await currentApproval(deps.configStore, job, tool, hash);
+  if (current && (!['pending', 'approved', 'denied'].includes(current.status)
+    || !Number.isSafeInteger(current.id) || current.id < 1)) {
+    throw new AgentToolApiError(503, 'invocation_record_invalid', 'The original approval record could not be verified.');
+  }
+  const journalStates = ['dispatching', 'response_recorded', 'completed', 'uncertain', 'evidence_degraded'];
+  const journalState: AgentInvocationReceipt['journal_state'] = !journal ? 'absent'
+    : journalStates.includes(journal.state) ? journal.state : 'unknown';
+  let result = receiptResult(job);
+  let resultSource: AgentInvocationReceipt['result_source'] = result ? 'job' : 'none';
+  if (journal) {
+    resultSource = 'journal';
+    result = journalState === 'completed' && typeof journal.ok === 'boolean'
+      && Number.isSafeInteger(journal.status) && journal.status > 0 && typeof journal.text === 'string'
+      ? publicResult({ invocationId: input.invocation_id, route, tool,
+        state: journal.ok ? 'executed' : 'business_rejected', ok: journal.ok, text: journal.text, businessStatus: journal.status })
+      : publicResult({ invocationId: input.invocation_id, route, tool, state: 'reconciliation_required', ok: false,
+        text: 'The original execution journal has not confirmed a completed outcome. Inspect the original record; do not repeat the business operation.' });
+  }
+  const dispatchState: AgentInvocationReceipt['dispatch_state'] = journalState === 'unknown' ? 'unknown'
+    : journal || result?.state === 'executed' || result?.state === 'business_rejected' ? 'attempted'
+      : result && ['awaiting_approval', 'denied', 'rejected_before_dispatch'].includes(result.state) ? 'not_dispatched'
+        : metadata['agent_dispatch_attempted'] === false ? 'not_dispatched'
+          : metadata['agent_dispatch_attempted'] === true ? 'attempted' : 'unknown';
+  return {
+    schema_version: AGENT_INVOCATION_RECEIPT_SCHEMA, read_only: true, business_operation_performed: false,
+    invocation_id: input.invocation_id, agent_run_id: runId, route, tool, observed_at: deps.now(),
+    result, result_source: resultSource, dispatch_state: dispatchState,
+    approval: current ? { status: current.status, approval_id: current.id } : { status: 'none' },
+    journal_state: journalState,
+  };
 }

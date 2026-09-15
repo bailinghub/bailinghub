@@ -11,6 +11,7 @@ import type { AgentClientRunRecord } from '../infrastructure/config/config-agent
 import {
   AgentToolApiError,
   invokeAgentToolFor,
+  inspectAgentToolInvocationFor,
   listAgentToolsFor,
   resumeAgentToolFor,
   type AgentToolAuthContext,
@@ -180,6 +181,7 @@ function fixture(baseUrl: string) {
     deps,
     state,
     approvals,
+    calls,
     setRoute: (value: Route) => { currentRoute = value; },
     setSpec: (value: string) => { currentSpec = value; },
     setToolRateLimited: (value: boolean) => { toolRateLimited = value; provider.tool_rate_limits = { default: { mode: 'custom', count: 120, window: '1h' }, overrides: {} }; },
@@ -197,6 +199,170 @@ function runtimeRun(overrides: Partial<AgentClientRunRecord> = {}): AgentClientR
     ...overrides,
   };
 }
+
+async function pendingReceiptFixture() {
+  const fx = fixture('https://business.invalid');
+  fx.setRoute(routeWithForcedApproval());
+  fx.setRuntimeRun(runtimeRun());
+  const catalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
+  const input = {
+    invocation_id: invocationId('a'), route: 'tenant-agent', capability_revision: catalog.capability_revision,
+    agent_run_id: AGENT_RUN_ID, tool: 'staff_edit', arguments: { id: 1, name: 'Synthetic' },
+  };
+  const result = await invokeAgentToolFor(fx.deps, auth(), input);
+  assert.equal(result.state, 'awaiting_approval');
+  const job = [...fx.state.jobs.values()][0]!;
+  return { ...fx, input, result, job };
+}
+
+function forbidReceiptMutations(fx: Awaited<ReturnType<typeof pendingReceiptFixture>>) {
+  const snapshot = () => JSON.stringify({ jobs: [...fx.state.jobs], approvals: fx.approvals, calls: [...fx.calls], audits: fx.state.audits });
+  const before = snapshot();
+  const forbidden = async () => { throw new Error('inspection_attempted_mutation'); };
+  fx.state.createJob = forbidden;
+  fx.state.updateJob = forbidden;
+  fx.state.appendAudit = forbidden;
+  fx.state.acquireRuntimeLock = forbidden;
+  fx.state.releaseRuntimeLock = forbidden;
+  fx.deps.configStore!.approvals.use = forbidden;
+  fx.deps.configStore!.approvals.create = forbidden;
+  fx.deps.configStore!.rateLimits.consume = forbidden;
+  fx.deps.configStore!.toolCalls.reserve = forbidden;
+  fx.deps.configStore!.toolCalls.complete = forbidden;
+  fx.deps.configStore!.toolCalls.recordResponse = forbidden;
+  // Inspection needs no original encrypted arguments or server decryption secret.
+  fx.deps.cfg.server.token = 'synthetic-rotated-key';
+  return () => assert.equal(snapshot(), before, 'inspection must not alter original execution evidence');
+}
+
+test('Agent receipt: approved original remains undispatched across repeated read-only inspections', async () => {
+  const fx = await pendingReceiptFixture();
+  fx.approvals[0]!.status = 'approved';
+  const unchanged = forbidReceiptMutations(fx);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const receipt = await inspectAgentToolInvocationFor(fx.deps, auth(), fx.input);
+    assert.equal(receipt.schema_version, 'bailing.agent-invocation-receipt.v1');
+    assert.equal(receipt.read_only, true);
+    assert.equal(receipt.business_operation_performed, false);
+    assert.equal(receipt.agent_run_id, AGENT_RUN_ID);
+    assert.equal(receipt.invocation_id, fx.input.invocation_id);
+    assert.equal(receipt.dispatch_state, 'not_dispatched');
+    assert.equal(receipt.journal_state, 'absent');
+    assert.deepEqual(receipt.result, fx.result);
+    assert.deepEqual(receipt.approval, { status: 'approved', approval_id: 1 });
+    assert.equal(fx.approvals[0]!.used_at, undefined);
+  }
+  unchanged();
+});
+
+test('Agent receipt: completed journal supersedes a stale job without persisting or dispatching', async () => {
+  const fx = await pendingReceiptFixture();
+  fx.calls.set(`${fx.job.job_id}\0staff_edit\0${fx.job.metadata.agent_args_hash}`, {
+    state: 'completed', ok: true, status: 200, text: 'Synthetic completion', idempotencyKey: 'synthetic-original-key',
+  });
+  const unchanged = forbidReceiptMutations(fx);
+  const receipt = await inspectAgentToolInvocationFor(fx.deps, auth(), fx.input);
+  assert.equal(receipt.result_source, 'journal');
+  assert.equal(receipt.journal_state, 'completed');
+  assert.equal(receipt.result?.state, 'executed');
+  assert.equal(receipt.result?.auto_retry_allowed, false);
+  assert.equal(receipt.dispatch_state, 'attempted');
+  assert.equal(receipt.result?.text, 'Synthetic completion');
+  assert.equal(JSON.stringify(receipt).includes('synthetic-original-key'), false);
+  unchanged();
+});
+
+test('Agent receipt: unresolved or malformed journal never grants a repeat operation', async (t) => {
+  for (const state of ['dispatching', 'response_recorded', 'uncertain', 'evidence_degraded', 'unexpected'] as const) {
+    await t.test(state, async () => {
+      const fx = await pendingReceiptFixture();
+      fx.calls.set(`${fx.job.job_id}\0staff_edit\0${fx.job.metadata.agent_args_hash}`, {
+        state, ok: true, status: 200, text: 'Unconfirmed synthetic content', idempotencyKey: 'synthetic-original-key',
+      } as ToolExecutionJournalEntry);
+      const unchanged = forbidReceiptMutations(fx);
+      const receipt = await inspectAgentToolInvocationFor(fx.deps, auth(), fx.input);
+      assert.equal(receipt.journal_state, state === 'unexpected' ? 'unknown' : state);
+      assert.equal(receipt.result_source, 'journal');
+      assert.equal(receipt.result?.state, 'reconciliation_required');
+      assert.equal(receipt.result?.auto_retry_allowed, false);
+      assert.equal(receipt.business_operation_performed, false);
+      assert.equal(JSON.stringify(receipt).includes('Unconfirmed synthetic content'), false);
+      unchanged();
+    });
+  }
+});
+
+test('Agent receipt: result JSON is allowlisted and invalid schema stays unknown', async () => {
+  const fx = await pendingReceiptFixture();
+  fx.job.result = { ...fx.result, private_data: 'synthetic-hidden', rate_limit: {
+    level: 'tool', count: 120, window_sec: 3600, scope: 'tool_provider_shared', source: 'override', token: 'synthetic-secret',
+  } };
+  const receipt = await inspectAgentToolInvocationFor(fx.deps, auth(), fx.input);
+  assert.equal(JSON.stringify(receipt).includes('synthetic-hidden'), false);
+  assert.equal(JSON.stringify(receipt).includes('synthetic-secret'), false);
+  assert.equal(JSON.stringify(receipt).includes('agent_frozen_arguments'), false);
+  fx.job.result = { ...fx.result, schema_version: 'unknown-schema' };
+  delete fx.job.metadata.agent_dispatch_attempted;
+  const unchanged = forbidReceiptMutations(fx);
+  const unknown = await inspectAgentToolInvocationFor(fx.deps, auth(), fx.input);
+  assert.equal(unknown.result, null);
+  assert.equal(unknown.result_source, 'none');
+  assert.equal(unknown.dispatch_state, 'unknown');
+  unchanged();
+});
+
+test('Agent receipt: capability declaration changes do not require historical execution fingerprints', async () => {
+  const fx = await pendingReceiptFixture();
+  const changed = JSON.parse(spec());
+  changed.paths['/staff/edit'].post.summary = 'Updated synthetic description';
+  changed.paths['/staff/edit'].post.requestBody.content['application/json'].schema.properties.note = { type: 'string' };
+  fx.setSpec(JSON.stringify(changed));
+  const unchanged = forbidReceiptMutations(fx);
+  assert.equal((await inspectAgentToolInvocationFor(fx.deps, auth(), fx.input)).result?.state, 'awaiting_approval');
+  unchanged();
+});
+
+test('Agent receipt: current tool revocation still forbids access to original result content', async () => {
+  const fx = await pendingReceiptFixture();
+  const changed = routeWithForcedApproval();
+  changed.tools = { ...changed.tools, agent_direct: { enabled: true, write_tools: [] } };
+  fx.setRoute(changed);
+  const unchanged = forbidReceiptMutations(fx);
+  await assert.rejects(inspectAgentToolInvocationFor(fx.deps, auth(), fx.input),
+    (error) => error instanceof AgentToolApiError && error.code === 'capability_changed');
+  unchanged();
+});
+
+test('Agent receipt: original session, client, principal, route and run bindings cannot be changed', async (t) => {
+  for (const drift of ['session', 'client', 'principal', 'tenant', 'on_behalf_of', 'run', 'route', 'thread'] as const) {
+    await t.test(drift, async () => {
+      const fx = await pendingReceiptFixture();
+      const caller = auth();
+      if (drift === 'session') caller.session.session_id = '33333333-3333-4333-8333-333333333333';
+      if (drift === 'client') caller.client.app_id = 'another-client';
+      if (drift === 'principal') caller.session.principal.id = 'another-user';
+      if (drift === 'tenant') caller.session.principal.tenant = 'another-tenant';
+      if (drift === 'on_behalf_of') caller.session.on_behalf_of = 'another-subject';
+      if (drift === 'run') fx.setRuntimeRun(runtimeRun({ session_id: '33333333-3333-4333-8333-333333333333' }));
+      if (drift === 'route') fx.setRuntimeRun(runtimeRun({ route_key: 'another-route' }));
+      if (drift === 'thread') fx.setRuntimeRun(runtimeRun({ thread_id: 99 }));
+      const unchanged = forbidReceiptMutations(fx);
+      await assert.rejects(inspectAgentToolInvocationFor(fx.deps, caller, fx.input),
+        (error) => error instanceof AgentToolApiError && ['invocation_not_found', 'invocation_conflict', 'agent_run_conflict'].includes(error.code));
+      unchanged();
+    });
+  }
+});
+
+test('Agent receipt: absent original or malformed identifier never creates substitute evidence', async () => {
+  const fx = await pendingReceiptFixture();
+  const unchanged = forbidReceiptMutations(fx);
+  await assert.rejects(inspectAgentToolInvocationFor(fx.deps, auth(), { invocation_id: invocationId('b') }),
+    (error) => error instanceof AgentToolApiError && error.statusCode === 404 && error.code === 'invocation_not_found');
+  await assert.rejects(inspectAgentToolInvocationFor(fx.deps, auth(), { invocation_id: 'bad-id' }),
+    (error) => error instanceof AgentToolApiError && error.statusCode === 400);
+  unchanged();
+});
 
 test('Agent direct: 本地投影只含只读与精确写工具，写工具默认继承 ACC 审批声明', async (t) => {
   let businessCalls = 0;

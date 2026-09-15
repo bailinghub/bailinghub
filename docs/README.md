@@ -25,6 +25,7 @@
 | [AGENT_SUBJECT_DISPLAY.md](AGENT_SUBJECT_DISPLAY.md) | 业务授权显示名称：三方职责、新授权与旧会话名称同步。 |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Agent Auth v1：业务登录态绑定、PKCE、Token 交换与会话撤销的语言无关契约。 |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | English Agent Auth v1 protocol and trusted business-identity boundary. |
+| [INVOCATION_RECEIPTS.md](INVOCATION_RECEIPTS.md) | 候选：只读核对原调用、审批与执行日志；与可能继续业务的 resume 分开。 |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Agent Client Runtime v1：工作区、turn、能力搜索、工具执行与完成回传。 |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | English Agent Client Runtime v1 contract. |
 | [AGENT_CONVERSATION_AUDIT.md](AGENT_CONVERSATION_AUDIT.md) | 完整可见对话审计：逐授权成员确认、幂等文本事件、run 关联和管理员分页读取。 |

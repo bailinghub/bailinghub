@@ -21,6 +21,7 @@ This directory contains public documentation for the open-source BailingHub proj
 | [AGENT_SUBJECT_DISPLAY.en.md](AGENT_SUBJECT_DISPLAY.en.md) | Business authorization display names: responsibilities, new approvals and existing-session synchronization. |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | Agent Auth v1, PKCE, trusted business identity, and revocation. |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Chinese Agent Auth v1 protocol. |
+| [INVOCATION_RECEIPTS.md](INVOCATION_RECEIPTS.md) | Candidate: read an original receipt without continuing its business operation. |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | Agent Client Runtime v1 workspaces, turns, tools, and completion contract. |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Chinese Agent Client Runtime v1 contract. |
 | [AGENT_CONVERSATION_AUDIT.en.md](AGENT_CONVERSATION_AUDIT.en.md) | Complete visible conversation audit, member confirmation, run ownership and admin pagination. |
