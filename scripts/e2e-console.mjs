@@ -431,7 +431,7 @@ try {
   if (process.env.BAILING_RATE_SCREENSHOT) await page.screenshot({ path: process.env.BAILING_RATE_SCREENSHOT, fullPage: true });
   await page.getByRole('button', { name: '取消', exact: true }).click();
 
-  await page.getByRole('menuitem', { name: '任务' }).click();
+  await page.getByRole('menuitem', { name: '任务', exact: true }).click();
   const auditRadio = page.getByRole('radio', { name: '客户端完整对话', exact: true });
   if (!await auditRadio.isChecked()) throw new Error('任务会话页应默认展示客户端完整对话');
   const auditList = page.locator('aside[aria-label="客户端对话列表"]');
