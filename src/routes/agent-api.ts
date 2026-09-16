@@ -1,9 +1,12 @@
+import { handleAgentArtifacts } from './agent-artifacts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PayloadTooLargeError, readBody, send } from '../app/http';
 import type { Principal } from '../app/auth';
 import type { ToolProxyDeps } from '../app/tool-proxy';
 import {
   AgentToolApiError,
+  agentInvocationInspectionCapabilities,
+  inspectAgentToolInvocationFor,
   invokeAgentToolFor,
   listAgentToolsFor,
   resumeAgentToolFor,
@@ -15,6 +18,8 @@ import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { authenticateAgentAccess } from './agent-auth';
 import { handleAgentConversationAuditFor } from './agent-conversation-audit';
 import { getAgentSystemInfoFor } from '../app/agent-system-info';
+import { agentTaskCapabilitiesFor, inspectAgentTaskFor, assertAgentLegacyTaskAllowedFor, taskErrorStatus, publicAgentTaskError } from '../app/agent-task-control';
+import { AgentTaskControlError } from '../core/runtime/agent-task-control';
 import type { KbService } from '../services/kb';
 import {
   completeAgentRunFor,
@@ -33,6 +38,7 @@ export interface AgentApiHttpDeps {
   /** 未注入时仅关闭新的无模型直调面，保持旧宿主的 Agent Auth / run 兼容。 */
   toolProxyDeps?: ToolProxyDeps;
   kbService?: KbService | null;
+  artifactRoot?: string;
 }
 
 // 64000 个 UTF-16 code units 在 JSON 中最坏可被转义为约 384 KB；512 KiB 还可容纳
@@ -55,6 +61,11 @@ function declaredFields(body: Record<string, unknown>, allowedFields: string[], 
 }
 
 function sendAgentToolError(res: ServerResponse, error: unknown): void {
+  if (error instanceof AgentTaskControlError) {
+    const visible = publicAgentTaskError(error);
+    send(res, taskErrorStatus(visible), { error: visible.code, message: visible.message });
+    return;
+  }
   if (error instanceof AgentToolApiError) {
     send(res, error.statusCode, { error: error.code, message: error.message });
     return;
@@ -93,6 +104,19 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
   if (!auth) { send(res, 401, { error: 'unauthorized' }); return true; }
   const principal: Principal = { kind: 'agent', session: auth.session, client: auth.client };
   const method = req.method ?? 'GET';
+  if (method === 'GET' && path === '/agent-api/v1/task-control/capabilities') {
+    try { send(res, 200, await agentTaskCapabilitiesFor(deps.configStore, auth, Boolean(deps.toolProxyDeps))); }
+    catch { send(res, 503, { error: 'TASK_UNAVAILABLE', message: 'Task control could not be verified.' }); }
+    return true;
+  }
+  const taskMatch = method === 'GET' ? path.match(/^\/agent-api\/v1\/tasks\/([0-9a-f-]{36})$/i) : null;
+  if (taskMatch) {
+    try { send(res, 200, await inspectAgentTaskFor(deps.configStore, auth, taskMatch[1]!,
+      url.searchParams.get('workspace') ?? '', url.searchParams.get('client_conversation_id') ?? '')); }
+    catch (error) { sendAgentToolError(res, error); }
+    return true;
+  }
+  if (await handleAgentArtifacts({ configStore: deps.configStore, root: deps.artifactRoot, isPaused: deps.isPaused }, auth, req, res, path)) return true;
   if (await handleAgentConversationAuditFor(deps.configStore, auth, req, res, path)) return true;
   const systemInfoMatch = method === 'GET' ? path.match(/^\/agent-api\/v1\/workspaces\/([a-z0-9][a-z0-9_-]{1,63})\/system-info$/) : null;
   if (systemInfoMatch) {
@@ -125,7 +149,7 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
     if (deps.isPaused()) { send(res, 503, { error: 'hub_paused', status: 'paused' }); return true; }
     const body = await readAgentToolBody(req, res, AGENT_RUNTIME_JSON_BODY_MAX_BYTES);
     if (!body) return true;
-    if (!declaredFields(body, ['client_conversation_id', 'client_turn_id', 'user_message_id', 'user_input', 'page_context', 'renderers'], ['client_conversation_id', 'client_turn_id', 'user_message_id', 'user_input'])
+    if (!declaredFields(body, ['client_conversation_id', 'client_turn_id', 'user_message_id', 'user_input', 'page_context', 'renderers', 'task_binding'], ['client_conversation_id', 'client_turn_id', 'user_message_id', 'user_input'])
       || typeof body['client_conversation_id'] !== 'string'
       || typeof body['client_turn_id'] !== 'string'
       || typeof body['user_message_id'] !== 'string'
@@ -140,6 +164,7 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
         user_message_id: body['user_message_id'], user_input: body['user_input'],
         ...(record(body['page_context']) ? { page_context: record(body['page_context'])! } : {}),
         ...(Array.isArray(body['renderers']) ? { renderers: body['renderers'] as string[] } : {}),
+        ...(Object.hasOwn(body, 'task_binding') ? { task_binding: body['task_binding'] } : {}),
       }));
     } catch (error) { sendAgentToolError(res, error); }
     return true;
@@ -199,6 +224,20 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
     catch (error) { sendAgentToolError(res, error); }
     return true;
   }
+  if (method === 'GET' && path === '/agent-api/v1/tool-invocations/inspection-capabilities') {
+    if (!deps.toolProxyDeps || !deps.configStore) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
+    if (url.search) { send(res, 400, { error: 'invalid_request', message: 'Invocation inspection does not accept query parameters.' }); return true; }
+    send(res, 200, agentInvocationInspectionCapabilities());
+    return true;
+  }
+  const receiptMatch = method === 'GET' ? path.match(/^\/agent-api\/v1\/tool-invocations\/([a-f0-9]{64})\/receipt$/) : null;
+  if (receiptMatch) {
+    if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
+    if (url.search) { send(res, 400, { error: 'invalid_request', message: 'Invocation inspection does not accept query parameters.' }); return true; }
+    try { send(res, 200, await inspectAgentToolInvocationFor(deps.toolProxyDeps, auth, { invocation_id: receiptMatch[1]! })); }
+    catch (error) { sendAgentToolError(res, error); }
+    return true;
+  }
   if (method === 'POST' && path === '/agent-api/v1/tool-invocations') {
     if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
     if (deps.isPaused()) { send(res, 503, { error: 'hub_paused', status: 'paused' }); return true; }
@@ -243,6 +282,8 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
     return true;
   }
   if (method === 'POST' && path === '/agent-api/v1/run') {
+    try { await assertAgentLegacyTaskAllowedFor(deps.configStore, auth.session.session_id); }
+    catch (error) { sendAgentToolError(res, error); return true; }
     await deps.handleRun(req, res, principal);
     return true;
   }

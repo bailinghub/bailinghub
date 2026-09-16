@@ -212,8 +212,29 @@
         <el-input-number v-model="form.timeout_ms" :min="1000" :max="60000" :step="1000" />
       </el-form-item>
       <el-form-item>
-        <template #label>{{ fieldTitle('rate_limit_per_min', '总闸限流') }}（次/分钟，0=不限） <HelpTip :title="fieldTitle('rate_limit_per_min', '总闸限流')"><p>{{ fieldDesc('rate_limit_per_min') }}</p></HelpTip></template>
-        <el-input-number v-model="form.rate_limit_per_min" :min="0" :max="6000" :step="10" />
+        <template #label>工具源总限额（次/分钟，0=关闭）</template>
+        <el-input-number v-model="form.rate_limit_per_min" :min="0" :max="1000000" :precision="0" :step="100" />
+        <div class="muted hint">该工具源下所有工具、用户、授权和会话共用。设为 0 只关闭总闸，下方单工具策略独立生效。</div>
+      </el-form-item>
+      <el-form-item label="单工具默认策略">
+        <ToolRateLimitEditor v-model="toolRateDefault" />
+        <div class="muted hint">每个工具分别计数，同一工具的用户与会话共用；120 次/小时按一小时滑动窗口计数，允许在额度内连续调用。</div>
+        <div class="muted hint">自定义或关闭只调整中枢限额；接入方限额、业务系统自身限额、权限与审批仍独立生效。保存后对后续调度生效，当前窗口已有计数不会清零。</div>
+      </el-form-item>
+      <el-form-item label="指定工具覆盖">
+        <div style="width: 100%">
+          <div v-for="(entry, index) in toolRateOverrides" :key="index" style="margin-bottom: 12px">
+            <div style="display: flex; gap: 8px; margin-bottom: 6px">
+              <el-select v-model="entry.name" filterable allow-create default-first-option placeholder="选择或输入工具名" style="width: 280px">
+                <el-option v-for="tool in limitToolNames" :key="tool" :label="tool" :value="tool" />
+              </el-select>
+              <el-button text type="danger" @click="toolRateOverrides.splice(index, 1)">删除覆盖</el-button>
+            </div>
+            <ToolRateLimitEditor v-model="entry.policy" />
+          </div>
+          <el-button @click="toolRateOverrides.push({ name: '', policy: { mode: 'inherit' } })">添加工具覆盖</el-button>
+          <div class="muted hint">覆盖优先于默认策略；“继承业务声明”使用该工具的原声明。刷新能力清单会保留这里的设置。</div>
+        </div>
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="工具检索" name="retrieval">
@@ -365,10 +386,12 @@
               <div class="td-sec">治理参数</div>
               <div class="td-text">
                 超时 {{ row.timeout_ms ? row.timeout_ms + ' ms（ACC execution.timeout_ms 覆盖）' : '跟随工具源全局' }}
-                · 单工具限速 {{ row.rate_limit_per_min ? row.rate_limit_per_min + ' 次/分' : '不限（用工具源全局限速）' }}
+                · 单工具生效限额 {{ toolLimitLabel(row.effective_rate_limit) }}（该工具源内共享）
                 · {{ row.idempotent ? '幂等：失败可安全重试' : '非幂等：失败不自动重试' }}
                 · {{ row.readonly ? '只读' : '会改数据' }}
               </div>
+              <div class="muted">业务声明：{{ row.rate_limit ? row.rate_limit.count + ' 次/' + rateWindowLabel[row.rate_limit.window] : row.rate_limit_per_min ? row.rate_limit_per_min + ' 次/分钟' : '未声明限额' }}。生效来源：{{ ({ declaration: '业务声明', provider_default: '中枢默认策略', tool_override: '指定工具覆盖' } as any)[row.effective_rate_limit?.source] || '业务声明' }}。</div>
+              <el-button text type="primary" @click="editLimitsFromPreview">设置限额</el-button>
               <template v-if="row.confirm_prompt">
                 <div class="td-sec">审批通知话术（ACC approval.prompt，{参数名} 由实参填充后发给审批人）</div>
                 <div class="td-text">{{ row.confirm_prompt }}</div>
@@ -404,6 +427,7 @@
 </template>
 
 <script setup lang="ts">
+import ToolRateLimitEditor from '../components/ToolRateLimitEditor.vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
@@ -435,6 +459,18 @@ type ToolProviderEditBaseline = {
   auto_refresh_min: number;
   enabled: boolean;
 };
+type RatePolicy = { mode: 'inherit' | 'custom' | 'disabled'; count?: number; window?: string };
+const toolRateDefault = ref<RatePolicy>({ mode: 'inherit' });
+const toolRateOverrides = ref<Array<{ name: string; policy: RatePolicy }>>([]);
+const limitToolNames = ref<string[]>([]);
+const rateWindowLabel: Record<string, string> = { '1s': '秒', '1m': '分钟', '1h': '小时', '1d': '天' };
+function toolLimitLabel(limit: any): string {
+  return limit?.enabled ? `${limit.count} 次/${rateWindowLabel[limit.window] || limit.window}` : '关闭';
+}
+function editLimitsFromPreview(): void {
+  const row = list.value.find((item: any) => item.name === previewName.value);
+  if (row) { openEdit(row); toolFormTab.value = 'governance'; }
+}
 const form = reactive({ name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', spec_access_policy: 'signed_required' as SpecAccessChoice, log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
 const editBaseline = ref<ToolProviderEditBaseline | null>(null);
 const historicalAccessPending = computed(() => editing.value
@@ -883,6 +919,9 @@ async function probeAuthz(name: string): Promise<void> {
   finally { probing.value = ''; }
 }
 function openCreate(): void {
+  toolRateDefault.value = { mode: 'inherit' };
+  toolRateOverrides.value = [];
+  limitToolNames.value = [];
   editing.value = false;
   editBaseline.value = null;
   toolFormTab.value = 'basic';
@@ -890,6 +929,12 @@ function openCreate(): void {
   open.value = true;
 }
 function openEdit(row: any): void {
+  toolRateDefault.value = JSON.parse(JSON.stringify(row.tool_rate_limits?.default ?? { mode: 'inherit' }));
+  toolRateOverrides.value = Object.entries(row.tool_rate_limits?.overrides ?? {}).map(([name, policy]) => ({ name, policy: JSON.parse(JSON.stringify(policy)) as RatePolicy }));
+  limitToolNames.value = [];
+  api<{ tools: Array<{ name: string }> }>('/admin/api/tool-providers/' + encodeURIComponent(row.name) + '/tools')
+    .then((result) => { if (form.name === row.name) limitToolNames.value = result.tools.map((tool) => tool.name); })
+    .catch(() => { /* Existing configuration remains editable if the catalog is unavailable. */ });
   editing.value = true;
   toolFormTab.value = 'basic';
   const policy = specAccessPolicyValue(row.spec_access_policy);
@@ -948,7 +993,11 @@ async function save(): Promise<void> {
   }
   saving.value = true;
   try {
-    const payload: Record<string, unknown> = { ...form };
+    const names = toolRateOverrides.value.map((entry) => entry.name);
+    if (new Set(names).size !== names.length || names.some((name) => !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))) throw new Error('指定工具覆盖的工具名不能为空、重复或包含特殊字符');
+    const payload: Record<string, unknown> = { ...form, tool_rate_limits: {
+      default: toolRateDefault.value, overrides: Object.fromEntries(toolRateOverrides.value.map((entry) => [entry.name, entry.policy])),
+    } };
     // 历史 URL 工具源未确认时省略该字段：后端会保留既有 sentinel，空串绝不代表允许公开。
     if (form.spec_source === 'url' && form.spec_access_policy === '') delete payload.spec_access_policy;
     await api('/admin/api/tool-providers', { method: 'POST', body: JSON.stringify(payload) });

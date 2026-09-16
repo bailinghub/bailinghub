@@ -1,3 +1,4 @@
+import { normalizeToolRateLimitPolicies } from '../contracts/tool-rate-limits';
 import { randomUUID } from 'node:crypto';
 import { validateBudgetPolicy } from '../runtime/budget-runtime';
 import type { PageRule } from '../platform/pagecontext';
@@ -147,6 +148,7 @@ export function prepareStorageBucketConfig(input: Partial<StorageBucket>): Prepa
   const publicBaseUrl = str(input.public_base_url).replace(/\/+$/, '');
   if (kind !== 'local' && !publicBaseUrl) return fail('公开访问域名 public_base_url 必填（拼最终媒体 URL 用）');
   const region = str(input.region);
+  if (kind === 'oss' && !region) return fail('OSS 必须填地域 region（如 cn-shanghai）');
   if (kind === 'cos' && !region) return fail('COS 必须填地域 region（如 ap-shanghai）');
   return {
     ok: true,
@@ -372,6 +374,13 @@ export function prepareToolProviderConfig(
     : requestedSpecAccessPolicy
       ? requestedSpecAccessPolicy as ToolProvider['spec_access_policy']
       : old?.spec_source === 'url' ? oldSpecAccessPolicy : 'signed_required';
+  let toolRateLimits = old?.tool_rate_limits;
+  if (input.tool_rate_limits !== undefined) {
+    try { toolRateLimits = normalizeToolRateLimitPolicies(input.tool_rate_limits); }
+    catch (error) { return fail((error as Error).message); }
+  }
+  const providerLimit = Number(input.rate_limit_per_min ?? old?.rate_limit_per_min ?? 120);
+  if (!Number.isSafeInteger(providerLimit) || providerLimit < 0 || providerLimit > 1_000_000) return fail('工具源总限额需为 0–1000000 的整数，0=关闭');
   const autoRefreshMin = Math.min(Math.max(Number(input.auto_refresh_min ?? old?.auto_refresh_min ?? 0) || 0, 0), 1440);
   const enabled = input.enabled !== false;
 
@@ -423,7 +432,8 @@ export function prepareToolProviderConfig(
       secret,
       log_payload: input.log_payload !== false,
       timeout_ms: Math.min(Math.max(Number(input.timeout_ms ?? old?.timeout_ms ?? 10000) || 10000, 1000), 60000),
-      rate_limit_per_min: Math.max(Number(input.rate_limit_per_min ?? old?.rate_limit_per_min ?? 120) || 0, 0),
+      rate_limit_per_min: providerLimit,
+      tool_rate_limits: toolRateLimits,
       auto_refresh_min: autoRefreshMin,
       enabled,
       description: optionalStr(input.description),

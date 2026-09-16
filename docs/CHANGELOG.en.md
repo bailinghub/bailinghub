@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar shop, product-maintenance or inventory scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.7.0.en.md).
+Lead each release with a familiar shop, product-maintenance or inventory scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.8.0.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,16 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.8.0 - Longer task recovery, attachments and task controls
+
+Release date: 2026-09-16. Pair SDK/DSH 0.6.0; see [scenarios](RELEASE_NOTES_v0.8.0.en.md) and [upgrade guide](UPGRADE_v0.8.0.en.md).
+
+- Add public image attachment delivery, read-only original receipts and administrator task budgets, concurrency, pause and cancellation.
+- Clarify discovery counts and structured failures; configure inherited, custom or disabled Hub tool limits while retaining hour/day windows.
+- Fix cross-turn artifact run links, original argument recovery, legal long Client IDs and concurrent metadata updates; uncertain writes are never replaced.
+- Add migrations060–062. Task enrollment persists on original Agent Sessions, cancellation does not remove it, and enrolled deployments must not downgrade to versions that ignore it.
+- Keep business APIs/authorization/approval; hosts supply matched persistent stores and opt into cross-turn reuse. See release limits; no full-plan automatic restart is claimed.
 
 ## v0.7.0 - cross-system conversations, authorization names and centralized setup
 

@@ -25,8 +25,10 @@ import { MysqlKbDatasourceRepository, MysqlKnowledgeRepository } from './config-
 import { InstanceBrandingRepository } from './config-instance-branding-repository';
 import type { InstanceBrandingRepositoryContract } from './config-instance-branding-repository';
 import { AgentAuthRepository, type AgentAuthRepositoryContract } from './config-agent-auth-repository';
+import { AgentArtifactRepository } from './config-agent-artifact-repository';
 import { AgentClientRuntimeRepository } from './config-agent-client-runtime-repository';
 import { AgentConversationAuditRepository } from './config-agent-conversation-audit-repository';
+import { AgentTaskControlRepository } from './config-agent-task-control-repository';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 export type RouteRepositoryContract = Omit<Pick<RouteRepository, keyof RouteRepository>, 'compareAndSetAgentSetup'>
@@ -46,7 +48,8 @@ export type TargetRepositoryContract = Pick<TargetRepository, keyof TargetReposi
 export type StorageBucketRepositoryContract = Pick<StorageBucketRepository, keyof StorageBucketRepository>;
 export type AlertRuleRepositoryContract = Pick<AlertRuleRepository, keyof AlertRuleRepository>;
 export type ChatConfigRepositoryContract = Pick<ChatConfigRepository, keyof ChatConfigRepository>;
-export type RateLimitLedgerContract = Pick<RateLimitLedger, keyof RateLimitLedger>;
+export type RateLimitLedgerContract = Omit<Pick<RateLimitLedger, keyof RateLimitLedger>, 'consumeAll'>
+  & Partial<Pick<RateLimitLedger, 'consumeAll'>>;
 export type ApprovalLedgerContract =
   Omit<Pick<ApprovalLedger, keyof ApprovalLedger>, 'forJobs'>
   & Partial<Pick<ApprovalLedger, 'forJobs'>>;
@@ -92,11 +95,14 @@ export interface ConfigStoreContract {
   readonly deliveryDlq: DeliveryDlqLedgerContract;
   readonly observability: ObservabilityLedgerContract;
   /** 新 Agent Auth 能力对旧宿主仓储保持可选；缺失时 HTTP 面 fail closed。 */
+  readonly agentArtifacts?: Pick<AgentArtifactRepository, keyof AgentArtifactRepository>;
   readonly agentAuth?: AgentAuthRepositoryContract;
   /** Agent Client Runtime v1 对旧宿主保持可选；缺失时新 API fail closed。 */
   readonly agentClientRuntime?: AgentClientRuntimeRepositoryContract;
   /** Optional, admin-only visible transcript ledger; never a source of Agent memory. */
   readonly agentConversationAudit?: AgentConversationAuditRepositoryContract;
+  /** Optional for extension hosts. Managed Sessions must never fall back without this repository. */
+  readonly agentTaskControl?: Pick<AgentTaskControlRepository, keyof AgentTaskControlRepository>;
   init(): Promise<void>;
   close?(): Promise<void>;
   readonly db: Pool;
@@ -130,8 +136,10 @@ export class ConfigStore implements ConfigStoreContract {
   readonly deliveryDlq = new DeliveryDlqLedger(() => this.pool);
   readonly observability = new ObservabilityLedger(() => this.pool);
   readonly agentAuth = new AgentAuthRepository(() => this.pool);
+  readonly agentArtifacts = new AgentArtifactRepository(() => this.pool);
   readonly agentClientRuntime = new AgentClientRuntimeRepository(() => this.pool);
   readonly agentConversationAudit = new AgentConversationAuditRepository(() => this.pool);
+  readonly agentTaskControl = new AgentTaskControlRepository(() => this.pool);
 
   constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);

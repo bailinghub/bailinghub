@@ -1,3 +1,3 @@
-# Versioned release notes
+# Release notes
 
-See [BailingHub v0.7.0](RELEASE_NOTES_v0.7.0.en.md).
+[Core 0.8.0](RELEASE_NOTES_v0.8.0.en.md) · [Upgrade](UPGRADE_v0.8.0.en.md)

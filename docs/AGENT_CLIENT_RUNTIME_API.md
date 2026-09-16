@@ -1,5 +1,7 @@
 # Agent Client Runtime v1
 
+未发布配套增量：[任务控制](AGENT_TASK_CONTROL.md)为 turn 增加宿主 `task_binding` 和原样回显；已加入任务的 Session 不能省略，业务搜索须使用原 `run_id`。原调用只读核对与显式继续分别处理。
+
 本版本化接口让已完成 Agent Auth 网页授权的本地智能体在本地承担规划，同时继续复用 BailingHub 的身份重验、工具治理、审批、审计与对话总账。它不替代现有 `/run`、聊天入口或执行器协议。配套的部署、业务授权页和宿主接入步骤见 [Agent Client v1 接入指南](AGENT_CLIENT_QUICKSTART.md)，身份授权契约见 [Agent Auth v1](AGENT_AUTH_API.md)。
 
 所有接口只接受 `Authorization: Bearer <Agent access token>`，响应均 `Cache-Control: no-store`。业务运行与能力接口的工作区授权面始终取以下交集：Client `allowed_routes` ∩ Agent Session `allowed_routes` ∩ 启用且 audience 允许的 route ∩ `tools.agent_direct`。`agent_client.enabled=false` 关闭 Runtime 工作区、上下文与能力接口，不关闭旧 `/agent-api/v1/tools`。
@@ -92,6 +94,38 @@ Bootstrap 只逐字段抽取 `target_config.system_prompt`，再拼接可选 `ag
 
 能力搜索最多返回 12 个完整 typed tools，schema 为 `bailing.agent-capability-search.v1`。检索只在当前授权集内进行；任一工具源的 embedding 不可用时，整次搜索确定性退回 lexical 排序。
 能力搜索必须提供非空 `query`，或者提供属于当前 Agent Session 与 route 的合法 `run_id`，由服务端回退使用该 run 的 `user_input`。
+
+搜索响应新增可选 `discovery` 元数据，以下示例表示当前授权目录的 14 项候选中，本次返回排序靠前的 12 项：
+
+```json
+{
+  "discovery": {
+    "mode": "ranked_candidates",
+    "scope": "current_authorization",
+    "returned_count": 12,
+    "authorized_total": 14,
+    "matched_total": null,
+    "matched_total_exact": false,
+    "limit": 12,
+    "truncated": true,
+    "has_more": true,
+    "truncation_scope": "authorized_catalog",
+    "pagination": "unsupported"
+  }
+}
+```
+
+`authorized_total` 来自本次响应相同 `route`、`capability_revision` 对应的授权目录，已经过会话、路由、主体和直调策略裁剪。它不是系统全量能力数，也不是客户端会话共享的已加载工具数。`returned_count` 是本次 `tools.length`；`limit` 是实际返回上限。`truncated` / `has_more` 只表示授权候选因上限未全部返回，不表示还有确定匹配结果，也不提供下一页。
+
+搜索按相关性排序，不过滤零分候选。例如查询库存时，已授权的订单工具仍可能作为后续候选返回；不能据返回数量断言系统具备或缺少某项能力。`matched_total` 为 `null`，精确性为 `false`，不可用 `0` 或返回数量代替。授权目录为空时，`returned_count` 和 `authorized_total` 均为 `0`，仍不代表其他授权范围没有能力。
+
+这是现有 v1 响应的可选扩展；旧客户端可以忽略，新客户端遇到缺少 `discovery` 的旧服务端应把这些统计视为未知。搜索不修改 Core 权限或审批规则，宿主负责说明动态工具的替换/追加方式和当前有效的已加载工具。
+
+## 工具调用与恢复
+
+工具已经尝试发送、但网络中断或响应正文丢失时，Core 返回 `reconciliation_required` 和 `auto_retry_allowed: false`；只读和声明幂等的工具也不能被标为 `rejected_before_dispatch`。该状态表示尚无可信结果，不证明业务已经执行或尚未执行。
+
+客户端必须保留原 `invocation_id` 及授权关联，使用现有 resume 恢复原调用。Core 重新验证当前授权并回放已保存的结果，不重新派发；结果仍不确定时需要人工核实，不能新建库存调整、订单更新等操作，也不能切换授权或改用另一工具重复执行。重新发现工具与恢复业务调用是两个动作。原审批和执行日志机制保持不变。
 
 ## Complete
 

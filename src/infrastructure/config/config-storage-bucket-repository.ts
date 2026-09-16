@@ -19,12 +19,12 @@ export class StorageBucketRepository {
   /** 新建/更新。编辑时 access_key / secret_key 传空 = 保留原值（列表不回显完整凭证，没法回填）。 */
   async upsert(b: StorageBucket): Promise<void> {
     const existing = (!b.secret_key || !b.access_key) ? await this.get(b.name) : null;
-    let sk = b.secret_key;
+    let sk = b.kind === 'local' ? 'local' : b.secret_key;
     if (!sk) {
       if (!existing) throw new Error('新建存储桶必须填 SecretKey');
       sk = existing.secret_key;
     }
-    let ak = b.access_key;
+    let ak = b.kind === 'local' ? 'local' : b.access_key;
     if (!ak) {
       if (!existing) throw new Error('新建存储桶必须填 SecretId / AccessKeyId');
       ak = existing.access_key;

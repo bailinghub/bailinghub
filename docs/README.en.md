@@ -6,6 +6,7 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [RELEASE_NOTES_v0.8.0.md](RELEASE_NOTES_v0.8.0.md) · [English](RELEASE_NOTES_v0.8.0.en.md) | v0.8.0: long tasks, original receipts, attachments and upgrade boundaries. |
 | [RELEASE_NOTES_v0.7.0.md](RELEASE_NOTES_v0.7.0.md) · [English](RELEASE_NOTES_v0.7.0.en.md) | v0.7.0 shop/inventory scenarios, upgrade steps and limits. |
 | [user-guide/conversations.en.md](user-guide/conversations.en.md) | Multi-account conversations, full-text review and offline recovery for users. |
 | [QUICKSTART.en.md](QUICKSTART.en.md) | Install BailingHub, run the Docker demo, create the first route, and connect the first business tool. |
@@ -21,7 +22,9 @@ This directory contains public documentation for the open-source BailingHub proj
 | [AGENT_SUBJECT_DISPLAY.en.md](AGENT_SUBJECT_DISPLAY.en.md) | Business authorization display names: responsibilities, new approvals and existing-session synchronization. |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | Agent Auth v1, PKCE, trusted business identity, and revocation. |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Chinese Agent Auth v1 protocol. |
+| [INVOCATION_RECEIPTS.md](INVOCATION_RECEIPTS.md) | Candidate: read an original receipt without continuing its business operation. |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | Agent Client Runtime v1 workspaces, turns, tools, and completion contract. |
+| [AGENT_TASK_CONTROL.en.md](AGENT_TASK_CONTROL.en.md) · [Chinese](AGENT_TASK_CONTROL.md) | Core 0.8.0: cumulative task budgets, actual dispatch, pause and SDK/DSH host integration. |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Chinese Agent Client Runtime v1 contract. |
 | [AGENT_CONVERSATION_AUDIT.en.md](AGENT_CONVERSATION_AUDIT.en.md) | Complete visible conversation audit, member confirmation, run ownership and admin pagination. |
 | [AGENT_CONVERSATION_AUDIT.md](AGENT_CONVERSATION_AUDIT.md) | Chinese complete conversation audit protocol. |

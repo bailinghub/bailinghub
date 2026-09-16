@@ -29,18 +29,13 @@ You choose which business APIs become available. BailingHub connects the convers
   <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
 </picture>
 
-## v0.7.0: check stock, then update and list a shop product
+## v0.8.0: continue and control longer business tasks
 
-> “Check tumbler stock. If available, change the corresponding shop product's price to 59 and list it.”
+Move between shop edits, inventory queries and image uploads. Inspect original operations after interruptions; administrators can bound cumulative task calls and pause further dispatch. Existing multi-system authorization and display names remain.
 
-Select inventory and shop authorizations on one Hub. The Agent uses each system's tools and authority for the right step. Controlled system descriptions explain their roles, business-supplied names identify the approved subjects, and centralized setup and visible records help administrators configure and trace the work.
+Pair **Core 0.8.0 + MCP / Agent Client SDK 0.6.0 + DSH 0.6.0**. Images are public in the first phase; cross-turn reuse requires host opt-in, and task enrollment persists on original authorizations. Original permissions and approvals remain.
 
-The business APIs and product mapping must already exist. Original approvals apply; a stock read is not a reservation, and a completed price change is not an approved listing.
-
-Full pairing: **Core 0.7.0 + MCP / Agent Client SDK 0.5.0 + DSH 0.5.0**, or a custom host implementing the same interfaces. Existing same-system conversations remain supported; cross-system scope stays within one Hub and audit domain.
-
-[Changes and upgrade steps](docs/RELEASE_NOTES_v0.7.0.en.md) · [Get started](docs/user-guide/conversations.en.md) · [Centralized setup](docs/LOCAL_AGENT_SETUP.en.md)
-
+[Release scenarios](docs/RELEASE_NOTES_v0.8.0.en.md) · [Upgrade and enablement](docs/UPGRADE_v0.8.0.en.md) · [Setup](docs/LOCAL_AGENT_SETUP.en.md)
 ## Operate the System by Conversation
 
 Most business software already has the data, permission model, and APIs it needs. What it lacks is a safe bridge between a natural-language request and the exact operation the current user is allowed to perform.
@@ -208,7 +203,9 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [Quickstart](docs/QUICKSTART.en.md) — deploy and run the first route.
 - [Docker Demo](docs/DEMO.en.md) — complete the sample business-operation loop.
 - [Integration Guide](docs/INTEGRATION.en.md) — connect an existing application.
+- [Read-only invocation receipts](docs/INVOCATION_RECEIPTS.md) — inspection without continuing a business operation.
 - [Agent Client v1](docs/AGENT_CLIENT_QUICKSTART.en.md) — browser authorization and local planning.
+- [Local Agent attachment space](docs/GENERATED_ARTIFACTS.en.md) — the image-first extension for storing local outputs and obtaining business-usable URLs.
 - [Local Agent Setup](docs/LOCAL_AGENT_SETUP.en.md) — configure authorization, descriptions, tools, and connection checks in one place.
 - [System Information](docs/AGENT_SYSTEM_INFO.en.md) — explain selected systems before searching for tools.
 - [Business Tools and Governance](docs/TOOLS.en.md) — declare, sign, approve, and audit tools.

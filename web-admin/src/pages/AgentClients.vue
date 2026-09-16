@@ -1,6 +1,6 @@
 <template>
   <div class="agent-clients-page">
-    <div class="page-navigation"><div><b>本地智能体</b><span>配置接入与管理授权设备</span></div><el-radio-group v-model="pageTab"><el-radio-button value="setup">接入配置</el-radio-button><el-radio-button value="activity">设备与运行</el-radio-button></el-radio-group></div>
+    <div class="page-navigation"><div><b>本地智能体</b><span>配置接入与管理授权设备</span></div><div class="actions"><el-button v-if="me.can('clients:read') && me.hasModule('agent-tasks')" @click="router.push('/agent-tasks')">任务控制</el-button><el-radio-group v-model="pageTab"><el-radio-button value="setup">接入配置</el-radio-button><el-radio-button value="activity">设备与运行</el-radio-button></el-radio-group></div></div>
     <el-card v-if="pageTab === 'activity'" shadow="never">
       <template #header>
         <div class="head">
@@ -165,6 +165,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import HelpTip from '../components/HelpTip.vue';
 import AgentSetupPanel from '../components/AgentSetupPanel.vue';
 import { kernelFetch, kernelOrigin } from '../runtime-path';
+import { useMe } from '../store';
 
 interface Workspace { route: string; name: string; description?: string }
 interface SetupWorkspace extends Workspace { enabled: boolean; runtime_enabled: boolean; direct_enabled: boolean; source_count: number; system_info_configured: boolean }
@@ -173,6 +174,7 @@ interface Application { app_id: string; name: string; enabled: boolean; agent_au
 interface SessionRow { subject_display?: { name: string } | null; subject_display_status?: 'provided' | 'missing'; session_id: string; client_app_id: string; device_label: string; principal?: { id?: string; tenant?: string; roles?: string[] }; on_behalf_of: string; allowed_routes: string[]; last_seen_at?: string; refresh_expires_at: string; state: 'active' | 'expired' | 'revoked' }
 
 const router = useRouter();
+const me = useMe();
 const pageRoute = useRoute();
 const pageTab = ref('setup');
 const days = ref(30);

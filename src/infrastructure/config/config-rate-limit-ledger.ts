@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { dt, dtAt } from '../../core/config/config-codec';
+import type { RateLimitDecision, RateLimitRequest } from '../../core/contracts/tool-rate-limits';
 
 export class RateLimitLedger {
   constructor(private readonly poolOf: () => any) {}
@@ -52,5 +53,52 @@ export class RateLimitLedger {
 
   async clear(bucket: string): Promise<void> {
     await this.pool.query('DELETE FROM bz_rate_limits WHERE bucket=?', [bucket]);
+  }
+
+  /** One connection, deterministic locks and one transaction: a rejected gate charges no other gate. */
+  async consumeAll(requests: RateLimitRequest[]): Promise<RateLimitDecision> {
+    const gates = requests.filter((gate) => gate.limit > 0);
+    if (!gates.length) return { limited: false };
+    const conn = await this.pool.getConnection();
+    const locks: string[] = [];
+    let transaction = false;
+    try {
+      for (const bucket of [...new Set(gates.map((gate) => gate.bucket))].sort()) {
+        const name = this.lockName(bucket);
+        const [rows] = await conn.query('SELECT GET_LOCK(?, 2) AS ok', [name]);
+        if (Number(rows[0]?.ok) !== 1) throw new Error('rate limit lock timeout');
+        locks.push(name);
+      }
+      await conn.beginTransaction();
+      transaction = true;
+      const now = Date.now();
+      for (const gate of gates) {
+        const cutoff = dtAt(now - gate.windowSec * 1000);
+        const [rows] = await conn.query('SELECT COUNT(*) AS n FROM bz_rate_limits WHERE bucket=? AND created_at > ?', [gate.bucket, cutoff]);
+        const count = Number(rows[0]?.n ?? 0);
+        if (count >= gate.limit) {
+          // Offset handles a limit lowered while the original window is still occupied.
+          const [expiry] = await conn.query('SELECT created_at FROM bz_rate_limits WHERE bucket=? AND created_at > ? ORDER BY created_at, id LIMIT 1 OFFSET ?', [gate.bucket, cutoff, count - gate.limit]);
+          const raw = expiry[0]?.created_at;
+          const oldest = raw instanceof Date ? raw.getTime() : Date.parse(String(raw).replace(' ', 'T') + 'Z');
+          await conn.rollback();
+          transaction = false;
+          return { limited: true, bucket: gate.bucket, retryAfterMs: Number.isFinite(oldest) ? Math.max(1, oldest + gate.windowSec * 1000 - now) : gate.windowSec * 1000 };
+        }
+      }
+      for (const gate of gates) {
+        await conn.query('DELETE FROM bz_rate_limits WHERE bucket=? AND created_at <= ?', [gate.bucket, dtAt(now - gate.windowSec * 1000)]);
+        await conn.query('INSERT INTO bz_rate_limits (bucket, created_at) VALUES (?, ?)', [gate.bucket, dtAt(now)]);
+      }
+      await conn.commit();
+      transaction = false;
+      return { limited: false };
+    } catch (error) {
+      if (transaction) await conn.rollback().catch(() => undefined);
+      throw error;
+    } finally {
+      for (const name of locks.reverse()) await conn.query('SELECT RELEASE_LOCK(?)', [name]).catch(() => undefined);
+      conn.release();
+    }
   }
 }

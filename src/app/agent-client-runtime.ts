@@ -8,6 +8,8 @@ import type { Route } from '../core/contracts/types';
 import type { KbService } from '../services/kb';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import { AgentClientRuntimeConflictError, type AgentClientRunRecord } from '../infrastructure/config/config-agent-client-runtime-repository';
+import { admitAgentTaskTurnFor, bindingForTask, parseAgentTaskBinding, resolveAgentTaskRunFor, assertAgentLegacyTaskAllowedFor } from './agent-task-control';
+import { assertTaskCanDispatch } from '../core/runtime/agent-task-control';
 
 export const AGENT_RUNTIME_PROFILE_SCHEMA = 'bailing.agent-runtime-profile.v1';
 export const AGENT_TURN_CONTEXT_SCHEMA = 'bailing.agent-turn-context.v1';
@@ -27,6 +29,7 @@ export interface AgentTurnInput {
   user_input: string;
   page_context?: Record<string, unknown>;
   renderers?: string[];
+  task_binding?: unknown;
 }
 
 export interface AgentRunCompleteInput {
@@ -258,12 +261,15 @@ export async function prepareAgentTurnFor(
     user_input: strictClientText(raw.user_input, 'user_input', 64_000, true),
     ...(raw.page_context ? { page_context: raw.page_context } : {}),
     ...(renderers !== undefined ? { renderers } : {}),
+    ...(raw.task_binding !== undefined ? { task_binding: parseAgentTaskBinding(raw.task_binding) } : {}),
   };
   if (Buffer.byteLength(JSON.stringify(input.page_context ?? {}), 'utf8') > 16 * 1024) {
     throw new AgentToolApiError(413, 'page_context_too_large', 'page_context exceeds 16 KiB.');
   }
   const repo = deps.toolProxyDeps.configStore?.agentClientRuntime;
   if (!repo) throw new AgentToolApiError(503, 'agent_runtime_unavailable', 'Agent Client Runtime requires the MySQL control plane.');
+  const managedTask = await admitAgentTaskTurnFor(deps.toolProxyDeps.configStore, auth,
+    routeKey, input.client_conversation_id, input.task_binding);
   const { route, catalog, activeLimit } = await authorizedRuntime(deps, auth, routeKey);
   const threadId = await repo.resolveConversation({
     session_id: auth.session.session_id, client_app_id: auth.client.app_id, route_key: route.route_key,
@@ -281,6 +287,8 @@ export async function prepareAgentTurnFor(
     if (error instanceof AgentClientRuntimeConflictError) throw new AgentToolApiError(409, 'turn_conflict', error.message);
     throw error;
   }
+  if (managedTask) await deps.toolProxyDeps.configStore!.agentTaskControl!.bindRuntimeRun(
+    managedTask.taskId, managedTask.scopeHash, auth.session.session_id, reserved.run.run_id);
   if (reserved.run.context) return reserved.run.context;
 
   // 先从总账装配本轮之前的记忆，再追加本轮 user visible message。
@@ -300,6 +308,7 @@ export async function prepareAgentTurnFor(
   const context: Record<string, unknown> = {
     schema_version: AGENT_TURN_CONTEXT_SCHEMA,
     run_id: reserved.run.run_id,
+    ...(managedTask ? { task_binding: bindingForTask(managedTask) } : {}),
     profile_revision: profileBody['revision'],
     capability_revision: selected.capability_revision,
     context: {
@@ -340,6 +349,10 @@ export async function searchAgentCapabilitiesFor(
 ): Promise<Record<string, unknown>> {
   let query = input.query === undefined ? '' : strictClientText(input.query, 'query', 2000);
   if (!query.trim() && !input.run_id) throw new AgentToolApiError(400, 'invalid_request', 'query is required when run_id is not provided.');
+  if (input.run_id) {
+    const task = await resolveAgentTaskRunFor(deps.toolProxyDeps.configStore, auth, safeRunId(input.run_id), routeKey, true);
+    if (task) assertTaskCanDispatch(task, deps.toolProxyDeps.now());
+  } else await assertAgentLegacyTaskAllowedFor(deps.toolProxyDeps.configStore, auth.session.session_id);
   const { activeLimit } = await authorizedRuntime(deps, auth, routeKey);
   if (input.run_id) {
     const runId = safeRunId(input.run_id);

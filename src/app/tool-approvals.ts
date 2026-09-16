@@ -43,6 +43,10 @@ export function approvalDepsForStores(
       if (!a) return null;
       return (await cs.approvals.use(a.id)) ? a.id : null;
     },
+    async peekApproved(tool, hash) {
+      const a = await cs.approvals.find(job.job_id, tool, hash, 'approved');
+      return a?.id ?? null;
+    },
     async findApprovedAnyArgs(tool) {
       const rows = await cs.approvals.approvedUnusedForJob(job.job_id).catch(() => []);
       const a = rows.find((r) => r.tool === tool);

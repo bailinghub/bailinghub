@@ -103,6 +103,7 @@ const englishCompanions = {
   'docs/RELEASE_NOTES_v0.3.4.md': 'docs/RELEASE_NOTES_v0.3.4.en.md',
   'docs/RELEASE_NOTES_v0.5.0.md': 'docs/RELEASE_NOTES_v0.5.0.en.md',
   'docs/RELEASE_NOTES_v0.5.1.md': 'docs/RELEASE_NOTES_v0.5.1.en.md',
+  'docs/RELEASE_NOTES_v0.8.0.md': 'docs/RELEASE_NOTES_v0.8.0.en.md',
   'docs/RELEASE_NOTES_v0.7.0.md': 'docs/RELEASE_NOTES_v0.7.0.en.md',
   'docs/RELEASE_NOTES_v0.6.1.md': 'docs/RELEASE_NOTES_v0.6.1.en.md',
   'docs/RELEASE_NOTES_v0.6.0.md': 'docs/RELEASE_NOTES_v0.6.0.en.md',

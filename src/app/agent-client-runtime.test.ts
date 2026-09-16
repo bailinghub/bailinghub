@@ -102,7 +102,12 @@ function fixture() {
     now: () => '2026-01-01T00:00:00.000Z', sleep: async () => undefined,
   };
   const deps: AgentClientRuntimeDeps = { toolProxyDeps, kbService: null, stateStore };
-  return { deps, repo, setRoute: (value: Route) => { currentRoute = value; }, counts: () => ({ userWrites, assistantWrites }) };
+  return {
+    deps, repo,
+    setRoute: (value: Route) => { currentRoute = value; },
+    setSpec: (value: string) => { provider.spec_json = value; },
+    counts: () => ({ userWrites, assistantWrites }),
+  };
 }
 
 test('Agent Runtime bootstrap 只返回安全字段并声明本地规划治理边界', async () => {
@@ -218,4 +223,74 @@ test('capability search 空 query 必须绑定合法 run，且可回退到该 ru
   const fallback = await searchAgentCapabilitiesFor(fx.deps, auth(), 'tenant-agent', { run_id: RUN_ID });
   assert.equal(fallback['query'], '查询员工 Ada');
   assert.equal((fallback['tools'] as Array<{ name: string }>)[0]?.name, 'staff_list');
+});
+
+test('capability search distinguishes empty, bounded and truncated authorized candidate catalogs', async (t) => {
+  for (const size of [0, 2, 14]) {
+    await t.test(`authorized catalog size ${size}`, async () => {
+      const fx = fixture();
+      fx.setSpec(JSON.stringify({
+        openapi: '3.0.0', info: { title: 'Synthetic inventory', version: '1' },
+        paths: Object.fromEntries(Array.from({ length: size }, (_, index) => [`/inventory/${index}`, {
+          get: {
+            operationId: `inventory_${index}`, summary: 'Read inventory',
+            'x-agent-capability': { version: 1, enabled: true, scope: 'inventory.read' },
+          },
+        }])),
+      }));
+      const result = await searchAgentCapabilitiesFor(fx.deps, auth(), 'tenant-agent', { query: 'inventory', limit: 12 });
+      assert.equal((result['tools'] as unknown[]).length, Math.min(size, 12));
+      assert.deepEqual(result['discovery'], {
+        mode: 'ranked_candidates', scope: 'current_authorization', returned_count: Math.min(size, 12),
+        authorized_total: size, matched_total: null, matched_total_exact: false,
+        limit: 12, truncated: size > 12, has_more: size > 12,
+        truncation_scope: 'authorized_catalog', pagination: 'unsupported',
+      });
+    });
+  }
+});
+
+test('capability search does not claim exact matches for an unrelated query', async () => {
+  const fx = fixture();
+  const result = await searchAgentCapabilitiesFor(fx.deps, auth(), 'tenant-agent', { query: 'zzz_quasar_999', limit: 8 });
+  assert.equal((result['tools'] as unknown[]).length, 2, 'ranked search still includes zero-score authorized candidates');
+  const discovery = result['discovery'] as Record<string, unknown>;
+  assert.equal(discovery['mode'], 'ranked_candidates');
+  assert.equal(discovery['matched_total'], null);
+  assert.equal(discovery['matched_total_exact'], false);
+  assert.equal(discovery['truncated'], false);
+  assert.equal(discovery['authorized_total'], 2);
+});
+
+test('capability search counts only tools remaining after authorization and direct-tool policy', async () => {
+  const fx = fixture();
+  const declaration = JSON.parse(spec());
+  declaration.paths['/orders'].post = {
+    operationId: 'order_update', summary: 'Update order',
+    'x-agent-capability': { version: 1, enabled: true, scope: 'tenant.order.write' },
+  };
+  fx.setSpec(JSON.stringify(declaration));
+  const limited = route();
+  limited.tools = { ...limited.tools, sources: [{ provider: 'business', allow: ['tenant.order.*'] }] };
+  fx.setRoute(limited);
+  const result = await searchAgentCapabilitiesFor(fx.deps, auth(), 'tenant-agent', { query: 'order', limit: 1 });
+  assert.deepEqual((result['tools'] as Array<{ name: string }>).map((tool) => tool.name), ['order_list']);
+  const discovery = result['discovery'] as Record<string, unknown>;
+  assert.equal(discovery['authorized_total'], 1, 'scope-excluded reads and direct-policy-excluded writes must not be counted');
+  assert.equal(discovery['returned_count'], 1);
+  assert.equal(discovery['has_more'], false);
+  assert.equal(JSON.stringify(result).includes('staff_list'), false);
+  assert.equal(JSON.stringify(result).includes('order_update'), false);
+
+  const noSubject = auth();
+  noSubject.session.on_behalf_of = '';
+  const empty = await searchAgentCapabilitiesFor(fx.deps, noSubject, 'tenant-agent', { query: 'order' });
+  assert.equal((empty['discovery'] as Record<string, unknown>)['authorized_total'], 0);
+  assert.deepEqual(empty['tools'], []);
+  const denied = auth();
+  denied.session.allowed_routes = [];
+  await assert.rejects(
+    searchAgentCapabilitiesFor(fx.deps, denied, 'tenant-agent', { query: 'order' }),
+    (error) => error instanceof AgentToolApiError && error.code === 'route_not_allowed',
+  );
 });

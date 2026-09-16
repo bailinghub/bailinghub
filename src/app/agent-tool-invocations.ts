@@ -1,3 +1,7 @@
+import { openInvocationArguments, sealInvocationArguments } from './agent-invocation-snapshot';
+import { bindingForTask, resolveAgentTaskRunFor } from './agent-task-control';
+import { taskAssert } from '../core/runtime/agent-task-control';
+import type { ToolRateLimitFeedback } from '../core/contracts/tools';
 import { createHash, randomUUID } from 'node:crypto';
 import { agentDirectToolsConfig } from '../core/config/tools-config';
 import type { ToolDefinition } from '../core/contracts/tool-definition';
@@ -12,7 +16,7 @@ import type { AgentClientRunRecord } from '../infrastructure/config/config-agent
 import type { ToolProxyDeps } from './tool-proxy';
 import {
   AGENT_TOOL_JOB_MARKER,
-  AGENT_TOOL_JOB_SOURCE_PREFIX,
+  agentToolJobSource,
   AGENT_TOOL_JOB_TARGET,
   isAgentToolInvocationJob,
 } from './agent-tool-job';
@@ -26,6 +30,8 @@ const INVOCATION_LOCK_TTL_MS = 15 * 60_000;
 
 export const AGENT_TOOL_CATALOG_SCHEMA = 'bailing.agent-tool-catalog.v1';
 export const AGENT_TOOL_INVOCATION_SCHEMA = 'bailing.agent-tool-invocation.v1';
+export const AGENT_INVOCATION_RECEIPT_SCHEMA = 'bailing.agent-invocation-receipt.v1';
+export const AGENT_INVOCATION_INSPECTION_SCHEMA = 'bailing.agent-invocation-inspection-capabilities.v1';
 const AGENT_TOOL_EXECUTION_FINGERPRINT_SCHEMA = 'bailing.agent-tool-execution.v1';
 
 export type AgentToolInvocationState =
@@ -61,12 +67,28 @@ export interface AgentToolCatalog {
 }
 
 export const AGENT_TOOL_SEARCH_SCHEMA = 'bailing.agent-capability-search.v1';
+export interface AgentToolDiscovery {
+  mode: 'ranked_candidates';
+  scope: 'current_authorization';
+  returned_count: number;
+  authorized_total: number;
+  matched_total: null;
+  matched_total_exact: false;
+  limit: number;
+  truncated: boolean;
+  has_more: boolean;
+  truncation_scope: 'authorized_catalog';
+  pagination: 'unsupported';
+}
+
 export interface AgentToolSearchResult {
   schema_version: typeof AGENT_TOOL_SEARCH_SCHEMA;
   route: string;
   capability_revision: string;
   query: string;
   tools: AgentToolCatalogItem[];
+  /** Optional for compatibility with earlier v1 responses; counts share this result's authorized surface. */
+  discovery?: AgentToolDiscovery;
 }
 
 export interface AgentToolInvocationResult {
@@ -77,9 +99,36 @@ export interface AgentToolInvocationResult {
   state: AgentToolInvocationState;
   ok: boolean;
   auto_retry_allowed: boolean;
+  retry_after_ms?: number;
+  rate_limit?: ToolRateLimitFeedback;
   text: string;
   business_status?: number;
   approval_id?: number;
+}
+
+/** Observations of the original call, never permission to dispatch or replay it. */
+export interface AgentInvocationReceipt {
+  schema_version: typeof AGENT_INVOCATION_RECEIPT_SCHEMA;
+  read_only: true;
+  business_operation_performed: false;
+  invocation_id: string;
+  agent_run_id: string;
+  route: string;
+  tool: string;
+  observed_at: string;
+  result: AgentToolInvocationResult | null;
+  result_source: 'job' | 'journal' | 'none';
+  dispatch_state: 'not_dispatched' | 'attempted' | 'unknown';
+  approval: { status: 'none' | 'pending' | 'approved' | 'denied'; approval_id?: number };
+  journal_state: 'absent' | 'dispatching' | 'response_recorded' | 'completed' | 'uncertain' | 'evidence_degraded' | 'unknown';
+}
+
+export function agentInvocationInspectionCapabilities() {
+  return {
+    schema_version: AGENT_INVOCATION_INSPECTION_SCHEMA,
+    receipt_schema: AGENT_INVOCATION_RECEIPT_SCHEMA,
+    read_only: true as const,
+  };
 }
 
 export class AgentToolApiError extends Error {
@@ -282,7 +331,7 @@ function probeJob(auth: AgentToolAuthContext, route: Route, now: string): Job {
     target: AGENT_TOOL_JOB_TARGET,
     profile: route.profile,
     project: route.project ?? '',
-    source: `${AGENT_TOOL_JOB_SOURCE_PREFIX}${auth.client.app_id}`,
+    source: agentToolJobSource(auth.client.app_id),
     client_app_id: auth.client.app_id,
     agent_session_id: auth.session.session_id,
     on_behalf_of: auth.session.on_behalf_of,
@@ -426,12 +475,27 @@ export async function searchAgentToolsFor(
         || a.name.localeCompare(b.name));
     }
   }
+  const tools = ordered.slice(0, limit);
+  const truncated = surface.tools.length > tools.length;
   return {
     schema_version: AGENT_TOOL_SEARCH_SCHEMA,
     route: surface.route.route_key,
     capability_revision: surface.revision,
     query: cleanQuery,
-    tools: ordered.slice(0, limit),
+    tools,
+    discovery: {
+      mode: 'ranked_candidates',
+      scope: 'current_authorization',
+      returned_count: tools.length,
+      authorized_total: surface.tools.length,
+      matched_total: null,
+      matched_total_exact: false,
+      limit,
+      truncated,
+      has_more: truncated,
+      truncation_scope: 'authorized_catalog',
+      pagination: 'unsupported',
+    },
   };
 }
 
@@ -462,6 +526,8 @@ function publicResult(input: {
   ok: boolean;
   text: string;
   autoRetryAllowed?: boolean;
+  retryAfterMs?: number;
+  rateLimit?: ToolRateLimitFeedback;
   businessStatus?: number;
   approvalId?: number;
 }): AgentToolInvocationResult {
@@ -474,12 +540,14 @@ function publicResult(input: {
     ok: input.ok,
     auto_retry_allowed: input.autoRetryAllowed ?? false,
     text: safeText(input.text, 8192),
+    ...(input.retryAfterMs !== undefined ? { retry_after_ms: input.retryAfterMs } : {}),
+    ...(input.rateLimit ? { rate_limit: input.rateLimit } : {}),
     ...(input.businessStatus !== undefined ? { business_status: input.businessStatus } : {}),
     ...(input.approvalId !== undefined ? { approval_id: input.approvalId } : {}),
   };
 }
 
-function isStableInvocationResult(result: AgentToolInvocationResult | null): result is AgentToolInvocationResult {
+function isStableInvocationResult(result: AgentToolInvocationResult | null): result is AgentToolInvocationResult & { auto_retry_allowed: false } {
   return !!result
     && !['in_progress', 'awaiting_approval'].includes(result.state)
     && result.auto_retry_allowed !== true;
@@ -561,7 +629,7 @@ function syntheticJob(
     target: AGENT_TOOL_JOB_TARGET,
     profile: surface.route.profile,
     project: surface.route.project ?? '',
-    source: `${AGENT_TOOL_JOB_SOURCE_PREFIX}${auth.client.app_id}`,
+    source: agentToolJobSource(auth.client.app_id),
     client_app_id: auth.client.app_id,
     agent_session_id: auth.session.session_id,
     on_behalf_of: auth.session.on_behalf_of,
@@ -572,6 +640,7 @@ function syntheticJob(
     metadata: {
       agent_tool_job_marker: AGENT_TOOL_JOB_MARKER,
       agent_tool_call_v1: true,
+      agent_dispatch_attempted: false,
       agent_invocation_id: input.invocation_id,
       agent_run_id: input.agent_run_id,
       agent_route: input.route,
@@ -616,7 +685,15 @@ function fromJournal(input: FrozenInvocationCoordinates, tool: string, entry: To
 }
 
 async function persistResult(deps: ToolProxyDeps, job: Job, result: AgentToolInvocationResult): Promise<void> {
-  await deps.stateStore.updateJob(job.job_id, { status: 'done', result: { ...result }, error: undefined });
+  const managed = Boolean(job.metadata.agent_task_binding || job.metadata.agent_task_id);
+  const metadata = { ...job.metadata };
+  if (isStableInvocationResult(result)) delete metadata.agent_frozen_arguments;
+  // Task transactions own the dispatch fence and permit metadata. A stale in-memory job must never overwrite it.
+  const saved = await deps.stateStore.updateJob(job.job_id, { ...(managed ? {} : { metadata }), status: 'done', result: { ...result }, error: undefined });
+  if (!saved) throw new AgentToolApiError(503, 'invocation_storage_unavailable', 'The original invocation state could not be saved.');
+  if (managed && isStableInvocationResult(result)) await deps.configStore!.agentTaskControl!.clearFrozenArguments(job.job_id);
+  job.metadata = metadata;
+  job.result = { ...result };
   await deps.stateStore.appendAudit({
     ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event: 'agent_tool_invocation_state',
     detail: { invocation_id: result.invocation_id, route: result.route, tool: result.tool, state: result.state, ok: result.ok, business_status: result.business_status ?? null },
@@ -638,7 +715,7 @@ async function invokeExisting(
   if (!surface.context.allowed.some((candidate) => candidate.name === tool)) {
     throw new AgentToolApiError(409, 'capability_changed', 'The tool is no longer available; refresh the capability catalog.');
   }
-  const journal = await deps.configStore!.toolCalls.get(job.job_id, tool, hash).catch(() => null);
+  const journal = await deps.configStore!.toolCalls.get(job.job_id, tool, hash);
   if (journal) {
     const result = fromJournal(input, tool, journal);
     await persistResult(deps, job, result);
@@ -646,6 +723,11 @@ async function invokeExisting(
   }
   const approval = await currentApproval(deps.configStore!, job, tool, hash);
   if (approval?.status === 'denied') {
+    if (job.metadata.agent_task_binding || job.metadata.agent_task_id) {
+      const original = await deps.configStore!.agentTaskControl!.findInvocation(auth.session.session_id, input.invocation_id);
+      if (original) await deps.configStore!.agentTaskControl!.releaseReservation({ taskId: original.taskId,
+        sessionId: auth.session.session_id, invocationId: input.invocation_id, reason: 'approval_denied', approvalId: approval.id });
+    }
     const result = publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'denied', ok: false, text: 'The governed tool invocation was denied.' });
     await persistResult(deps, job, result);
     return result;
@@ -654,6 +736,16 @@ async function invokeExisting(
     const result = publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'awaiting_approval', ok: false, text: 'The governed tool invocation is awaiting approval.', approvalId: approval.id });
     await persistResult(deps, job, result);
     return result;
+  }
+  // Only an affirmative pre-dispatch result permits another dispatch attempt.
+  // A persisted in-progress attempt without a terminal journal may have reached the business system.
+  if (job.metadata.agent_dispatch_attempted !== false && cached?.state === 'in_progress') {
+    const result = publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'reconciliation_required', ok: false, text: 'The original dispatch outcome is unknown; reconcile the original invocation. Do not submit a new write.' });
+    await persistResult(deps, job, result);
+    return result;
+  }
+  if (!args && ((cached?.state === 'rejected_before_dispatch' && cached.auto_retry_allowed) || job.metadata.agent_dispatch_attempted === false)) {
+    args = openInvocationArguments(job, deps.cfg.server.token);
   }
   if (!args && approval?.status === 'approved' && approval.args_json) {
     try {
@@ -674,6 +766,11 @@ async function invokeExisting(
   if (!runtime || runtime === 'subject_locked') {
     throw new AgentToolApiError(409, 'capability_changed', 'The tool surface is no longer available; refresh the capability catalog.');
   }
+  if (!job.metadata.agent_task_binding && !job.metadata.agent_task_id) {
+    job = { ...job, metadata: { ...job.metadata, agent_dispatch_attempted: true } };
+  }
+  // Persist the attempt fence before allowing HTTP dispatch, including resumed idempotent writes.
+  await persistResult(deps, job, publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'in_progress', ok: false, text: 'The original governed invocation is in progress.' }));
   const out = await runtime.invoke(tool, args);
   const uncertainty = runtime.executionUncertainty();
   const state: AgentToolInvocationState = uncertainty || out.governance_state === 'reconciliation_required'
@@ -693,6 +790,8 @@ async function invokeExisting(
     ok: out.ok,
     text: out.text,
     autoRetryAllowed: out.auto_retry_allowed ?? false,
+    retryAfterMs: out.retry_after_ms,
+    rateLimit: out.rate_limit,
     ...(out.status > 0 && out.governance_state !== 'rejected_before_dispatch' ? { businessStatus: out.status } : {}),
     ...(out.approval_id !== undefined ? { approvalId: out.approval_id } : {}),
   });
@@ -702,6 +801,7 @@ async function invokeExisting(
 
 export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAuthContext, input: InvokeAgentToolInput): Promise<AgentToolInvocationResult> {
   assertInvocationInput(input);
+  input = { ...input, arguments: JSON.parse(JSON.stringify(input.arguments)) as Record<string, unknown> };
   const runtimeRun = await deps.configStore?.agentClientRuntime?.findRunForInvocation(input.agent_run_id) ?? null;
   if (runtimeRun && (
     runtimeRun.session_id !== auth.session.session_id
@@ -722,6 +822,8 @@ export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
     if (job && !sameInvocation(job, auth, { ...input, args_hash: hash })) {
       throw new AgentToolApiError(409, 'invocation_conflict', 'The invocation_id is already bound to a different call.');
     }
+    const task = await resolveAgentTaskRunFor(deps.configStore, auth, input.agent_run_id, input.route, !job);
+    taskAssert(task || !(runtimeRun?.context?.task_binding || job?.metadata.agent_task_binding || job?.metadata.agent_task_id), 'TASK_UNSUPPORTED');
     if (job) await resolveDirectRoute(deps, auth, input.route);
     const cached = job ? parseInvocationResult(job) : null;
     let surface: AgentToolSurface | null = null;
@@ -732,9 +834,6 @@ export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
     }
     surface = await resolveSurface(deps, auth, input.route);
     if (!job) {
-      if (await rateLimitedFor(deps.configStore, auth.client)) {
-        return publicResult({ invocationId: input.invocation_id, route: input.route, tool: input.tool, state: 'rejected_before_dispatch', ok: false, text: 'The Agent client rate limit was exceeded.', autoRetryAllowed: true });
-      }
       if (surface.revision !== input.capability_revision) {
         throw new AgentToolApiError(409, 'capability_changed', 'The capability catalog changed; refresh tools before calling.');
       }
@@ -744,11 +843,18 @@ export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
         throw new AgentToolApiError(404, 'tool_not_found', 'The tool is not available in the current capability catalog.');
       }
       job = syntheticJob(auth, surface, input, hash, toolFingerprint, runtimeRun, deps.now());
+      if (task) job.metadata.agent_task_binding = bindingForTask(task);
+      job.metadata.agent_frozen_arguments = sealInvocationArguments(job, input.arguments, deps.cfg.server.token);
       await deps.stateStore.createJob(job);
       await deps.stateStore.appendAudit({
         ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event: 'agent_tool_invocation_created',
         detail: { invocation_id: input.invocation_id, agent_run_id: input.agent_run_id, agent_thread_id: runtimeRun?.thread_id ?? null, route: input.route, tool: input.tool, args_hash: hash, execution_fingerprint: toolFingerprint, client_app_id: auth.client.app_id, agent_session_id: auth.session.session_id },
       });
+      if (await rateLimitedFor(deps.configStore, auth.client)) {
+        const result = publicResult({ invocationId: input.invocation_id, route: input.route, tool: input.tool, state: 'rejected_before_dispatch', ok: false, text: 'The Agent client shared rate limit was exceeded; resume this invocation after waiting.', autoRetryAllowed: true, retryAfterMs: 60_000 });
+        await persistResult(deps, job, result);
+        return result;
+      }
     } else {
       assertCurrentToolExecution(job, surface, input.tool);
       if (await rateLimitedFor(deps.configStore, auth.client)) {
@@ -778,6 +884,8 @@ export async function resumeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
       throw new AgentToolApiError(404, 'invocation_not_found', 'The governed invocation was not found.');
     }
     const route = String(job.metadata['agent_route'] ?? '');
+    const task = await resolveAgentTaskRunFor(deps.configStore, auth, String(job.metadata.agent_run_id ?? ''), route, false);
+    taskAssert(task || !(job.metadata.agent_task_binding || job.metadata.agent_task_id), 'TASK_UNSUPPORTED');
     const capabilityRevision = String(job.metadata['agent_capability_revision'] ?? '');
     const tool = String(job.metadata['agent_tool'] ?? '');
     const hash = String(job.metadata['agent_args_hash'] ?? '');
@@ -804,4 +912,109 @@ export async function resumeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
   } finally {
     await deps.stateStore.releaseRuntimeLock(lockKey, owner).catch(() => undefined);
   }
+}
+
+/** An allowlisted result copy. Stored JSON is data, including when its schema marker is valid. */
+function receiptResult(job: Job): AgentToolInvocationResult | null {
+  const saved = parseInvocationResult(job);
+  if (!saved) return null;
+  const limit = saved.rate_limit;
+  const rateLimit = isRecord(limit)
+    && (limit['level'] === 'tool' || limit['level'] === 'provider')
+    && Number.isSafeInteger(limit['count']) && Number(limit['count']) > 0
+    && Number.isSafeInteger(limit['window_sec']) && Number(limit['window_sec']) > 0
+    && limit['scope'] === 'tool_provider_shared' && typeof limit['source'] === 'string'
+    ? {
+      level: limit['level'], count: Number(limit['count']), window_sec: Number(limit['window_sec']),
+      scope: 'tool_provider_shared' as const, source: safeText(limit['source'], 128),
+    } : undefined;
+  return publicResult({
+    invocationId: saved.invocation_id, route: saved.route, tool: saved.tool, state: saved.state,
+    ok: saved.ok, text: saved.text, autoRetryAllowed: saved.auto_retry_allowed,
+    ...(Number.isSafeInteger(saved.retry_after_ms) && Number(saved.retry_after_ms) >= 0 ? { retryAfterMs: saved.retry_after_ms } : {}),
+    ...(rateLimit ? { rateLimit } : {}),
+    ...(saved.business_status !== undefined ? { businessStatus: saved.business_status } : {}),
+    ...(saved.approval_id !== undefined ? { approvalId: saved.approval_id } : {}),
+  });
+}
+
+/**
+ * Reads local evidence only. In particular this must not call invokeExisting: resume may
+ * consume an approved request and perform its first business dispatch.
+ * The observations are not an atomic dispatch decision and confer no permission to replay.
+ */
+export async function inspectAgentToolInvocationFor(
+  deps: ToolProxyDeps, auth: AgentToolAuthContext, input: ResumeAgentToolInput,
+): Promise<AgentInvocationReceipt> {
+  if (!INVOCATION_RE.test(input.invocation_id)) {
+    throw new AgentToolApiError(400, 'invalid_request', 'The original invocation identifier is invalid.');
+  }
+  if (!deps.configStore) throw new AgentToolApiError(503, 'agent_tools_unavailable', 'Invocation inspection requires the control plane.');
+  const requestId = invocationRequestId(auth.session.session_id, input.invocation_id);
+  const stored = await deps.stateStore.findByRequestId(requestId);
+  if (!stored || !isAgentToolInvocationJob(stored)
+    || stored.agent_session_id !== auth.session.session_id || stored.client_app_id !== auth.client.app_id) {
+    throw new AgentToolApiError(404, 'invocation_not_found', 'The original governed invocation was not found.');
+  }
+  // Freeze the observation even for in-memory repository implementations.
+  const job = JSON.parse(JSON.stringify(stored)) as Job;
+  const metadata = job.metadata;
+  const route = String(metadata['agent_route'] ?? '');
+  const tool = String(metadata['agent_tool'] ?? '');
+  const runId = String(metadata['agent_run_id'] ?? '');
+  const revision = String(metadata['agent_capability_revision'] ?? '');
+  const hash = String(metadata['agent_args_hash'] ?? '');
+  const originalPrincipal = metadata['principal'];
+  if (job.request_id !== requestId || !ROUTE_RE.test(route) || !AGENT_RUN_RE.test(runId)
+    || !REVISION_RE.test(revision) || !REVISION_RE.test(hash) || !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(tool)
+    || job.session_id !== runId || job.on_behalf_of !== auth.session.on_behalf_of
+    || !isRecord(originalPrincipal) || originalPrincipal['id'] !== auth.session.principal.id
+    || originalPrincipal['tenant'] !== auth.session.principal.tenant
+    || !sameInvocation(job, auth, { invocation_id: input.invocation_id, route, tool, args_hash: hash, capability_revision: revision, agent_run_id: runId })) {
+    throw new AgentToolApiError(409, 'invocation_conflict', 'The original invocation binding could not be verified.');
+  }
+  const runtimeRun = await deps.configStore.agentClientRuntime?.findRunForInvocation(runId) ?? null;
+  const task = await resolveAgentTaskRunFor(deps.configStore, auth, runId, route, false);
+  taskAssert(task || !(runtimeRun?.context?.task_binding || metadata.agent_task_binding || metadata.agent_task_id), 'TASK_UNSUPPORTED');
+  if (runtimeRun && (runtimeRun.run_id !== runId || runtimeRun.session_id !== auth.session.session_id
+    || runtimeRun.client_app_id !== auth.client.app_id || runtimeRun.route_key !== route
+    || (job.thread_id !== undefined && runtimeRun.thread_id !== job.thread_id))) {
+    throw new AgentToolApiError(409, 'agent_run_conflict', 'The original runtime run belongs to a different binding.');
+  }
+  // Current authorization is required, but the historical execution/schema fingerprint
+  // need not remain current merely to inspect a result. No business context or run is created.
+  const surface = await resolveSurface(deps, auth, route);
+  assertCurrentToolAuthorized(surface, tool);
+  const journal = await deps.configStore.toolCalls.get(job.job_id, tool, hash);
+  const current = await currentApproval(deps.configStore, job, tool, hash);
+  if (current && (!['pending', 'approved', 'denied'].includes(current.status)
+    || !Number.isSafeInteger(current.id) || current.id < 1)) {
+    throw new AgentToolApiError(503, 'invocation_record_invalid', 'The original approval record could not be verified.');
+  }
+  const journalStates = ['dispatching', 'response_recorded', 'completed', 'uncertain', 'evidence_degraded'];
+  const journalState: AgentInvocationReceipt['journal_state'] = !journal ? 'absent'
+    : journalStates.includes(journal.state) ? journal.state : 'unknown';
+  let result = receiptResult(job);
+  let resultSource: AgentInvocationReceipt['result_source'] = result ? 'job' : 'none';
+  if (journal) {
+    resultSource = 'journal';
+    result = journalState === 'completed' && typeof journal.ok === 'boolean'
+      && Number.isSafeInteger(journal.status) && journal.status > 0 && typeof journal.text === 'string'
+      ? publicResult({ invocationId: input.invocation_id, route, tool,
+        state: journal.ok ? 'executed' : 'business_rejected', ok: journal.ok, text: journal.text, businessStatus: journal.status })
+      : publicResult({ invocationId: input.invocation_id, route, tool, state: 'reconciliation_required', ok: false,
+        text: 'The original execution journal has not confirmed a completed outcome. Inspect the original record; do not repeat the business operation.' });
+  }
+  const dispatchState: AgentInvocationReceipt['dispatch_state'] = journalState === 'unknown' ? 'unknown'
+    : journal || result?.state === 'executed' || result?.state === 'business_rejected' ? 'attempted'
+      : result && ['awaiting_approval', 'denied', 'rejected_before_dispatch'].includes(result.state) ? 'not_dispatched'
+        : metadata['agent_dispatch_attempted'] === false ? 'not_dispatched'
+          : metadata['agent_dispatch_attempted'] === true ? 'attempted' : 'unknown';
+  return {
+    schema_version: AGENT_INVOCATION_RECEIPT_SCHEMA, read_only: true, business_operation_performed: false,
+    invocation_id: input.invocation_id, agent_run_id: runId, route, tool, observed_at: deps.now(),
+    result, result_source: resultSource, dispatch_state: dispatchState,
+    approval: current ? { status: current.status, approval_id: current.id } : { status: 'none' },
+    journal_state: journalState,
+  };
 }

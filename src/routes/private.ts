@@ -121,6 +121,7 @@ export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingM
     handleRun: deps.handleRun,
     toolProxyDeps: toolProxyDeps(deps),
     kbService: deps.kbService,
+    artifactRoot: deps.cfg.runtimeRoot ?? deps.cfg.root,
   }, req, res, url)) return;
 
   if (method === 'POST' && path === '/admin/login') {

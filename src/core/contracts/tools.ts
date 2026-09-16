@@ -1,7 +1,9 @@
+import { effectiveToolRateLimit, type RateLimitRequest, type RateLimitDecision } from './tool-rate-limits';
 // 工具插座运行时治理核心——设计与安全边界见 docs/TOOLS_DESIGN.md
 // 职责：消费 ToolDefinition → 白名单/主体/审批/限流/审计/签名 → 给大脑可调用的运行时句柄。
 // 中枢只做 reach（白名单/风险闸/限流/签名/审计）；authority（这个人能不能做）永远由业务侧验签后裁决。
 import { createHash, createHmac } from 'node:crypto';
+import { AgentTaskControlError } from '../runtime/agent-task-control';
 import type { ToolProvider } from './types';
 import { schemaAtPath, schemaTypes, valueMatchesSchemaType, type ToolConfirmCondition, type ToolDefinition } from './tool-definition';
 import { toolSummary } from './tool-definition';
@@ -233,44 +235,39 @@ function modelFacingToolResponse(fullText: string, status: number, truncateBytes
 
 // ---- 限流（进程内滑窗，三层：每任务 max_calls 由调用方计数 / 每工具 ACC execution.rate_limit / 工具源总闸）----
 export class LocalSlidingWindowRateLimiter {
-  private readonly buckets = new Map<string, number[]>();
+  private readonly buckets = new Map<string, { timestamps: number[]; windowMs: number }>();
   private lastSweepAt = 0;
-
   constructor(private readonly now: () => number = Date.now) {}
 
-  consume(key: string, perMin: number): boolean {
-    if (perMin <= 0) return false;
+  consume(key: string, limit: number, windowSec = 60): boolean {
+    return this.consumeAll([{ bucket: key, limit, windowSec }]).limited;
+  }
+  consumeAll(requests: RateLimitRequest[]): RateLimitDecision {
     const now = this.now();
-    this.sweep(now);
-    const timestamps = (this.buckets.get(key) ?? []).filter((timestamp) => now - timestamp < 60_000);
-    if (timestamps.length >= perMin) {
-      this.buckets.set(key, timestamps);
-      return true;
+    if (now - this.lastSweepAt >= 60_000) {
+      this.lastSweepAt = now;
+      for (const [key, bucket] of this.buckets) {
+        if (!bucket.timestamps.some((ts) => now - ts < bucket.windowMs)) this.buckets.delete(key);
+      }
     }
-    timestamps.push(now);
-    this.buckets.set(key, timestamps);
-    return false;
-  }
-
-  bucketCount(): number {
-    return this.buckets.size;
-  }
-
-  private sweep(now: number): void {
-    if (now - this.lastSweepAt < 60_000) return;
-    this.lastSweepAt = now;
-    for (const [key, timestamps] of this.buckets) {
-      const active = timestamps.filter((timestamp) => now - timestamp < 60_000);
-      if (active.length) this.buckets.set(key, active);
-      else this.buckets.delete(key);
+    const active = requests.filter((r) => r.limit > 0).map((r) => {
+      const windowMs = r.windowSec * 1000;
+      const timestamps = (this.buckets.get(r.bucket)?.timestamps ?? []).filter((ts) => now - ts < windowMs);
+      return { ...r, windowMs, timestamps };
+    });
+    for (const r of active) {
+      if (r.timestamps.length >= r.limit) {
+        const expires = r.timestamps[r.timestamps.length - r.limit]! + r.windowMs;
+        return { limited: true, bucket: r.bucket, retryAfterMs: Math.max(1, expires - now) };
+      }
     }
+    // Check every gate before charging any of them.
+    for (const r of active) this.buckets.set(r.bucket, { timestamps: [...r.timestamps, now], windowMs: r.windowMs });
+    return { limited: false };
   }
+  bucketCount(): number { return this.buckets.size; }
 }
-
 const localRateLimiter = new LocalSlidingWindowRateLimiter();
-function allowRate(key: string, perMin: number): boolean {
-  return !localRateLimiter.consume(key, perMin);
-}
 
 /** 渐进式披露阈值：白名单内工具数 ≤ 此值全量内联（省一次往返）；超过则目录+按需取定义（防几百个工具定义灌爆上下文）。 */
 export const TOOL_INLINE_MAX = 12;
@@ -315,12 +312,22 @@ export type ToolGovernanceState =
   | 'reconciliation_required';
 
 /** 工具调用的受治理结果；旧调用方仍可只读 ok/text/status。 */
+export interface ToolRateLimitFeedback {
+  level: 'tool' | 'provider';
+  count: number;
+  window_sec: number;
+  scope: 'tool_provider_shared';
+  source: string;
+}
+
 export interface ToolInvokeResult {
   ok: boolean;
   text: string;
   status: number;
   governance_state?: ToolGovernanceState;
   auto_retry_allowed?: boolean;
+  retry_after_ms?: number;
+  rate_limit?: ToolRateLimitFeedback;
   approval_id?: number;
 }
 
@@ -385,6 +392,8 @@ export interface ApprovalDeps {
   continuationMode?: 'rerun' | 'resume';
   /** 查"已批准且未消费"的同快照审批单并原子消费；消费成功返回单号，否则 null */
   consumeApproved(tool: string, hash: string): Promise<number | null>;
+  /** Managed tasks only: observation without consuming; final permit transaction consumes it. */
+  peekApproved?(tool: string, hash: string): Promise<number | null>;
   /** 查同快照 pending 单（去重：同一调用别重复开单） */
   findPending(tool: string, hash: string): Promise<number | null>;
   /** 查本任务同工具"已批准未消费"单（不限参数）——重跑时大脑参数漂移的纠偏依据 */
@@ -420,6 +429,14 @@ export interface ToolRuntimeDeps {
   truncateBytes: number;            // 工具结果回流截断（默认 8192）
   approvedNote?: string;            // 重跑时已批准调用清单提示
   approvals?: ApprovalDeps;         // 不注入 = high/confirm 一律拦
+  /** A trusted assembly supplies these hooks; model parameters cannot create a task or permit. */
+  taskControl?: {
+    prepare(input: { tool: string; argsHash: string; readonly: boolean; approvalRequired: boolean }): Promise<void>;
+    grant(input: { tool: string; argsHash: string; scope: string; idempotencyKey: string; approvalId?: number }): Promise<boolean>;
+    settle(outcome: 'unknown' | 'confirmed_dispatched', response?: { ok: boolean; status: number; text: string }, evidenceDegraded?: boolean): Promise<void>;
+  };
+  /** Recheck sticky task enrollment for legacy Agent/engine/executor entrypoints before outbound I/O. */
+  beforeDispatch?: () => Promise<void>;
   audit(event: string, detail: Record<string, unknown>): Promise<void>; // 写审计；抛错=调用不放行（fail-closed）
   /** 工具语义检索（装配层注入；不注入 = 不启用检索，退回 progressive）：一句意图 → 召回工具名（已是双闸内、按相关度排序）。
    * 返回 null = 检索运行时不可用（索引/凭证/embedding 临时挂）→ retrieve() 透传 null 让适配器降级。本层不碰 embedding，只收名单。 */
@@ -437,6 +454,7 @@ export interface ToolRuntimeDeps {
   };
   /** 集中限速器：返回 true = 已触发限流；不注入时退回进程内滑窗。 */
   rateLimit?: (bucket: string, limit: number, windowSec: number) => Promise<boolean>;
+  rateLimitAll?: (requests: RateLimitRequest[]) => Promise<RateLimitDecision>;
 }
 
 export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
@@ -508,7 +526,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       // 闸1.8：幂等账本——同 job 内"副作用工具"(非只读、非声明幂等)已执行过的相同调用，重试/崩溃恢复重跑时直接返回上次结果，
       //   不重复执行（防写操作重复扣款）。放在审批闸之前：否则重跑时已消费的审批单会被当成"无批准"再次触发待审批，把重跑卡死。
       const sideEffecting = !t.readonly && !t.idempotent;
-      if (sideEffecting && !d.idempotency) {
+      if ((sideEffecting || d.taskControl) && !d.idempotency) {
         await d.audit('tool_blocked', {
           tool: name,
           scope: t.scope,
@@ -520,7 +538,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
           text: `工具 ${name} 会产生业务副作用，但当前运行时未配置持久化执行日志，请求未发出。`,
         };
       }
-      const idemHash = sideEffecting ? argsHash(callArgs) : '';
+      const idemHash = sideEffecting || d.taskControl ? argsHash(callArgs) : '';
       const idemKey = idemHash ? toolCallIdempotencyKey(d.jobId, name, idemHash, d.onBehalfOf) : '';
       if (idemHash) {
         let existing: ToolExecutionJournalEntry | null;
@@ -557,19 +575,34 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       }
       // 前置调度闸：任何可重试的限流都必须发生在审批单消费前。
       // 请求尚未出站，不能把 429 伪装成业务拒绝，也不能白白用掉人工批准。
-      const toolLimited = d.rateLimit
-        ? await d.rateLimit(`tool:${d.provider.name}:${name}`, t.rateLimitPerMin, 60)
-        : !allowRate(`tool:${d.provider.name}:${name}`, t.rateLimitPerMin);
-      const providerLimited = d.rateLimit
-        ? await d.rateLimit(`provider:${d.provider.name}`, d.provider.rate_limit_per_min, 60)
-        : !allowRate(`provider:${d.provider.name}`, d.provider.rate_limit_per_min);
-      if (toolLimited || providerLimited) {
+      const effective = effectiveToolRateLimit(t, d.provider.tool_rate_limits);
+      const gates: RateLimitRequest[] = [
+        { bucket: `tool:${d.provider.name}:${name}`, limit: effective.enabled ? effective.count : 0, windowSec: effective.window_sec || 60 },
+        { bucket: `provider:${d.provider.name}`, limit: d.provider.rate_limit_per_min, windowSec: 60 },
+      ].filter((gate) => gate.limit > 0);
+      let limitDecision: RateLimitDecision;
+      if (d.rateLimitAll) limitDecision = await d.rateLimitAll(gates);
+      else if (d.rateLimit) {
+        // Compatibility for external runtime assemblers that implement only the legacy single gate callback.
+        limitDecision = { limited: false };
+        for (const gate of gates) {
+          if (await d.rateLimit(gate.bucket, gate.limit, gate.windowSec)) {
+            limitDecision = { limited: true, bucket: gate.bucket, retryAfterMs: gate.windowSec * 1000 };
+            break;
+          }
+        }
+      } else limitDecision = localRateLimiter.consumeAll(gates);
+      if (limitDecision.limited) {
+        const gate = gates.find((candidate) => candidate.bucket === limitDecision.bucket) ?? gates[0]!;
+        const level = gate.bucket.startsWith('provider:') ? 'provider' : 'tool';
         return {
           ok: false,
-          text: `工具 ${name} 触发限流，稍后使用同一调用标识重试。`,
+          text: `工具 ${name} 达到${level === 'tool' ? '单工具' : '工具源总'}限额（该工具源下的用户与会话共享）。调用未派发；等待后通过原 invocation_id 恢复，不要创建新调用。`,
           status: 429,
           governance_state: 'rejected_before_dispatch',
           auto_retry_allowed: true,
+          retry_after_ms: limitDecision.retryAfterMs ?? gate.windowSec * 1000,
+          rate_limit: { level, count: gate.limit, window_sec: gate.windowSec, scope: 'tool_provider_shared', source: level === 'tool' ? effective.source : 'provider_total' },
         };
       }
       // 闸2：风险闸 + 审批车道（B 方案：先撤再来）。high / confirm-required 的调用：
@@ -583,13 +616,16 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       }
       const confirmHit = confirmCheck.hit;
       const needsApproval = t.risk === 'high' || t.confirmRequired || !!confirmHit;
+      if (d.taskControl) await d.taskControl.prepare({ tool: name, argsHash: argsHash(callArgs),
+        readonly: t.readonly, approvalRequired: needsApproval });
       if (needsApproval) {
         if (!d.approvals) { // 未接审批车道（理论不发生，server 总会注入）：一律拦
           await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: approvalReason(t, confirmHit) }).catch(() => undefined);
           return { ok: false, text: `工具 ${name} 属于需人工确认的高风险操作，当前不允许自动执行。请告知用户走人工流程。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
         }
         const hash = argsHash(callArgs);
-        approvalId = await d.approvals.consumeApproved(name, hash);
+        if (d.taskControl && !d.approvals.peekApproved) throw new AgentTaskControlError('TASK_UNSUPPORTED');
+        approvalId = d.taskControl ? await d.approvals.peekApproved!(name, hash) : await d.approvals.consumeApproved(name, hash);
         if (approvalId === null) {
           const pendingId = await d.approvals.findPending(name, hash);
           if (pendingId !== null) {
@@ -655,7 +691,17 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         ...(approvalId !== null ? { approval_id: approvalId } : {}),
       });
 
-      if (idemHash) {
+      if (d.beforeDispatch) await d.beforeDispatch();
+      if (d.taskControl) {
+        const fresh = await d.taskControl.grant({ tool: name, argsHash: idemHash, scope: t.scope,
+          idempotencyKey: idemKey, ...(approvalId !== null ? { approvalId } : {}) });
+        if (!fresh) {
+          const existing = await d.idempotency!.get(name, idemHash);
+          if (existing?.state === 'completed') return { ok: existing.ok, text: existing.text, status: existing.status };
+          return { ok: false, text: 'The original task invocation already owns a dispatch attempt. Inspect the original invocation; do not replay it.',
+            status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
+        }
+      } else if (idemHash) {
         let reserved: { inserted: boolean; entry: ToolExecutionJournalEntry };
         try {
           reserved = await d.idempotency!.reserve(name, t.scope, idemHash, idemKey);
@@ -722,6 +768,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       } catch (e) {
         const error = e instanceof Error && e.name === 'TimeoutError' ? `超时（${timeoutMs}ms）` : String(e);
         fullText = `调用结果不确定：${error}`;
+        if (d.taskControl) await d.taskControl.settle('unknown').catch(() => undefined);
         if (idemHash) {
           await d.idempotency!.markUncertain(name, idemHash, error).catch(() => undefined);
           executionUncertainty = {
@@ -741,12 +788,29 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
           }).catch(() => undefined);
           return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
         }
+        // fetch (including response body consumption) has already been attempted. Readonly or
+        // declared-idempotent tools do not use the execution journal, but a missing response
+        // still cannot prove that dispatch was rejected. Agent invocations persist this state
+        // and resume the original result instead of dispatching a replacement call.
+        await d.audit('tool_reconciliation_required', {
+          tool: name,
+          scope: t.scope,
+          state: 'uncertain',
+          reason: error,
+        }).catch(() => undefined);
+        return {
+          ok: false,
+          text: `工具 ${name} 的请求已尝试发出，但未取得可信响应，执行结果未知。禁止自动重试或新建调用；请恢复原调用，必要时人工核实结果。`,
+          status: 0,
+          governance_state: 'reconciliation_required',
+          auto_retry_allowed: false,
+        };
       }
       // 回流给模型的：受上下文预算 truncateBytes 截断（与审计留存解耦）
       const text = modelFacingToolResponse(fullText, status, d.truncateBytes, responseContentType);
       const ok = status >= 200 && status < 300;
       const retText = text || `（HTTP ${status} 空响应）`;
-      if (idemHash) {
+      if (idemHash && !d.taskControl) {
         try {
           await d.idempotency!.recordResponse(name, idemHash, { ok, status, text: retText });
         } catch (error) {
@@ -782,6 +846,13 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
           ...respLog,
         });
       } catch (error) {
+        if (d.taskControl) {
+          await d.taskControl.settle('confirmed_dispatched', { ok, status, text: retText }, true).catch(() => undefined);
+          executionUncertainty = { state: 'evidence_degraded', tool: name, scope: t.scope, idempotency_key: idemKey,
+            reason: 'The business response was received, but its audit evidence could not be completed.',
+            message: 'The original operation may have completed; inspect its original receipt. Do not submit a replacement operation.' };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
+        }
         if (idemHash) {
           const reason = `业务响应已收到，但结果审计写入失败：${String(error).slice(0, 300)}`;
           await d.idempotency!.markEvidenceDegraded(name, idemHash, reason).catch(() => undefined);
@@ -797,7 +868,15 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         }
         throw error;
       }
-      if (idemHash) {
+      if (d.taskControl) {
+        try { await d.taskControl.settle('confirmed_dispatched', { ok, status, text: retText }); }
+        catch {
+          executionUncertainty = { state: 'uncertain', tool: name, scope: t.scope, idempotency_key: idemKey,
+            reason: 'The response was received but task settlement was not confirmed.',
+            message: 'Task settlement is unconfirmed. Inspect the original invocation; do not repeat the business operation.' };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
+        }
+      } else if (idemHash) {
         try {
           await d.idempotency!.complete(name, idemHash);
         } catch (error) {
