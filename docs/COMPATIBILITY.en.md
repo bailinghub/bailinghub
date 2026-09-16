@@ -1,5 +1,7 @@
 # Compatibility And Upgrade Policy
 
+> Core 0.8.0 task enrollment persists on original Agent Sessions. Do not downgrade an enrolled deployment to a version that ignores enforcement markers. See [upgrade boundaries](UPGRADE_v0.8.0.md).
+
 BailingHub follows SemVer for public releases.
 
 Before `1.0.0`, the project may still adjust public contracts, but breaking changes must be documented clearly in release notes and changelog entries.

@@ -8,6 +8,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [RELEASE_NOTES_v0.8.0.md](RELEASE_NOTES_v0.8.0.md) · [English](RELEASE_NOTES_v0.8.0.en.md) | v0.8.0: long tasks, original receipts, attachments and upgrade boundaries. |
 | [RELEASE_NOTES_v0.7.0.md](RELEASE_NOTES_v0.7.0.md) · [English](RELEASE_NOTES_v0.7.0.en.md) | v0.7.0：商城与库存场景、配套升级和限制。 |
 | [user-guide/conversations.md](user-guide/conversations.md) | 普通用户的多账户对话、完整沟通追溯和离线恢复指南。 |
 | [QUICKSTART.md](QUICKSTART.md) | 从零部署百灵中枢，适合准备接入真实业务系统的开发者。 |
@@ -25,9 +26,9 @@
 | [AGENT_SUBJECT_DISPLAY.md](AGENT_SUBJECT_DISPLAY.md) | 业务授权显示名称：三方职责、新授权与旧会话名称同步。 |
 | [AGENT_AUTH_API.md](AGENT_AUTH_API.md) | Agent Auth v1：业务登录态绑定、PKCE、Token 交换与会话撤销的语言无关契约。 |
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | English Agent Auth v1 protocol and trusted business-identity boundary. |
-| [INVOCATION_RECEIPTS.md](INVOCATION_RECEIPTS.md) | 候选：只读核对原调用、审批与执行日志；与可能继续业务的 resume 分开。 |
+| [INVOCATION_RECEIPTS.md](INVOCATION_RECEIPTS.md) | 只读核对原调用、审批与执行日志；与可能继续业务的 resume 分开。 |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Agent Client Runtime v1：工作区、turn、能力搜索、工具执行与完成回传。 |
-| [AGENT_TASK_CONTROL.md](AGENT_TASK_CONTROL.md) · [English](AGENT_TASK_CONTROL.en.md) | 未发布配套候选：跨轮任务额度、实际派发、暂停及 SDK/DSH 宿主接入。 |
+| [AGENT_TASK_CONTROL.md](AGENT_TASK_CONTROL.md) · [English](AGENT_TASK_CONTROL.en.md) | Core 0.8.0：跨轮任务额度、实际派发、暂停及 SDK/DSH 宿主接入。 |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | English Agent Client Runtime v1 contract. |
 | [AGENT_CONVERSATION_AUDIT.md](AGENT_CONVERSATION_AUDIT.md) | 完整可见对话审计：逐授权成员确认、幂等文本事件、run 关联和管理员分页读取。 |
 | [AGENT_CONVERSATION_AUDIT.en.md](AGENT_CONVERSATION_AUDIT.en.md) | English complete conversation audit protocol and authorization boundary. |

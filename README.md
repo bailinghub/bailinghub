@@ -27,18 +27,13 @@
 
 在线体验环境只用于了解产品和配置方式。请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
 
-## v0.7.0：先查库存，再到商城改价上架
+## v0.8.0：让业务长任务可继续、可控制
 
-> “先查保温杯还有多少库存，有货就把商城对应商品改为 59 元并上架。”
+助手查询商品、核对库存、上传图片后继续维护商品；中断后沿原调用核对，管理员按任务设置累计额度、暂停或取消后续派发。已有多系统授权与名称继续保留。
 
-在同一个中枢内选定库存与商城授权，Agent 按每一步使用对应工具与权限。系统说明让它先分清谁负责什么，业务提供的授权名称让用户认清具体对象；集中配置入口和完整会话记录帮助管理员设置、检查与追溯。
+配套为 **Core 0.8.0 + MCP / Agent Client SDK 0.6.0 + DSH 0.6.0**。图片首期公开读取；跨轮声明复用需宿主启用，任务启用会持续约束原授权，原权限和审批保持。
 
-示例动作需由业务系统开放，商品映射需已确认，原审批继续生效；查库存不等于锁库存，改价完成也不代表上架审批已通过。
-
-完整配套为 **Core 0.7.0 + MCP / Agent Client SDK 0.5.0 + DSH 0.5.0**，或实现相同接口的自研客户端。保留原同系统多账户会话，跨系统范围限同一 Hub 与审计域。
-
-[看变化与升级步骤](docs/RELEASE_NOTES_v0.7.0.md) · [开始使用](docs/user-guide/conversations.md) · [集中配置](docs/LOCAL_AGENT_SETUP.md)
-
+[更新场景](docs/RELEASE_NOTES_v0.8.0.md) · [升级与启用边界](docs/UPGRADE_v0.8.0.md) · [集中配置](docs/LOCAL_AGENT_SETUP.md)
 ## 适合哪些团队
 
 - 已有商城、SaaS、CRM、ERP 或内部后台，希望增加能查数据、办业务的 AI 助手。
@@ -196,8 +191,8 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 | 部署完整开源版 | [快速开始](docs/QUICKSTART.md) |
 | 跑通公开 Demo | [Docker Demo](docs/DEMO.md) |
 | 接入现有业务 | [第三方对接指南](docs/第三方对接指南.md) |
-| 为本地智能体接入附件空间（候选，首期图片） | [场景、配置与上传契约](docs/GENERATED_ARTIFACTS.md) |
-| 只核对原操作有没有完成（候选） | [只读回执与恢复的区别](docs/INVOCATION_RECEIPTS.md) |
+| 为本地智能体接入附件空间（首期图片） | [场景、配置与上传契约](docs/GENERATED_ARTIFACTS.md) |
+| 只核对原操作有没有完成 | [只读回执与恢复的区别](docs/INVOCATION_RECEIPTS.md) |
 | 接入本地智能体 | [Agent Client v1 指南](docs/AGENT_CLIENT_QUICKSTART.md) |
 | 集中开启本地智能体与工具 | [四步配置指南](docs/LOCAL_AGENT_SETUP.md) · [系统说明](docs/AGENT_SYSTEM_INFO.md) |
 | 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |

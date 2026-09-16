@@ -1,6 +1,6 @@
-# Task budgets and pause control — integration candidate
+# Task budgets and pause control
 
-This is an **unreleased paired Core / Agent Client SDK / DSH candidate**, not an announcement that an existing installation is enabled. See the [complete protocol and operator guide](AGENT_TASK_CONTROL.md).
+Use Core 0.8.0 with Agent Client SDK / DSH 0.6.0 and an adapted host. Task controls require explicit administrator enrollment. See the [complete protocol and operator guide](AGENT_TASK_CONTROL.md).
 
 An assistant updating shop products and checking stock may work across several messages and systems. An administrator can freeze the original authorizations, exact tool names, cumulative write-call allowance, concurrency and optional expiry for that task. New messages, tool searches and client restarts do not reset the allowance. Existing business APIs, ACC declarations, authorization and approval rules remain unchanged.
 
@@ -12,7 +12,7 @@ Use **Agent Clients → Task control** to create and inspect tasks. The host ver
 - Pause blocks new permits, while already permitted requests can finish. Continue keeps the original scope and limits and does not execute anything automatically. Cancel cannot be undone and does not roll back business changes.
 - Approval consumption, permit, original-job fence and execution journal commit atomically before HTTP dispatch. Unknown results are inspected using the original invocation; do not submit a replacement write.
 
-Agent endpoints are `GET /agent-api/v1/task-control/capabilities` and `GET /agent-api/v1/tasks/{task_id}?workspace=...&client_conversation_id=...`. Turn creation accepts and echoes trusted `task_binding` (`bailing.agent-task-binding.v1`, `task_id`, `scope_hash`). Task snapshots use `bailing.agent-task.v1`, disclose only the requesting member and shared counters, and explicitly do not confer dispatch permission. Verify the complete original group; this candidate supports one Hub and audit domain only.
+Agent endpoints are `GET /agent-api/v1/task-control/capabilities` and `GET /agent-api/v1/tasks/{task_id}?workspace=...&client_conversation_id=...`. Turn creation accepts and echoes trusted `task_binding` (`bailing.agent-task-binding.v1`, `task_id`, `scope_hash`). Task snapshots use `bailing.agent-task.v1`, disclose only the requesting member and shared counters, and explicitly do not confer dispatch permission. Verify the complete original group; this release supports one Hub and audit domain only.
 
 Read-only progress uses `GET /agent-api/v1/tool-invocations/{invocation_id}/receipt`. `POST .../resume` can dispatch an approved original operation and must never be used as a polling method. Managed runtime searches require the bound `run_id`; discovery itself does not consume the write allowance.
 

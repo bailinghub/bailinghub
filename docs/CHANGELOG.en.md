@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar shop, product-maintenance or inventory scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.7.0.en.md).
+Lead each release with a familiar shop, product-maintenance or inventory scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.8.0.en.md).
 
 Each public version should describe:
 
@@ -22,18 +22,15 @@ Each public version should describe:
 - validation commands;
 - related docs.
 
-## Unreleased candidate: inspect an original invocation without continuing it
+## v0.8.0 - Longer task recovery, attachments and task controls
 
-For example, a shop listing may have been approved but not dispatched. Refreshing
-its status should report that fact without listing the product. The new receipt
-API reads the original result, approval and execution journal; existing `resume`
-can still continue the original business operation.
+Release date: 2026-09-16. Pair SDK/DSH 0.6.0; see [scenarios](RELEASE_NOTES_v0.8.0.en.md) and [upgrade guide](UPGRADE_v0.8.0.en.md).
 
-Original identity and current tool permission remain required. Inspection works
-while global dispatch is paused, without invoking a tool, consuming approval or
-updating invocation state. Existing authentication activity tracking may still
-occur. No migration is required; matched SDK support is negotiated explicitly.
-This adds no task budget or task pause interface. See [the receipt contract](INVOCATION_RECEIPTS.md).
+- Add public image attachment delivery, read-only original receipts and administrator task budgets, concurrency, pause and cancellation.
+- Clarify discovery counts and structured failures; configure inherited, custom or disabled Hub tool limits while retaining hour/day windows.
+- Fix cross-turn artifact run links, original argument recovery, legal long Client IDs and concurrent metadata updates; uncertain writes are never replaced.
+- Add migrations060–062. Task enrollment persists on original Agent Sessions, cancellation does not remove it, and enrolled deployments must not downgrade to versions that ignore it.
+- Keep business APIs/authorization/approval; hosts supply matched persistent stores and opt into cross-turn reuse. See release limits; no full-plan automatic restart is claimed.
 
 ## v0.7.0 - cross-system conversations, authorization names and centralized setup
 
