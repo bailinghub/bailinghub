@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Job } from '../core/contracts/types';
-import { AGENT_TOOL_JOB_MARKER, isAgentToolInvocationJob } from './agent-tool-job';
+import { AGENT_TOOL_JOB_MARKER, agentToolJobSource, isAgentToolInvocationJob } from './agent-tool-job';
+
+test('Agent source labels fit the existing column and preserve exact Client binding', () => {
+  assert.equal(agentToolJobSource('example-business'), 'agent-tool:example-business');
+  for (const length of [21, 22, 32, 64]) {
+    const client = 'a'.repeat(length);
+    const job = { ...directJob(), client_app_id: client, source: agentToolJobSource(client) };
+    assert.ok(job.source.length <= 32); assert.equal(isAgentToolInvocationJob(job), true);
+    assert.equal(isAgentToolInvocationJob({ ...job, client_app_id: `${client.slice(0, -1)}b` }), false);
+  }
+});
 
 function directJob(): Job {
   const route = 'tenant-agent';

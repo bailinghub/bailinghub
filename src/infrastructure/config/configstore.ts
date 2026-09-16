@@ -28,6 +28,7 @@ import { AgentAuthRepository, type AgentAuthRepositoryContract } from './config-
 import { AgentArtifactRepository } from './config-agent-artifact-repository';
 import { AgentClientRuntimeRepository } from './config-agent-client-runtime-repository';
 import { AgentConversationAuditRepository } from './config-agent-conversation-audit-repository';
+import { AgentTaskControlRepository } from './config-agent-task-control-repository';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 export type RouteRepositoryContract = Omit<Pick<RouteRepository, keyof RouteRepository>, 'compareAndSetAgentSetup'>
@@ -100,6 +101,8 @@ export interface ConfigStoreContract {
   readonly agentClientRuntime?: AgentClientRuntimeRepositoryContract;
   /** Optional, admin-only visible transcript ledger; never a source of Agent memory. */
   readonly agentConversationAudit?: AgentConversationAuditRepositoryContract;
+  /** Optional for extension hosts. Managed Sessions must never fall back without this repository. */
+  readonly agentTaskControl?: Pick<AgentTaskControlRepository, keyof AgentTaskControlRepository>;
   init(): Promise<void>;
   close?(): Promise<void>;
   readonly db: Pool;
@@ -136,6 +139,7 @@ export class ConfigStore implements ConfigStoreContract {
   readonly agentArtifacts = new AgentArtifactRepository(() => this.pool);
   readonly agentClientRuntime = new AgentClientRuntimeRepository(() => this.pool);
   readonly agentConversationAudit = new AgentConversationAuditRepository(() => this.pool);
+  readonly agentTaskControl = new AgentTaskControlRepository(() => this.pool);
 
   constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);

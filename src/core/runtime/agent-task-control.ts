@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-/** Internal foundation only. No HTTP admission or enforcement is wired to these types yet. */
+/** Internal trusted task state. HTTP adapters must project only authorized fields. */
 export type AgentTaskState = 'active' | 'paused' | 'blocked' | 'cancelled';
 export type AgentTaskBudgetState = 'reserved' | 'consumed' | 'released' | null;
 export type AgentTaskPermitState = 'none' | 'held' | 'unknown' | 'settled';
@@ -93,6 +93,8 @@ export interface GrantAgentTaskPermitInput {
   /** Required only for a confirmed-not-dispatched, nonterminal prior attempt. */
   retryOriginal?: boolean;
   approvalId?: number;
+  /** Supplied by the trusted execution layer, never the model. Reserved atomically with the permit. */
+  journal?: { scope: string; idempotencyKey: string };
 }
 export interface SettleAgentTaskPermitInput {
   taskId: string;
@@ -102,6 +104,10 @@ export interface SettleAgentTaskPermitInput {
   /** Only the trusted execution/evidence layer may supply these observations. */
   outcome: AgentTaskOutcome;
   terminal: boolean;
+  /** Original transport response; only accepted with confirmed_dispatched. */
+  response?: { ok: boolean; status: number; text: string };
+  /** Transport succeeded but the separate audit sink could not persist complete evidence. */
+  evidenceDegraded?: boolean;
 }
 export interface ReleaseAgentTaskReservationInput {
   taskId: string;
@@ -113,6 +119,9 @@ export interface ReleaseAgentTaskReservationInput {
   actor?: string;
 }
 export interface AgentTaskPermitResult { fresh: boolean; invocation: AgentTaskInvocation; task: AgentControlledTask }
+export type AgentTaskMemberBinding = Pick<AgentTaskMemberInput, 'sessionId' | 'clientAppId' | 'route' | 'clientConversationId'>;
+export interface AgentTaskPageInput { limit?: number; before?: string }
+export interface AgentTaskPage<T> { items: T[]; nextCursor: string | null }
 
 export class AgentTaskControlError extends Error {
   override readonly name = 'AgentTaskControlError';

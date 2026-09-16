@@ -1,8 +1,15 @@
 import type { Job } from '../core/contracts/types';
+import { createHash } from 'node:crypto';
 
 export const AGENT_TOOL_JOB_TARGET = 'agent-tool-v1';
 export const AGENT_TOOL_JOB_SOURCE_PREFIX = 'agent-tool:';
 export const AGENT_TOOL_JOB_MARKER = 'bailing.agent-tool-job.v1';
+
+/** bz_jobs.source is a 32-character origin label; the full identity stays in client_app_id. */
+export function agentToolJobSource(clientAppId: string): string {
+  const original = `${AGENT_TOOL_JOB_SOURCE_PREFIX}${clientAppId}`;
+  return original.length <= 32 ? original : `${AGENT_TOOL_JOB_SOURCE_PREFIX}${createHash('sha256').update(clientAppId).digest('hex').slice(0, 32 - AGENT_TOOL_JOB_SOURCE_PREFIX.length)}`;
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HEX_64_RE = /^[a-f0-9]{64}$/;
@@ -24,7 +31,7 @@ export function isAgentToolInvocationJob(job: Job | null | undefined): boolean {
   return job.target === AGENT_TOOL_JOB_TARGET
     && REQUEST_ID_RE.test(job.request_id)
     && !!clientAppId
-    && job.source === `${AGENT_TOOL_JOB_SOURCE_PREFIX}${clientAppId}`
+    && (job.source === agentToolJobSource(clientAppId) || job.source === `${AGENT_TOOL_JOB_SOURCE_PREFIX}${clientAppId}`)
     && UUID_RE.test(agentSessionId)
     && !!job.on_behalf_of
     && metadata['agent_tool_job_marker'] === AGENT_TOOL_JOB_MARKER

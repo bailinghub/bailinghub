@@ -3,6 +3,7 @@ import { effectiveToolRateLimit, type RateLimitRequest, type RateLimitDecision }
 // 职责：消费 ToolDefinition → 白名单/主体/审批/限流/审计/签名 → 给大脑可调用的运行时句柄。
 // 中枢只做 reach（白名单/风险闸/限流/签名/审计）；authority（这个人能不能做）永远由业务侧验签后裁决。
 import { createHash, createHmac } from 'node:crypto';
+import { AgentTaskControlError } from '../runtime/agent-task-control';
 import type { ToolProvider } from './types';
 import { schemaAtPath, schemaTypes, valueMatchesSchemaType, type ToolConfirmCondition, type ToolDefinition } from './tool-definition';
 import { toolSummary } from './tool-definition';
@@ -391,6 +392,8 @@ export interface ApprovalDeps {
   continuationMode?: 'rerun' | 'resume';
   /** 查"已批准且未消费"的同快照审批单并原子消费；消费成功返回单号，否则 null */
   consumeApproved(tool: string, hash: string): Promise<number | null>;
+  /** Managed tasks only: observation without consuming; final permit transaction consumes it. */
+  peekApproved?(tool: string, hash: string): Promise<number | null>;
   /** 查同快照 pending 单（去重：同一调用别重复开单） */
   findPending(tool: string, hash: string): Promise<number | null>;
   /** 查本任务同工具"已批准未消费"单（不限参数）——重跑时大脑参数漂移的纠偏依据 */
@@ -426,6 +429,14 @@ export interface ToolRuntimeDeps {
   truncateBytes: number;            // 工具结果回流截断（默认 8192）
   approvedNote?: string;            // 重跑时已批准调用清单提示
   approvals?: ApprovalDeps;         // 不注入 = high/confirm 一律拦
+  /** A trusted assembly supplies these hooks; model parameters cannot create a task or permit. */
+  taskControl?: {
+    prepare(input: { tool: string; argsHash: string; readonly: boolean; approvalRequired: boolean }): Promise<void>;
+    grant(input: { tool: string; argsHash: string; scope: string; idempotencyKey: string; approvalId?: number }): Promise<boolean>;
+    settle(outcome: 'unknown' | 'confirmed_dispatched', response?: { ok: boolean; status: number; text: string }, evidenceDegraded?: boolean): Promise<void>;
+  };
+  /** Recheck sticky task enrollment for legacy Agent/engine/executor entrypoints before outbound I/O. */
+  beforeDispatch?: () => Promise<void>;
   audit(event: string, detail: Record<string, unknown>): Promise<void>; // 写审计；抛错=调用不放行（fail-closed）
   /** 工具语义检索（装配层注入；不注入 = 不启用检索，退回 progressive）：一句意图 → 召回工具名（已是双闸内、按相关度排序）。
    * 返回 null = 检索运行时不可用（索引/凭证/embedding 临时挂）→ retrieve() 透传 null 让适配器降级。本层不碰 embedding，只收名单。 */
@@ -515,7 +526,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       // 闸1.8：幂等账本——同 job 内"副作用工具"(非只读、非声明幂等)已执行过的相同调用，重试/崩溃恢复重跑时直接返回上次结果，
       //   不重复执行（防写操作重复扣款）。放在审批闸之前：否则重跑时已消费的审批单会被当成"无批准"再次触发待审批，把重跑卡死。
       const sideEffecting = !t.readonly && !t.idempotent;
-      if (sideEffecting && !d.idempotency) {
+      if ((sideEffecting || d.taskControl) && !d.idempotency) {
         await d.audit('tool_blocked', {
           tool: name,
           scope: t.scope,
@@ -527,7 +538,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
           text: `工具 ${name} 会产生业务副作用，但当前运行时未配置持久化执行日志，请求未发出。`,
         };
       }
-      const idemHash = sideEffecting ? argsHash(callArgs) : '';
+      const idemHash = sideEffecting || d.taskControl ? argsHash(callArgs) : '';
       const idemKey = idemHash ? toolCallIdempotencyKey(d.jobId, name, idemHash, d.onBehalfOf) : '';
       if (idemHash) {
         let existing: ToolExecutionJournalEntry | null;
@@ -605,13 +616,16 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       }
       const confirmHit = confirmCheck.hit;
       const needsApproval = t.risk === 'high' || t.confirmRequired || !!confirmHit;
+      if (d.taskControl) await d.taskControl.prepare({ tool: name, argsHash: argsHash(callArgs),
+        readonly: t.readonly, approvalRequired: needsApproval });
       if (needsApproval) {
         if (!d.approvals) { // 未接审批车道（理论不发生，server 总会注入）：一律拦
           await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: approvalReason(t, confirmHit) }).catch(() => undefined);
           return { ok: false, text: `工具 ${name} 属于需人工确认的高风险操作，当前不允许自动执行。请告知用户走人工流程。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
         }
         const hash = argsHash(callArgs);
-        approvalId = await d.approvals.consumeApproved(name, hash);
+        if (d.taskControl && !d.approvals.peekApproved) throw new AgentTaskControlError('TASK_UNSUPPORTED');
+        approvalId = d.taskControl ? await d.approvals.peekApproved!(name, hash) : await d.approvals.consumeApproved(name, hash);
         if (approvalId === null) {
           const pendingId = await d.approvals.findPending(name, hash);
           if (pendingId !== null) {
@@ -677,7 +691,17 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         ...(approvalId !== null ? { approval_id: approvalId } : {}),
       });
 
-      if (idemHash) {
+      if (d.beforeDispatch) await d.beforeDispatch();
+      if (d.taskControl) {
+        const fresh = await d.taskControl.grant({ tool: name, argsHash: idemHash, scope: t.scope,
+          idempotencyKey: idemKey, ...(approvalId !== null ? { approvalId } : {}) });
+        if (!fresh) {
+          const existing = await d.idempotency!.get(name, idemHash);
+          if (existing?.state === 'completed') return { ok: existing.ok, text: existing.text, status: existing.status };
+          return { ok: false, text: 'The original task invocation already owns a dispatch attempt. Inspect the original invocation; do not replay it.',
+            status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
+        }
+      } else if (idemHash) {
         let reserved: { inserted: boolean; entry: ToolExecutionJournalEntry };
         try {
           reserved = await d.idempotency!.reserve(name, t.scope, idemHash, idemKey);
@@ -744,6 +768,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       } catch (e) {
         const error = e instanceof Error && e.name === 'TimeoutError' ? `超时（${timeoutMs}ms）` : String(e);
         fullText = `调用结果不确定：${error}`;
+        if (d.taskControl) await d.taskControl.settle('unknown').catch(() => undefined);
         if (idemHash) {
           await d.idempotency!.markUncertain(name, idemHash, error).catch(() => undefined);
           executionUncertainty = {
@@ -785,7 +810,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       const text = modelFacingToolResponse(fullText, status, d.truncateBytes, responseContentType);
       const ok = status >= 200 && status < 300;
       const retText = text || `（HTTP ${status} 空响应）`;
-      if (idemHash) {
+      if (idemHash && !d.taskControl) {
         try {
           await d.idempotency!.recordResponse(name, idemHash, { ok, status, text: retText });
         } catch (error) {
@@ -821,6 +846,13 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
           ...respLog,
         });
       } catch (error) {
+        if (d.taskControl) {
+          await d.taskControl.settle('confirmed_dispatched', { ok, status, text: retText }, true).catch(() => undefined);
+          executionUncertainty = { state: 'evidence_degraded', tool: name, scope: t.scope, idempotency_key: idemKey,
+            reason: 'The business response was received, but its audit evidence could not be completed.',
+            message: 'The original operation may have completed; inspect its original receipt. Do not submit a replacement operation.' };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
+        }
         if (idemHash) {
           const reason = `业务响应已收到，但结果审计写入失败：${String(error).slice(0, 300)}`;
           await d.idempotency!.markEvidenceDegraded(name, idemHash, reason).catch(() => undefined);
@@ -836,7 +868,15 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         }
         throw error;
       }
-      if (idemHash) {
+      if (d.taskControl) {
+        try { await d.taskControl.settle('confirmed_dispatched', { ok, status, text: retText }); }
+        catch {
+          executionUncertainty = { state: 'uncertain', tool: name, scope: t.scope, idempotency_key: idemKey,
+            reason: 'The response was received but task settlement was not confirmed.',
+            message: 'Task settlement is unconfirmed. Inspect the original invocation; do not repeat the business operation.' };
+          return { ok: false, text: executionUncertainty.message, status: 0, governance_state: 'reconciliation_required', auto_retry_allowed: false };
+        }
+      } else if (idemHash) {
         try {
           await d.idempotency!.complete(name, idemHash);
         } catch (error) {

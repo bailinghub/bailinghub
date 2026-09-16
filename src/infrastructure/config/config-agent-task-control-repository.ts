@@ -13,12 +13,20 @@ import {
   type AgentTaskPermitResult, type ControlAgentTaskInput, type CreateAgentTaskInput,
   type GrantAgentTaskPermitInput, type ReserveAgentTaskInvocationInput, type SettleAgentTaskPermitInput,
   type ReleaseAgentTaskReservationInput,
+  type AgentTaskMemberBinding, type AgentTaskPageInput, type AgentTaskPage,
 } from '../../core/runtime/agent-task-control';
 
 type Row = Record<string, any>;
 type LockedBindings = { sessions: Map<string, Row>; clients: Map<string, Row>; routes: Map<string, Row> };
 const SESSION_COLUMNS = 'session_id,client_app_id,principal_json,on_behalf_of,allowed_routes,refresh_expires_at,created_at,revoked_at';
 const ACTIVE_RUN = 'context_ready';
+const TASK_TABLES = ['bz_agent_tasks', 'bz_agent_task_members', 'bz_agent_task_enforcements',
+  'bz_agent_task_invocations', 'bz_agent_task_runs', 'bz_agent_task_events'];
+
+function pageInput(input: AgentTaskPageInput) {
+  const limit = taskInteger(input.limit ?? 30, 1, 100);
+  return { limit, cursor: input.before === undefined ? null : taskUuid(input.before) };
+}
 
 function object(value: unknown): Row {
   try {
@@ -73,7 +81,7 @@ function invocationRow(row: Row): AgentTaskInvocation {
 }
 
 /**
- * Unwired MySQL foundation. All methods are internal trusted services, not Agent HTTP APIs.
+ * All methods are internal trusted services, not Agent HTTP APIs.
  * getTask includes identity hashes and multi-member state: admission and output projection
  * must be implemented before exposing it. This class performs no business HTTP requests.
  */
@@ -188,6 +196,109 @@ export class AgentTaskControlRepository {
     if (blocked) throw blocked;
     return result;
   }
+  /** A missing migration is unsupported; operational database errors must propagate. */
+  async supportsTaskControl(): Promise<boolean> {
+    const rows = await this.rows(this.poolOf(), `SELECT TABLE_NAME AS table_name FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (${TASK_TABLES.map(() => '?').join(',')})`, TASK_TABLES);
+    if (!rows.length) return false;
+    taskAssert(TASK_TABLES.every((name) => rows.some((row) => row.table_name === name)), 'TASK_UNAVAILABLE');
+    return true;
+  }
+  /** Final legacy admission point. Admin enrollment takes the same Session lock first. */
+  async assertUnmanagedDispatch(sessionId: string): Promise<void> {
+    sessionId = taskUuid(sessionId);
+    await this.tx(async (connection) => {
+      const [session] = await this.rows(connection, 'SELECT session_id FROM bz_agent_sessions WHERE session_id=? FOR UPDATE', [sessionId]);
+      taskAssert(session?.session_id === sessionId, 'TASK_MEMBER_MISMATCH');
+      const [marker] = await this.rows(connection, 'SELECT session_id FROM bz_agent_task_enforcements WHERE session_id=? FOR UPDATE', [sessionId]);
+      taskAssert(!marker, 'TASK_REQUIRED');
+    });
+  }
+  async listTasks(input: AgentTaskPageInput = {}): Promise<AgentTaskPage<AgentControlledTask>> {
+    const { limit, cursor } = pageInput(input);
+    const rows = await this.rows(this.poolOf(), `SELECT * FROM bz_agent_tasks${cursor ? ' WHERE task_id<?' : ''}
+      ORDER BY task_id DESC LIMIT ?`, [...(cursor ? [cursor] : []), limit + 1]);
+    const selected = rows.slice(0, limit);
+    const items = await Promise.all(selected.map(async (row) => taskRow(row, await this.members(this.poolOf(), row.task_id))));
+    const last = selected.at(-1);
+    return { items, nextCursor: rows.length > limit && last ? last.task_id : null };
+  }
+  async listInvocations(taskId: string, input: AgentTaskPageInput = {}): Promise<AgentTaskPage<AgentTaskInvocation>> {
+    taskId = taskUuid(taskId);
+    const { limit, cursor } = pageInput(input);
+    const rows = await this.rows(this.poolOf(), `SELECT * FROM bz_agent_task_invocations WHERE task_id=?${cursor ? ' AND job_id<?' : ''}
+      ORDER BY job_id DESC LIMIT ?`, [taskId, ...(cursor ? [cursor] : []), limit + 1]);
+    const selected = rows.slice(0, limit), last = selected.at(-1);
+    return { items: selected.map(invocationRow), nextCursor: rows.length > limit && last
+      ? last.job_id : null };
+  }
+  async validateMember(taskId: string, value: AgentTaskMemberBinding, scopeHash?: string): Promise<AgentControlledTask> {
+    const binding = normalizeAgentTaskMembers([{ ...value, allowedTools: ['binding_check'] }])[0]!;
+    taskId = taskUuid(taskId);
+    if (scopeHash !== undefined) taskDigest(scopeHash);
+    const matches = (member: AgentTaskMember) => member.sessionId === binding.sessionId && member.clientAppId === binding.clientAppId
+      && member.route === binding.route && member.clientConversationId === binding.clientConversationId;
+    taskAssert((await this.members(this.poolOf(), taskId)).some(matches), 'TASK_MEMBER_MISMATCH');
+    return this.withTask(taskId, true, async (_connection, task) => {
+      taskAssert(scopeHash === undefined || scopeHash === task.scopeHash, 'TASK_BINDING_CONFLICT');
+      taskAssert(task.members.some(matches), 'TASK_MEMBER_MISMATCH');
+      return task;
+    });
+  }
+  async bindRuntimeRun(taskId: string, scopeHash: string, sessionId: string, runId: string): Promise<void> {
+    taskId = taskUuid(taskId); taskDigest(scopeHash); sessionId = taskUuid(sessionId); runId = taskUuid(runId);
+    await this.withTask(taskId, true, async (connection, task) => {
+      taskAssert(task.scopeHash === scopeHash, 'TASK_BINDING_CONFLICT');
+      assertTaskCanDispatch(task, this.now());
+      const [run] = await this.rows(connection, 'SELECT run_id,session_id,client_app_id,route_key,client_conversation_id,status,completed_at FROM bz_agent_client_runs WHERE run_id=? FOR UPDATE', [runId]);
+      taskAssert(run?.run_id === runId && run.session_id === sessionId && task.members.some((member) => member.sessionId === sessionId
+        && member.clientAppId === run.client_app_id && member.route === run.route_key && member.clientConversationId === run.client_conversation_id), 'TASK_MEMBER_MISMATCH');
+      taskAssert(['preparing', ACTIVE_RUN].includes(run.status) && !run.completed_at, 'TASK_RUN_INACTIVE');
+      await this.bindRun(connection, { taskId, sessionId, runId }, true, this.now());
+    });
+  }
+  async findTaskForRun(runId: string, sessionId: string): Promise<AgentControlledTask | null> {
+    runId = taskUuid(runId); sessionId = taskUuid(sessionId);
+    const [binding] = await this.rows(this.poolOf(), `SELECT b.task_id,b.session_id,r.session_id AS run_session_id,r.client_app_id,r.route_key,r.client_conversation_id
+      FROM bz_agent_task_runs b LEFT JOIN bz_agent_client_runs r ON r.run_id=b.run_id WHERE b.run_id=? AND b.session_id=?`, [runId, sessionId]);
+    if (!binding) return null;
+    const task = await this.getTask(binding.task_id);
+    taskAssert(task && binding.run_session_id === sessionId && task.members.some((member) => member.sessionId === sessionId
+      && member.clientAppId === binding.client_app_id && member.route === binding.route_key && member.clientConversationId === binding.client_conversation_id), 'TASK_RECORD_INVALID');
+    return task;
+  }
+  async findInvocation(sessionId: string, invocationId: string): Promise<AgentTaskInvocation | null> {
+    sessionId = taskUuid(sessionId); invocationId = taskDigest(invocationId);
+    const [row] = await this.rows(this.poolOf(), 'SELECT * FROM bz_agent_task_invocations WHERE session_id=? AND invocation_id=?', [sessionId, invocationId]);
+    return row ? invocationRow(row) : null;
+  }
+  async clearFrozenArguments(jobId: string): Promise<void> {
+    jobId = taskUuid(jobId);
+    await this.poolOf().query("UPDATE bz_jobs SET metadata=JSON_REMOVE(metadata,'$.agent_frozen_arguments') WHERE job_id=?", [jobId]);
+  }
+  /** Lock the real job before classifying it; never replace its JSON or a concurrently committed permit. */
+  async freezeInvocationContract(jobId: string, contract: { schema_version: string; readonly: boolean; approval_required: boolean;
+    args_hash: string; execution_fingerprint: string }): Promise<void> {
+    jobId = taskUuid(jobId);
+    taskAssert(contract.schema_version === 'bailing.agent-task-tool-contract.v1'
+      && typeof contract.readonly === 'boolean' && typeof contract.approval_required === 'boolean', 'TASK_INVALID_INPUT');
+    taskDigest(contract.args_hash); taskDigest(contract.execution_fingerprint);
+    await this.tx(async (connection) => {
+      const [row] = await this.rows(connection, 'SELECT metadata FROM bz_jobs WHERE job_id=? FOR UPDATE', [jobId]);
+      taskAssert(row, 'TASK_INVOCATION_CONFLICT');
+      const metadata = typeof row.metadata === 'string' ? JSON.parse(row.metadata) : row.metadata;
+      taskAssert(metadata?.agent_tool_job_marker === 'bailing.agent-tool-job.v1'
+        && metadata.agent_args_hash === contract.args_hash && metadata.agent_execution_fingerprint === contract.execution_fingerprint,
+      'TASK_INVOCATION_CONFLICT');
+      if (metadata.agent_task_tool_contract) {
+        taskAssert(agentTaskHash(metadata.agent_task_tool_contract) === agentTaskHash(contract), 'TASK_INVOCATION_CONFLICT');
+        return;
+      }
+      taskAssert(metadata.agent_dispatch_attempted === false && !metadata.agent_task_permit_id, 'TASK_ORIGINAL_ALREADY_ATTEMPTED');
+      await connection.query("UPDATE bz_jobs SET metadata=JSON_SET(metadata,'$.agent_task_tool_contract',CAST(? AS JSON)) WHERE job_id=?",
+        [JSON.stringify(contract), jobId]);
+    });
+  }
   async createAdminTask(input: CreateAgentTaskInput): Promise<AgentControlledTask> {
     const taskId = taskUuid(input.taskId), actor = taskText(input.actor, 191), requestId = taskText(input.requestId, 128);
     taskAssert(Object.keys(input).every((key) => ['taskId', 'actor', 'requestId', 'members', 'policy'].includes(key)), 'TASK_INVALID_INPUT');
@@ -254,7 +365,7 @@ export class AgentTaskControlRepository {
     const [row] = await this.rows(connection, 'SELECT * FROM bz_agent_task_invocations WHERE session_id=? AND invocation_id=? FOR UPDATE', [sessionId, invocationId]);
     return row ? invocationRow(row) : null;
   }
-  private async bindRun(connection: PoolConnection, invocation: ReserveAgentTaskInvocationInput, create: boolean, now: string) {
+  private async bindRun(connection: PoolConnection, invocation: Pick<ReserveAgentTaskInvocationInput, 'taskId' | 'sessionId' | 'runId'>, create: boolean, now: string) {
     const [binding] = await this.rows(connection, 'SELECT task_id,session_id FROM bz_agent_task_runs WHERE run_id=? FOR UPDATE', [invocation.runId]);
     if (binding) {
       taskAssert(binding.task_id === invocation.taskId && binding.session_id === invocation.sessionId, 'TASK_RUN_TASK_CONFLICT');
@@ -375,7 +486,8 @@ export class AgentTaskControlRepository {
   }
   async grantDispatchPermit(value: GrantAgentTaskPermitInput): Promise<AgentTaskPermitResult> {
     const input = { taskId: taskUuid(value.taskId), sessionId: taskUuid(value.sessionId), invocationId: taskDigest(value.invocationId),
-      retryOriginal: value.retryOriginal === true, approvalId: value.approvalId };
+      retryOriginal: value.retryOriginal === true, approvalId: value.approvalId,
+      journal: value.journal === undefined ? undefined : { scope: taskText(value.journal.scope, 191), idempotencyKey: taskDigest(value.journal.idempotencyKey) } };
     taskAssert(value.retryOriginal === undefined || typeof value.retryOriginal === 'boolean', 'TASK_INVALID_INPUT');
     if (input.approvalId !== undefined) taskInteger(input.approvalId, 1);
     return this.withTask(input.taskId, true, async (connection, task, bindings) => {
@@ -383,6 +495,12 @@ export class AgentTaskControlRepository {
       taskAssert(invocation && invocation.taskId === task.taskId, 'TASK_INVOCATION_CONFLICT');
       const job = await this.validateOriginal(connection, task, invocation, bindings, false);
       await this.bindRun(connection, invocation, false, task.updatedAt);
+      const priorJournal = job.metadata.agent_task_journal;
+      if (priorJournal !== undefined) {
+        const prior = object(priorJournal);
+        taskAssert(input.journal && prior.schema_version === 'bailing.agent-task-journal.v1'
+          && prior.scope === input.journal.scope && prior.idempotency_key === input.journal.idempotencyKey, 'TASK_JOURNAL_CONFLICT');
+      }
       if (invocation.permitState === 'held' || invocation.permitState === 'unknown') return { fresh: false, invocation, task };
       taskAssert(!invocation.terminal, 'TASK_INVOCATION_TERMINAL');
       taskAssert(invocation.attempt === 0 || (input.retryOriginal && invocation.outcome === 'confirmed_not_dispatched'), 'TASK_EXPLICIT_RETRY_REQUIRED');
@@ -390,6 +508,14 @@ export class AgentTaskControlRepository {
       taskAssert(task.activePermits < task.policy.maxConcurrent, 'TASK_CONCURRENCY_EXHAUSTED');
       taskAssert(invocation.readonly || invocation.budgetState === 'reserved', 'TASK_BUDGET_CONFLICT');
       taskAssert(job.metadata.agent_task_id === task.taskId && job.metadata.agent_dispatch_attempted === false, 'TASK_INVOCATION_CONFLICT');
+      if (input.journal) {
+        const [existing] = await this.rows(connection, 'SELECT scope,idempotency_key,state FROM bz_tool_calls WHERE job_id=? AND tool=? AND args_hash=? FOR UPDATE',
+          [invocation.jobId, invocation.tool, invocation.argsHash]);
+        if (existing) {
+          taskAssert(existing.scope === input.journal.scope && existing.idempotency_key === input.journal.idempotencyKey, 'TASK_JOURNAL_CONFLICT');
+          return { fresh: false, invocation, task };
+        }
+      }
       if (invocation.approvalRequired) {
         taskAssert(input.approvalId !== undefined, 'TASK_APPROVAL_REQUIRED');
         const [approval] = await this.rows(connection, 'SELECT id,job_id,request_id,tool,args_hash,on_behalf_of,status,used_at FROM bz_tool_approvals WHERE id=? FOR UPDATE', [input.approvalId]);
@@ -408,6 +534,17 @@ export class AgentTaskControlRepository {
       } else taskAssert(input.approvalId === undefined, 'TASK_APPROVAL_UNEXPECTED');
       invocation.permitId = taskUuid((this.options.newId ?? randomUUID)()); invocation.permitState = 'held';
       invocation.outcome = null; invocation.attempt++; task.activePermits++; task.ledgerSequence++; task.updatedAt = this.now();
+      if (input.journal) {
+        const [reserved] = await connection.query(`INSERT IGNORE INTO bz_tool_calls
+          (job_id,tool,scope,args_hash,state,idempotency_key,ok,status,result_json,error,created_at,updated_at)
+          VALUES (?,?,?,?,'dispatching',?,0,0,NULL,NULL,?,?)`,
+        [invocation.jobId, invocation.tool, input.journal.scope, invocation.argsHash, input.journal.idempotencyKey, sqlDate(task.updatedAt), sqlDate(task.updatedAt)]);
+        // A competing legacy journal writer must roll back approval use and the permit too.
+        taskAssert((reserved as { affectedRows?: number }).affectedRows === 1, 'TASK_JOURNAL_CONFLICT');
+        await connection.query("UPDATE bz_jobs SET metadata=JSON_SET(metadata,'$.agent_task_journal',CAST(? AS JSON)) WHERE job_id=?",
+          [JSON.stringify({ schema_version: 'bailing.agent-task-journal.v1', scope: input.journal.scope,
+            idempotency_key: input.journal.idempotencyKey, permit_id: invocation.permitId }), invocation.jobId]);
+      }
       const result = { schema_version: 'bailing.agent-tool-invocation.v1', invocation_id: invocation.invocationId,
         route: job.metadata.agent_route, tool: invocation.tool, state: 'in_progress', ok: false, auto_retry_allowed: false,
         text: 'The original governed invocation has a dispatch permit; its business outcome is not yet confirmed.' };
@@ -425,19 +562,27 @@ export class AgentTaskControlRepository {
     taskAssert(['confirmed_dispatched', 'confirmed_not_dispatched', 'unknown'].includes(input.outcome)
       && typeof input.terminal === 'boolean' && (input.outcome !== 'unknown' || !input.terminal)
       && (input.outcome !== 'confirmed_dispatched' || input.terminal), 'TASK_INVALID_INPUT');
+    if (value.response !== undefined) taskAssert(input.outcome === 'confirmed_dispatched' && value.response
+      && typeof value.response.ok === 'boolean' && Number.isSafeInteger(value.response.status) && value.response.status >= 0
+      && value.response.status <= 599 && typeof value.response.text === 'string'
+      && Buffer.byteLength(value.response.text, 'utf8') <= 8 * 1024 * 1024, 'TASK_INVALID_INPUT');
+    taskAssert(value.evidenceDegraded === undefined || (typeof value.evidenceDegraded === 'boolean'
+      && input.outcome === 'confirmed_dispatched' && value.response !== undefined), 'TASK_INVALID_INPUT');
     // Trusted late evidence remains recordable after revocation, expiry, pause or cancellation.
     return this.withTask(input.taskId, false, async (connection, task) => {
       const invocation = await this.invocation(connection, input.sessionId, input.invocationId);
       taskAssert(invocation && invocation.taskId === input.taskId && invocation.permitId === input.permitId, 'TASK_PERMIT_CONFLICT');
+      const [job] = await this.rows(connection, 'SELECT metadata FROM bz_jobs WHERE job_id=? FOR UPDATE', [invocation.jobId]);
+      const metadata = object(job?.metadata);
+      taskAssert(metadata.agent_task_id === task.taskId && metadata.agent_task_permit_id === input.permitId, 'TASK_PERMIT_CONFLICT');
       if (invocation.permitState === 'settled') {
         taskAssert(invocation.outcome === input.outcome && invocation.terminal === input.terminal, 'TASK_SETTLEMENT_CONFLICT');
+        if (value.response !== undefined) await this.settleJournal(connection, invocation, metadata, value, true);
         return { fresh: false, invocation, task };
       }
       if (invocation.permitState === 'unknown' && input.outcome === 'unknown') return { fresh: false, invocation, task };
       taskAssert(invocation.permitState === 'held' || invocation.permitState === 'unknown', 'TASK_PERMIT_CONFLICT');
-      const [job] = await this.rows(connection, 'SELECT metadata FROM bz_jobs WHERE job_id=? FOR UPDATE', [invocation.jobId]);
-      const metadata = object(job?.metadata);
-      taskAssert(metadata.agent_task_id === task.taskId && metadata.agent_task_permit_id === input.permitId, 'TASK_PERMIT_CONFLICT');
+      await this.settleJournal(connection, invocation, metadata, value, false);
       invocation.outcome = input.outcome; invocation.terminal = input.terminal;
       if (input.outcome === 'unknown') invocation.permitState = 'unknown';
       else {
@@ -457,5 +602,39 @@ export class AgentTaskControlRepository {
       await this.event(connection, task, `settled_${input.outcome}`, { invocationId: invocation.invocationId, permitId: input.permitId, detail: { terminal: input.terminal } });
       return { fresh: true, invocation, task };
     });
+  }
+  private async settleJournal(connection: PoolConnection, invocation: AgentTaskInvocation, metadata: Row,
+    input: SettleAgentTaskPermitInput, replay: boolean): Promise<void> {
+    if (metadata.agent_task_journal === undefined) {
+      taskAssert(input.response === undefined, 'TASK_JOURNAL_REQUIRED');
+      return;
+    }
+    const marker = object(metadata.agent_task_journal);
+    taskAssert(marker.schema_version === 'bailing.agent-task-journal.v1' && marker.permit_id === invocation.permitId, 'TASK_JOURNAL_CONFLICT');
+    const [journal] = await this.rows(connection, 'SELECT scope,state,ok,status,result_json,idempotency_key FROM bz_tool_calls WHERE job_id=? AND tool=? AND args_hash=? FOR UPDATE',
+      [invocation.jobId, invocation.tool, invocation.argsHash]);
+    taskAssert(journal && journal.scope === marker.scope && journal.idempotency_key === marker.idempotency_key, 'TASK_JOURNAL_CONFLICT');
+    const ids = [invocation.jobId, invocation.tool, invocation.argsHash];
+    if (input.outcome === 'confirmed_dispatched') {
+      taskAssert(input.response, 'TASK_RESPONSE_REQUIRED');
+      const desiredState = input.evidenceDegraded ? 'evidence_degraded' : 'completed';
+      if (replay || ['completed', 'response_recorded', 'evidence_degraded'].includes(journal.state)) {
+        const original = object(journal.result_json);
+        taskAssert(Number(journal.ok) === (input.response.ok ? 1 : 0) && Number(journal.status) === input.response.status
+          && original.text === input.response.text && (!replay || journal.state === desiredState), 'TASK_SETTLEMENT_CONFLICT');
+        if (replay) return;
+      } else taskAssert(['dispatching', 'uncertain'].includes(journal.state), 'TASK_JOURNAL_CONFLICT');
+      await connection.query(`UPDATE bz_tool_calls SET state=?,ok=?,status=?,result_json=?,error=?,updated_at=? WHERE job_id=? AND tool=? AND args_hash=?`,
+        [desiredState, input.response.ok ? 1 : 0, input.response.status, JSON.stringify({ text: input.response.text }),
+          input.evidenceDegraded ? 'task_result_audit_incomplete' : null, sqlDate(this.now()), ...ids]);
+    } else if (input.outcome === 'unknown') {
+      taskAssert(['dispatching', 'uncertain'].includes(journal.state), 'TASK_JOURNAL_CONFLICT');
+      await connection.query("UPDATE bz_tool_calls SET state='uncertain',error='task_dispatch_outcome_unknown',updated_at=? WHERE job_id=? AND tool=? AND args_hash=?",
+        [sqlDate(this.now()), ...ids]);
+    } else {
+      // Only authoritative evidence that this original permit never left the process can remove its empty reservation.
+      taskAssert(journal.state === 'dispatching' && journal.result_json === null && invocation.permitState === 'held', 'TASK_JOURNAL_CONFLICT');
+      await connection.query("DELETE FROM bz_tool_calls WHERE job_id=? AND tool=? AND args_hash=? AND state='dispatching'", ids);
+    }
   }
 }

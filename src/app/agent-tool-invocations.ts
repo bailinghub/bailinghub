@@ -1,4 +1,6 @@
 import { openInvocationArguments, sealInvocationArguments } from './agent-invocation-snapshot';
+import { bindingForTask, resolveAgentTaskRunFor } from './agent-task-control';
+import { taskAssert } from '../core/runtime/agent-task-control';
 import type { ToolRateLimitFeedback } from '../core/contracts/tools';
 import { createHash, randomUUID } from 'node:crypto';
 import { agentDirectToolsConfig } from '../core/config/tools-config';
@@ -14,7 +16,7 @@ import type { AgentClientRunRecord } from '../infrastructure/config/config-agent
 import type { ToolProxyDeps } from './tool-proxy';
 import {
   AGENT_TOOL_JOB_MARKER,
-  AGENT_TOOL_JOB_SOURCE_PREFIX,
+  agentToolJobSource,
   AGENT_TOOL_JOB_TARGET,
   isAgentToolInvocationJob,
 } from './agent-tool-job';
@@ -329,7 +331,7 @@ function probeJob(auth: AgentToolAuthContext, route: Route, now: string): Job {
     target: AGENT_TOOL_JOB_TARGET,
     profile: route.profile,
     project: route.project ?? '',
-    source: `${AGENT_TOOL_JOB_SOURCE_PREFIX}${auth.client.app_id}`,
+    source: agentToolJobSource(auth.client.app_id),
     client_app_id: auth.client.app_id,
     agent_session_id: auth.session.session_id,
     on_behalf_of: auth.session.on_behalf_of,
@@ -627,7 +629,7 @@ function syntheticJob(
     target: AGENT_TOOL_JOB_TARGET,
     profile: surface.route.profile,
     project: surface.route.project ?? '',
-    source: `${AGENT_TOOL_JOB_SOURCE_PREFIX}${auth.client.app_id}`,
+    source: agentToolJobSource(auth.client.app_id),
     client_app_id: auth.client.app_id,
     agent_session_id: auth.session.session_id,
     on_behalf_of: auth.session.on_behalf_of,
@@ -683,10 +685,13 @@ function fromJournal(input: FrozenInvocationCoordinates, tool: string, entry: To
 }
 
 async function persistResult(deps: ToolProxyDeps, job: Job, result: AgentToolInvocationResult): Promise<void> {
+  const managed = Boolean(job.metadata.agent_task_binding || job.metadata.agent_task_id);
   const metadata = { ...job.metadata };
   if (isStableInvocationResult(result)) delete metadata.agent_frozen_arguments;
-  const saved = await deps.stateStore.updateJob(job.job_id, { metadata, status: 'done', result: { ...result }, error: undefined });
+  // Task transactions own the dispatch fence and permit metadata. A stale in-memory job must never overwrite it.
+  const saved = await deps.stateStore.updateJob(job.job_id, { ...(managed ? {} : { metadata }), status: 'done', result: { ...result }, error: undefined });
   if (!saved) throw new AgentToolApiError(503, 'invocation_storage_unavailable', 'The original invocation state could not be saved.');
+  if (managed && isStableInvocationResult(result)) await deps.configStore!.agentTaskControl!.clearFrozenArguments(job.job_id);
   job.metadata = metadata;
   job.result = { ...result };
   await deps.stateStore.appendAudit({
@@ -718,6 +723,11 @@ async function invokeExisting(
   }
   const approval = await currentApproval(deps.configStore!, job, tool, hash);
   if (approval?.status === 'denied') {
+    if (job.metadata.agent_task_binding || job.metadata.agent_task_id) {
+      const original = await deps.configStore!.agentTaskControl!.findInvocation(auth.session.session_id, input.invocation_id);
+      if (original) await deps.configStore!.agentTaskControl!.releaseReservation({ taskId: original.taskId,
+        sessionId: auth.session.session_id, invocationId: input.invocation_id, reason: 'approval_denied', approvalId: approval.id });
+    }
     const result = publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'denied', ok: false, text: 'The governed tool invocation was denied.' });
     await persistResult(deps, job, result);
     return result;
@@ -756,7 +766,9 @@ async function invokeExisting(
   if (!runtime || runtime === 'subject_locked') {
     throw new AgentToolApiError(409, 'capability_changed', 'The tool surface is no longer available; refresh the capability catalog.');
   }
-  job = { ...job, metadata: { ...job.metadata, agent_dispatch_attempted: true } };
+  if (!job.metadata.agent_task_binding && !job.metadata.agent_task_id) {
+    job = { ...job, metadata: { ...job.metadata, agent_dispatch_attempted: true } };
+  }
   // Persist the attempt fence before allowing HTTP dispatch, including resumed idempotent writes.
   await persistResult(deps, job, publicResult({ invocationId: input.invocation_id, route: input.route, tool, state: 'in_progress', ok: false, text: 'The original governed invocation is in progress.' }));
   const out = await runtime.invoke(tool, args);
@@ -810,6 +822,8 @@ export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
     if (job && !sameInvocation(job, auth, { ...input, args_hash: hash })) {
       throw new AgentToolApiError(409, 'invocation_conflict', 'The invocation_id is already bound to a different call.');
     }
+    const task = await resolveAgentTaskRunFor(deps.configStore, auth, input.agent_run_id, input.route, !job);
+    taskAssert(task || !(runtimeRun?.context?.task_binding || job?.metadata.agent_task_binding || job?.metadata.agent_task_id), 'TASK_UNSUPPORTED');
     if (job) await resolveDirectRoute(deps, auth, input.route);
     const cached = job ? parseInvocationResult(job) : null;
     let surface: AgentToolSurface | null = null;
@@ -829,6 +843,7 @@ export async function invokeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
         throw new AgentToolApiError(404, 'tool_not_found', 'The tool is not available in the current capability catalog.');
       }
       job = syntheticJob(auth, surface, input, hash, toolFingerprint, runtimeRun, deps.now());
+      if (task) job.metadata.agent_task_binding = bindingForTask(task);
       job.metadata.agent_frozen_arguments = sealInvocationArguments(job, input.arguments, deps.cfg.server.token);
       await deps.stateStore.createJob(job);
       await deps.stateStore.appendAudit({
@@ -869,6 +884,8 @@ export async function resumeAgentToolFor(deps: ToolProxyDeps, auth: AgentToolAut
       throw new AgentToolApiError(404, 'invocation_not_found', 'The governed invocation was not found.');
     }
     const route = String(job.metadata['agent_route'] ?? '');
+    const task = await resolveAgentTaskRunFor(deps.configStore, auth, String(job.metadata.agent_run_id ?? ''), route, false);
+    taskAssert(task || !(job.metadata.agent_task_binding || job.metadata.agent_task_id), 'TASK_UNSUPPORTED');
     const capabilityRevision = String(job.metadata['agent_capability_revision'] ?? '');
     const tool = String(job.metadata['agent_tool'] ?? '');
     const hash = String(job.metadata['agent_args_hash'] ?? '');
@@ -957,6 +974,8 @@ export async function inspectAgentToolInvocationFor(
     throw new AgentToolApiError(409, 'invocation_conflict', 'The original invocation binding could not be verified.');
   }
   const runtimeRun = await deps.configStore.agentClientRuntime?.findRunForInvocation(runId) ?? null;
+  const task = await resolveAgentTaskRunFor(deps.configStore, auth, runId, route, false);
+  taskAssert(task || !(runtimeRun?.context?.task_binding || metadata.agent_task_binding || metadata.agent_task_id), 'TASK_UNSUPPORTED');
   if (runtimeRun && (runtimeRun.run_id !== runId || runtimeRun.session_id !== auth.session.session_id
     || runtimeRun.client_app_id !== auth.client.app_id || runtimeRun.route_key !== route
     || (job.thread_id !== undefined && runtimeRun.thread_id !== job.thread_id))) {

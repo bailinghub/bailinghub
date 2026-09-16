@@ -19,6 +19,7 @@ import {
 import { sendMessageConfig } from '../core/config/tools-config';
 import { SEND_TOOL_NAME, type BuiltinToolDef } from '../core/targets/adapter';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import { assertTaskLegacyJobAllowedFor } from './agent-task-runtime';
 
 export { SEND_MAX_CALLS, SEND_TOOL_NAME } from '../core/targets/adapter';
 
@@ -94,6 +95,8 @@ export async function runSendMessageFor(
   ) => Promise<ChannelSendResult> = channelSendFor,
 ): Promise<BuiltinSendResult> {
   if (!config) return { ok: false, text: '发送失败：中枢无 mysql 后端。' };
+  try { await assertTaskLegacyJobAllowedFor(config, job); }
+  catch { return { ok: false, text: 'TASK_REQUIRED: 此授权的业务执行必须经过原任务控制范围，消息未发送。' }; }
   if (!allowedChannels.length) return { ok: false, text: '本路由未开放任何可主动发送的渠道，无法发送。' };
   // 渠道：显式 channel 必须在白名单内；不给且只有一个允许渠道 → 默认它
   const reqCh = String(args['channel'] ?? '').trim();
@@ -183,6 +186,7 @@ export async function runSendMessageFor(
   }
 
   try {
+    await assertTaskLegacyJobAllowedFor(config, job);
     const reserved = await config.toolCalls.reserve(job.job_id, SEND_TOOL_NAME, scope, idemHash, idemKey);
     if (!reserved.inserted) {
       if (reserved.entry.state === 'completed') {

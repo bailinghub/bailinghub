@@ -106,4 +106,4 @@ These are observations of separately persisted records. A concurrent operation o
 
 ## Integration scope
 
-This addition requires no database migration and leaves existing invoke/resume behavior unchanged. The Core endpoint and paired Agent Client SDK are a foundation for future task-level read views. No task record, cumulative task budget, task pause/cancel API, automatic reconciliation with a business provider, or task enforcement is introduced here.
+The standalone receipt addition requires no migration. The later [paired task-control candidate](AGENT_TASK_CONTROL.en.md) builds on it with migration 062, whole-group verification for managed calls, budgets, pause/cancel and host integration. It still does not automatically reconcile unknown outcomes with a business provider. Non-enrolled original invocation behavior remains unchanged.

@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { dt } from '../../core/config/config-codec';
 
+/** Message channel is a bounded display label; the original Client is preserved by agent_run_id. */
+function agentMessageChannel(clientAppId: string): string {
+  const label = `agent:${clientAppId}`;
+  return label.length <= 64 ? label : `agent:sha256:${createHash('sha256').update(clientAppId).digest('hex').slice(0, 48)}`;
+}
+
 export interface AgentClientRunRecord {
   run_id: string;
   session_id: string;
@@ -244,7 +250,7 @@ export class AgentClientRuntimeRepository {
       const at = dt();
       await conn.query(
         'INSERT INTO bz_messages (thread_id,direction,channel,principal_id,job_id,agent_run_id,external_message_id,content,created_at) VALUES (?,\'in\',?,?,?,?,?,?,?)',
-        [Number(row.thread_id), `agent:${input.client_app_id}`, input.principal_id || null, null, input.run_id, String(row.user_message_id), String(row.user_input), at],
+        [Number(row.thread_id), agentMessageChannel(input.client_app_id), input.principal_id || null, null, input.run_id, String(row.user_message_id), String(row.user_input), at],
       );
       await conn.query('UPDATE bz_threads SET message_count=message_count+1,last_active_at=? WHERE thread_id=?', [at, Number(row.thread_id)]);
       await conn.query(

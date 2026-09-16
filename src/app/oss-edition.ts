@@ -84,6 +84,7 @@ export function createOssEdition(cfg: AppConfig, options: {
         'routes',
         'clients',
         'agent-clients',
+        'agent-tasks',
         'chat',
         'channels',
         'targets',

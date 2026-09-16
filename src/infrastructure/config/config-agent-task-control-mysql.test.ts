@@ -307,7 +307,7 @@ test('task foundation uses real MySQL transactions and durable original identiti
     await t.test('corrupted original request or principal records cannot reserve budget', async () => {
       const fx = await setup();
       const wrongRequest = { taskId: fx.task.taskId, ...await seedTaskMysqlInvocation(pool, fx.members[0]!) };
-      await pool.query('UPDATE bz_jobs SET request_id=? WHERE job_id=?', [`agent-tool:${'e'.repeat(64)}`, wrongRequest.jobId]);
+      await pool.query('UPDATE bz_jobs SET request_id=? WHERE job_id=?', [`agent-tool:${randomUUID().replaceAll('-', '').repeat(2)}`, wrongRequest.jobId]);
       await assert.rejects(fx.repo.reserveInvocation(wrongRequest), code('TASK_INVOCATION_CONFLICT'));
       const wrongPrincipal = { taskId: fx.task.taskId, ...await seedTaskMysqlInvocation(pool, fx.members[0]!, {
         extraMetadata: { principal: { ...fx.members[0]!.principal, tenant: 'other-example-tenant' } },

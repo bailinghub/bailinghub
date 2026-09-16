@@ -36,7 +36,8 @@ function agentAllowsRoute(principal: Extract<Principal, { kind: 'agent' }>, rout
 }
 
 function agentUserMetadata(value: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(value).filter(([key]) => !AGENT_RESERVED_METADATA_FIELDS.has(key)));
+  return Object.fromEntries(Object.entries(value).filter(([key]) => !AGENT_RESERVED_METADATA_FIELDS.has(key)
+    && !key.startsWith('agent_task') && key !== 'task_binding' && key !== 'task_id'));
 }
 
 function agentSubjectScope(principal: Extract<Principal, { kind: 'agent' }>): string {

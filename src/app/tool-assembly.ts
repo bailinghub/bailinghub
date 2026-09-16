@@ -7,6 +7,7 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ToolIndexService } from '../services/tools-index';
 import type { AppConfig } from '../core/config/config';
 import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
+import { taskRuntimeFor } from './agent-task-runtime';
 
 /**
  * 工具插座装配：已过双闸的清单 → 受治理的工具运行时。
@@ -44,6 +45,7 @@ export async function assembleResolvedToolRuntimeFor(
   targetRegistry: TargetRegistry = defaultTargetRegistry,
 ): Promise<ToolRuntime | 'subject_locked' | undefined> {
   if (!r.allowed.length) return 'subject_locked';
+  const taskRuntime = await taskRuntimeFor(config, state, job);
   const maxCalls = maxCallsOf(r.toolsCfg);
   const retrievalMode = r.allowed.length > TOOL_INLINE_MAX;
   const approvedNote = await approvedNoteForJobFor(config, job.job_id);
@@ -80,6 +82,8 @@ export async function assembleResolvedToolRuntimeFor(
       jobId: job.job_id,
       clientAppId: job.client_app_id ?? '',
       truncateBytes: 8192,
+      taskControl: taskRuntime.taskControl,
+      beforeDispatch: taskRuntime.beforeDispatch,
       approvals: approvalDepsForStores(config, state, job, provider, r.toolsCfg, sourceCfg, appConfig, nowFn, sleepFn, targetRegistry),
       retrieveNames,
       retrievalMode,

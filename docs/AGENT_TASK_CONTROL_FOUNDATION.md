@@ -1,5 +1,7 @@
 # Task control: persistence foundation
 
+Historical foundation notes. The paired integration candidate now connects the actual runtime, HTTP, SDK/DSH and console; see [Task control](AGENT_TASK_CONTROL.en.md). The limitations below describe the earlier foundation slice only.
+
 Status: internal implementation foundation. It is **not connected to the HTTP APIs,
 tool runtime, SDK, DSH, or console**. Applying the new SQL alone does not enforce a
 task budget or pause business execution. No client should enable task mode from

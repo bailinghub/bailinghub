@@ -21,6 +21,7 @@ import { handleAdminConversationAuditFor } from './admin-conversation-audit';
 import { handleAdminToolProviderApiFor } from './admin-tool-providers';
 import { handleAdminBrandingApiFor } from './admin-branding';
 import { handleAdminAgentClientsApiFor } from './admin-agent-clients';
+import { handleAdminAgentTasksApiFor } from './admin-agent-tasks';
 import { handleAdminDemoDatasetApiFor, type DemoDatasetServiceContract } from './admin-demo-dataset';
 import { refreshTargets, type TargetRegistry } from '../core/targets/registry';
 import type { AppConfig } from '../core/config/config';
@@ -109,6 +110,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     [/^\/admin\/api\/config-schemas/, 'audit:read', 'audit:read'],
     [/^\/admin\/api\/cost/, 'runs:read', 'runs:read'], // 成本可观测=运行面只读
     [/^\/admin\/api\/agent-clients/, 'clients:read', 'clients:write'],
+    [/^\/admin\/api\/agent-tasks/, 'clients:read', 'clients:write'],
     [/^\/admin\/api\/clients/, 'clients:read', 'clients:write'],
     [/^\/admin\/api\/credentials/, 'credentials:read', 'credentials:write'],
     [/^\/admin\/api\/storage-buckets/, 'storage:read', 'storage:write'], // 含桶凭证，默认仅 admin（*）可管
@@ -198,6 +200,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     engineRuntime: deps.engineRuntime,
   }, method, path, req, res, principal)) return true;
   if (await handleAdminAgentClientsApiFor({ configStore, stateStore: deps.stateStore, now: deps.now }, method, path, req, res, principal)) return true;
+  if (await handleAdminAgentTasksApiFor(configStore, method, path, req, res, principal)) return true;
   if (await handleAdminBrandingApiFor({ brandingProvider: deps.brandingProvider }, method, path, req, res)) return true;
   if (await handleAdminAccessApiFor({ configStore, stateStore: deps.stateStore, now: deps.now }, method, path, req, res, principal)) return true;
   if (await handleAdminToolProviderApiFor({ cfg: deps.cfg, configStore, stateStore: deps.stateStore, toolIndex: deps.toolIndex, now: deps.now, sleep: deps.sleep }, method, path, req, res, principal)) return true;

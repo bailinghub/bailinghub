@@ -27,6 +27,7 @@
 | [AGENT_AUTH_API.en.md](AGENT_AUTH_API.en.md) | English Agent Auth v1 protocol and trusted business-identity boundary. |
 | [INVOCATION_RECEIPTS.md](INVOCATION_RECEIPTS.md) | 候选：只读核对原调用、审批与执行日志；与可能继续业务的 resume 分开。 |
 | [AGENT_CLIENT_RUNTIME_API.md](AGENT_CLIENT_RUNTIME_API.md) | Agent Client Runtime v1：工作区、turn、能力搜索、工具执行与完成回传。 |
+| [AGENT_TASK_CONTROL.md](AGENT_TASK_CONTROL.md) · [English](AGENT_TASK_CONTROL.en.md) | 未发布配套候选：跨轮任务额度、实际派发、暂停及 SDK/DSH 宿主接入。 |
 | [AGENT_CLIENT_RUNTIME_API.en.md](AGENT_CLIENT_RUNTIME_API.en.md) | English Agent Client Runtime v1 contract. |
 | [AGENT_CONVERSATION_AUDIT.md](AGENT_CONVERSATION_AUDIT.md) | 完整可见对话审计：逐授权成员确认、幂等文本事件、run 关联和管理员分页读取。 |
 | [AGENT_CONVERSATION_AUDIT.en.md](AGENT_CONVERSATION_AUDIT.en.md) | English complete conversation audit protocol and authorization boundary. |
