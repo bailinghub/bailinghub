@@ -1,8 +1,9 @@
 <template>
-  <el-container class="shell">
+  <el-container class="shell" :class="{ 'token-console': route.path === '/usage' || route.path === '/usage-access', 'mobile-nav-open': mobileNavOpen }">
+    <button v-if="mobileNavOpen && (route.path === '/usage' || route.path === '/usage-access')" class="mobile-nav-shade" aria-label="关闭导航" @click="mobileNavOpen = false" />
     <el-aside width="220px" class="aside">
       <BrandLockup class="brand" />
-      <el-menu ref="menuRef" :default-active="route.path" :default-openeds="defaultOpeneds" router class="menu" @open="rememberGroupOpen" @close="rememberGroupClose">
+      <el-menu ref="menuRef" :default-active="activeMenuPath" :default-openeds="defaultOpeneds" router class="menu" @open="rememberGroupOpen" @close="rememberGroupClose">
         <el-menu-item v-for="it in primaryPages" :key="it.path" :index="'/' + it.path" class="primary-item">
           <el-icon><component :is="ICONS[it.path]" /></el-icon>
           <span>{{ it.title }}</span>
@@ -21,6 +22,7 @@
 
     <el-container>
       <el-header class="topbar" height="52px">
+        <el-button v-if="route.path === '/usage' || route.path === '/usage-access'" class="mobile-nav-toggle" text :aria-expanded="mobileNavOpen" @click="mobileNavOpen = !mobileNavOpen">菜单</el-button>
         <span class="page-title">{{ route.meta.title }}</span>
         <span class="spacer" />
         <span class="health" :class="{ bad: !healthy }">{{ healthy ? '中枢正常' : '中枢异常' }}</span>
@@ -96,15 +98,17 @@ import BrandLockup from '../components/BrandLockup.vue';
 
 const s = useMe();
 const route = useRoute();
+const mobileNavOpen = ref(false);
+watch(() => route.path, () => { mobileNavOpen.value = false; });
 const router = useRouter();
 const menuRef = ref<{ open: (index: string) => void } | null>(null);
 
 const ICONS: Record<string, unknown> = {
-  kb: markRaw(Collection), runs: markRaw(Tickets), executors: markRaw(Monitor), cost: markRaw(Coin), routes: markRaw(Connection), targets: markRaw(Cpu),
+  kb: markRaw(Collection), runs: markRaw(Tickets), usage: markRaw(Coin), executors: markRaw(Monitor), cost: markRaw(Coin), routes: markRaw(Connection), targets: markRaw(Cpu),
   tools: markRaw(SetUp), approvals: markRaw(Stamp), chat: markRaw(ChatDotRound), channels: markRaw(Promotion), projects: markRaw(Folder),
   clients: markRaw(Key), 'agent-clients': markRaw(Connection), 'agent-tasks': markRaw(Lock), credentials: markRaw(Lock), storage: markRaw(Box), settings: markRaw(Brush), system: markRaw(InfoFilled), diagnostics: markRaw(Warning), accounts: markRaw(User), audit: markRaw(Document),
 };
-const GROUP_ORDER = ['场景配置', '接入入口', '能力装配', '运行', '基础资源', '系统管理'] as const;
+const GROUP_ORDER = ['场景配置', '接入入口', '能力装配', '运行', '运营管理', '基础资源', '系统管理'] as const;
 const DEFAULT_OPEN_GROUPS = new Set<string>(['场景配置', '接入入口', '能力装配', '运行']);
 const CONFIG_CENTER_PATHS = new Set<string>(['credentials', 'storage', 'projects', 'settings', 'system', 'diagnostics', 'accounts']);
 const MENU_OPEN_STORAGE_KEY = 'bailing:console:menu-open-groups:v1';
@@ -126,7 +130,8 @@ function readSavedOpenGroups(): Set<string> {
   return new Set(DEFAULT_OPEN_GROUPS);
 }
 const savedOpenGroups = ref(readSavedOpenGroups());
-const activeGroup = computed(() => PAGES.find((p) => '/' + p.path === route.path)?.group ?? '');
+const activeMenuPath = computed(() => route.path === '/usage-access' ? '/usage' : route.path);
+const activeGroup = computed(() => PAGES.find((p) => '/' + p.path === activeMenuPath.value)?.group ?? '');
 const defaultOpeneds = computed(() => {
   const opened = new Set(savedOpenGroups.value);
   if (activeGroup.value) opened.add(activeGroup.value);
@@ -354,4 +359,16 @@ async function onCmd(cmd: string): Promise<void> {
 .demoBody code { font-family: var(--bz-mono); background: var(--el-fill-color-light); padding: 1px 4px; }
 /* 内容区全宽铺满，与顶栏对齐——居中收口在超宽屏下跟全宽顶栏错位，反而奇怪。 */
 .main { width: 100%; padding: 24px 28px; }
+.mobile-nav-toggle,.mobile-nav-shade { display: none; }
+@media(max-width:600px) {
+  .token-console > .aside { display:none; position:fixed; inset:0 auto 0 0; z-index:2201; }
+  .token-console.mobile-nav-open > .aside { display:flex; }
+  .token-console > .el-container { min-width:0; }
+  .token-console .main { padding:20px 16px; }
+  .token-console .topbar { gap:8px; padding:0 12px; }
+  .token-console .topbar .health,.token-console .topbar .top-action { display:none; }
+  .token-console .topbar .user { max-width:110px; overflow:hidden; white-space:nowrap; }
+  .token-console .mobile-nav-toggle { display:inline-flex; padding:0; }
+  .token-console .mobile-nav-shade { display:block; position:fixed; inset:0; z-index:2200; border:0; background:rgba(0,0,0,.5); }
+}
 </style>

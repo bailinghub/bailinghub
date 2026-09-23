@@ -39,6 +39,7 @@ const requiredRepoFiles = [
   'docs/RELEASE_NOTES_v0.5.1.md',
   'docs/RELEASE_NOTES_v0.7.0.md',
   'docs/RELEASE_NOTES_v0.8.0.md',
+  'docs/RELEASE_NOTES_v0.9.0.md',
   'docs/RELEASE_NOTES_v0.6.1.md',
   'docs/RELEASE_NOTES_v0.6.0.md',
   'docs/CHANGELOG.md',

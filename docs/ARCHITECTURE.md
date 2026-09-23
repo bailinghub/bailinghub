@@ -410,7 +410,7 @@ MCP tools            /                     -> MCP projection
 - `config-tool-provider-repository`：工具源仓储，负责 provider spec、密钥、刷新策略、嵌入配置与启停；
 - `config-admin-repository`：管理员与后台会话仓储，负责账号、角色、登录时间、会话签发、滑动续期与吊销；
 - `config-project-repository`：项目目录仓储，负责项目名、路径、启停和说明；
-- `config-executor-token-repository`：执行器令牌仓储，负责 token 生成、轮换、target 白名单和 last_seen 观测；
+- `config-executor-billing-repository`：执行器令牌仓储，负责 token 生成、轮换、target 白名单和 last_seen 观测；
 - `config-target-repository`：执行目标仓储，负责 target 注册、执行形态、超时与启停；
 - `config-storage-bucket-repository`：对象存储桶仓储，负责存储配置、密钥留空保留和启停；
 - `config-alert-rule-repository`：告警规则仓储，负责事件前缀匹配、渠道、收件人和冷却时间；

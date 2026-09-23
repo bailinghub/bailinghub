@@ -7,7 +7,7 @@ export const SETUP_PAGE = { path: 'setup', perm: 'audit:read', title: '上手向
 
 // 页面与所需权限（菜单渲染同源于此；后端接口另有二次拦截）。
 // 数组顺序 = 菜单显示顺序，也是常规默认落地优先级（进 `/` 落到第一个有权限的页 → 任务）。
-// 分组按「日常使用频率 + 概念角色」切：任务(运行入口) → 场景配置 → 入口(谁/从哪触发) → 能力(引用的积木) → 基础资源(低频公共配置) → 运行治理 → 系统(平台管理)。
+// 任务是唯一独立工作入口；其余按配置、接入、能力、运行、运营、资源与系统职责分组。
 // 上手向导是首次接入与低频自检入口，不常驻左侧主导航；路由保留，入口收敛到默认落地与右上角菜单。
 export const PAGES = [
   // ① 任务 —— 稳定运行后的默认工作台
@@ -30,9 +30,11 @@ export const PAGES = [
   { path: 'projects', perm: 'projects:read', title: '项目目录', group: '基础资源' },
   // ⑥ 运行治理 —— 非默认运行配置与治理观察
   { path: 'executors', perm: 'runs:read', title: '执行器', group: '运行' },
-  { path: 'cost', perm: 'runs:read', title: '成本观测', group: '运行' },
   { path: 'approvals', perm: 'runs:read', title: '审批意图', group: '运行' },
-  // ⑦ 系统 —— 平台管理（低频）
+  // ⑦ 运营管理 —— 跨接入入口的账户、套餐与成本，不隶属于智能体客户端
+  { path: 'usage', perm: 'usage:read', title: '用户与用量', group: '运营管理' },
+  { path: 'cost', perm: 'runs:read', title: '成本观测', group: '运营管理' },
+  // ⑧ 系统 —— 平台管理（低频）
   { path: 'settings', perm: 'admins:manage', title: '实例外观', group: '系统管理' },
   { path: 'system', perm: 'audit:read', title: '系统状态', group: '系统管理' },
   { path: 'diagnostics', perm: 'audit:read', title: '系统体检', group: '系统管理' },
@@ -51,6 +53,8 @@ export const router = createRouter({
         { path: 'setup', component: () => import('./pages/Setup.vue'), meta: { perm: SETUP_PAGE.perm, title: SETUP_PAGE.title } },
         { path: 'kb', component: () => import('./pages/Kb.vue'), meta: { perm: 'kb:read', title: '知识库' } },
         { path: 'runs', component: () => import('./pages/Runs.vue'), meta: { perm: 'runs:read', title: '任务' } },
+        { path: 'usage', component: () => import('./pages/Usage.vue'), meta: { perm: 'usage:read', title: '用户与用量' } },
+        { path: 'usage-access', component: () => import('./pages/UsageAccess.vue'), meta: { perm: 'usage:read', title: '用量接入设置' } },
         { path: 'executors', component: () => import('./pages/Executors.vue'), meta: { perm: 'runs:read', title: '执行器' } },
         { path: 'cost', component: () => import('./pages/Cost.vue'), meta: { perm: 'runs:read', title: '成本观测' } },
         { path: 'routes', component: () => import('./pages/Routes.vue'), meta: { perm: 'routes:read', title: '触发路由' } },
@@ -112,7 +116,7 @@ router.beforeEach(async (to) => {
     if (!first) { await s.logout(); return { path: '/login', query: to.query }; } // 零权限账号（不应出现）
     return '/' + first.path;
   }
-  const page = PAGES.find((candidate) => `/${candidate.path}` === to.path);
+  const page = PAGES.find((candidate) => `/${candidate.path}` === to.path || (candidate.path === 'usage' && to.path === '/usage-access'));
   if (page && !s.hasModule(page.path)) return '/';
   if (to.meta['perm'] && !s.can(to.meta['perm'] as string)) return '/';
   return true;

@@ -52,14 +52,16 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column width="256" align="right">
+      <el-table-column label="操作" column-key="actions" width="512" fixed="right" align="right">
         <template #default="{ row }">
+          <div class="route-actions">
           <el-button link type="primary" @click="router.push({ path: '/agent-clients', query: { workspace: row.route_key } })">本地智能体配置</el-button>
           <el-button link type="primary" @click="openCode(row)">调用代码</el-button>
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-popconfirm title="删除该路由？业务侧再调用会报未知 route。" width="240" @confirm="del(row.route_key)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -1833,6 +1835,8 @@ onMounted(async () => {
 
 <style scoped>
 .head { display: flex; align-items: center; gap: 10px; }
+.route-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px 12px; }
+.route-actions :deep(.el-button) { margin-left: 0; }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .mono { font-family: var(--bz-mono); font-size: 12px; }
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

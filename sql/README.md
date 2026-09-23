@@ -8,6 +8,14 @@
 npm run db:init     # 按文件名顺序应用所有未应用的结构文件
 ```
 
+## Core 0.9.0：063/064 模型计费
+
+`063_usage_model_billing.sql` 新建身份、账户、模型服务、USD 套餐、原请求账本与参考价格缓存，共 14 张表。不修改业务授权、审批或会话表。`064_period_plan_allowance.sql` 将已有周期计费配置和快照中缺失的 `periodAllowanceUsd` 补为各自原 `priceUsd`，保留原额度、请求哈希及账本；新安装的空计费表无数据回填。
+
+只有一份美元账本：额度包显示 Credits，周期套餐显示百分比。原始 Token 独立保留，不作为额度限制。运行时不自动迁移；缺表或关键字段时明确不可用。公开 0.8.0 升级只需应用未执行迁移，保留真实数据，不要求清退测试结构；已部署计费预览的实例先协调停止旧写入并核对原快照。
+
+完整规则见[模型服务与套餐计费](../docs/MODEL_BILLING.md)、[v0.9.0 升级指南](../docs/UPGRADE_v0.9.0.md)及[周期额度迁移](../docs/PERIOD_ALLOWANCE_UPGRADE.md)。这些迁移属于 Core 0.9.0 升级配套。
+
 `scripts/init-db.ts` 的幂等模型：
 
 - **账本为主**：`bz_schema_migrations` 记录每个已成功应用的文件名；**已记账的文件直接跳过、永不二次执行**。
@@ -16,9 +24,9 @@ npm run db:init     # 按文件名顺序应用所有未应用的结构文件
 - **错误码容错兜底**：`IF NOT EXISTS` 自身幂等；加列/索引遇到 1060/1061 时，只有实际列/索引结构与官方语句一致才按已完成处理，跑完即记账，此后走账本快路径。
 - **失败关闭**：账本出现既不属于活动序列、也不属于固化退役证据的文件，或者任一已记账摘要不匹配时，会在补录摘要或执行新迁移前拒绝继续。
 
-## 未发布候选：058 跨系统归档成员绑定
+## 058 跨系统归档成员绑定
 
-`058_agent_conversation_member_bindings.sql` 是尚未发布的增量候选，只给已有归档增加
+`058_agent_conversation_member_bindings.sql` 在 Core 0.7.0 引入，只给已有归档增加
 `membership_version`（默认 1），给成员增加 `client_app_id`、`route_key`、`client_name`（默认 NULL）。
 057 保持原样；已应用 057 的实例不重复建表，也不回填或移动 Session、run、invocation、正文和旧成员身份。
 旧记录按 v1 的共同绑定解释，NULL 不能冒充逐成员系统或路由证据。
@@ -27,9 +35,9 @@ Host 需把官方 SQL 一起打包，并通过现有迁移入口显式执行；�
 沿用上述迁移账本、摘要及结构核对，不引入另一套迁移引擎。仅有 057、缺少任一 058 新列，
 或旧 Host 未实现可选跨绑定仓储方法时，能力探测不能返回跨绑定支持；旧 v1 功能保持兼容。
 跨系统只在同一 Hub 和同一 Host 数据域内组合独立授权，不能跨租户拼库。
-完整候选协议见 [Agent 对话审计](../docs/AGENT_CONVERSATION_AUDIT.md#未发布候选跨系统成员绑定)。
+完整协议见 [Agent 对话审计](../docs/AGENT_CONVERSATION_AUDIT.md#未发布候选跨系统成员绑定)。
 
-## 未发布候选：059 授权主体展示信息
+## 059 授权主体展示信息
 
 `059_agent_subject_display.sql` 给 `bz_agent_authorizations` 和 `bz_agent_sessions`
 各增加一个可空、默认 NULL 的 JSON 列 `subject_display`，独立保存授权主体的展示名称。
@@ -37,9 +45,9 @@ Host 需把官方 SQL 一起打包，并通过现有迁移入口显式执行；�
 不改写 principal、授权范围、凭据、Session 或归档记录。业务后端以后可通过
 [授权名称接口](../docs/AGENT_SUBJECT_DISPLAY.md) 为原会话补名。
 
-升级到此候选运行时前，先通过现有迁移入口显式应用 059；自定义 Host 也需打包官方 SQL，
+使用这一能力前，先通过现有迁移入口显式应用 059；自定义 Host 也需打包官方 SQL，
 并实现可选的名称更新仓储方法。旧 Host 不支持新命名操作时明确返回 unavailable，
-仍可使用原不带名称的授权请求。此目录提供候选结构，不代表已经部署或执行迁移。
+仍可使用原不带名称的授权请求。迁移是否已应用，以目标实例的迁移账本为准。
 
 ## 写结构文件的铁律
 

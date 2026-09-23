@@ -29,13 +29,14 @@ You choose which business APIs become available. BailingHub connects the convers
   <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
 </picture>
 
-## v0.8.0: continue and control longer business tasks
+## v0.9.0: model services and shared plan allowances
 
-Move between shop edits, inventory queries and image uploads. Inspect original operations after interruptions; administrators can bound cumulative task calls and pause further dispatch. Existing multi-system authorization and display names remain.
+Optionally enable a lightweight model billing gateway for an assistant's conversation models and text-to-image tools. Services share a USD allowance and one plan multiplier. Periodic allowance is separate from sale price; customers see Credits or remaining percentage. The local host continues orchestration, with existing business authority and approvals intact.
 
-Pair **Core 0.8.0 + MCP / Agent Client SDK 0.6.0 + DSH 0.6.0**. Images are public in the first phase; cross-turn reuse requires host opt-in, and task enrollment persists on original authorizations. Original permissions and approvals remain.
+Release pairing: **Core 0.9.0 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**. Reference prices are not provider invoices; generation and settlement have separate states. Verify versions, Tags and artifact digests when upgrading.
 
-[Release scenarios](docs/RELEASE_NOTES_v0.8.0.en.md) · [Upgrade and enablement](docs/UPGRADE_v0.8.0.en.md) · [Setup](docs/LOCAL_AGENT_SETUP.en.md)
+[Release notes](docs/RELEASE_NOTES_v0.9.0.en.md) · [Upgrade guide](docs/UPGRADE_v0.9.0.en.md) · [Model billing](docs/MODEL_BILLING.en.md) · [Previous release](docs/RELEASE_NOTES_v0.8.0.en.md)
+
 ## Operate the System by Conversation
 
 Most business software already has the data, permission model, and APIs it needs. What it lacks is a safe bridge between a natural-language request and the exact operation the current user is allowed to perform.
@@ -212,7 +213,7 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
 - [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.
 - [English Documentation Map](docs/README.en.md) — the complete public documentation index.
-- [Changelog](docs/CHANGELOG.en.md) and [v0.6.1 Release Notes](docs/RELEASE_NOTES_v0.6.1.en.md) — current release changes and upgrade notes.
+- [Changelog](docs/CHANGELOG.en.md) and [v0.9.0](docs/RELEASE_NOTES_v0.9.0.en.md) — current release changes and upgrade notes.
 
 ## Feedback and Ecosystem
 

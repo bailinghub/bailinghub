@@ -14,6 +14,8 @@ import type { TargetRegistry } from '../core/targets/registry';
 import type { KernelHostAdminSessionV1, KernelIdentityProviderV1 } from '../kernel-api/v1/contracts';
 import { handleAgentAuthHttpFor } from './agent-auth';
 import { handleAgentApiHttpFor } from './agent-api';
+import { handleUsageApiFor } from '../modules/usage/http';
+import { handleModelGatewayApiFor } from '../modules/usage/model-gateway';
 
 export interface PrivateHttpDeps extends AuthRuntimeDeps {
   cfg: AppConfig;
@@ -103,6 +105,12 @@ function toolProxyDeps(deps: PrivateHttpDeps): ToolProxyDeps {
 export async function handlePrivateHttpFor(deps: PrivateHttpDeps, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   const path = url.pathname;
   const method = req.method ?? 'GET';
+
+  // Usage credentials are independent of admin, business Client Token and Agent authorization.
+  if (await handleUsageApiFor({ usage: deps.configStore?.usage ?? null }, req, res, url)) return;
+  if (await handleModelGatewayApiFor({ usage: deps.configStore?.usage ?? null, cfg: deps.cfg,
+    credentials: deps.configStore?.credentials, isPaused: deps.isPaused }, req, res, url)) return;
+
 
   // 企微入站（公开面，自带验签，不走 admin/接入方鉴权）：GET 验 URL / POST 收消息。
   const mWecom = (method === 'GET' || method === 'POST') ? path.match(/^\/wecom\/([a-zA-Z0-9_-]{2,64})$/) : null;

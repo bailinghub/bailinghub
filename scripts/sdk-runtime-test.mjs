@@ -57,6 +57,12 @@ async function closeServer(server) {
 }
 
 console.log('— SDK runtime helpers');
+const nodeUsage = run(process.execPath, ['--test', 'sdk/node/tests/usage.test.mjs']);
+ok('Node billing issuer transport boundaries', nodeUsage.status === 0, nodeUsage.stderr || nodeUsage.stdout);
+const phpUsage = run(process.env.BAILING_SDK_PHP7_BINARY || 'php', ['sdk/php7/tests/usage-client.php']);
+ok('PHP7 billing issuer transport boundaries', phpUsage.status === 0, phpUsage.stderr || phpUsage.stdout);
+const billingTypes = run(process.execPath, ['node_modules/typescript/bin/tsc', '--noEmit', '--strict', '--skipLibCheck', '--module', 'NodeNext', '--target', 'ES2022', '--types', 'node', 'sdk/node/tests/usage-types.mts']);
+ok('Node billing public package types match the documented methods', billingTypes.status === 0, billingTypes.stderr || billingTypes.stdout);
 ok('Node signTicket deterministic vector', signTicket('secret', 'tenant:user', { expiresAt: 2_000_000_000 }) === expectedTicket);
 
 const ts = Math.floor(Date.now() / 1000);

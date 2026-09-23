@@ -17,7 +17,7 @@ use Bailing\Connect\SpecServer;
 
 $secret = getenv('BAILING_TOOL_SECRET') ?: '在中枢「工具源」登记的签名密钥';
 
-$spec = ToolSpec::create('示例商城')
+$spec = ToolSpec::create('示例业务系统')
     ->authzProbe('/bailing/authz-probe')
     ->tool('staff_list', 'GET', '/openapi/staff/list', 'tenant.staff.read', '查询门店员工列表',
         function (ToolDef $t) {

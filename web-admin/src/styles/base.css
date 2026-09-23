@@ -132,6 +132,63 @@ body *::after {
   width: 2px;
 }
 .el-card { --el-card-padding: 24px; }              /* 默认 20px */
+
+/* 页面页签与上下文操作共用一行；内容跨满容器，避免另占工具栏。 */
+.console-page-tabs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 16px;
+  min-width: 0;
+}
+.console-page-tabs::before {
+  content: '';
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-self: end;
+  height: 1px;
+  background: var(--el-border-color-light);
+}
+.console-page-tabs > .el-tabs { display: contents; }
+.console-page-tabs > .el-tabs > .el-tabs__header {
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+  margin: 0;
+}
+.console-page-tabs > .el-tabs > .el-tabs__header .el-tabs__nav-wrap {
+  margin-bottom: 0;
+}
+.console-page-tabs > .el-tabs > .el-tabs__header .el-tabs__nav-wrap::after {
+  content: none;
+}
+.console-page-tabs > .el-tabs > .el-tabs__content {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  padding-top: 20px;
+}
+.console-page-tabs-actions {
+  grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+.console-page-tabs-actions .el-button + .el-button { margin-left: 0; }
+@media (max-width: 760px) {
+  .console-page-tabs { grid-template-columns: minmax(0, 1fr); }
+  .console-page-tabs-actions {
+    grid-column: 1;
+    grid-row: 2;
+    flex-wrap: wrap;
+    padding-top: 12px;
+  }
+  .console-page-tabs-actions:empty { display: none; }
+  .console-page-tabs > .el-tabs > .el-tabs__content { grid-row: 3; }
+}
 .el-form--label-top .el-form-item { margin-bottom: 22px; }  /* 抽屉表单项间距，默认 18px */
 /* 本版 EP 对 label-top 没有 label 高度覆盖：small 的 height:24px 锁死，
  * 长说明 label（如路由页）折行即撑破盒子叠到输入框上。放开高度 + 留 label→输入间隙。 */

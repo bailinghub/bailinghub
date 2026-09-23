@@ -1,5 +1,9 @@
 # Compatibility And Upgrade Policy
 
+## Core 0.9.0 release pairing
+
+Pair Core 0.9.0 with SDK 0.7.0 / DSH 0.7.0 for the optional model billing gateway. Hosts retain orchestration, existing business authority, approvals and original-call recovery. Public 0.8.0 upgrades apply outstanding 063/064 migrations and retain real data, with no test-schema purge. Periodic sale price and allowance are separate; original grant snapshots and ledger remain. Hosts opt into model plans explicitly; existing business-tool-only hosts need not enable billing. See the [0.9.0 upgrade guide](UPGRADE_v0.9.0.en.md).
+
 > Core 0.8.0 task enrollment persists on original Agent Sessions. Do not downgrade an enrolled deployment to a version that ignores enforcement markers. See [upgrade boundaries](UPGRADE_v0.8.0.md).
 
 BailingHub follows SemVer for public releases.
