@@ -255,7 +255,9 @@ function columnMinWidth(column: any, index: number, defaults?: Record<string, De
 
 function isActionColumn(column: any): boolean {
   const type = String(column.type || '');
-  return !column.label && !column.property && !column.columnKey && !column.rawColumnKey && !['expand', 'selection', 'index'].includes(type);
+  if (['expand', 'selection', 'index'].includes(type)) return false;
+  if (column.columnKey === 'actions' || column.rawColumnKey === 'actions') return true;
+  return (!column.label || column.label === '操作') && !column.property && !column.columnKey && !column.rawColumnKey;
 }
 
 function actionColumn(instance: TableInstanceLike): any | null {
@@ -387,6 +389,19 @@ function normalizeTableWidths(instance: TableInstanceLike, router: Router): bool
   if (tableWidth <= 16) return false;
   const defaults = DEFAULT_COLUMN_WIDTHS[tableKey(instance, router)];
   let changed = false;
+  // Fixed operation columns must also fit the container. An oversized saved
+  // width cannot be repaired by shrinking only the non-fixed columns.
+  const columns = columnsOf(instance);
+  const action = actionColumn(instance);
+  if (action) {
+    const reserved = columns.filter((column) => column !== action).reduce((sum, column) =>
+      sum + (canForceShrinkColumn(column) ? Math.min(columnWidth(column), HARD_MIN_WIDTH) : columnWidth(column)), 0);
+    const maxActionWidth = Math.max(HARD_MIN_WIDTH, tableWidth - reserved);
+    if (columnWidth(action) > maxActionWidth) {
+      setColumnWidth(action, maxActionWidth);
+      changed = true;
+    }
+  }
   if (shrinkColumnsForOverflow(instance, tableWidth, defaults)) changed = true;
   if (stretchColumnForSlack(instance, tableWidth, defaults)) changed = true;
   const overflow = actualScrollOverflow(instance);

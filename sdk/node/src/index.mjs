@@ -248,3 +248,5 @@ export class HubClient {
     }
   }
 }
+
+export { UsageIssuerClient, UsageIssuerError } from './usage.mjs';

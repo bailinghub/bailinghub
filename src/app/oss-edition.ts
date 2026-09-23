@@ -96,6 +96,7 @@ export function createOssEdition(cfg: AppConfig, options: {
         'runs',
         'executors',
         'cost',
+        'usage',
         'approvals',
         'system',
         'settings',

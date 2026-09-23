@@ -22,7 +22,7 @@ curl -O https://<中枢域名>/connect/bailing-connect-php7.tgz && tar -xzf bail
 }
 ```
 
-或 ③ 直接拷贝 `src/` 目录进项目——共 **7 个文件**（`ToolSpec`/`ToolDef`/`Verify`/`Ticket`/`SpecServer`/`HubClient`/`AgentAuth`）。零依赖，怎么引都行。命名空间同为 `Bailing\Connect`。
+或 ③ 直接拷贝 `src/` 目录进项目——共 **9 个文件**（`ToolSpec`/`ToolDef`/`Verify`/`Ticket`/`SpecServer`/`HubClient`/`AgentAuth`，以及可选的 `UsageClient`/`UsageClientException`）。零依赖，怎么引都行。命名空间同为 `Bailing\Connect`。
 
 ## 第一步：声明工具（builder，不动你的控制器）
 
@@ -30,7 +30,7 @@ curl -O https://<中枢域名>/connect/bailing-connect-php7.tgz && tar -xzf bail
 use Bailing\Connect\ToolSpec;
 use Bailing\Connect\ToolDef;
 
-$spec = ToolSpec::create('示例商城')              // 标题随便填，业务系统名
+$spec = ToolSpec::create('示例业务系统')              // 标题随便填，业务系统名
     ->tool(
         'staff_list',                            // 工具名（operationId）：定了就别改，改名会让 AI 认为这是另一个新工具
         'GET',                                   // method
@@ -250,3 +250,20 @@ $session = $agentAuth->updateSubjectDisplay($sessionId, null);
 
 - `examples/build-spec.php`：完整 builder 范例（覆盖全部字段；与 8.x 版同源，跑同一个跨语言契约测试）
 - `examples/well-known.php`：裸 PHP 托管 spec 范例
+
+## 可选模型套餐与登录
+
+`Bailing\Connect\UsageClient`（PHP 7.3） 使用独立的服务端 Usage issuer 凭据，提供 `exchangeSession`、`revokeUser`、`listBillingPlans`、`getBillingSummary`、`grantBillingPlan` 和 `controlBillingPlan`。不要复用业务 Client Token，也不要把 issuer 凭据或管理方法交给浏览器或模型。
+
+业务后端根据已验证登录提交 `request_key/tenant/subject/generation/service_id` 换取短期模型凭证。`model_access: "service"` 限定所选模型；显式 `"token_gateway"` 可在身份来源及套餐允许的模型交集中选择，不扩大业务权限。只将短期凭证和固定身份交给对应使用人。登录不依赖套餐摘要成功；未开通套餐通过摘要的 `grant=null` 表达。
+
+`grantBillingPlan(accountId, input)` 的 input 包含原 `request_key`、`plan_id`、`expected_revision`。`controlBillingPlan(accountId, input)` 使用原请求键、当前修订和 `state: active|suspended`。`getBillingSummary(accountId)` 读取当前账户美元余额、实际费用与周期状态，不执行模型。向用户展示时只使用摘要 `presentation`：额度包显示积分，周期套餐显示剩余百分比；美元字段用于计费核账；原始 Token 用量保留在模型请求明细中。售价、收款和合同由业务系统负责。
+
+套餐管理统一使用 `/usage/v1/external/billing/`。套餐目录返回 `config.priceUsd`、周期套餐必填的 `config.periodAllowanceUsd`、`periodUnit`、`duration`、`serviceIds` 和 `multiplier`。周期套餐售价与每周期额度是两个独立字段；账户摘要使用 `bailing.billing-summary.v1`，美元余额为 `availableUsd`，已消费为 `consumedUsd`，客户展示使用 `presentation`。
+
+管理写入不会自动重试。回包丢失时沿原键、原参数核对，不能换新键重复发放。异常只包含脱敏错误码、`outcome`、`requestKey` 和安全反馈。`revokeUser` 按原 tenant/subject/generation 幂等停用，不需要 request_key。
+
+完整契约见 [模型服务与套餐计费](../../docs/MODEL_BILLING.md)。安装业务 SDK 本身不接管本地模型流量；客户端接入模型请求/流式入口后才会计量。
+
+
+示例将准备和发送分开：先调用 `prepareBillingPlan` 并持久化 `grantInput`，再调用 `applyBillingPlan`；回包不确定时沿用已保存的输入，不能重新计算修订。服务端开通示例见 [examples/billing.php](examples/billing.php)。

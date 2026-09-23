@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar shop, product-maintenance or inventory scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.8.0.en.md).
+Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.0.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,17 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.9.0 - Model services, shared allowances and image tools
+
+Version date: 2026-09-23. Release pairing: Core 0.9.0 / SDK 0.7.0 / DSH 0.7.0. See [release notes](RELEASE_NOTES_v0.9.0.en.md) and the [upgrade guide](UPGRADE_v0.9.0.en.md).
+
+- Add an optional model billing gateway while hosts retain orchestration. Models and tools share USD allowance and one multiplier; periodic sale price and allowance are separate, with Credits or percentage presentation.
+- Add explicit model/reference-endpoint mappings and price snapshots. OpenRouter prices are references, not another provider's invoice. Unready services stay out of callable catalogs.
+- Add Aliyun compatible/native and OpenRouter text-to-image adapters, durable original requests and independent result/actual-usage settlement. Video and voice declarations are not execution support.
+- Complete plan removal, account archive/restore and per-account manual allowance reset, retaining original requests, pools and ledger. Reset does not extend expiration; in-flight requests settle to their original pool.
+- Add migrations 063/064. Public 0.8.0 upgrades retain real data and require no abandoned test-schema purge. Business applications retain payment, currency conversion, refunds and final authorization.
+- Hosts opt into catalogs, summaries and original-operation records. Verify configuration, actual usage, presentation, original-ID lookup and administration; automated checks do not establish live provider or deployment acceptance.
 
 ## v0.8.0 - Longer task recovery, attachments and task controls
 

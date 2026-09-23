@@ -5,7 +5,7 @@
       <div class="actions"><el-button @click="router.push('/agent-clients')">智能体客户端</el-button><el-button :loading="listLoading" @click="loadTasks()">刷新</el-button><el-button v-if="canWrite" type="primary" @click="openCreate">{{ createAttempt ? '继续原创建' : '创建受控任务' }}</el-button></div>
     </header>
     <el-card shadow="never" class="explanation">
-      <div class="explanation-grid"><div><b>例如：商城上架商品，再核对库存</b><p>明确选定商城和库存系统的原授权、工作空间、本地会话及工具。保留各系统原有权限与审批。</p></div><div><b>累计写预算 ≠ 每分钟限流</b><p>按业务写调用计数，包含待确认的预留；不是商品数量，也不是成功次数。读取不扣写预算，仍受并发限制。</p></div><div><b>暂停只阻止新的派发</b><p>已获许可的调用仍可能完成。继续不补充预算、不执行或重放业务；取消不会撤回已产生的变化。</p></div></div>
+      <div class="explanation-grid"><div><b>例如：更新项目资料，再核对执行结果</b><p>明确选定业务系统的原授权、工作空间、本地会话及工具。保留各系统原有权限与审批。</p></div><div><b>累计写预算 ≠ 每分钟限流</b><p>按业务写调用计数，包含待确认的预留；不是处理的数据条数，也不是成功次数。读取不扣写预算，仍受并发限制。</p></div><div><b>暂停只阻止新的派发</b><p>已获许可的调用仍可能完成。继续不补充预算、不执行或重放业务；取消不会撤回已产生的变化。</p></div></div>
     </el-card>
     <el-alert v-if="listError" type="error" :closable="false" :title="listError" show-icon />
     <el-card shadow="never">
@@ -38,7 +38,7 @@
           </el-form-item>
           <div class="form-grid">
             <el-form-item label="Agent Session ID"><el-input v-model="member.session_id" :readonly="!member.manual" placeholder="原授权的 UUID" /></el-form-item>
-            <el-form-item label="接入方 Client App ID"><el-input v-model="member.client_app_id" :readonly="!member.manual" maxlength="64" placeholder="例如 shop-app" /></el-form-item>
+            <el-form-item label="接入方 Client App ID"><el-input v-model="member.client_app_id" :readonly="!member.manual" maxlength="64" placeholder="例如 business-app" /></el-form-item>
             <el-form-item label="工作空间 Workspace"><el-input v-if="member.manual" v-model="member.workspace" maxlength="64" placeholder="原授权允许的工作空间" /><el-select v-else v-model="member.workspace" placeholder="明确选择工作空间"><el-option v-for="workspace in workspaceChoices(member)" :key="workspace.route" :label="`${workspace.name || workspace.route}（${workspace.route}）`" :value="workspace.route" /></el-select></el-form-item>
             <el-form-item label="本地会话 ID"><el-input v-model="member.client_conversation_id" maxlength="128" placeholder="从客户端宿主取得，区分于 Session ID" /></el-form-item>
           </div>

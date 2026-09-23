@@ -33,6 +33,8 @@ export const ROLE_PERMS: Record<string, string[]> = {
   admin: ['*'],
   kb_editor: ['kb:read', 'kb:write'],            // 客服/运维：维护知识库
   viewer: ['runs:read'],                          // 只读看任务
+  usage_operator: ['usage:read', 'usage:write', 'usage:adjust'], // 不授予业务正文或模型密钥访问权
+  usage_auditor: ['usage:read'],                // 消费元数据，只读
 };
 export function permsOf(p: Principal): string[] {
   if (p.kind !== 'admin') return [];

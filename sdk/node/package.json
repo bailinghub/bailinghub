@@ -5,7 +5,11 @@
   "type": "module",
   "main": "./src/index.mjs",
   "exports": {
-    ".": "./src/index.mjs"
+    ".": "./src/index.mjs",
+    "./usage": {
+      "types": "./src/usage.d.mts",
+      "default": "./src/usage.mjs"
+    }
   },
   "files": [
     "src",

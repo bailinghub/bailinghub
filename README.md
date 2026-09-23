@@ -27,13 +27,14 @@
 
 在线体验环境只用于了解产品和配置方式。请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
 
-## v0.8.0：让业务长任务可继续、可控制
+## v0.9.0：模型服务与统一套餐额度
 
-助手查询商品、核对库存、上传图片后继续维护商品；中断后沿原调用核对，管理员按任务设置累计额度、暂停或取消后续派发。已有多系统授权与名称继续保留。
+按需启用微型模型计费网关，为业务助手的对话模型与文生图工具配置共享 USD 额度。套餐统一倍率，周期额度与售价分开；客户看到 Credits 或剩余百分比。本地宿主继续编排任务，原业务授权和审批保持。
 
-配套为 **Core 0.8.0 + MCP / Agent Client SDK 0.6.0 + DSH 0.6.0**。图片首期公开读取；跨轮声明复用需宿主启用，任务启用会持续约束原授权，原权限和审批保持。
+配套为 **Core 0.9.0 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**。参考报价不等于供应商实付费用，生成结果与计费分别处理。升级时核对版本、Tag 与制品摘要。
 
-[更新场景](docs/RELEASE_NOTES_v0.8.0.md) · [升级与启用边界](docs/UPGRADE_v0.8.0.md) · [集中配置](docs/LOCAL_AGENT_SETUP.md)
+[版本说明](docs/RELEASE_NOTES_v0.9.0.md) · [升级指南](docs/UPGRADE_v0.9.0.md) · [模型计费](docs/MODEL_BILLING.md) · [上一版本](docs/RELEASE_NOTES_v0.8.0.md)
+
 ## 适合哪些团队
 
 - 已有商城、SaaS、CRM、ERP 或内部后台，希望增加能查数据、办业务的 AI 助手。
@@ -197,7 +198,7 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 | 集中开启本地智能体与工具 | [四步配置指南](docs/LOCAL_AGENT_SETUP.md) · [系统说明](docs/AGENT_SYSTEM_INFO.md) |
 | 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |
 | 理解架构与长期取舍 | [架构](docs/ARCHITECTURE.md) · [项目愿景](VISION.md) |
-| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.6.1 Release Notes](docs/RELEASE_NOTES_v0.6.1.md) |
+| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.9.0](docs/RELEASE_NOTES_v0.9.0.md) |
 
 完整中英文文档地图见 [docs/README.md](docs/README.md)。公共 API、SDK、Schema、Docker Demo 与代码标识保持语言中立。
 

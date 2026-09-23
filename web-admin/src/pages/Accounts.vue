@@ -3,7 +3,7 @@
     <template #header>
       <div class="head"><b>后台账号</b> <HelpTip title="后台账号 / 角色">
           <p>后台账号只用于维护中枢控制台，不等同于业务系统用户，也不参与聊天/工具调用的业务身份。</p>
-          <p>角色决定可见板块与管理权限：<code>admin</code> 管全局配置，<code>kb_editor</code> 维护知识库，<code>viewer</code> 查看运行记录。</p>
+          <p>角色决定可见板块与管理权限：<code>admin</code> 管全局配置，<code>kb_editor</code> 维护知识库，<code>viewer</code> 查看运行记录；<code>usage_operator</code> 管理AI额度，<code>usage_auditor</code> 只读消费明细。</p>
         </HelpTip>
         <el-button type="primary" style="margin-left: auto" @click="openCreate">新建账号</el-button></div>
     </template>
@@ -52,7 +52,7 @@
       <el-form-item label="显示名（可选）"><el-input v-model="form.display_name" /></el-form-item>
       <el-form-item>
         <template #label>角色 <span class="field-required">必填</span> <HelpTip title="角色">
-          <p><b>admin</b>：管理全局配置与账号；<b>kb_editor</b>：维护知识库；<b>viewer</b>：只读查看运行记录。</p>
+          <p><b>admin</b>：管理全局配置与账号；<b>kb_editor</b>：维护知识库；<b>viewer</b>：只读查看运行记录；<b>usage_operator</b>：管理AI额度；<b>usage_auditor</b>：只读消费明细。用量角色不会获得业务会话正文权限。</p>
         </HelpTip></template>
         <el-select v-model="form.role" style="width: 100%">
           <el-option v-for="r in roles" :key="r" :value="r" :label="r + (ROLE_DESC[r] ? '（' + ROLE_DESC[r] + '）' : '')" />
@@ -87,7 +87,7 @@ import { copyText, fmtTime } from '../util';
 import { useMe } from '../store';
 import HelpTip from '../components/HelpTip.vue';
 
-const ROLE_DESC: Record<string, string> = { admin: '全能', kb_editor: '知识库维护', viewer: '只读任务' };
+const ROLE_DESC: Record<string, string> = { admin: '全能', kb_editor: '知识库维护', viewer: '只读任务', usage_operator: '用量管理', usage_auditor: '用量只读' };
 const s = useMe();
 const list = ref<any[]>([]);
 const roles = ref<string[]>(['admin', 'kb_editor', 'viewer']);

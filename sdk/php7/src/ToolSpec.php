@@ -13,7 +13,7 @@ use InvalidArgumentException;
  * 设计原则同 8.x 版：**会被中枢跳过/误用的问题在构建期就报错**，而不是发布后才在控制台发现。
  *
  * 用法：
- *   $spec = ToolSpec::create('示例商城')
+ *   $spec = ToolSpec::create('示例业务系统')
  *       ->tool('staff_list', 'GET', '/openapi/staff/list', 'tenant.staff.read', '查询门店员工列表',
  *           function (ToolDef $t) {
  *               $t->query('dept', 'string', false, '按部门过滤');

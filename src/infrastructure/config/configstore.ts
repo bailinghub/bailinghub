@@ -29,6 +29,8 @@ import { AgentArtifactRepository } from './config-agent-artifact-repository';
 import { AgentClientRuntimeRepository } from './config-agent-client-runtime-repository';
 import { AgentConversationAuditRepository } from './config-agent-conversation-audit-repository';
 import { AgentTaskControlRepository } from './config-agent-task-control-repository';
+import { UsageRepository } from '../../modules/usage/repository';
+import { getUsageIdentity } from '../../modules/usage/identity';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 
 export type RouteRepositoryContract = Omit<Pick<RouteRepository, keyof RouteRepository>, 'compareAndSetAgentSetup'>
@@ -103,6 +105,8 @@ export interface ConfigStoreContract {
   readonly agentConversationAudit?: AgentConversationAuditRepositoryContract;
   /** Optional for extension hosts. Managed Sessions must never fall back without this repository. */
   readonly agentTaskControl?: Pick<AgentTaskControlRepository, keyof AgentTaskControlRepository>;
+  /** Optional usage module. Dedicated usage requests fail closed when it is absent. */
+  readonly usage?: UsageRepository;
   init(): Promise<void>;
   close?(): Promise<void>;
   readonly db: Pool;
@@ -140,9 +144,11 @@ export class ConfigStore implements ConfigStoreContract {
   readonly agentClientRuntime = new AgentClientRuntimeRepository(() => this.pool);
   readonly agentConversationAudit = new AgentConversationAuditRepository(() => this.pool);
   readonly agentTaskControl = new AgentTaskControlRepository(() => this.pool);
+  readonly usage = new UsageRepository(() => this.pool);
 
   constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);
+    getUsageIdentity(this.usage);
   }
 
   async init(): Promise<void> {

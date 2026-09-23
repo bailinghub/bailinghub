@@ -22,6 +22,7 @@ import { handleAdminToolProviderApiFor } from './admin-tool-providers';
 import { handleAdminBrandingApiFor } from './admin-branding';
 import { handleAdminAgentClientsApiFor } from './admin-agent-clients';
 import { handleAdminAgentTasksApiFor } from './admin-agent-tasks';
+import { handleAdminUsageApiFor } from './admin-usage';
 import { handleAdminDemoDatasetApiFor, type DemoDatasetServiceContract } from './admin-demo-dataset';
 import { refreshTargets, type TargetRegistry } from '../core/targets/registry';
 import type { AppConfig } from '../core/config/config';
@@ -92,6 +93,9 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
   if (path === '/admin/api/capabilities' && method === 'GET') {
     send(res, 200, deps.capabilities);
     return true;
+  }
+  if (path === '/admin/api/usage' || path.startsWith('/admin/api/usage/')) {
+    return handleAdminUsageApiFor(configStore.usage ?? null, method, path, req, res, principal);
   }
   if (deps.demoDataset && await handleAdminDemoDatasetApiFor(
     { demoDataset: deps.demoDataset, refreshTargets: deps.refreshTargets },
