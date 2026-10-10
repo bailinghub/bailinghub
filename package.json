@@ -81,8 +81,8 @@
     "client-api:contract": "tsx scripts/client-api-contract-test.ts",
     "client-api:ecosystem:local": "node scripts/check-client-api-ecosystem.mjs --mode local",
     "client-api:ecosystem:clone": "node scripts/check-client-api-ecosystem.mjs --mode clone",
-    "audit:deps": "npm audit --audit-level=low && npm --prefix web-admin audit --audit-level=low",
-    "web-admin:check": "npm --prefix web-admin run build && npm --prefix web-admin audit --audit-level=low",
+    "audit:deps": "node scripts/dependency-audit.mjs",
+    "web-admin:check": "npm --prefix web-admin run build && node scripts/dependency-audit.mjs --scope web-admin",
     "oss:guard": "node scripts/oss-boundary-check.mjs",
     "oss:export": "node scripts/export-oss.mjs",
     "oss:verify": "node scripts/verify-oss-export.mjs",
@@ -104,7 +104,8 @@
     "sdk:test-runtime": "node scripts/sdk-runtime-test.mjs",
     "sdk:test-p1": "node scripts/sdk-p1-check.mjs",
     "sdk:pack": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php.tgz -s '|^php|bailing-connect-php|' -C sdk php",
-    "sdk:pack7": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php7.tgz -s '|^php7|bailing-connect-php7|' -C sdk php7"
+    "sdk:pack7": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php7.tgz -s '|^php7|bailing-connect-php7|' -C sdk php7",
+    "audit:deps:test": "node --test scripts/dependency-audit.test.mjs"
   },
   "dependencies": {
     "mammoth": "^1.12.0",

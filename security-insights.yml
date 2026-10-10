@@ -1,0 +1,72 @@
+header:
+  schema-version: 2.2.0
+  last-updated: '2026-10-10'
+  last-reviewed: '2026-10-10'
+  url: https://raw.githubusercontent.com/bailinghub/bailinghub/main/security-insights.yml
+  comment: >-
+    Project security information maintained by BailingHub Core. This document
+    records published policies and evidence; it is not an OSPS assessment or
+    security certification.
+
+project:
+  name: BailingHub Core
+  homepage: https://www.bailinghub.com
+  administrators:
+    - name: Jingchuan Nie
+      primary: true
+      social: https://github.com/niejingchuan
+  repositories:
+    - name: BailingHub Core
+      url: https://github.com/bailinghub/bailinghub
+      comment: >-
+        Self-hosted runtime, administration console and reference demo in this
+        repository. Independently released ecosystem adapters and ACC are
+        outside this assessment scope.
+  vulnerability-reporting:
+    reports-accepted: true
+    bug-bounty-available: false
+    policy: https://github.com/bailinghub/bailinghub/blob/main/SECURITY.md
+    comment: >-
+      SECURITY.md requests private reports and targets acknowledgement within
+      three business days. GitHub private vulnerability reporting was confirmed enabled by the
+      repository API on 2026-10-10. The direct report URL is
+      https://github.com/bailinghub/bailinghub/security/advisories/new.
+      No report was submitted as part of this check.
+  documentation:
+    quickstart-guide: https://github.com/bailinghub/bailinghub/blob/main/docs/QUICKSTART.en.md
+    detailed-guide: https://github.com/bailinghub/bailinghub/blob/main/docs/README.md
+    design: https://github.com/bailinghub/bailinghub/blob/main/docs/ARCHITECTURE.en.md
+    code-of-conduct: https://github.com/bailinghub/bailinghub/blob/main/CODE_OF_CONDUCT.md
+    support-policy: https://github.com/bailinghub/bailinghub/blob/main/SECURITY.md
+
+repository:
+  url: https://github.com/bailinghub/bailinghub
+  status: active
+  accepts-change-request: true
+  accepts-automated-change-request: true
+  core-team:
+    - name: Jingchuan Nie
+      primary: true
+      social: https://github.com/niejingchuan
+  license:
+    expression: Apache-2.0
+    url: https://github.com/bailinghub/bailinghub/blob/main/LICENSE
+  documentation:
+    contributing-guide: https://github.com/bailinghub/bailinghub/blob/main/CONTRIBUTING.md
+    governance: https://github.com/bailinghub/bailinghub/blob/main/GOVERNANCE.md
+    security-policy: https://github.com/bailinghub/bailinghub/blob/main/SECURITY.md
+  release:
+    automated-pipeline: true
+    distribution-points:
+      - uri: https://github.com/bailinghub/bailinghub/releases
+        comment: Public versioned releases.
+      - uri: https://github.com/bailinghub/bailinghub/pkgs/container/bailinghub
+        comment: Container images published by the Images workflow.
+    changelog: https://github.com/bailinghub/bailinghub/blob/main/docs/CHANGELOG.en.md
+  security:
+    assessments:
+      self:
+        comment: >-
+          An OSPS self-assessment has not been completed for this repository.
+          Existing design documents discuss selected tool-execution threats;
+          they do not constitute a complete project security assessment.

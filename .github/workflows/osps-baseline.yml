@@ -1,0 +1,61 @@
+name: OSPS Baseline evaluation
+on:
+  schedule:
+    - cron: '20 3 * * 1'
+  workflow_dispatch:
+permissions: {}
+concurrency:
+  group: osps-baseline-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, verified 2026-10-10
+        with:
+          persist-credentials: false
+      - name: Evaluate OSPS Baseline 2026-08
+        env:
+          SCANNER_TOKEN: ${{ github.token }}
+          SCANNER_OWNER: ${{ github.repository_owner }}
+          SCANNER_REPO: ${{ github.event.repository.name }}
+        run: |
+          set -euo pipefail
+          config="$(mktemp "$RUNNER_TEMP/osps-config.XXXXXX")"
+          trap 'rm -f "$config"' EXIT
+          export SCANNER_CONFIG="$config"
+          python3 - <<'PY'
+          import json, os, pathlib
+          quote = json.dumps
+          pathlib.Path(os.environ['SCANNER_CONFIG']).write_text(
+              'loglevel: "info"\nwrite-directory: evaluation_results\n'
+              'write: true\noutput: "json"\nservices:\n  pvtr:\n'
+              '    plugin: github-repo\n    policy:\n      catalogs:\n'
+              '        - osps-baseline-2026-08\n      applicability:\n'
+              '        - "Maturity Level 1"\n    vars:\n'
+              + ''.join(f'      {key}: {quote(os.environ[value])}\n' for key, value in (
+                  ('owner', 'SCANNER_OWNER'), ('repo', 'SCANNER_REPO'), ('token', 'SCANNER_TOKEN')))
+          )
+          PY
+          chmod 600 "$config"
+          install -d -m 700 evaluation_results
+          # Same immutable scanner image as osps-baseline-action v1.5.2;
+          # parse its structured results instead of its incompatible log regex.
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,src=$config,dst=/.privateer/config.yml,readonly" \
+            --mount "type=bind,src=$GITHUB_WORKSPACE/evaluation_results,dst=/.privateer/bin/evaluation_results" \
+            ghcr.io/ossf/pvtr-github-repo-scanner:v0.31.0@sha256:cd5ecf47865ab9566676dca91edd303a1347b8eb738c88c182f3ffe523187dec
+      - name: Validate and summarize repository results
+        run: python3 scripts/osps-results.py evaluation_results/pvtr/pvtr.json
+      - name: Retain assessment output
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, verified 2026-10-10
+        with:
+          name: osps-baseline-${{ github.run_id }}-${{ github.run_attempt }}
+          path: evaluation_results/
+          if-no-files-found: error
+          retention-days: 14
