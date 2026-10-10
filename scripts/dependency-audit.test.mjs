@@ -45,6 +45,43 @@ test('an additional advisory on the accepted package is blocked', () => {
   const input = fixture(); input.audit.vulnerabilities['sprintf-js'].via.push({ url: 'https://github.com/advisories/GHSA-new', severity: 'high' });
   assert.equal(evaluateScope(input).pass, false);
 });
+test('adding an unrelated advisory to both policy and audit cannot broaden the exception', () => {
+  const input = fixture();
+  const row = { name: 'anotherPackage', severity: 'moderate', via: [{ url: 'https://github.com/advisories/GHSA-new', severity: 'moderate' }], nodes: ['node_modules/anotherPackage'] };
+  input.policy.scopes.core.knownAuditRows.anotherPackage = structuredClone(row);
+  input.audit.vulnerabilities.anotherPackage = row;
+  input.audit.metadata.vulnerabilities.moderate++;
+  input.audit.metadata.vulnerabilities.total++;
+  assert.equal(evaluateScope(input).pass, false);
+});
+test('changing or appending an advisory in both policy and audit is blocked', () => {
+  const input = fixture();
+  for (const rows of [input.policy.scopes.core.knownAuditRows, input.audit.vulnerabilities]) {
+    rows['sprintf-js'].via[0].url = 'https://github.com/advisories/GHSA-new';
+  }
+  assert.equal(evaluateScope(input).pass, false);
+  const next = fixture();
+  for (const rows of [next.policy.scopes.core.knownAuditRows, next.audit.vulnerabilities]) {
+    rows['sprintf-js'].via.push({ url: 'https://github.com/advisories/GHSA-new', severity: 'moderate' });
+  }
+  assert.equal(evaluateScope(next).pass, false);
+});
+test('rewriting the reviewed dependency chain in both policy and audit is blocked', () => {
+  const input = fixture();
+  for (const rows of [input.policy.scopes.core.knownAuditRows, input.audit.vulnerabilities]) {
+    rows.argparse.via = ['anotherPackage'];
+    rows['sprintf-js'].effects = ['anotherPackage'];
+  }
+  assert.equal(evaluateScope(input).pass, false);
+});
+test('removing a reviewed policy row cannot redefine the approved exception', () => {
+  const input = fixture();
+  delete input.policy.scopes.core.knownAuditRows.argparse;
+  delete input.audit.vulnerabilities.argparse;
+  input.audit.metadata.vulnerabilities.moderate--;
+  input.audit.metadata.vulnerabilities.total--;
+  assert.equal(evaluateScope(input).pass, false);
+});
 test('a changed audit node or suggested fix cannot silently broaden the exception', () => {
   const input = fixture(); input.audit.vulnerabilities['sprintf-js'].nodes.push('node_modules/new/node_modules/sprintf-js');
   assert.equal(evaluateScope(input).pass, false);

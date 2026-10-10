@@ -5,12 +5,36 @@ import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const affectedNames = ['mammoth', 'argparse', 'sprintf-js'];
+const approvedAdvisory = 'https://github.com/advisories/GHSA-hp3w-g68c-fv3c';
 const usagePattern = /\b(?:mammoth|argparse|sprintf-js)\b/i;
 const levels = ['info', 'low', 'moderate', 'high', 'critical'];
 const json = path => JSON.parse(readFileSync(path, 'utf8'));
 const hash = source => createHash('sha256').update(source).digest('hex');
 const stable = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item)
   ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item);
+
+function reviewedRowsAreExact(rows) {
+  if (!rows || Array.isArray(rows) || typeof rows !== 'object' ||
+      stable(Object.keys(rows).sort()) !== stable([...affectedNames].sort())) return false;
+  const chain = { mammoth: ['argparse'], argparse: ['sprintf-js'] };
+  const effects = { mammoth: [], argparse: ['mammoth'], 'sprintf-js': ['argparse'] };
+  for (const name of affectedNames) {
+    const row = rows[name];
+    if (!row || row.name !== name || row.severity !== 'moderate' ||
+        stable(row.nodes) !== stable([`node_modules/${name}`]) ||
+        stable(row.effects) !== stable(effects[name])) return false;
+    if (name !== 'sprintf-js') {
+      if (stable(row.via) !== stable(chain[name])) return false;
+    } else {
+      if (!Array.isArray(row.via) || row.via.length !== 1) return false;
+      const advisory = row.via[0];
+      if (!advisory || typeof advisory !== 'object' || Array.isArray(advisory) ||
+          advisory.name !== name || advisory.dependency !== name ||
+          advisory.severity !== 'moderate' || advisory.url !== approvedAdvisory) return false;
+    }
+  }
+  return true;
+}
 
 export function dependencyState(lock) {
   const versions = {}, references = [];
@@ -54,10 +78,11 @@ export function evaluateScope({ scope, audit, lock, usage, policy, now = new Dat
   const reasons = [], counts = Object.fromEntries(levels.map(level => [level, 0]));
   const exception = policy.scopes?.[scope];
   const from = Date.parse(policy.approvedFrom), until = Date.parse(policy.expiresAt), time = +now;
-  if (policy.version !== 1 || policy.owner !== 'Jingchuan Nie' || policy.advisory !== 'https://github.com/advisories/GHSA-hp3w-g68c-fv3c') reasons.push('Unknown exception policy');
+  if (policy.version !== 1 || policy.owner !== 'Jingchuan Nie' || policy.advisory !== approvedAdvisory) reasons.push('Unknown exception policy');
   if (![from, until, time].every(Number.isFinite) || until <= from || until - from > 30 * 86400000) reasons.push('Invalid exception period');
   else if (time < from || time >= until) reasons.push('Exception is not active or has expired');
   if (!exception) reasons.push(`Unknown scope: ${scope}`);
+  else if (!reviewedRowsAreExact(exception.knownAuditRows)) reasons.push('Exception policy must contain only the reviewed Mammoth/argparse/sprintf-js chain and advisory');
   const rows = audit?.vulnerabilities;
   if (audit?.auditReportVersion !== 2 || audit?.error || !rows || Array.isArray(rows) || typeof rows !== 'object') {
     reasons.push('Invalid or failed npm audit response');
