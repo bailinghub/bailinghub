@@ -69,6 +69,10 @@ Reusable improvements are welcome as Issues, Discussions, or Pull Requests. Stro
 
 See [Community Derivatives And Ecosystem Collaboration](docs/ECOSYSTEM.en.md) for the complete policy and [中文说明](docs/ECOSYSTEM.md) for the Chinese version.
 
+## Automation-assisted contributions
+
+Automation-assisted pull requests are welcome when an accountable human submitter reviews the complete change, explains its purpose, provides relevant validation, and follows the same contribution and security requirements as other contributions. Unattended changes do not bypass maintainer review.
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the Apache License 2.0.
