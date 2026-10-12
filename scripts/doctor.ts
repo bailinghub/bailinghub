@@ -1,6 +1,11 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runDeploymentDoctorCli } from './doctor-deployment';
+
+if (process.argv.includes('--deployment')) {
+  process.exitCode = await runDeploymentDoctorCli(process.argv.slice(2), process.cwd());
+} else {
 
 type Check = { name: string; run: () => void };
 
@@ -57,7 +62,8 @@ function checkRequiredFiles(): void {
 }
 
 function checkGitIgnore(): void {
-  const ignored = command('git', ['check-ignore', 'config.json', '.env', '.oss-dist', 'web/console', 'data']).split('\n').filter(Boolean);
+  // Check the directory rule even before generated console assets exist.
+  const ignored = command('git', ['check-ignore', 'config.json', '.env', '.oss-dist/', 'web/console/', 'data/']).split('\n').filter(Boolean).map((file) => file.replace(/\/$/, ''));
   const expected = new Set(['config.json', '.env', '.oss-dist', 'web/console', 'data']);
   for (const file of expected) {
     if (!ignored.includes(file)) throw new Error(`${file} is not ignored`);
@@ -105,3 +111,4 @@ if (failures.length) {
 }
 
 console.log('Doctor passed. For runtime checks against a live hub, run BAILING_DOCTOR_SMOKE=1 npm run doctor.');
+}

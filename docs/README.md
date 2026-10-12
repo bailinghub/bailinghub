@@ -83,6 +83,7 @@
 | [CHANNELS.md](CHANNELS.md) | 入站渠道模型，当前包含企微接入。 |
 | [CHANNELS.en.md](CHANNELS.en.md) | English inbound channel model. |
 | [OPERATIONS.md](OPERATIONS.md) | 生产部署、多副本、健康检查、容量、备份与恢复。 |
+| [DEPLOYMENT_DIAGNOSTICS.md](DEPLOYMENT_DIAGNOSTICS.md) · [English](DEPLOYMENT_DIAGNOSTICS.en.md) | 只读部署 doctor：公开身份核对、显式 readiness、未知与未检查状态及机器退出码。 |
 | [OPERATIONS.en.md](OPERATIONS.en.md) | English production operations guide. |
 | [STREAMING.md](STREAMING.md) | 网页聊天的真实增量输出协议：SSE 事件、断线重放、权威结果和多副本边界。 |
 | [STREAMING.en.md](STREAMING.en.md) | English chat streaming protocol and operations boundary. |

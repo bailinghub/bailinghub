@@ -71,6 +71,7 @@ This directory contains public documentation for the open-source BailingHub proj
 | [SDK.en.md](SDK.en.md) | SDK guide for PHP, Node, Python, Java, Go, .NET, and any-language OpenAPI/HMAC integration. |
 | [CHANNELS.en.md](CHANNELS.en.md) | Inbound channel model and adapter expectations. |
 | [OPERATIONS.en.md](OPERATIONS.en.md) | Production topology, readiness, capacity, upgrades, backups, and recovery. |
+| [DEPLOYMENT_DIAGNOSTICS.en.md](DEPLOYMENT_DIAGNOSTICS.en.md) · [Chinese](DEPLOYMENT_DIAGNOSTICS.md) | Read-only deployment doctor: public identities, explicit readiness, unknown/unchecked evidence and machine exit codes. |
 | [STREAMING.en.md](STREAMING.en.md) | Chat streaming protocol, reconnect behavior, canonical final result, and multi-replica boundary. |
 | [STREAMING.md](STREAMING.md) | Chinese chat streaming protocol. |
 

@@ -24,6 +24,8 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run doctor:deployment:typecheck
+      - run: npm run doctor:deployment:test
       - run: npm test
 
   usage-lifecycle:

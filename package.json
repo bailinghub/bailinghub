@@ -90,7 +90,7 @@
     "release:consistency:test": "node --test scripts/check-release-consistency.test.mjs",
     "release:audit": "npm run release:consistency && npm run release:consistency:test && npm run images:policy:test && npm run public-content:denylist:test && npm run security:scan && npm run oss:guard && node scripts/release-audit.mjs && npm run package:artifact:check",
     "github:verify": "node scripts/verify-github-repo.mjs",
-    "release:check": "npm run notices:check && npm run assets:check && npm run audit:deps && npm run client-api:contract && npm run client-api:ecosystem:clone && npm run typecheck && npm test && npm run widget:renderer:test && npm run web-admin:check && npm run docs:check && npm run examples:check && npm run sdk:test && npm run sdk:test7 && npm run sdk:test-node && npm run sdk:test-python && npm run sdk:test-runtime && npm run sdk:test-p1 && npm run release:audit && npm run oss:verify && npm run github:verify",
+    "release:check": "npm run notices:check && npm run assets:check && npm run audit:deps && npm run client-api:contract && npm run client-api:ecosystem:clone && npm run typecheck && npm run doctor:deployment:typecheck && npm run doctor:deployment:test && npm test && npm run widget:renderer:test && npm run web-admin:check && npm run docs:check && npm run examples:check && npm run sdk:test && npm run sdk:test7 && npm run sdk:test-node && npm run sdk:test-python && npm run sdk:test-runtime && npm run sdk:test-p1 && npm run release:audit && npm run oss:verify && npm run github:verify",
     "images:build": "sh scripts/publish-images.sh",
     "images:publish": "BAILING_PUSH_IMAGES=1 sh scripts/publish-images.sh",
     "images:publish-mysql": "BAILING_PUSH_IMAGES=1 sh scripts/publish-mysql-image.sh",
@@ -105,7 +105,9 @@
     "sdk:test-p1": "node scripts/sdk-p1-check.mjs",
     "sdk:pack": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php.tgz -s '|^php|bailing-connect-php|' -C sdk php",
     "sdk:pack7": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php7.tgz -s '|^php7|bailing-connect-php7|' -C sdk php7",
-    "audit:deps:test": "node --test scripts/dependency-audit.test.mjs"
+    "audit:deps:test": "node --test scripts/dependency-audit.test.mjs",
+    "doctor:deployment:test": "node --import tsx --test scripts/doctor-deployment.test.ts",
+    "doctor:deployment:typecheck": "tsc --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022 --types node scripts/doctor.ts scripts/doctor-deployment.ts scripts/doctor-deployment.test.ts"
   },
   "dependencies": {
     "mammoth": "^1.12.0",
