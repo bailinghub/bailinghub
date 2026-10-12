@@ -1,7 +1,7 @@
 header:
   schema-version: 2.2.0
-  last-updated: '2026-10-10'
-  last-reviewed: '2026-10-10'
+  last-updated: '2026-10-12'
+  last-reviewed: '2026-10-12'
   url: https://raw.githubusercontent.com/bailinghub/bailinghub/main/security-insights.yml
   comment: >-
     Project security information maintained by BailingHub Core. This document
@@ -66,7 +66,32 @@ repository:
   security:
     assessments:
       self:
+        name: Repository security self-assessment
+        evidence: https://github.com/bailinghub/bailinghub/blob/main/SECURITY_SELF_ASSESSMENT.md
         comment: >-
-          An OSPS self-assessment has not been completed for this repository.
-          Existing design documents discuss selected tool-execution threats;
-          they do not constitute a complete project security assessment.
+          Maintainer assessment of the repository's scope, design, threats,
+          development practices and remaining gaps. This is not an independent
+          audit or a claim that all OSPS Baseline requirements pass.
+    tools:
+      - name: OSPS Baseline Scanner (Privateer)
+        type: other
+        version: '0.31.0'
+        rulesets:
+          - osps-baseline-2026-08
+        comment: >-
+          Fixed-digest Privateer GitHub repository scanner with read-only
+          permissions, weekly scheduling and workflow_dispatch. Initial manual
+          results are available; workflow success does not imply control success.
+        integration:
+          adhoc: true
+          ci: true
+          release: false
+        results:
+          adhoc:
+            name: Initial manual OSPS Baseline evaluation
+            predicate-uri: https://github.com/ossf/pvtr-github-repo-scanner
+            location: https://github.com/bailinghub/bailinghub/actions/runs/38016927247
+          ci:
+            name: OSPS Baseline evaluation
+            predicate-uri: https://github.com/ossf/pvtr-github-repo-scanner
+            location: https://github.com/bailinghub/bailinghub/actions/workflows/osps-baseline.yml
