@@ -188,6 +188,7 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 
 | 我想做什么 | 从这里开始 |
 |---|---|
+| 区分已发行能力、公开验证与限制 | [能力与证据索引](docs/IMPLEMENTATION_STATUS.md) |
 | 看懂产品和控制台 | [用户指南](docs/user-guide/README.md) |
 | 部署完整开源版 | [快速开始](docs/QUICKSTART.md) |
 | 跑通公开 Demo | [Docker Demo](docs/DEMO.md) |

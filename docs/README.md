@@ -8,6 +8,7 @@
 
 | 文档 | 用途 |
 |---|---|
+| [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) · [English](IMPLEMENTATION_STATUS.en.md) | Core 能力归属、正式发行与主分支状态、公开证据和未覆盖范围。 |
 | [RELEASE_NOTES_v0.9.0.md](RELEASE_NOTES_v0.9.0.md) · [English](RELEASE_NOTES_v0.9.0.en.md) | v0.9.0：可选模型计费、统一套餐额度与文生图工具。 |
 | [UPGRADE_v0.9.0.md](UPGRADE_v0.9.0.md) · [English](UPGRADE_v0.9.0.en.md) | 从公开 0.8.0 升级、063/064 迁移及宿主按需接入。 |
 | [MODEL_BILLING.md](MODEL_BILLING.md) · [English](MODEL_BILLING.en.md) | 模型与工具、参考价格、异步结算、账户归档和额度重置契约。 |
