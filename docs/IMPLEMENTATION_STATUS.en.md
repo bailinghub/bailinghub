@@ -71,3 +71,7 @@ A version field or this page does not substitute for artifact checks. Evaluate n
 - Complete user-level long-term memory, media tools without executable adapters, and real providers/business systems not accepted through the public paths listed here are not validated capabilities of this index. This page creates no new product timetable for them.
 
 Keep this page and its Chinese companion aligned. Retain the distinction between formal Tags and main, and update a capability's availability or validation scope only when its corresponding public evidence changes.
+
+## Additional process-recovery regressions in current source
+
+[Process crash and lost acknowledgements](MODEL_PROCESS_RECOVERY.en.md) use real SIGKILL, replacement PIDs and withheld MySQL COMMIT acknowledgements to check original requests, provider call counts, results and USD ledgers. These are subsequent opt-in source tests, not part of the historical v0.9.1 Tag. The link states coverage, not a new execution, real-provider or production-crash acceptance claim.
