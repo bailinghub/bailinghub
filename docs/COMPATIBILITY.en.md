@@ -1,5 +1,9 @@
 # Compatibility And Upgrade Policy
 
+## Core 0.9.1 patch upgrade
+
+Relative to 0.9.0, this patch fixes asynchronous usage shutdown and updates public documentation/general security governance. There are no new APIs, SQL, plan rules, or client features. SDK 0.7.0 / DSH 0.7.0 remain unchanged. Old-version close returning does not establish that usage work has finished. Reconcile original requests before replacing artifacts; retry a new-version usage-drain timeout on the original instance. See the [0.9.1 upgrade guide](UPGRADE_v0.9.1.en.md).
+
 ## Core 0.9.0 release pairing
 
 Pair Core 0.9.0 with SDK 0.7.0 / DSH 0.7.0 for the optional model billing gateway. Hosts retain orchestration, existing business authority, approvals and original-call recovery. Public 0.8.0 upgrades apply outstanding 063/064 migrations and retain real data, with no test-schema purge. Periodic sale price and allowance are separate; original grant snapshots and ledger remain. Hosts opt into model plans explicitly; existing business-tool-only hosts need not enable billing. See the [0.9.0 upgrade guide](UPGRADE_v0.9.0.en.md).

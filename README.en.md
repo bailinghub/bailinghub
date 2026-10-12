@@ -29,13 +29,13 @@ You choose which business APIs become available. BailingHub connects the convers
   <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
 </picture>
 
-## v0.9.0: model services and shared plan allowances
+## v0.9.1: asynchronous shutdown and public capability evidence
 
-Optionally enable a lightweight model billing gateway for an assistant's conversation models and text-to-image tools. Services share a USD allowance and one plan multiplier. Periodic allowance is separate from sale price; customers see Credits or remaining percentage. The local host continues orchestration, with existing business authority and approvals intact.
+Core shutdown now waits within its original deadline for model completion, settlement, and related usage background work. Usage-drain timeouts retain the original instance for retry without redispatch. This patch also provides a public capability/evidence index and general security-governance updates.
 
-Release pairing: **Core 0.9.0 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**. Reference prices are not provider invoices; generation and settlement have separate states. Verify versions, Tags and artifact digests when upgrading.
+Release pairing: **Core 0.9.1 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**. Independent client packages are not bumped for this patch. Shared USD allowances, the uniform multiplier, periodic price/allowance, and business authority remain unchanged, with no new APIs, SQL, or plan rules. Verify versions, Tags, and artifact digests when upgrading.
 
-[Release notes](docs/RELEASE_NOTES_v0.9.0.en.md) · [Upgrade guide](docs/UPGRADE_v0.9.0.en.md) · [Model billing](docs/MODEL_BILLING.en.md) · [Previous release](docs/RELEASE_NOTES_v0.8.0.en.md)
+[Release notes](docs/RELEASE_NOTES_v0.9.1.en.md) · [Upgrade guide](docs/UPGRADE_v0.9.1.en.md) · [Model billing](docs/MODEL_BILLING.en.md) · [Previous release](docs/RELEASE_NOTES_v0.9.0.en.md)
 
 ## Operate the System by Conversation
 
@@ -125,7 +125,7 @@ To explore before installing, use the [online experience](https://trial.bailingh
 To run the complete disposable loop locally:
 
 ```bash
-git clone --branch v0.6.1 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.9.1 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -214,7 +214,7 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
 - [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.
 - [English Documentation Map](docs/README.en.md) — the complete public documentation index.
-- [Changelog](docs/CHANGELOG.en.md) and [v0.9.0](docs/RELEASE_NOTES_v0.9.0.en.md) — current release changes and upgrade notes.
+- [Changelog](docs/CHANGELOG.en.md) and [v0.9.1](docs/RELEASE_NOTES_v0.9.1.en.md) — current release changes and upgrade notes.
 
 ## Feedback and Ecosystem
 
