@@ -46,6 +46,24 @@ await kernel.close(30_000);
 
 Managed mode does not create a full timer set per Kernel. The host must call `tick()` fairly and call `close()` during eviction, upgrade, or process shutdown. The 0-600000 ms `close(drainMs)` budget covers initialization, in-flight maintenance/ticks, HTTP, InHub, and execution-queue drain; after drain, Core also clears Kernel-owned transient credential caches such as WeCom access tokens. A timeout preserves the original instance dependencies and reports an error, so the host can retry on that same instance or alert. New `initialize()` and `tick()` calls cannot reopen resources after closing begins.
 
+### Usage background drain: current source, not yet released
+
+The current source adds usage background work to that close budget. This revision **is not released and is not a shutdown guarantee of the formal v0.9.0 Tag**. Each Kernel's `UsageRepository` owns a separate [background-work tracker](../src/modules/usage/background-work.ts), covering model-tool completion, settlement, response cleanup, pending-usage reconciliation, and reference-price refresh through persistence.
+
+`close()` first blocks new Kernel HTTP admission and waits for accepted HTTP handlers, InHub, and execution queues to finish registering work. It then stops new model requests and maintenance/price refresh for that repository, and dynamically waits for accepted background work. An accepted model-tool completion may register a settlement child after drain starts; that child must also finish before resources close. Asynchronous model tools still promptly return the original pending state/HTTP 202. This revision does not make the first response wait for image-provider completion.
+
+All stages share the original `drainMs` deadline rather than receiving a fresh full budget each. A usage-drain timeout reports an error, keeps the Kernel closing and its dependencies intact, and skips subsequent resource closure. The host can wait for the original work and retry `close()` on **the same instance**. A timeout never authorizes a fresh model dispatch or business write. Successful drain establishes that registered work has ended, not that every billing record is settled; failed work may retain durable pending/unknown evidence for later reconciliation. Diagnostics report fixed work categories without provider bodies or raw SQL errors.
+
+The [tracker unit tests](../src/modules/usage/background-work.test.ts) check registration before execution, late children, stopped maintenance, timeout/retry, isolation between two owners, and failure cleanup/fixed-category diagnostics. Those two unit-test owners are not two actual Kernels or databases. The public [Kernel + MySQL lifecycle tests](../src/app/kernel-usage-lifecycle.mysql.test.ts) use actual Kernels, separate test schemas, and synthetic providers to assert:
+
+- delayed model-tool completion, late settlement, real SQL-lock waits, resource preservation on timeouts, and same-instance retry;
+- ordinary text-model delivery before asynchronous settlement, close waiting for that settlement, and standalone shutdown draining before exit;
+- work/resource isolation between two Kernels using the same original request ID, one original dispatch, and one settlement-ledger record;
+- response cleanup and usage reconciliation each independently blocking close, reference-price refresh through SQL persistence, and stopped new maintenance;
+- settlement failure retaining the original result and durable pending evidence, later reconciliation without provider redispatch, and diagnostics excluding raw errors.
+
+The database tests explicitly require `BAILING_USAGE_TEST_MYSQL=1`. Their existence, or a default run that skips them, does not establish a passing database run or live-provider, process-crash recovery, or production-host acceptance. See the [capability/evidence index](IMPLEMENTATION_STATUS.en.md) for the historical v0.9.0 limitation.
+
 Multiple Kernels may share `KernelExecutionQueueV1` as a process-wide concurrency ceiling. This v1 wrapper exposes only `run()` to the Host; admission, statistics, and drain for each Kernel-local queue remain Core-owned. All Kernels in one process currently need the same `display_tz` and `display_tz_label`.
 
 ## Artifact And Schema Upgrades

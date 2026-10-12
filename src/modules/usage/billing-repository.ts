@@ -355,17 +355,19 @@ export class BillingRepository {
     return recorded.billingState === 'pending' && (recorded.usage || recorded.rawUsage) ? this.settleRecorded(recorded) : recorded;
   }
   private readonly settlements = new Map<string, Promise<void>>();
-  scheduleSettlement(operationId: string, actor: UsageActor): void {
+  scheduleSettlement(operationId: string, actor: UsageActor): Promise<void> {
     const key = operationIdKey(actor, operationId);
-    if (this.settlements.has(key)) return;
-    const work = Promise.resolve().then(async () => {
+    const existing = this.settlements.get(key);
+    if (existing) return existing;
+    const work = this.repository.backgroundWork.track('settlement', async () => {
       const r = await this.findRequest(actor, operationId);
       if (r?.billingState === 'pending' && (r.usage || r.rawUsage) && r.resultHash) await this.settleRecorded(r);
     }).catch(() => { /* Durable pending evidence is retried by maintenance. */ })
       .finally(() => { this.settlements.delete(key); });
     this.settlements.set(key, work);
+    return work;
   }
-  async drainSettlements(): Promise<void> { await Promise.allSettled([...this.settlements.values()]); }
+  async drainSettlements(): Promise<void> { while (this.settlements.size) await Promise.allSettled([...this.settlements.values()]); }
   private async settleRecorded(recorded: BillingRequest): Promise<BillingRequest> {
     try {
       return await this.repository.withTransaction(async c => {

@@ -6,6 +6,7 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [IMPLEMENTATION_STATUS.en.md](IMPLEMENTATION_STATUS.en.md) · [Chinese](IMPLEMENTATION_STATUS.md) | Core ownership, formal releases versus main, public evidence, and uncovered scope. |
 | [RELEASE_NOTES_v0.9.0.en.md](RELEASE_NOTES_v0.9.0.en.md) · [Chinese](RELEASE_NOTES_v0.9.0.md) | v0.9.0: optional model billing, shared allowances and image tools. |
 | [UPGRADE_v0.9.0.en.md](UPGRADE_v0.9.0.en.md) · [Chinese](UPGRADE_v0.9.0.md) | Upgrade from public 0.8.0, migrations 063/064 and optional host integration. |
 | [MODEL_BILLING.en.md](MODEL_BILLING.en.md) · [Chinese](MODEL_BILLING.md) | Models/tools, reference prices, asynchronous settlement, archive and allowance reset contract. |

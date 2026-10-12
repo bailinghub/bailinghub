@@ -180,6 +180,9 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     queue: new Queue(cfg.concurrency, input.executionQueue),
     serialScope: instanceKey,
   });
+  composition.cfgStore?.usage?.backgroundWork.setFailureReporter(kind => {
+    logger.warn?.(`[Kernel ${instanceKey}] usage background ${kind} failed; original durable evidence is retained`);
+  });
   const demoDataset = composition.cfgStore ? new DemoDatasetService(composition.cfgStore, cfg.demoDataset) : null;
   const runtimeHelpers = createRuntimeContextHelpers({
     cfg,
@@ -482,6 +485,13 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
       composition.queue.closeAdmission();
       const queueDrained = await composition.queue.drain(remainingDrainMs());
       if (!queueDrained) throw new Error(`Kernel ${instanceKey} execution queue drain timed out`);
+      const usageWork = composition.cfgStore?.usage?.backgroundWork;
+      if (usageWork) {
+        // Foreground handlers have finished registering their continuations.
+        // Stop new maintenance, but let already accepted completions settle.
+        usageWork.beginDrain();
+        if (!await usageWork.drain(remainingDrainMs())) throw new Error(`Kernel ${instanceKey} usage background drain timed out`);
+      }
       targetRegistry.bindStore(null);
       wecomRuntimeState.dispose();
       wecomAccessTokenCache.dispose();

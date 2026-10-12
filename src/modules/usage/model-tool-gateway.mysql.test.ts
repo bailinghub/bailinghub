@@ -61,7 +61,7 @@ async function fixture(options: {response?: () => Response | Promise<Response>} 
     throw new Error('Synthetic image operation did not settle');
   }
   return {...h,image,excluded,pending,user,calls,input,request,release,settled,
-    async close(){release();for(let i=0;i<300;i++){const [rows]=await h.pool.query<any[]>("SELECT COUNT(*) n FROM bz_usage_billing_requests WHERE fence IS NOT NULL AND result_hash IS NULL AND state='dispatch_committed'");if(!Number(rows[0].n))break;await delay(10);}server.close();server.closeAllConnections();await h.close();},
+    async close(){release();server.close();server.closeAllConnections();h.repository.backgroundWork.beginDrain();assert.equal(await h.repository.backgroundWork.drain(5000),true,'Synthetic model-tool background drain timed out');await h.close();},
   };
 }
 

@@ -46,6 +46,24 @@ await kernel.close(30_000);
 
 `managed` 模式不为每个 Kernel 创建完整定时器组；宿主必须公平调用 `tick()`，并在淘汰、升级或进程退出时调用 `close()`。`close(drainMs)` 的 0~600000 毫秒时限覆盖初始化、在途维护/tick、HTTP、InHub 与执行队列排空；排空后还会清理 Kernel 自己的企微令牌等瞬时凭证缓存。超时会保留原实例依赖并报错，宿主应在同一实例上重试或告警。`close()` 开始后的新 `initialize()` / `tick()` 不会重开资源。
 
+### usage 后台工作排空：当前源码，尚未发行
+
+当前源码在上述关闭时限内增加 usage 后台工作等待；这项修订**尚未发行，不属于正式 v0.9.0 Tag 的关闭保证**。每个 Kernel 所使用的 `UsageRepository` 拥有独立的 [后台工作登记器](../src/modules/usage/background-work.ts)，记录模型工具完成、结算、响应清理、待结算 usage 核对，以及参考价格刷新到持久化结束的工作。
+
+`close()` 先阻止新的 Kernel HTTP 接入，并等待已接纳的 HTTP、InHub 与执行队列结束登记；随后停止该 repository 的新模型请求及新维护/价格刷新，再动态等待已有后台工作。已接纳的模型工具完成可以在关闭等待开始后登记其结算子工作，该子工作也须结束后才允许关闭资源。异步模型工具仍先返回原请求的 pending/HTTP 202；此修订不会让首次响应等待图片供应商完成。
+
+所有阶段共用原 `drainMs` 时限，而不是为每类工作增加新的完整时限。usage 排空超时会报错，保持 Kernel 的关闭状态并保留其依赖，不调用后续资源关闭。宿主可以等待原工作结束，再对**同一实例**重试 `close()`；不能把超时当作重新派发模型请求或业务写入的许可。成功排空只说明已登记工作已结束，不保证所有账本记录已经 settled；失败工作可保留 durable pending/unknown 证据供后续核对。日志只报告固定工作类别，不附供应商正文或原始 SQL 错误。
+
+[登记器单元测试](../src/modules/usage/background-work.test.ts) 检查先登记后启动、晚登记子工作、维护停止、超时重试、两个 owner 的隔离，以及失败清理/固定类别诊断；这些单测的两个 owner 不是两个实际 Kernel 或数据库。[Kernel + MySQL 生命周期测试](../src/app/kernel-usage-lifecycle.mysql.test.ts) 则使用实际 Kernel、独立测试 schema 和模拟供应商，公开断言覆盖：
+
+- 延迟模型工具完成、晚登记结算、真实 SQL 锁等待、超时保留资源与同实例重试；
+- 普通文本模型先返回结果、关闭仍等待异步结算，以及 standalone shutdown 排空后才退出；
+- 两个 Kernel 使用同一原请求标识时的工作/资源隔离，原请求单次派发和单条结算记录；
+- 响应清理和 usage 核对分别单独阻挡关闭，以及参考价格刷新到 SQL 持久化、新维护停止；
+- 结算失败仍保留原结果及 durable pending，后续核对不重派供应商请求，诊断不输出原始错误。
+
+数据库入口由 `BAILING_USAGE_TEST_MYSQL=1` 显式启用。测试源码存在或默认运行时被跳过，不代表实际数据库测试通过，也不代表真实供应商、进程崩溃恢复或生产宿主已完成验收。正式 v0.9.0 的历史限制另见 [能力与证据索引](IMPLEMENTATION_STATUS.md)。
+
 多个 Kernel 可以共享 `KernelExecutionQueueV1` 作为进程级并发上限。这个 v1 包装只向宿主暴露 `run()`；每个 Kernel 内部队列的接入、统计和排空仍由 Core 自己管理。当前同进程实例必须使用相同的 `display_tz` / `display_tz_label`。
 
 ## 制品与数据库升级

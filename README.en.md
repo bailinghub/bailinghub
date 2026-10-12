@@ -201,6 +201,7 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 
 ## Documentation
 
+- [Capabilities and Public Evidence](docs/IMPLEMENTATION_STATUS.en.md) — separate release availability, validation scope, and limitations.
 - [Quickstart](docs/QUICKSTART.en.md) — deploy and run the first route.
 - [Docker Demo](docs/DEMO.en.md) — complete the sample business-operation loop.
 - [Integration Guide](docs/INTEGRATION.en.md) — connect an existing application.
