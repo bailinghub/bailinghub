@@ -54,3 +54,9 @@ web-admin/src/private/
 web-admin/src/platform/
 *.private.*
 *.enterprise.*
+
+# Repository governance metadata; excluded from runtime distributions.
+security-insights.yml
+SECURITY_SELF_ASSESSMENT*.md
+docs/security-assessment*
+docs/security/self-assessment*
