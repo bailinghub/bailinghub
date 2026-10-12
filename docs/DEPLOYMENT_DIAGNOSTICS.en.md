@@ -1,5 +1,7 @@
 # Read-only deployment diagnostics
 
+This additional mode belongs to subsequent main-branch source. The historical released `v0.9.1` Tag/npm artifact does not include it. Run the commands below only from source or a later released artifact that includes `scripts/doctor-deployment.ts`.
+
 Deployment diagnostics add a separate mode to `npm run doctor` for an installed Core. Doctor without arguments retains its source, documentation, example and OSS checks. Deployment mode checks the specified instance's public health and version declarations without running the existing check scripts.
 
 See [DEPLOYMENT_DIAGNOSTICS.md](DEPLOYMENT_DIAGNOSTICS.md) for Chinese, [OPERATIONS.en.md](OPERATIONS.en.md) for deployment and recovery, and [IMPLEMENTATION_STATUS.en.md](IMPLEMENTATION_STATUS.en.md) for capability and evidence boundaries.

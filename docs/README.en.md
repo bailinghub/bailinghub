@@ -57,6 +57,7 @@ This directory contains public documentation for the open-source BailingHub proj
 |---|---|
 | [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | Architecture overview: layers, runtime path, boundaries, and extension points. |
 | [KERNEL_HOST_API.en.md](KERNEL_HOST_API.en.md) | Versioned high-level embedding API, managed lifecycle, mount paths, and artifact upgrade boundary. |
+| [MODEL_PROCESS_RECOVERY.en.md](MODEL_PROCESS_RECOVERY.en.md) · [简体中文](MODEL_PROCESS_RECOVERY.md) | Opt-in process-crash/lost-acknowledgement regressions in current source; historical Tag evidence stays separate. |
 | [KERNEL_HOST_API.md](KERNEL_HOST_API.md) | Chinese Kernel Host API guide. |
 | [PIPELINE.en.md](PIPELINE.en.md) | Runtime pipeline from trigger to dispatch, tools, audit, approval, and delivery. |
 

@@ -1,5 +1,7 @@
 # 只读部署诊断
 
+本页新增模式属于后续主分支源码；历史正式 `v0.9.1` Tag/npm 尚不包含该模式。仅在包含 `scripts/doctor-deployment.ts` 的源码或后续正式制品中执行以下命令。
+
 部署诊断沿用 `npm run doctor`，增加一个面向已安装 Core 的独立模式。原有不带参数的 doctor 继续检查源码、文档、示例和开源边界；部署模式只核对指定实例的公开健康与版本信息，不执行原有 doctor 的检查脚本。
 
 英文版见 [DEPLOYMENT_DIAGNOSTICS.en.md](DEPLOYMENT_DIAGNOSTICS.en.md)。部署与恢复步骤见 [OPERATIONS.md](OPERATIONS.md)，能力和证据范围见 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)。
