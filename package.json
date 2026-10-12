@@ -105,7 +105,8 @@
     "sdk:test-p1": "node scripts/sdk-p1-check.mjs",
     "sdk:pack": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php.tgz -s '|^php|bailing-connect-php|' -C sdk php",
     "sdk:pack7": "COPYFILE_DISABLE=1 tar --no-xattrs -czf web/connect/bailing-connect-php7.tgz -s '|^php7|bailing-connect-php7|' -C sdk php7",
-    "audit:deps:test": "node --test scripts/dependency-audit.test.mjs"
+    "audit:deps:test": "node --test scripts/dependency-audit.test.mjs",
+    "test:model-process-recovery": "node --import tsx --test src/app/kernel-model-process-crash.mysql.test.ts"
   },
   "dependencies": {
     "mammoth": "^1.12.0",

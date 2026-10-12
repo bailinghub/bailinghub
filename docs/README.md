@@ -64,6 +64,7 @@
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 当前架构的主说明：分层、核心运行链路、解耦边界和扩展方向。 |
 | [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | English architecture overview. |
 | [KERNEL_HOST_API.md](KERNEL_HOST_API.md) | 完整 Core 的版本化高层嵌入 API、托管生命周期和升级边界。 |
+| [MODEL_PROCESS_RECOVERY.md](MODEL_PROCESS_RECOVERY.md) · [English](MODEL_PROCESS_RECOVERY.en.md) | 当前源码的 opt-in 进程崩溃/确认丢失回归；不回写历史 Tag 验证。 |
 | [KERNEL_HOST_API.en.md](KERNEL_HOST_API.en.md) | English versioned Kernel Host API and lifecycle boundary. |
 | [PIPELINE.md](PIPELINE.md) | 一次任务从入口到执行、审计、送达的流水线。 |
 | [PIPELINE.en.md](PIPELINE.en.md) | English runtime pipeline. |
