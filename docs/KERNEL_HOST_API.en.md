@@ -46,9 +46,9 @@ await kernel.close(30_000);
 
 Managed mode does not create a full timer set per Kernel. The host must call `tick()` fairly and call `close()` during eviction, upgrade, or process shutdown. The 0-600000 ms `close(drainMs)` budget covers initialization, in-flight maintenance/ticks, HTTP, InHub, and execution-queue drain; after drain, Core also clears Kernel-owned transient credential caches such as WeCom access tokens. A timeout preserves the original instance dependencies and reports an error, so the host can retry on that same instance or alert. New `initialize()` and `tick()` calls cannot reopen resources after closing begins.
 
-### Usage background drain: current source, not yet released
+### Usage background drain: Core v0.9.1
 
-The current source adds usage background work to that close budget. This revision **is not released and is not a shutdown guarantee of the formal v0.9.0 Tag**. Each Kernel's `UsageRepository` owns a separate [background-work tracker](../src/modules/usage/background-work.ts), covering model-tool completion, settlement, response cleanup, pending-usage reconciliation, and reference-price refresh through persistence.
+[Core v0.9.1](RELEASE_NOTES_v0.9.1.en.md) adds usage background work to that close budget. **The formal v0.9.0 Tag does not contain this shutdown fix**. Each Kernel's `UsageRepository` owns a separate [background-work tracker](../src/modules/usage/background-work.ts), covering model-tool completion, settlement, response cleanup, pending-usage reconciliation, and reference-price refresh through persistence.
 
 `close()` first blocks new Kernel HTTP admission and waits for accepted HTTP handlers, InHub, and execution queues to finish registering work. It then stops new model requests and maintenance/price refresh for that repository, and dynamically waits for accepted background work. An accepted model-tool completion may register a settlement child after drain starts; that child must also finish before resources close. Asynchronous model tools still promptly return the original pending state/HTTP 202. This revision does not make the first response wait for image-provider completion.
 

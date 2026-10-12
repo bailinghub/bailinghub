@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.0.en.md).
+Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.1.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,16 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.9.1 - Asynchronous model shutdown and public capability evidence
+
+Version date: 2026-10-12. Core patch release; MCP / Agent Client SDK 0.7.0 and DSH 0.7.0 remain unchanged. See [release notes](RELEASE_NOTES_v0.9.1.en.md) and the [upgrade guide](UPGRADE_v0.9.1.en.md).
+
+- Fix model-tool completion, late settlement, and other usage background work not being explicitly included in Kernel shutdown drain. Original HTTP 202, request IDs, result/billing states, and business authority remain unchanged.
+- Usage drain shares the original close deadline. A timeout at that stage retains original dependencies and the closing state for same-instance retry without redispatch. Failed settlement can retain durable pending evidence.
+- Add a Chinese/English public capability/evidence index separating releases, source, test scope, independent-component responsibilities, and uncovered cases.
+- Include existing main-branch dependency auditing, pinned Actions sources/minimal permissions, recurring scanning, assessments, and security metadata. Repository governance material is excluded from runtime packages/images; no all-controls-passing claim is made.
+- No new APIs, SQL migrations, plan rules, or client features relative to 0.9.0. Public unit and actual Kernel/MySQL synthetic-provider regressions expose shutdown checks, without replacing live-provider or deployment acceptance.
 
 ## v0.9.0 - Model services, shared allowances and image tools
 

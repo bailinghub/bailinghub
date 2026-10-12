@@ -46,9 +46,9 @@ await kernel.close(30_000);
 
 `managed` 模式不为每个 Kernel 创建完整定时器组；宿主必须公平调用 `tick()`，并在淘汰、升级或进程退出时调用 `close()`。`close(drainMs)` 的 0~600000 毫秒时限覆盖初始化、在途维护/tick、HTTP、InHub 与执行队列排空；排空后还会清理 Kernel 自己的企微令牌等瞬时凭证缓存。超时会保留原实例依赖并报错，宿主应在同一实例上重试或告警。`close()` 开始后的新 `initialize()` / `tick()` 不会重开资源。
 
-### usage 后台工作排空：当前源码，尚未发行
+### usage 后台工作排空：Core v0.9.1
 
-当前源码在上述关闭时限内增加 usage 后台工作等待；这项修订**尚未发行，不属于正式 v0.9.0 Tag 的关闭保证**。每个 Kernel 所使用的 `UsageRepository` 拥有独立的 [后台工作登记器](../src/modules/usage/background-work.ts)，记录模型工具完成、结算、响应清理、待结算 usage 核对，以及参考价格刷新到持久化结束的工作。
+[Core v0.9.1](RELEASE_NOTES_v0.9.1.md) 在上述关闭时限内增加 usage 后台工作等待；**正式 v0.9.0 Tag 不包含这项关闭修复**。每个 Kernel 所使用的 `UsageRepository` 拥有独立的 [后台工作登记器](../src/modules/usage/background-work.ts)，记录模型工具完成、结算、响应清理、待结算 usage 核对，以及参考价格刷新到持久化结束的工作。
 
 `close()` 先阻止新的 Kernel HTTP 接入，并等待已接纳的 HTTP、InHub 与执行队列结束登记；随后停止该 repository 的新模型请求及新维护/价格刷新，再动态等待已有后台工作。已接纳的模型工具完成可以在关闭等待开始后登记其结算子工作，该子工作也须结束后才允许关闭资源。异步模型工具仍先返回原请求的 pending/HTTP 202；此修订不会让首次响应等待图片供应商完成。
 
