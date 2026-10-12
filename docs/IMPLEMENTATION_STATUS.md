@@ -7,7 +7,7 @@
 ## 版本与阅读口径
 
 - 正式发行基线：[v0.9.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.0)，对应提交 [`dae5260ede6565080d21e94ae63d52f3a7d23556`](https://github.com/bailinghub/bailinghub/tree/dae5260ede6565080d21e94ae63d52f3a7d23556)。下表机制均可在该 Tag 的公开源码中找到；不代表默认安装后已启用所有可选功能。
-- 本次盘点的主分支基线：[`728899e88d89f0ec333684a56640c12154970327`](https://github.com/bailinghub/bailinghub/tree/728899e88d89f0ec333684a56640c12154970327)。该基线的运行面源码与 v0.9.0 相同，新增的治理、依赖检查和 CI 配置单独列在后文；主分支变化不等于新的 npm、镜像或产品发行。
+- 本次盘点的主分支基线：[`728899e88d89f0ec333684a56640c12154970327`](https://github.com/bailinghub/bailinghub/tree/728899e88d89f0ec333684a56640c12154970327)。该固定基线的运行面源码与 v0.9.0 相同；后续源码候选修复，以及该基线新增的治理、依赖检查和 CI 配置，分别列在后文。源码变化不等于新的 npm、镜像或产品发行。
 - 表中的测试链接是**公开测试代码及其检查范围**，不是本页重新执行所得的通过记录。单元测试、模拟供应商响应、MySQL 集成测试和完整 demo 验证分别说明各自覆盖的条件。未执行或跳过的测试不能写成已通过，也不能据此把已有机制写成“计划实现”。
 - 版本发行内容与升级前提以 [v0.9.0 说明](RELEASE_NOTES_v0.9.0.md) 和 [升级指南](UPGRADE_v0.9.0.md) 为准。适配客户端、应用迁移、模型凭据、存储和具体业务授权仍需各自配置、验证。
 
@@ -44,11 +44,19 @@ Core 默认是一个组织的管理与审计域。不同 Client、route 或工�
 
 任务卡要求记录服务、控制台、匿名预览边界、基础体检和完整业务闭环的具体结果。README 的 demo 图像与动画展示同一公开样例，不能当作客户采用证据。任务卡存在也不意味着已有外部开发者完成验证；报告结果应保留验证者实际版本、环境、检查项和失败范围。
 
-### 异步模型工具关闭的当前限制
+### 正式 v0.9.0 的异步模型工具关闭限制
 
 v0.9.0 的 [模型工具网关源码](https://github.com/bailinghub/bailinghub/blob/dae5260ede6565080d21e94ae63d52f3a7d23556/src/modules/usage/model-gateway.ts) 先持久化 provider 派发记录，再通过 `void complete().then(...)` 启动后台完成与结算，立即返回原请求状态。[Kernel 的关闭源码](https://github.com/bailinghub/bailinghub/blob/dae5260ede6565080d21e94ae63d52f3a7d23556/src/app/kernel.ts) 显式等待初始化、托管维护、HTTP、InHub、执行队列及资源关闭，但没有把这段 usage 模型工具 continuation 显式登记为独立的 drain 对象。
 
-因此，现有异步图片请求/原标识恢复测试不能被扩展为“所有 provider 完成都已经纳入 Kernel 关闭验收”。本次盘点的主分支仍有同一源码边界。本页不据此断言已发生数据丢失或重复业务效果，也不把待补覆盖写成已修复或新的发行承诺。
+因此，v0.9.0 中的异步图片请求/原标识恢复测试不能被扩展为“所有 provider 完成都已经纳入 Kernel 关闭验收”。以上固定主分支基线也有同一源码边界。本页不据此断言已发生数据丢失或重复业务效果。
+
+### 后续源码候选修复：尚未发行
+
+当前源码增加了每个 `UsageRepository` 独立拥有的 [后台工作登记器](../src/modules/usage/background-work.ts)，并在 [Kernel 关闭路径](../src/app/kernel.ts) 的资源关闭前排空。模型工具完成及其晚登记的结算子工作、普通模型响应后的结算、按流量触发的响应清理/usage 核对，以及参考价格刷新到持久化结束，均有实际登记接线。停止新工作、共享关闭时限和超时后同实例重试语义见 [Kernel Host API](KERNEL_HOST_API.md)。原请求的 HTTP 202 与恢复标识不变；关闭等待不发起新的供应商请求，也不改变业务审批权限。
+
+新增 [登记器单元测试](../src/modules/usage/background-work.test.ts) 检查先登记后启动、动态子工作、维护停止、超时重试、owner 隔离和失败诊断边界；owner 单测不等于实际多 Kernel 验证。[Kernel + MySQL 生命周期测试](../src/app/kernel-usage-lifecycle.mysql.test.ts) 使用实际 Kernel、独立测试 schema 和合成供应商，公开断言覆盖延迟完成/晚登记结算、SQL 锁等待、超时保留资源与同实例重试、两个 Kernel 的原标识/资源隔离、普通文本结果交付后结算仍阻挡关闭，以及 standalone shutdown 排空后退出。响应清理与 usage 核对分别有单独阻挡关闭的用例，参考价格刷新覆盖到持久化及新维护停止；结算失败保留原结果/durable pending、后续核对不重派、诊断不带原错误，以及原请求单次派发/单条结算记录也有断言。数据库入口显式依赖 `BAILING_USAGE_TEST_MYSQL=1`；源码与断言不能代替实际测试结果，也不证明真实供应商、进程崩溃恢复或生产部署已验收。
+
+这项修复目前是**未发行的源码候选**，不回写 v0.9.0 Tag 的历史保证。后台工作失败后可能留下 durable pending/unknown 证据；排空完成不等于每条计费记录必然 settled，更不是完整故障恢复或安全保证。
 
 ## 主分支已有、尚未随新版本发行的治理工作
 

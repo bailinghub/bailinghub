@@ -5,6 +5,7 @@ import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type { CreateUsageAccountInput, UsageAccount, UsageActor, UsageActorValidator, UsageService, UsageServiceConfig } from "./contracts";
 import { integer, assertKnownFields } from "./validation";
 import { usageAssert } from "./errors";
+import { UsageBackgroundWork } from './background-work';
 type Row = Record<string, any>;
 // Impact previews derive account models from each current grant's plan.
 function serviceReferenceSources(id: string) {
@@ -79,6 +80,7 @@ function service(r: Row): UsageService {
   };
 }
 export class UsageRepository {
+  readonly backgroundWork = new UsageBackgroundWork();
   private validator: UsageActorValidator | undefined;
   constructor(private readonly pool: () => Pool) {}
   getPool(): Pool {

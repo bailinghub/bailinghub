@@ -100,7 +100,8 @@ export async function createUsageTestHarness() {
     setPaused(value: boolean) { paused = value; },
     async close() {
       state.release?.(); hub.close(); hub.closeAllConnections(); provider.close(); provider.closeAllConnections();
-      await getBillingRepository(repository).drainSettlements();
+      repository.backgroundWork.beginDrain();
+      if (!await repository.backgroundWork.drain(5000)) throw new Error('Synthetic usage background drain timed out');
       await pool.end();
       // Only the random database created by this fixture is removed; no shared or configured DB is touched.
       await adminPool.query(`DROP DATABASE \`${dbName}\``); await adminPool.end();

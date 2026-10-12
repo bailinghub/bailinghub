@@ -167,7 +167,7 @@ export class ReferencePricing {
   }
   private async refresh(kind: 'chat'|'image', modelId?: string): Promise<Catalog> {
     const key = this.key(kind,modelId), pending = this.flights.get(key); if (pending) return pending;
-    const job = (async () => {
+    const job = this.repository.backgroundWork.startMaintenance('reference-price-refresh', async () => {
       const prefix = kind === 'image' ? 'images/models' : 'models';
       const encoded = modelId?.split('/').map(encodeURIComponent).join('/');
       const value = await this.fetchJson(modelId ? `${prefix}/${encoded}/endpoints` : prefix);
@@ -189,7 +189,8 @@ export class ReferencePricing {
         items = items.filter((x:any) => items.filter((y:any)=>y.id===x.id).length===1);
       }
       const result = {items,fetchedAt}; await this.save(key,result); return result;
-    })();
+    });
+    usageAssert(job, 'USAGE_PRICE_UNAVAILABLE', '参考价格同步已停止，请稍后重试。', 503);
     this.flights.set(key,job); try {return await job;} finally {this.flights.delete(key);}
   }
   async catalog(kind:'chat'|'image', modelId?: string, force=false): Promise<Catalog> {

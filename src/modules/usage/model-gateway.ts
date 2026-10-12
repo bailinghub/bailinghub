@@ -28,13 +28,15 @@ export interface UsageGatewayDeps {
 
 const responseCleanup = new WeakMap<UsageRepository, number>();
 function scheduleResponseCleanup(repository: UsageRepository): void {
+  if (!repository.backgroundWork.acceptingRequests) return;
   const now = Date.now();
   if (now - (responseCleanup.get(repository) ?? 0) < 60_000) return;
   responseCleanup.set(repository, now);
   // Bounded maintenance is independent of admission and model delivery. A failed
   // cleanup is retried on later traffic; expired bodies are never returned meanwhile.
   const tokens = getBillingRepository(repository);
-  void Promise.allSettled([tokens.cleanupExpiredResponses(now), tokens.reconcilePendingUsage()]);
+  void repository.backgroundWork.startMaintenance('response-cleanup', () => tokens.cleanupExpiredResponses(now))?.catch(() => {});
+  void repository.backgroundWork.startMaintenance('usage-reconciliation', () => tokens.reconcilePendingUsage())?.catch(() => {});
 }
 
 export const MODEL_GATEWAY_CAPABILITIES = {
@@ -95,7 +97,7 @@ export async function runModelRequest(deps: UsageGatewayDeps, actor: UsageSessio
     usageAssert(previous.requestHash === requestHash, 'USAGE_IDEMPOTENCY_CONFLICT', '原请求标识已关联其他内容。');
     return tokens.view(previous);
   }
-  usageAssert(!deps.isPaused?.(), 'USAGE_SERVICE_PAUSED', '模型服务维护中；原请求结果仍可查询。', 503);
+  usageAssert(repository.backgroundWork.acceptingRequests && !deps.isPaused?.(), 'USAGE_SERVICE_PAUSED', '模型服务维护中；原请求结果仍可查询。', 503);
   const current = await tokens.summary(actor.accountId);
   usageAssert(current.grant, 'SERVICE_NOT_ENTITLED', '尚未开通套餐。', 403);
   if (!modelAllowedServices(actor, current.plan?.serviceIds ?? []).includes(serviceId))
@@ -144,7 +146,12 @@ export async function runModelRequest(deps: UsageGatewayDeps, actor: UsageSessio
   };
   if (toolRequest) {
     // Return the durable dispatch record promptly. Disconnecting never regenerates an image.
-    void complete().then(result=>tokens.scheduleSettlement(result.operation_id,actor)).catch(()=>{});
+    void repository.backgroundWork.track('model-completion', async () => {
+      const result = await complete();
+      // The accepted parent remains live through the late-created settlement.
+      // Delivery still returns 202 immediately; close must drain both stages.
+      await tokens.scheduleSettlement(result.operation_id, actor);
+    }).catch(()=>{});
     return tokens.view(request);
   }
   return complete();
