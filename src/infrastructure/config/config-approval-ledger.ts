@@ -1,7 +1,9 @@
 import { dt, rowToolApproval } from '../../core/config/config-codec';
 import type { ToolApproval } from '../../core/contracts/types';
+import type { ApprovalContinuation, ApprovalContinuationDecisionOptions } from '../../core/contracts/approval-continuation';
 
 export class ApprovalLedger {
+  private continuationCursor = 0;
   constructor(private readonly poolOf: () => any) {}
 
   private get pool(): any { return this.poolOf(); }
@@ -41,6 +43,72 @@ export class ApprovalLedger {
       [status, decidedBy, opts?.decision_id ?? null, opts?.comment ?? null, dt(), id],
     );
     return r?.affectedRows === 1;
+  }
+
+  /** Decision and immutable follow-up coordinates are a single database transaction. */
+  async decideWithContinuation(id: number, status: 'approved' | 'denied', decidedBy: string,
+    opts: ApprovalContinuationDecisionOptions): Promise<'decided' | 'same' | 'conflict'> {
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [rows]: any = await conn.query('SELECT * FROM bz_tool_approvals WHERE id=? FOR UPDATE', [id]);
+      if (!rows[0]) { await conn.commit(); return 'conflict'; }
+      const approval = rowToolApproval(rows[0]);
+      if (approval.status !== 'pending') {
+        const same = approval.status === status && (approval.decision_id ?? null) === (opts.decision_id ?? null);
+        await conn.commit();
+        return same ? 'same' : 'conflict';
+      }
+      const intent: ApprovalContinuation = {
+        schema_version: 'bailing.approval-continuation.v1', approval_id: id,
+        decision_key: opts.decision_id ?? `console:${id}`, decision: status,
+        ...(opts.decision_id ? { decision_id: opts.decision_id } : {}),
+        job_id: approval.job_id, request_id: approval.request_id, args_hash: approval.args_hash,
+        tool: approval.tool, scope: approval.scope, by: decidedBy,
+        source: opts.source, auth: opts.auth, mode: opts.mode,
+        ...(approval.policy ? { policy: approval.policy } : {}),
+        ...(approval.reason ? { reason: approval.reason } : {}),
+        ...(approval.summary ? { summary: approval.summary } : {}),
+        ...(opts.comment ? { comment: opts.comment } : {}),
+        audit_recorded: false, completed: false,
+      };
+      await conn.query("UPDATE bz_tool_approvals SET status=?,decided_by=?,decision_id=?,decision_comment=?,decided_at=? WHERE id=? AND status='pending'",
+        [status, decidedBy, opts.decision_id ?? null, opts.comment ?? null, dt(), id]);
+      await conn.query('INSERT INTO bz_approval_continuations (approval_id,intent_json,created_at) VALUES (?,?,?)',
+        [id, JSON.stringify(intent), dt()]);
+      await conn.commit();
+      return 'decided';
+    } catch (error) {
+      await conn.rollback().catch(() => undefined);
+      if ((error as { code?: string }).code === 'ER_DUP_ENTRY') return 'conflict';
+      throw error;
+    } finally { conn.release(); }
+  }
+
+  async getContinuation(id: number): Promise<ApprovalContinuation | null> {
+    const [rows]: any = await this.pool.query('SELECT * FROM bz_approval_continuations WHERE approval_id=?', [id]);
+    return rows[0] ? continuationRow(rows[0]) : null;
+  }
+
+  async pendingContinuations(limit = 25): Promise<ApprovalContinuation[]> {
+    const n = Math.min(Math.max(Math.trunc(limit) || 25, 1), 100);
+    let [rows]: any = await this.pool.query(`SELECT * FROM bz_approval_continuations WHERE completed_at IS NULL AND approval_id>? ORDER BY approval_id LIMIT ${n}`, [this.continuationCursor]);
+    if (!rows.length && this.continuationCursor > 0) {
+      this.continuationCursor = 0;
+      [rows] = await this.pool.query(`SELECT * FROM bz_approval_continuations WHERE completed_at IS NULL AND approval_id>? ORDER BY approval_id LIMIT ${n}`, [0]);
+    }
+    if (rows.length) this.continuationCursor = Number(rows[rows.length - 1].approval_id);
+    return rows.map(continuationRow);
+  }
+
+  async markContinuationAuditRecorded(id: number, decisionKey: string): Promise<void> {
+    await this.pool.query("UPDATE bz_approval_continuations SET audit_recorded_at=COALESCE(audit_recorded_at,?) WHERE approval_id=? AND JSON_UNQUOTE(JSON_EXTRACT(intent_json,'$.decision_key'))=?",
+      [dt(), id, decisionKey]);
+  }
+
+  async completeContinuation(id: number, decisionKey: string): Promise<void> {
+    await this.pool.query("UPDATE bz_approval_continuations SET completed_at=COALESCE(completed_at,?) WHERE approval_id=? AND audit_recorded_at IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT(intent_json,'$.decision_key'))=?",
+      [dt(), id, decisionKey]);
   }
 
   async use(id: number): Promise<boolean> {
@@ -87,4 +155,11 @@ export class ApprovalLedger {
     }
     return grouped;
   }
+}
+
+function continuationRow(row: any): ApprovalContinuation {
+  const intent = typeof row.intent_json === 'string' ? JSON.parse(row.intent_json) : row.intent_json;
+  if (!intent || intent.schema_version !== 'bailing.approval-continuation.v1'
+    || intent.approval_id !== Number(row.approval_id)) throw new Error('approval_continuation_invalid');
+  return { ...intent, audit_recorded: row.audit_recorded_at != null, completed: row.completed_at != null };
 }

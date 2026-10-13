@@ -13,6 +13,7 @@ import { authenticateUsageRequest, getUsageIdentity, usageFields, usageString, t
 import { usageHttpError } from './http';
 import { canonicalJson, executeProvider, normalizeModelRequest, providerBody, type UsageModelRequest } from './provider';
 import { UsageStreamWriter } from './stream-http';
+import { runUsageMaintenanceFor } from './maintenance';
 import { getBillingRepository } from './billing-repository';
 import type { UsageRepository } from './repository';
 import { referencePricing } from './pricing';
@@ -36,7 +37,7 @@ function scheduleResponseCleanup(repository: UsageRepository): void {
   // cleanup is retried on later traffic; expired bodies are never returned meanwhile.
   const tokens = getBillingRepository(repository);
   void repository.backgroundWork.startMaintenance('response-cleanup', () => tokens.cleanupExpiredResponses(now))?.catch(() => {});
-  void repository.backgroundWork.startMaintenance('usage-reconciliation', () => tokens.reconcilePendingUsage())?.catch(() => {});
+  void runUsageMaintenanceFor(repository);
 }
 
 export const MODEL_GATEWAY_CAPABILITIES = {

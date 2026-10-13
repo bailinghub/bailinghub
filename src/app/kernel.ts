@@ -5,6 +5,7 @@ import { bootstrapInitialAdmin } from './admin-bootstrap';
 import type { Principal } from './auth';
 import { channelSendFor } from './channels';
 import { createEngineRuntime } from './engine';
+import { reconcileApprovalContinuationsFor } from './approval-continuations';
 import { createBailingHttpServer } from './http-server';
 import { normalizeHttpMountPath, now, send, serveConsoleFromRoot, sleep } from './http';
 import { createOperationalMetricsEndpointFor } from './operational-metrics';
@@ -234,6 +235,15 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     now,
     sleep,
     targetRegistry,
+    reconcileApprovalContinuations: async () => {
+      await reconcileApprovalContinuationsFor({
+        configStore: composition.cfgStore,
+        stateStore: composition.store,
+        engineRuntime: engine,
+        now,
+        isClosing: () => closing || closed,
+      });
+    },
     afterStoresInitialized: !localAdminManagement || input.bootstrapLocalAdmin === false
       ? undefined
       : async () => { await bootstrapInitialAdmin(cfg.bootstrapAdmin, { admins: composition.cfgStore?.admins ?? null }); },
@@ -465,6 +475,9 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
         if (!initializedWithinBudget) throw new Error(`Kernel ${instanceKey} initialization drain timed out`);
       }
       schedulers?.stop();
+      if (schedulers?.drain && !await schedulers.drain(remainingDrainMs())) {
+        throw new Error(`Kernel ${instanceKey} persisted evidence maintenance drain timed out`);
+      }
       schedulers = null;
       if (bootRecoveryTimer) clearTimeout(bootRecoveryTimer);
       bootRecoveryTimer = null;

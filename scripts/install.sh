@@ -33,11 +33,15 @@ as_root() {
 }
 
 secret() {
-  if have openssl; then
-    openssl rand -base64 24 | tr -d '\n'
-  else
-    date +%s | sha256sum | awk '{print $1}'
-  fi
+  have openssl || die "生成安装凭据需要 openssl 安全随机源，请先安装 openssl 后重试。"
+  # Keep the producer's exit status: a POSIX pipeline can hide openssl failure.
+  SECRET_VALUE="$(openssl rand -base64 24 2>/dev/null)" || die "安全随机凭据生成失败，安装已停止。"
+  # 24 random bytes encode to exactly 32 unpadded Base64 characters.
+  case "$SECRET_VALUE" in
+    ''|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/]*) die "安全随机凭据格式异常，安装已停止。" ;;
+  esac
+  [ "${#SECRET_VALUE}" -eq 32 ] || die "安全随机凭据长度异常，安装已停止。"
+  printf '%s\n' "$SECRET_VALUE"
 }
 
 install_packages() {

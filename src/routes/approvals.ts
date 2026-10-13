@@ -11,6 +11,7 @@ import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { isAgentToolInvocationJob } from '../app/agent-tool-job';
+import { continueApprovalDecisionFor, supportsApprovalContinuations } from '../app/approval-continuations';
 
 export interface ApprovalDecisionDeps {
   cfg: AppConfig;
@@ -19,7 +20,7 @@ export interface ApprovalDecisionDeps {
   now: () => string;
   sleep: (ms: number) => Promise<void>;
   secretForJob: (job: Job) => Promise<string>;
-  engineRuntime: Pick<EngineRuntime, 'requeueForRerun'>;
+  engineRuntime: Pick<EngineRuntime, 'kickInhubScheduler'>;
 }
 
 async function clientOwnsJob(configStore: ConfigStoreContract | null, client: Client, job: Job): Promise<boolean> {
@@ -75,7 +76,14 @@ export async function handleApprovalDecisionFor(deps: ApprovalDecisionDeps, req:
   const sameDecision = approval.status === decision.decision && approval.decision_id === decision.decision_id;
   if (approval.status !== 'pending') {
     if (sameDecision) {
-      send(res, 200, { ok: true, id: approvalId, status: approval.status, decision_id: decision.decision_id, idempotent: true, rerun: false });
+      try {
+        const continued = supportsApprovalContinuations(deps)
+          ? await continueApprovalDecisionFor(deps, approvalId) : { rerun: false, pending: false };
+        send(res, 200, { ok: true, id: approvalId, status: approval.status, decision_id: decision.decision_id, idempotent: true,
+          rerun: continued.rerun, continuation_pending: continued.pending });
+      } catch {
+        send(res, 503, { error: '审批决策已保存，原任务续办等待恢复', decision_recorded: true, continuation_pending: true });
+      }
       return;
     }
     send(res, 409, { error: `审批单已是 ${approval.status}，不可重复裁决`, status: approval.status, decision_id: approval.decision_id }); return;
@@ -86,38 +94,27 @@ export async function handleApprovalDecisionFor(deps: ApprovalDecisionDeps, req:
     send(res, 409, { error: 'decision_id 已用于其他审批单', decision_id: decision.decision_id, approval_id: existingDecision.id }); return;
   }
 
-  if (!await deps.configStore.approvals.decide(approvalId, decision.decision, decision.approver, { decision_id: decision.decision_id, comment: decision.comment })) {
+  if (!supportsApprovalContinuations(deps)) {
+    send(res, 503, { error: '审批持久续办需要配套状态与配置仓储', code: 'approval_continuations_unavailable' }); return;
+  }
+  let recorded: 'decided' | 'same' | 'conflict';
+  try {
+    recorded = await deps.configStore.approvals.decideWithContinuation!(approvalId, decision.decision, decision.approver, {
+      decision_id: decision.decision_id, comment: decision.comment, source: 'external', auth: byAuth,
+      mode: isAgentToolInvocationJob(job) ? 'manual' : 'rerun',
+    });
+  } catch {
+    send(res, 503, { error: '审批决策持久化暂不可用，请使用原 decision_id 重试', code: 'approval_continuations_unavailable' }); return;
+  }
+  if (recorded === 'conflict') {
     send(res, 409, { error: '审批单状态已变化，请刷新后重试' }); return;
   }
-
-  await deps.stateStore.appendAudit({
-    ts: deps.now(),
-    job_id: approval.job_id,
-    request_id: approval.request_id,
-    event: decision.decision === 'approved' ? 'tool_approved_external' : 'tool_denied_external',
-    detail: {
-      approval_id: approvalId,
-      decision_id: decision.decision_id,
-      tool: approval.tool,
-      scope: approval.scope,
-      by: decision.approver,
-      auth: byAuth,
-      policy: approval.policy,
-      reason: approval.reason,
-      summary: approval.summary,
-      ...(decision.comment ? { comment: decision.comment } : {}),
-    },
-  });
-
-  let rerun = false;
-  if (decision.decision === 'approved') {
-    const latest = await deps.stateStore.getJob(approval.job_id);
-    // Agent 直调没有中枢模型这一层；批准后由原本地 Agent 持 invocation_id
-    // 续执行冻结快照。绝不得把 synthetic Job 重排进 LLM 调度器。
-    if (latest && !isAgentToolInvocationJob(latest) && (latest.status === 'done' || latest.status === 'error' || latest.status === 'rejected')) {
-      await deps.engineRuntime.requeueForRerun(latest, decision.approver, `approval_${approvalId}`);
-      rerun = true;
-    }
+  try {
+    // Direct Agent invocations only retain a manual original-ID continuation.
+    const continued = await continueApprovalDecisionFor(deps, approvalId);
+    send(res, 200, { ok: true, id: approvalId, status: decision.decision, decision_id: decision.decision_id,
+      idempotent: recorded === 'same', rerun: continued.rerun, continuation_pending: continued.pending });
+  } catch {
+    send(res, 503, { error: '审批决策已保存，原任务续办等待恢复', decision_recorded: true, continuation_pending: true });
   }
-  send(res, 200, { ok: true, id: approvalId, status: decision.decision, decision_id: decision.decision_id, idempotent: false, rerun });
 }

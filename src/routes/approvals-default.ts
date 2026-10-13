@@ -3,7 +3,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { cfg, cfgStore, store } from '../app/runtime';
 import { now, sleep } from '../app/http';
-import { requeueForRerun } from '../app/engine-default';
+import { kickInhubScheduler } from '../app/engine-default';
 import { outboundRuntimeDepsFor, secretForJobWithDeps } from '../app/outbound';
 import type { Job } from '../core/contracts/types';
 import { handleApprovalDecisionFor, type ApprovalDecisionDeps } from './approvals';
@@ -23,7 +23,7 @@ export function defaultApprovalDecisionDeps(): ApprovalDecisionDeps {
     now,
     sleep,
     secretForJob: (job: Job): Promise<string> => secretForJobWithDeps(outboundDeps, job),
-    engineRuntime: { requeueForRerun },
+    engineRuntime: { kickInhubScheduler },
   };
 }
 

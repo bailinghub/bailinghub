@@ -75,3 +75,7 @@ Core v0.9.1 增加了每个 `UsageRepository` 独立拥有的 [后台工作登�
 ## 当前源码新增的进程恢复回归
 
 [进程崩溃与确认丢失专项](MODEL_PROCESS_RECOVERY.md)使用实际SIGKILL、不同PID恢复和MySQL COMMIT回包扣留，核原请求、供应商调用次数、结果与美元账本。此为后续源码中的独立opt-in测试，历史正式v0.9.1 Tag不含新增专项；链接是测试范围，不代表本页重跑、真实供应商或生产崩溃验收。
+
+## 当前源码的可靠性修复
+
+[安装凭据、结算维护与审批补续](CORE_RELIABILITY.md)记录新安装安全随机源失败关闭、无新流量的结算维护及审批决策的持久补续。配套新增 065/066 增量迁移。公开测试包括[安装器故障回归](../scripts/install-secrets.test.mjs)、[结算 MySQL 回归](../src/modules/usage/billing-reconciliation.mysql.test.ts)、[审批补续回归](../src/app/approval-continuations.test.ts)与[审批 MySQL/进程回归](../src/app/approval-continuations.mysql.test.ts)。这些是当前源码的实现与检查范围，尚未进入正式发行；不修改上表 v0.9.1 的历史制品范围。

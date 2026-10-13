@@ -53,8 +53,8 @@ export type ChatConfigRepositoryContract = Pick<ChatConfigRepository, keyof Chat
 export type RateLimitLedgerContract = Omit<Pick<RateLimitLedger, keyof RateLimitLedger>, 'consumeAll'>
   & Partial<Pick<RateLimitLedger, 'consumeAll'>>;
 export type ApprovalLedgerContract =
-  Omit<Pick<ApprovalLedger, keyof ApprovalLedger>, 'forJobs'>
-  & Partial<Pick<ApprovalLedger, 'forJobs'>>;
+  Omit<Pick<ApprovalLedger, keyof ApprovalLedger>, 'forJobs' | 'decideWithContinuation' | 'getContinuation' | 'pendingContinuations' | 'markContinuationAuditRecorded' | 'completeContinuation'>
+  & Partial<Pick<ApprovalLedger, 'forJobs' | 'decideWithContinuation' | 'getContinuation' | 'pendingContinuations' | 'markContinuationAuditRecorded' | 'completeContinuation'>>;
 export type ConversationLedgerContract = Pick<ConversationLedger, keyof ConversationLedger>;
 export type ExecutorLedgerContract = Pick<ExecutorLedger, keyof ExecutorLedger>;
 export type ToolCallLedgerContract = Pick<ToolCallLedger, keyof ToolCallLedger>;

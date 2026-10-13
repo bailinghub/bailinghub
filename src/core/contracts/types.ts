@@ -32,6 +32,8 @@ export interface Job {
   usage?: { duration_ms?: number; num_turns?: number; cost_usd?: number; tokens?: number };
   error?: string;
   metadata: Record<string, unknown>;
+  /** Core-owned durable queue admissions; ordinary updates must preserve these keys. */
+  approval_continuation_keys?: Record<string, string>;
   callback_url?: string;
   // 远端执行器派活相关（含 route 快照：route 之后可能改/删，故落到 job 上）；kb_refs=知识检索命中快照（引用来源回流）
   // user_images/user_audio/user_files=用户原始输入里的媒体 URL 快照（只取用户发的，不含知识库注入资产）；多模态适配器据此送模型，rerun 也能复现

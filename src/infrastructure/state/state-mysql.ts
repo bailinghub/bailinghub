@@ -7,6 +7,8 @@ import type { JobOperationalMetricsSnapshot, RuntimeStateStore } from '../../cor
 import { dt, json, rowToJob } from '../../core/state/state-codec';
 import { mysqlJobUpdatePlan } from './state-mysql-update-plan';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
+import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../../core/contracts/approval-continuation';
+import { approvalRequeuePlan } from '../../core/state/approval-continuation';
 
 /** mysql 后端：生产状态库。对应 sql/001_init_state.sql 的 bz_ 表。 */
 export class MysqlStore implements RuntimeStateStore {
@@ -48,6 +50,31 @@ export class MysqlStore implements RuntimeStateStore {
 
   async updateJob(jobId: string, patch: Partial<Job>): Promise<Job | null> {
     return this.writeJob(jobId, patch);
+  }
+
+  async requeueApprovedJobOnce(input: ApprovalRequeueInput): Promise<ApprovalRequeueOutcome> {
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [rows] = await conn.query('SELECT * FROM bz_jobs WHERE job_id=? FOR UPDATE', [input.job_id]);
+      const row = (rows as any[])[0];
+      const plan = approvalRequeuePlan(row ? rowToJob(row) : null, input);
+      if (plan.patch) {
+        const [approvals] = await conn.query('SELECT status,used_at,job_id,request_id,decision_id FROM bz_tool_approvals WHERE id=? FOR UPDATE', [input.approval_id]);
+        const approval = (approvals as any[])[0];
+        if (!approval || approval.status !== 'approved' || approval.job_id !== input.job_id || approval.request_id !== input.request_id
+          || (approval.decision_id ?? null) !== (input.decision_id ?? null)) { await conn.commit(); return 'conflict'; }
+        if (approval.used_at != null) { await conn.commit(); return 'consumed'; }
+        const update = mysqlJobUpdatePlan(plan.patch, new Date().toISOString());
+        await conn.query(`UPDATE bz_jobs SET ${update.assignments.join(',')},approval_continuation_keys=? WHERE job_id=?`,
+          [...update.values, json(plan.patch.approval_continuation_keys), input.job_id]);
+      }
+      await conn.commit();
+      return plan.outcome;
+    } catch (error) {
+      await conn.rollback().catch(() => undefined);
+      throw error;
+    } finally { conn.release(); }
   }
 
   async updateJobIfStatus(jobId: string, expectedStatuses: Array<Job['status']>, patch: Partial<Job>): Promise<Job | null> {

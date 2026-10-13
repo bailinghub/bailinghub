@@ -5,12 +5,21 @@ import { dirname } from 'node:path';
 import { completeTraceEntry } from '../../core/runtime/trace-runtime';
 import { JOB_STATUSES, TERMINAL_JOB_STATUSES, type AuditEntry, type Job } from '../../core/contracts/types';
 import type { JobOperationalMetricsSnapshot, RuntimeStateStore } from '../../core/state/state-contracts';
+import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../../core/contracts/approval-continuation';
+import { approvalRequeuePlan } from '../../core/state/approval-continuation';
 
 /** jsonl 后端：本地烟测与最小私有部署。状态仍是中枢自己的，不进业务库。 */
 export class JsonlStore implements RuntimeStateStore {
   private readonly jobs = new Map<string, Job>();
   private readonly byRequest = new Map<string, string>();
   private readonly locks = new Map<string, { owner: string; expiresAt: number }>();
+  private jobWrite: Promise<void> = Promise.resolve();
+
+  private async serialJobWrite<T>(write: () => Promise<T>): Promise<T> {
+    const work = this.jobWrite.then(write);
+    this.jobWrite = work.then(() => undefined, () => undefined);
+    return await work;
+  }
 
   constructor(private readonly path: string) {}
 
@@ -39,25 +48,46 @@ export class JsonlStore implements RuntimeStateStore {
   }
 
   async createJob(job: Job): Promise<void> {
-    this.jobs.set(job.job_id, job);
-    this.byRequest.set(job.request_id, job.job_id);
-    await this.persist(job);
+    await this.serialJobWrite(async () => {
+      await this.persist(job);
+      this.jobs.set(job.job_id, job);
+      this.byRequest.set(job.request_id, job.job_id);
+    });
   }
 
   async updateJob(jobId: string, patch: Partial<Job>): Promise<Job | null> {
+    return await this.serialJobWrite(async () => this.writeJob(jobId, patch));
+  }
+
+  private async writeJob(jobId: string, patch: Partial<Job>, expectedStatuses?: Array<Job['status']>): Promise<Job | null> {
     const cur = this.jobs.get(jobId);
-    if (!cur) return null;
-    const next: Job = { ...cur, ...patch, updated_at: new Date().toISOString() };
-    this.jobs.set(jobId, next);
+    if (!cur || (expectedStatuses && !expectedStatuses.includes(cur.status))) return null;
+    const { approval_continuation_keys: _ignored, ...ordinaryPatch } = patch;
+    const next: Job = { ...cur, ...ordinaryPatch, updated_at: new Date().toISOString() };
     await this.persist(next);
+    this.jobs.set(jobId, next);
     return next;
   }
 
   async updateJobIfStatus(jobId: string, expectedStatuses: Array<Job['status']>, patch: Partial<Job>): Promise<Job | null> {
     if (!expectedStatuses.length) return null;
-    const cur = this.jobs.get(jobId);
-    if (!cur || !expectedStatuses.includes(cur.status)) return null;
-    return this.updateJob(jobId, patch);
+    return await this.serialJobWrite(async () => this.writeJob(jobId, patch, expectedStatuses));
+  }
+
+  async requeueApprovedJobOnce(input: ApprovalRequeueInput): Promise<ApprovalRequeueOutcome> {
+    return await this.serialJobWrite(async () => {
+      const plan = approvalRequeuePlan(this.jobs.get(input.job_id) ?? null, input);
+      if (plan.patch) {
+        if (!input.isApprovedUnused) return 'conflict';
+        if (!await input.isApprovedUnused()) return 'consumed';
+        const current = this.jobs.get(input.job_id)!;
+        const next = { ...current, ...plan.patch, updated_at: new Date().toISOString() };
+        // Publish only after durable append succeeds; failed writes remain retryable.
+        await this.persist(next);
+        this.jobs.set(input.job_id, next);
+      }
+      return plan.outcome;
+    });
   }
 
   async getJob(jobId: string): Promise<Job | null> {
@@ -69,7 +99,7 @@ export class JsonlStore implements RuntimeStateStore {
     const nowMs = Date.now();
     for (const job of this.jobs.values()) {
       if (this.isClaimable(job, targets, nowMs)) {
-        return await this.updateJob(job.job_id, {
+        return await this.updateJobIfStatus(job.job_id, ['queued'], {
           status: 'dispatched',
           executor_id: executorId,
           claimed_at: new Date(nowMs).toISOString(),
@@ -88,7 +118,7 @@ export class JsonlStore implements RuntimeStateStore {
     const nowMs = Date.now();
     for (const job of this.jobs.values()) {
       if (this.isClaimable(job, targets, nowMs)) {
-        return await this.updateJob(job.job_id, {
+        return await this.updateJobIfStatus(job.job_id, ['queued'], {
           status: 'running',
           executor_id: workerId,
           claimed_at: new Date(nowMs).toISOString(),

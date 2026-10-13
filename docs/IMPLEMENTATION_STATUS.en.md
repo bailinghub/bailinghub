@@ -75,3 +75,7 @@ Keep this page and its Chinese companion aligned. Retain the distinction between
 ## Additional process-recovery regressions in current source
 
 [Process crash and lost acknowledgements](MODEL_PROCESS_RECOVERY.en.md) use real SIGKILL, replacement PIDs and withheld MySQL COMMIT acknowledgements to check original requests, provider call counts, results and USD ledgers. These are subsequent opt-in source tests, not part of the historical v0.9.1 Tag. The link states coverage, not a new execution, real-provider or production-crash acceptance claim.
+
+## Reliability fixes in current source
+
+[Installation secrets, settlement maintenance and approval continuation](CORE_RELIABILITY.en.md) covers failing closed without secure installation randomness, settlement without new traffic and durable continuation of approval decisions. It adds incremental migrations 065/066. Public checks include [installer failure tests](../scripts/install-secrets.test.mjs), [settlement MySQL acceptance](../src/modules/usage/billing-reconciliation.mysql.test.ts), [approval continuation tests](../src/app/approval-continuations.test.ts) and [approval MySQL/process acceptance](../src/app/approval-continuations.mysql.test.ts). These describe current source implementation and coverage, pending a formal release; they do not change the historical v0.9.1 artifact scope above.
