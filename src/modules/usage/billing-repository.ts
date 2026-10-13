@@ -61,6 +61,14 @@ function publicRawUsage(raw: Record<string, unknown> | null): Record<string, unk
   return out;
 }
 const RESULT_RETENTION_MS = 7 * 86_400_000;
+// Settlement never needs the model result body (images may contain MiB of Base64).
+const SETTLEMENT_COLUMNS = `id,operation_id,account_id,user_id,session_id,service_id,conversation_id,turn_id,
+request_hash,revision,state,result_state,billing_state,service_revision,service_json,model,fence,grant_id,
+grant_revision,grant_json,billing_rate_json,period_start,period_end,result_hash,usage_json,raw_usage_json,
+execution_key,reference_cost_usd,billed_usd,overage_usd,cancelled_at,resolution,created_at,updated_at,NULL AS result_json`;
+export interface UsageReconciliationProgress {
+  scanned: number; settled: number; deferred: number; failed: number; hasMore: boolean;
+}
 
 /** Current plan models share the account grant's original allowance and periods. */
 export class BillingRepository {
@@ -300,11 +308,11 @@ export class BillingRepository {
       return { ...request((await rows(c, 'SELECT * FROM bz_usage_billing_requests WHERE id=?', [id]))[0]!), created: true };
     });
   }
-  private async locked(c: PoolConnection, id: string): Promise<Row> {
+  private async locked(c: PoolConnection, id: string, resultBody = true): Promise<Row> {
     const hint = (await rows(c, 'SELECT account_id FROM bz_usage_billing_requests WHERE id=?', [billingKey(id)]))[0];
     usageAssert(hint, 'USAGE_OPERATION_NOT_FOUND', 'Original model request not found.', 404);
     await this.lockAccount(c, hint.account_id);
-    return (await rows(c, 'SELECT * FROM bz_usage_billing_requests WHERE id=? FOR UPDATE', [id]))[0]!;
+    return (await rows(c, `SELECT ${resultBody ? '*' : SETTLEMENT_COLUMNS} FROM bz_usage_billing_requests WHERE id=? FOR UPDATE`, [id]))[0]!;
   }
   async commitDispatch(id: string, actor: UsageActor): Promise<BillingRequest> {
     return this.repository.withTransaction(async c => {
@@ -371,15 +379,16 @@ export class BillingRepository {
   private async settleRecorded(recorded: BillingRequest): Promise<BillingRequest> {
     try {
       return await this.repository.withTransaction(async c => {
-        const r = await this.locked(c, recorded.id);
+        const r = await this.locked(c, recorded.id, false);
+        const receipt = (row: Row): BillingRequest => ({ ...request(row), response: recorded.response });
         usageAssert(r.fence === recorded.fence, 'USAGE_FENCE_CONFLICT', 'Settlement does not match the original dispatch.');
-        if (r.billing_state === 'settled' || (!r.usage_json && !r.raw_usage_json) || !r.result_hash) return request(r);
+        if (r.billing_state === 'settled' || (!r.usage_json && !r.raw_usage_json) || !r.result_hash) return receipt(r);
         const measured = r.usage_json ? tokenUsage(json(r.usage_json)) : null;
         const p = (await rows(c, 'SELECT * FROM bz_usage_billing_periods WHERE grant_id=? AND period_start=? FOR UPDATE', [r.grant_id, r.period_start]))[0];
         usageAssert(p, 'METERING_UNAVAILABLE', 'The original allowance pool is unavailable.', 503);
         const rate = request(r).billingRate;
         const referenceCost = calculateReferenceCost(rate.price, { ...(json<Record<string, unknown>>(r.raw_usage_json) ?? {}), ...(measured ?? {}) });
-        if (referenceCost === null) return request(r);
+        if (referenceCost === null) return receipt(r);
         const charged = billedUsdMicros(referenceCost, rate.multiplier);
         const before = usdMicros(p.consumed_usd), after = before + charged, quota = usdMicros(p.allowance_usd);
         const overage = positivePart(after - quota) - positivePart(before - quota), now = await this.now(c);
@@ -390,7 +399,7 @@ export class BillingRepository {
         await c.query('INSERT INTO bz_usage_billing_ledger(request_id,account_id,grant_id,period_start,input_tokens,output_tokens,reference_cost_usd,billed_usd,overage_usd,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
           [r.id, r.account_id, r.grant_id, r.period_start, measured?.inputTokens ?? null, measured?.outputTokens ?? null, referenceCost, chargedValue, overageValue, now]);
         await c.query("UPDATE bz_usage_billing_requests SET billing_state='settled',reference_cost_usd=?,billed_usd=?,overage_usd=?,resolution='actual_usage',revision=revision+1,updated_at=? WHERE id=?", [referenceCost, chargedValue, overageValue, now, r.id]);
-        return request((await rows(c, 'SELECT * FROM bz_usage_billing_requests WHERE id=?', [r.id]))[0]!);
+        return receipt((await rows(c, `SELECT ${SETTLEMENT_COLUMNS} FROM bz_usage_billing_requests WHERE id=?`, [r.id]))[0]!);
       });
     } catch (e) {
       if (e instanceof UsageError && e.status < 500) throw e;
@@ -402,11 +411,45 @@ export class BillingRepository {
     integer(now, 'now');
     await this.repository.getPool().query('UPDATE bz_usage_billing_requests SET result_json=NULL WHERE created_at<? AND result_json IS NOT NULL AND result_hash IS NOT NULL LIMIT 500', [now - RESULT_RETENTION_MS]);
   }
-  async reconcilePendingUsage(): Promise<void> {
-    // Only previously saved supplier evidence may settle in maintenance. This
-    // path has no credentials/provider transport and cannot create model work.
-    const pending = await rows(this.repository.getPool(), "SELECT * FROM bz_usage_billing_requests WHERE billing_state='pending' AND (usage_json IS NOT NULL OR raw_usage_json IS NOT NULL) AND result_hash IS NOT NULL AND fence IS NOT NULL ORDER BY updated_at,id LIMIT 50");
-    for (const row of pending) await this.settleRecorded(request(row));
+  private reconciliationCursor: { updatedAt: number; id: string } | null = null;
+  private reconciliationFlight: Promise<void> | null = null;
+  private reconciliationProgress: UsageReconciliationProgress = { scanned: 0, settled: 0, deferred: 0, failed: 0, hasMore: false };
+  getReconciliationProgress(): UsageReconciliationProgress { return { ...this.reconciliationProgress }; }
+  reconcilePendingUsage(): Promise<void> {
+    if (this.reconciliationFlight) return this.reconciliationFlight;
+    const work = this.reconcilePage();
+    this.reconciliationFlight = work;
+    void work.finally(() => { if (this.reconciliationFlight === work) this.reconciliationFlight = null; }).catch(() => {});
+    return work;
+  }
+  private async reconcilePage(): Promise<void> {
+    // Only durable supplier evidence is read. The constant-size owner cursor
+    // advances past unpriceable/failing records; no row can pin the oldest page.
+    // A new owner starts from the beginning, then makes the same bounded progress.
+    const progress: UsageReconciliationProgress = { scanned: 0, settled: 0, deferred: 0, failed: 0, hasMore: false };
+    this.reconciliationProgress = progress;
+    const scan = () => {
+      const cursor = this.reconciliationCursor;
+      return rows(this.repository.getPool(), `SELECT id,updated_at FROM bz_usage_billing_requests
+        WHERE billing_state='pending' AND (usage_json IS NOT NULL OR raw_usage_json IS NOT NULL)
+        AND result_hash IS NOT NULL AND fence IS NOT NULL
+        ${cursor ? 'AND (updated_at>? OR (updated_at=? AND id>?))' : ''}
+        ORDER BY updated_at,id LIMIT 50`, cursor ? [cursor.updatedAt, cursor.updatedAt, cursor.id] : []);
+    };
+    let pending = await scan();
+    if (!pending.length && this.reconciliationCursor) { this.reconciliationCursor = null; pending = await scan(); }
+    for (const item of pending) {
+      this.reconciliationCursor = { updatedAt: Number(item.updated_at), id: String(item.id) };
+      progress.scanned++;
+      try {
+        const row = (await rows(this.repository.getPool(), `SELECT ${SETTLEMENT_COLUMNS} FROM bz_usage_billing_requests WHERE id=?`, [item.id]))[0];
+        if (!row || row.billing_state !== 'pending') continue;
+        const result = await this.settleRecorded(request(row));
+        if (result.billingState === 'settled') progress.settled++; else progress.deferred++;
+      } catch { progress.failed++; } // One poison row never prevents subsequent original evidence from settling.
+    }
+    progress.hasMore = pending.length === 50;
+    if (!progress.hasMore) this.reconciliationCursor = null;
   }
   /** Persist a terminal rejection independently of settlement; never dispatch again. */
   async recordProviderFailure(id: string, fence: string, failure: ProviderFailure): Promise<BillingRequest> {

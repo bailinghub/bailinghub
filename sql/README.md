@@ -24,6 +24,15 @@ npm run db:init     # 按文件名顺序应用所有未应用的结构文件
 - **错误码容错兜底**：`IF NOT EXISTS` 自身幂等；加列/索引遇到 1060/1061 时，只有实际列/索引结构与官方语句一致才按已完成处理，跑完即记账，此后走账本快路径。
 - **失败关闭**：账本出现既不属于活动序列、也不属于固化退役证据的文件，或者任一已记账摘要不匹配时，会在补录摘要或执行新迁移前拒绝继续。
 
+## 当前源码：065/066 可靠性修复
+
+以下是尚未进入正式发行的新增结构，v0.9.1 Tag 不包含它们：
+
+- `065_usage_reconciliation_scan.sql` 新增 `(billing_state, updated_at, id)` 索引，供待结算记录公平分页，不修改历史计量或费用。
+- `066_approval_continuations.sql` 新增审批补续表与 `bz_jobs.approval_continuation_keys`，配合决策事务和原任务入队去重，不回填历史决策。
+
+使用新审批入口前显式应用 066，并配套更新 Core state/config 仓储；缺少表时决策事务失败关闭。运行时不自动迁移，回退代码不删除补续表或标记。完整行为、升级与回退边界见[Core 可靠性修复](../docs/CORE_RELIABILITY.md)。
+
 ## 058 跨系统归档成员绑定
 
 `058_agent_conversation_member_bindings.sql` 在 Core 0.7.0 引入，只给已有归档增加

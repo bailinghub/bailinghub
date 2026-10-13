@@ -121,3 +121,7 @@ Under Account Usage → Usage Details → Reset Allowance, administrators with `
 - Idempotent replay returns the original receipt. Revision checks prevent duplicate concurrent resets. The receipt records `reset.previousGrantId`, `reset.actor` and `reset.at` to identify the original grant and operator.
 
 Existing summaries return the new balance and next reset date. This feature adds no SQL migration and independently requires no SDK/DSH or backend changes.
+
+## Automatic settlement maintenance in current source
+
+Later source adds an initial and recurring minute-based settlement pass, fair paging and database-failure backoff without depending on new HTTP requests. It uses original metering, prices and the unified multiplier, without reading generated bodies or dispatching providers. Missing authoritative metering remains pending. See [Core reliability fixes](CORE_RELIABILITY.en.md) for index 065, managed tick and standalone shutdown boundaries. These later changes are pending a formal release and do not expand the historical v0.9.1 Tag's guarantees.

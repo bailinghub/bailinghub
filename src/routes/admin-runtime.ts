@@ -13,6 +13,7 @@ import type { AgentClientRunRecord } from '../infrastructure/config/config-agent
 import type { Principal } from '../app/auth';
 import type { ChannelMessage, ChannelSendResult } from '../app/channels';
 import { isAgentToolInvocationJob } from '../app/agent-tool-job';
+import { continueApprovalDecisionFor, supportsApprovalContinuations } from '../app/approval-continuations';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
 
@@ -152,7 +153,7 @@ export interface AdminRuntimeApiDeps {
   isPaused: () => boolean;
   queueStats: () => unknown;
   channelSend: AdminChannelSender;
-  engineRuntime: Pick<EngineRuntime, 'requeueForRerun'>;
+  engineRuntime: Pick<EngineRuntime, 'requeueForRerun' | 'kickInhubScheduler'>;
 }
 
 export async function handleAdminRuntimeApiFor(
@@ -475,27 +476,33 @@ export async function handleAdminRuntimeApiFor(
     const action = mApproval[2] as 'approve' | 'deny';
     const appr = await configStore.approvals.get(id);
     if (!appr) { send(res, 404, { error: '审批单不存在' }); return true; }
-    if (appr.status !== 'pending') { send(res, 400, { error: `审批单已是 ${appr.status}，不可重复裁决` }); return true; }
+    const decision = action === 'approve' ? 'approved' : 'denied';
+    if (appr.status !== 'pending' && (appr.status !== decision || appr.decision_id)) {
+      send(res, 409, { error: `审批单已是 ${appr.status}，不可重复裁决` }); return true;
+    }
     const by = principal.kind === 'admin' ? principal.username ?? 'token' : '?';
-    if (!(await configStore.approvals.decide(id, action === 'approve' ? 'approved' : 'denied', by))) {
-      send(res, 409, { error: '审批单状态已变化，请刷新后重试' });
-      return true;
+    const continuationDeps = { configStore, stateStore, engineRuntime: deps.engineRuntime, now: deps.now };
+    if (!supportsApprovalContinuations(continuationDeps)) {
+      send(res, 503, { error: '审批持久续办需要配套状态与配置仓储', code: 'approval_continuations_unavailable' }); return true;
     }
-    await stateStore.appendAudit({
-      ts: deps.now(), job_id: appr.job_id, request_id: appr.request_id,
-      event: action === 'approve' ? 'tool_approved' : 'tool_denied',
-      detail: { approval_id: id, tool: appr.tool, scope: appr.scope, by, policy: appr.policy, reason: appr.reason, summary: appr.summary },
-    });
-    // 批准 → 自动重跑原任务（任务在途则不动：运行中会自然消费批准单）
-    let rerun = false;
-    if (action === 'approve') {
+    let recorded: 'decided' | 'same' | 'conflict';
+    try {
       const job = await stateStore.getJob(appr.job_id);
-      if (job && !isAgentToolInvocationJob(job) && (job.status === 'done' || job.status === 'error' || job.status === 'rejected')) {
-        await deps.engineRuntime.requeueForRerun(job, by, `approval_${id}`);
-        rerun = true;
-      }
+      if (!job) { send(res, 404, { error: '审批单关联任务不存在' }); return true; }
+      recorded = await configStore.approvals.decideWithContinuation!(id, decision, by, {
+        source: 'console', auth: 'admin-console', mode: isAgentToolInvocationJob(job) ? 'manual' : 'rerun',
+      });
+    } catch {
+      send(res, 503, { error: '审批决策持久化暂不可用，请重试原审批单', code: 'approval_continuations_unavailable' }); return true;
     }
-    send(res, 200, { ok: true, id, status: action === 'approve' ? 'approved' : 'denied', rerun });
+    if (recorded === 'conflict') { send(res, 409, { error: '审批单状态已变化，请刷新后重试' }); return true; }
+    try {
+      const continued = await continueApprovalDecisionFor(continuationDeps, id);
+      send(res, 200, { ok: true, id, status: decision, idempotent: recorded === 'same',
+        rerun: continued.rerun, continuation_pending: continued.pending });
+    } catch {
+      send(res, 503, { error: '审批决策已保存，原任务续办等待恢复', decision_recorded: true, continuation_pending: true });
+    }
     return true;
   }
 

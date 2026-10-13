@@ -136,7 +136,7 @@ function depsFor(agentRun = run()) {
     isPaused: () => false,
     queueStats: () => ({}),
     channelSend: async () => ({ ok: true as const }),
-    engineRuntime: { requeueForRerun: async () => undefined },
+    engineRuntime: { requeueForRerun: async () => undefined, kickInhubScheduler: () => undefined },
   };
 }
 

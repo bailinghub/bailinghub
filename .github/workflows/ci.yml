@@ -24,16 +24,18 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run installer:secrets:test
       - run: npm run doctor:deployment:typecheck
       - run: npm run doctor:deployment:test
       - run: npm test
 
   usage-lifecycle:
-    name: usage lifecycle + MySQL
+    name: usage + approval recovery + MySQL
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       BAILING_USAGE_TEST_MYSQL: '1'
+      BAILING_APPROVAL_CONTINUATION_TEST_MYSQL: '1'
     services:
       mysql:
         image: mysql:8.4@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a # 8.4.11, amd64/arm64
@@ -56,7 +58,7 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: node --import tsx --test --test-concurrency=4 "src/modules/usage/*.test.ts" src/app/kernel-usage-lifecycle.mysql.test.ts
+      - run: node --import tsx --test --test-concurrency=4 "src/modules/usage/*.test.ts" src/app/kernel-usage-lifecycle.mysql.test.ts src/app/approval-continuations.mysql.test.ts
 
   model-process-recovery:
     name: model process recovery + MySQL

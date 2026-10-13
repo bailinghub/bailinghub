@@ -1,4 +1,5 @@
 import type { AuditEntry, Job, JobStatus } from '../contracts/types';
+import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../contracts/approval-continuation';
 
 export interface JobOperationalMetricsSnapshot {
   byStatus: Record<JobStatus, number>;
@@ -48,6 +49,8 @@ export interface RuntimeLockRepository {
 }
 
 export interface RuntimeStateStore extends JobRepository, AuditLedger, RuntimeLockRepository {
+  /** Atomic original-job queue transition + permanent decision marker; no substitute operation. */
+  requeueApprovedJobOnce?(input: ApprovalRequeueInput): Promise<ApprovalRequeueOutcome>;
   init(): Promise<void>;
   /** Kernel 释放时关闭自己拥有的资源；外部实现可不提供。 */
   close?(): Promise<void>;

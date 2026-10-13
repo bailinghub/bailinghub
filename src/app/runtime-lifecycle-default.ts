@@ -12,6 +12,7 @@ import {
   type RuntimeSchedulers,
 } from './runtime-lifecycle';
 import { bootstrapInitialAdmin } from './admin-bootstrap';
+import { reconcileApprovalContinuationsFor } from './approval-continuations';
 
 export function defaultRuntimeLifecycleDeps(): RuntimeLifecycleDeps {
   return {
@@ -29,6 +30,12 @@ export function defaultRuntimeLifecycleDeps(): RuntimeLifecycleDeps {
     now,
     sleep,
     targetRegistry,
+    reconcileApprovalContinuations: async () => {
+      await reconcileApprovalContinuationsFor({
+        configStore: cfgStore, stateStore: store,
+        engineRuntime: { kickInhubScheduler }, now,
+      });
+    },
     afterStoresInitialized: async () => {
       await bootstrapInitialAdmin(cfg.bootstrapAdmin, { admins: cfgStore?.admins ?? null });
     },

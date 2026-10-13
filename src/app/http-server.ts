@@ -102,6 +102,9 @@ export function createBailingHttpServer(deps: BailingHttpServerDeps): BailingHtt
     const drained = await deps.queue.drain(shutdownDrainMs).catch(() => false);
     if (!drained) logger.warn(`[百灵中枢] 优雅停机等待 ${shutdownDrainMs}ms 后仍有在途任务，交由 DB lease/reaper 恢复`);
     await closed;
+    if (schedulers?.drain && !await schedulers.drain(shutdownDrainMs)) {
+      throw new Error('Persisted evidence maintenance drain timed out');
+    }
     await deps.closeRuntime?.();
     (deps.exit ?? process.exit)(0);
   }

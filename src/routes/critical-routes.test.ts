@@ -408,7 +408,7 @@ function approvalDeps(item: ToolApproval): ApprovalDecisionDeps {
     now: () => '2026-01-01T00:00:00.000Z',
     sleep: async () => undefined,
     secretForJob: async () => 'approval-secret',
-    engineRuntime: { requeueForRerun: async () => { throw new Error('rerun should not be called'); } },
+    engineRuntime: { kickInhubScheduler: () => { throw new Error('rerun should not be called'); } },
   };
 }
 
@@ -443,6 +443,7 @@ test('审批决策: 同一 decision_id 的同一决策幂等返回', async () =>
 test('审批决策: 普通任务伪造 direct metadata 仍按原模型任务重跑', async () => {
   let reruns = 0;
   const item = approval();
+  let intent: any = null;
   const forged = job({
     status: 'done',
     target: 'llm',
@@ -470,17 +471,29 @@ test('审批决策: 普通任务伪造 direct metadata 仍按原模型任务重�
       approvals: {
         get: async () => item,
         getByDecisionId: async () => null,
-        decide: async () => true,
+        decideWithContinuation: async (_id: number, status: string, by: string, opts: any) => {
+          item.status = status as ToolApproval['status']; item.decision_id = opts.decision_id;
+          intent = { schema_version: 'bailing.approval-continuation.v1', approval_id: item.id,
+            decision_key: opts.decision_id, decision_id: opts.decision_id, decision: status,
+            job_id: item.job_id, request_id: item.request_id, args_hash: item.args_hash,
+            tool: item.tool, scope: item.scope, by, ...opts, audit_recorded: false, completed: false };
+          return 'decided';
+        },
+        getContinuation: async () => intent,
+        pendingContinuations: async () => intent ? [intent] : [],
+        markContinuationAuditRecorded: async () => { intent.audit_recorded = true; },
+        completeContinuation: async () => { intent.completed = true; },
       },
     } as unknown as ConfigStoreContract,
     stateStore: {
       getJob: async () => forged,
       appendAudit: async () => undefined,
+      requeueApprovedJobOnce: async () => { reruns++; return 'queued'; },
     } as unknown as RuntimeStateStore,
     now: () => '2026-01-01T00:00:00.000Z',
     sleep: async () => undefined,
     secretForJob: async () => 'approval-secret',
-    engineRuntime: { requeueForRerun: async () => { reruns++; } },
+    engineRuntime: { kickInhubScheduler: () => undefined },
   };
   const res = new FakeResponse();
   await handleApprovalDecisionFor(

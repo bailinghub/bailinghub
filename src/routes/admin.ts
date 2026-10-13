@@ -50,7 +50,7 @@ export interface AdminApiDeps {
   sleep: (ms: number) => Promise<void>;
   queueStats: () => unknown;
   channelSend: AdminChannelSender;
-  engineRuntime: Pick<EngineRuntime, 'requeueForRerun'>;
+  engineRuntime: Pick<EngineRuntime, 'requeueForRerun' | 'kickInhubScheduler'>;
   refreshTargets: typeof refreshTargets;
   targetRegistry?: TargetRegistry;
   /** Trusted same-origin mount prefix used by the self-smoke loopback client. */

@@ -2,7 +2,7 @@
 // 自定义部署应使用 admin.ts 的 handleAdminApiFor(deps, ...)。
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { channelSend } from '../app/channels-default';
-import { requeueForRerun } from '../app/engine-default';
+import { kickInhubScheduler, requeueForRerun } from '../app/engine-default';
 import { now, sleep } from '../app/http';
 import { cfg, cfgStore, edition, isPaused, kbService, kbSync, queue, store, targetRegistry, toolIndex } from '../app/runtime';
 import type { Principal } from '../app/auth';
@@ -25,7 +25,7 @@ export function defaultAdminApiDeps(): AdminApiDeps {
     sleep,
     queueStats: () => queue.stats(),
     channelSend,
-    engineRuntime: { requeueForRerun },
+    engineRuntime: { requeueForRerun, kickInhubScheduler },
     refreshTargets,
     targetRegistry,
     demoDataset: cfgStore ? new DemoDatasetService(cfgStore, cfg.demoDataset) : null,

@@ -2,7 +2,7 @@
 // 自定义部署应使用 admin-runtime.ts 的 handleAdminRuntimeApiFor(deps, ...)。
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { channelSend } from '../app/channels-default';
-import { requeueForRerun } from '../app/engine-default';
+import { requeueForRerun, kickInhubScheduler } from '../app/engine-default';
 import { now } from '../app/http';
 import { cfgStore, isPaused, queue, store } from '../app/runtime';
 import type { Principal } from '../app/auth';
@@ -16,7 +16,7 @@ export function defaultAdminRuntimeApiDeps(): AdminRuntimeApiDeps {
     isPaused,
     queueStats: () => queue.stats(),
     channelSend,
-    engineRuntime: { requeueForRerun },
+    engineRuntime: { requeueForRerun, kickInhubScheduler },
   };
 }
 

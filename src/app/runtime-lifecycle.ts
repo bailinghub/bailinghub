@@ -12,6 +12,7 @@ import type { KbService } from '../services/kb';
 import type { KbSyncService } from '../services/kbsync';
 import type { ToolIndexService } from '../services/tools-index';
 import { embedConfigOf } from './tool-context';
+import { runUsageMaintenanceFor } from '../modules/usage/maintenance';
 
 const TARGET_REFRESH_MS = 60_000;
 const INHUB_DRAIN_MS = 500;
@@ -23,6 +24,8 @@ const REAPER_INTERVAL_MS = 60_000;
 const TOOL_CALL_CLEANUP_MS = 60 * 60 * 1000;
 const AUDIT_RETENTION_CLEANUP_MS = 6 * 60 * 60 * 1000;
 const TOOL_INDEX_PREWARM_DELAY_MS = 0;
+const USAGE_MAINTENANCE_MS = 60_000;
+const APPROVAL_CONTINUATION_MS = 60_000;
 
 // 兜底：定期把派发后长时间未回报的 dispatched 任务重排回队列（执行器/网络异常时不至于卡死）。
 // 阈值需大于最长任务耗时（出厂能力档上限 6min），这里取 20min。
@@ -36,6 +39,8 @@ const TOOL_CALL_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 
 export interface RuntimeSchedulers {
   stop(): void;
+  /** New persisted-evidence maintenance must finish before its stores close. */
+  drain?(drainMs?: number): Promise<boolean>;
 }
 
 export interface RuntimeLifecycleDeps {
@@ -53,6 +58,8 @@ export interface RuntimeLifecycleDeps {
   now: () => string;
   sleep: (ms: number) => Promise<void>;
   afterStoresInitialized?: () => Promise<void>;
+  /** Reconcile already-decided approvals; never creates a new user decision. */
+  reconcileApprovalContinuations?: () => Promise<void>;
   /** 可嵌入宿主必须注入 Kernel 自己的 registry；默认实例仅服务旧 OSS 包装。 */
   targetRegistry?: TargetRegistry;
 }
@@ -117,6 +124,8 @@ async function runToolIndexPrewarmFor(deps: RuntimeLifecycleDeps): Promise<void>
 }
 
 interface RuntimeMaintenanceActions {
+  reconcileUsage(): Promise<void>;
+  reconcileApprovals(): Promise<void>;
   prewarmToolIndexes(): Promise<void>;
   refreshTargets(): Promise<void>;
   drainInhub(maxClaims?: number): Promise<number>;
@@ -135,6 +144,8 @@ interface RuntimeMaintenanceActions {
  */
 function runtimeMaintenanceActionsFor(deps: RuntimeLifecycleDeps): RuntimeMaintenanceActions {
   return {
+    reconcileUsage: () => runUsageMaintenanceFor(deps.configStore?.usage ?? null),
+    reconcileApprovals: () => deps.reconcileApprovalContinuations?.() ?? Promise.resolve(),
     prewarmToolIndexes: () => runToolIndexPrewarmFor(deps),
     async refreshTargets() {
       await deps.refreshTargets();
@@ -298,6 +309,10 @@ export function createManagedRuntimeMaintenanceFor(
   const tasks: ManagedMaintenanceTask[] = [
     // Prewarm is per Kernel cache, so it must run again after an eviction.
     scheduled('tool-index-prewarm', 0, null, actions.prewarmToolIndexes, false),
+    // New Kernel owners reconcile saved evidence on their first existing tick.
+    // Neither task sends provider requests or restores client orchestration.
+    scheduled('usage-maintenance', 0, USAGE_MAINTENANCE_MS, actions.reconcileUsage, false),
+    scheduled('approval-continuations', 0, APPROVAL_CONTINUATION_MS, actions.reconcileApprovals, false),
     scheduled('boot-recovery', 2_000, null, actions.recoverBoot),
     scheduled('target-refresh', TARGET_REFRESH_MS, TARGET_REFRESH_MS, actions.refreshTargets),
     scheduled('monitor', MONITOR_DELAY_MS, MONITOR_INTERVAL_MS, actions.monitor),
@@ -378,6 +393,14 @@ export function createManagedRuntimeMaintenanceFor(
 export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSchedulers {
   const actions = runtimeMaintenanceActionsFor(deps);
   const timers: Array<ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>> = [];
+  const evidenceWork = new Set<Promise<void>>();
+  let stopped = false;
+  function reconcile(action: () => Promise<void>): void {
+    if (stopped) return;
+    const work = Promise.resolve().then(action);
+    evidenceWork.add(work);
+    void work.finally(() => evidenceWork.delete(work)).catch(() => undefined);
+  }
   const every = (fn: () => void, ms: number): void => {
     const timer = setInterval(fn, ms);
     timer.unref();
@@ -391,6 +414,10 @@ export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSc
 
   // 服务先启动，索引随后在后台预热；任何数据库/索引异常都不阻塞 HTTP 就绪。
   later(() => void actions.prewarmToolIndexes(), TOOL_INDEX_PREWARM_DELAY_MS);
+  later(() => reconcile(actions.reconcileUsage), 0);
+  later(() => reconcile(actions.reconcileApprovals), 0);
+  every(() => reconcile(actions.reconcileUsage), USAGE_MAINTENANCE_MS);
+  every(() => reconcile(actions.reconcileApprovals), APPROVAL_CONTINUATION_MS);
 
   every(() => void actions.refreshTargets().catch(() => undefined), TARGET_REFRESH_MS);
 
@@ -424,7 +451,19 @@ export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSc
 
   return {
     stop() {
+      stopped = true;
       for (const timer of timers.splice(0)) clearTimeout(timer);
+    },
+    async drain(drainMs = 30_000) {
+      if (evidenceWork.size === 0) return true;
+      const bounded = Number.isFinite(drainMs) ? Math.max(0, Math.floor(drainMs)) : 0;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          Promise.allSettled([...evidenceWork]).then(() => true),
+          new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), bounded); }),
+        ]);
+      } finally { if (timer) clearTimeout(timer); }
     },
   };
 }
