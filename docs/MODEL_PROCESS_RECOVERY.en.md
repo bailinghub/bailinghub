@@ -2,7 +2,7 @@
 
 [简体中文](MODEL_PROCESS_RECOVERY.md)
 
-This page describes additional tests in the current source tree. The historical `v0.9.1` Tag contains original-request recovery and usage shutdown draining, but not these new process tests. Source, executed checks, released artifacts and production acceptance remain separate evidence.
+This page describes additional tests included in Core 0.9.2. The historical `v0.9.1` Tag contains original-request recovery and usage shutdown draining, but not these new process tests. Source, executed checks, released artifacts and production acceptance remain separate evidence.
 
 ## Fault windows
 

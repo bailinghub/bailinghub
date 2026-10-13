@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.1.en.md).
+Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.2.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,17 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.9.2 - Secure installation and persisted continuation
+
+Version date: 2026-10-13. A patch from Core 0.9.1; MCP / Agent Client SDK 0.7.0 and DSH 0.7.0 remain unchanged. See [release notes](RELEASE_NOTES_v0.9.2.en.md) and the [upgrade guide](UPGRADE_v0.9.2.en.md).
+
+- Fix installation secrets: generate six credentials independently from secure randomness; failed or invalid output stops installation without weak credentials or a partial `.env`. Preserve existing configuration.
+- Fix settlement depending on traffic and a blocking fixed first page: startup/existing tick and minute-based maintenance advance cursor pages of up to 50 records with wraparound, per-row failure isolation and database backoff. Use original metering, prices and multiplier; do not redispatch, read result bodies or invent charges.
+- Fix continuation after a saved approval encounters audit or queue failure: atomically persist the decision and continuation, then recover the original job through original-ID retry and background maintenance. Atomically save queue admission and a decision marker, deduplicate lost acknowledgements and process reopening, and recheck consumed state inside admission. Denials only complete auditing; direct Agent calls retain explicit resume; historical decisions without continuations are not backfilled.
+- Add read-only `doctor --deployment` for specified Core public health/version and optional readiness, with explicit declaration identity, unchecked scope and exit codes. Perform no upgrade, rollback or migration.
+- First ship actual model-child SIGKILL and lost MySQL COMMIT-acknowledgement regressions, plus installation, paging, approval concurrency/process recovery and maintenance-close coverage. Added tests do not add model redispatch behavior or establish production acceptance.
+- Add 065's settlement index and 066's continuation table/job markers. Apply explicit migrations and match custom state/config adapters; new maintenance participates in close draining. Rollback retains continuation records and markers. Queue deduplication does not guarantee exactly-once external effects. ACC, independent Hosts and clients release separately and are outside this Core update.
 
 ## v0.9.1 - Asynchronous model shutdown and public capability evidence
 
