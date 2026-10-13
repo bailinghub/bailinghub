@@ -68,7 +68,7 @@ await kernel.close(30_000);
 
 ## 制品与数据库升级
 
-当前源码尚未发行的 [Core 可靠性修复](CORE_RELIABILITY.md)新增 065/066 迁移。新 managed Kernel 在首次既有 tick 启动结算与审批补续维护，以后按周期推进；Host 继续负责公平 tick 和关闭时等待，不需要自行实现 Core 的账本恢复。standalone 新维护先停止再排空。使用新审批决策前须显式迁移 066 并具备配套仓储；它不修改 Kernel API v1 的运行导出，也不自动升级 Host 的部署。
+Core 0.9.2 的 [可靠性修复](CORE_RELIABILITY.md)新增 065/066 迁移。新 managed Kernel 在首次既有 tick 启动结算与审批补续维护，以后按周期推进；Host 继续负责公平 tick 和关闭时等待，不需要自行实现 Core 的账本恢复。standalone 新维护先停止再排空。使用新审批决策前须显式迁移 066 并具备配套仓储；它不修改 Kernel API v1 的运行导出，也不自动升级 Host 的部署。
 
 `BAILINGHUB_CORE_ARTIFACT_V1` 包含已安装包版本、官方活动迁移摘要、最新迁移名、退役迁移证据和整体 manifest 摘要。宿主应把这些值写入自己的实例目录，并在加载前逐项匹配。`migrations` 只是可在新 Schema 中执行的活动序列；`retiredMigrations` 只用于识别早期部署的历史账本，`replay: never` 表示不得恢复相应 SQL 文件或在新库中重放。
 

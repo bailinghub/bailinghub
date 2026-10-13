@@ -27,13 +27,13 @@
 
 在线体验环境只用于了解产品和配置方式。请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
 
-## v0.9.1：异步工作关闭与公开能力证据
+## v0.9.2：安全安装与持久证据恢复
 
-关闭 Core 时，在原时限内等待模型完成、结算及相关 usage 后台工作；usage 排空超时保留原实例供重试，不重派原请求。本版同时提供公开能力与证据索引，纳入通用安全治理。
+新安装只使用经过校验的安全随机凭据；后台结算在启动和周期维护中自动推进，无法计价的首批记录不再阻塞后续请求。审批已保存但审计或排队失败时，可按原决策补续，避免同一批准重复排队。
 
-配套为 **Core 0.9.1 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**，独立客户端包不因本补丁升版。已有共享 USD 额度、统一倍率、周期售价/额度与业务权限保持；没有新增 API、SQL 或套餐规则。升级时核对版本、Tag 与制品摘要。
+配套为 **Core 0.9.2 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**，独立客户端包不因本补丁升版。升级须显式应用 **065/066** 迁移；共享 USD 额度、统一倍率与客户端编排保持。新增只读部署体检和公开进程恢复专项，不代表具体运行环境已经升级。
 
-[版本说明](docs/RELEASE_NOTES_v0.9.1.md) · [升级指南](docs/UPGRADE_v0.9.1.md) · [模型计费](docs/MODEL_BILLING.md) · [上一版本](docs/RELEASE_NOTES_v0.9.0.md)
+[版本说明](docs/RELEASE_NOTES_v0.9.2.md) · [升级指南](docs/UPGRADE_v0.9.2.md) · [可靠性与迁移](docs/CORE_RELIABILITY.md) · [上一版本](docs/RELEASE_NOTES_v0.9.1.md)
 
 ## 适合哪些团队
 
@@ -115,7 +115,7 @@
 在本机启动中枢、MySQL、Demo 业务系统、工具源、路由和接入方：
 
 ```bash
-git clone --branch v0.9.1 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.9.2 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -199,7 +199,7 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 | 集中开启本地智能体与工具 | [四步配置指南](docs/LOCAL_AGENT_SETUP.md) · [系统说明](docs/AGENT_SYSTEM_INFO.md) |
 | 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |
 | 理解架构与长期取舍 | [架构](docs/ARCHITECTURE.md) · [项目愿景](VISION.md) |
-| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.9.1](docs/RELEASE_NOTES_v0.9.1.md) |
+| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.9.2](docs/RELEASE_NOTES_v0.9.2.md) |
 
 完整中英文文档地图见 [docs/README.md](docs/README.md)。公共 API、SDK、Schema、Docker Demo 与代码标识保持语言中立。
 

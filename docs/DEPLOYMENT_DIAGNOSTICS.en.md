@@ -1,6 +1,6 @@
 # Read-only deployment diagnostics
 
-This additional mode belongs to subsequent main-branch source. The historical released `v0.9.1` Tag/npm artifact does not include it. Run the commands below only from source or a later released artifact that includes `scripts/doctor-deployment.ts`.
+This deployment mode is available from Core 0.9.2. The historical released `v0.9.1` Tag/npm artifact does not include it. Run the commands below from source or a released artifact that includes `scripts/doctor-deployment.ts`.
 
 Deployment diagnostics add a separate mode to `npm run doctor` for an installed Core. Doctor without arguments retains its source, documentation, example and OSS checks. Deployment mode checks the specified instance's public health and version declarations without running the existing check scripts.
 
@@ -20,7 +20,7 @@ The default mode sends only `GET /health` and `GET /version`. It does not connec
 
 For a container installation, run the same command from the installed Core directory inside the container, or use an externally unpacked Core artifact against the public URL. The tool does not run `docker inspect`, read container environments or infer a running image digest. Container startup, permissions and digest verification belong to the deployment procedure.
 
-When the local directory is not the artifact to compare, supply a version and commit from a trusted release record:
+When the local directory is not the artifact to compare, supply a version and commit from a trusted release record. This example checks a historical v0.9.1 instance:
 
 ```bash
 npm run --silent doctor -- --deployment --url https://hub.example.com \

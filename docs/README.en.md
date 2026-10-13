@@ -7,6 +7,9 @@ This directory contains public documentation for the open-source BailingHub proj
 | Document | Purpose |
 |---|---|
 | [IMPLEMENTATION_STATUS.en.md](IMPLEMENTATION_STATUS.en.md) · [Chinese](IMPLEMENTATION_STATUS.md) | Core ownership, formal releases versus main, public evidence, and uncovered scope. |
+| [RELEASE_NOTES_v0.9.2.en.md](RELEASE_NOTES_v0.9.2.en.md) · [Chinese](RELEASE_NOTES_v0.9.2.md) | v0.9.2: secure installation, automatic settlement and original approval continuation, with deployment diagnostics and process tests. |
+| [UPGRADE_v0.9.2.en.md](UPGRADE_v0.9.2.en.md) · [Chinese](UPGRADE_v0.9.2.md) | Explicit migrations 065/066, matching adapters, original-record checks and rollback limits. |
+| [CORE_RELIABILITY.en.md](CORE_RELIABILITY.en.md) · [Chinese](CORE_RELIABILITY.md) | Installation credentials, fair settlement maintenance, approval continuation and synthetic acceptance boundaries. |
 | [RELEASE_NOTES_v0.9.1.en.md](RELEASE_NOTES_v0.9.1.en.md) · [Chinese](RELEASE_NOTES_v0.9.1.md) | v0.9.1: asynchronous usage shutdown fix, public capability index, and general security governance. |
 | [UPGRADE_v0.9.1.en.md](UPGRADE_v0.9.1.en.md) · [Chinese](UPGRADE_v0.9.1.md) | 0.9.0 patch upgrade, original requests, artifact manifests, and shutdown acceptance; no new SQL/APIs. |
 | [RELEASE_NOTES_v0.9.0.en.md](RELEASE_NOTES_v0.9.0.en.md) · [Chinese](RELEASE_NOTES_v0.9.0.md) | v0.9.0: optional model billing, shared allowances and image tools. |
@@ -57,7 +60,7 @@ This directory contains public documentation for the open-source BailingHub proj
 |---|---|
 | [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | Architecture overview: layers, runtime path, boundaries, and extension points. |
 | [KERNEL_HOST_API.en.md](KERNEL_HOST_API.en.md) | Versioned high-level embedding API, managed lifecycle, mount paths, and artifact upgrade boundary. |
-| [MODEL_PROCESS_RECOVERY.en.md](MODEL_PROCESS_RECOVERY.en.md) · [简体中文](MODEL_PROCESS_RECOVERY.md) | Opt-in process-crash/lost-acknowledgement regressions in current source; historical Tag evidence stays separate. |
+| [MODEL_PROCESS_RECOVERY.en.md](MODEL_PROCESS_RECOVERY.en.md) · [简体中文](MODEL_PROCESS_RECOVERY.md) | Opt-in process-crash/lost-acknowledgement regressions included in v0.9.2; historical Tag evidence stays separate. |
 | [KERNEL_HOST_API.md](KERNEL_HOST_API.md) | Chinese Kernel Host API guide. |
 | [PIPELINE.en.md](PIPELINE.en.md) | Runtime pipeline from trigger to dispatch, tools, audit, approval, and delivery. |
 

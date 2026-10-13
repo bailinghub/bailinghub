@@ -2,7 +2,7 @@
 
 [简体中文](CORE_RELIABILITY.md)
 
-This page describes fixes in the current source, pending a formal release. The published v0.9.1 tag, npm package and installation images do not contain these later changes. Verify each deployment's source identity and migration ledger separately.
+This page describes the fixes and checks in Core 0.9.2. The historical v0.9.1 tag, npm package and installation images do not contain these later changes. Verify each deployment's source identity and migration ledger separately.
 
 ## Installation secrets
 

@@ -1,6 +1,6 @@
 # 只读部署诊断
 
-本页新增模式属于后续主分支源码；历史正式 `v0.9.1` Tag/npm 尚不包含该模式。仅在包含 `scripts/doctor-deployment.ts` 的源码或后续正式制品中执行以下命令。
+本页部署模式从 Core 0.9.2 提供；历史正式 `v0.9.1` Tag/npm 不包含该模式。请从包含 `scripts/doctor-deployment.ts` 的源码或正式制品执行以下命令。
 
 部署诊断沿用 `npm run doctor`，增加一个面向已安装 Core 的独立模式。原有不带参数的 doctor 继续检查源码、文档、示例和开源边界；部署模式只核对指定实例的公开健康与版本信息，不执行原有 doctor 的检查脚本。
 
@@ -20,7 +20,7 @@ URL 必须由操作者显式提供，不从 `.env`、`config.json` 或 smoke 环
 
 容器部署可在容器中已安装的 Core 目录执行相同命令，也可在外部解包的 Core 制品目录诊断公开 URL。工具不会运行 `docker inspect`、读取容器环境或推断正在运行的镜像 digest；容器启动、权限和 digest 须由部署流程另行核对。
 
-若本地目录不是要对照的制品，可显式指定受信任发行记录中的版本和提交：
+若本地目录不是要对照的制品，可显式指定受信任发行记录中的版本和提交。下面以核对历史 v0.9.1 实例为例：
 
 ```bash
 npm run --silent doctor -- --deployment --url https://hub.example.com \
