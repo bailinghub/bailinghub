@@ -39,7 +39,7 @@ const TOOL_CALL_RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
 
 export interface RuntimeSchedulers {
   stop(): void;
-  /** New persisted-evidence maintenance must finish before its stores close. */
+  /** Accepted scheduler producers must finish registering children before resources close. */
   drain?(drainMs?: number): Promise<boolean>;
 }
 
@@ -393,60 +393,62 @@ export function createManagedRuntimeMaintenanceFor(
 export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSchedulers {
   const actions = runtimeMaintenanceActionsFor(deps);
   const timers: Array<ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>> = [];
-  const evidenceWork = new Set<Promise<void>>();
+  const acceptedWork = new Set<Promise<unknown>>();
   let stopped = false;
-  function reconcile(action: () => Promise<void>): void {
+  function reconcile(action: () => Promise<unknown>): void {
     if (stopped) return;
     const work = Promise.resolve().then(action);
-    evidenceWork.add(work);
-    void work.finally(() => evidenceWork.delete(work)).catch(() => undefined);
+    acceptedWork.add(work);
+    void work.finally(() => acceptedWork.delete(work)).catch(() => undefined);
   }
   const every = (fn: () => void, ms: number): void => {
+    if (stopped) return;
     const timer = setInterval(fn, ms);
     timer.unref();
     timers.push(timer);
   };
   const later = (fn: () => void, ms: number): void => {
+    if (stopped) return;
     const timer = setTimeout(fn, ms);
     timer.unref();
     timers.push(timer);
   };
 
   // 服务先启动，索引随后在后台预热；任何数据库/索引异常都不阻塞 HTTP 就绪。
-  later(() => void actions.prewarmToolIndexes(), TOOL_INDEX_PREWARM_DELAY_MS);
+  later(() => reconcile(actions.prewarmToolIndexes), TOOL_INDEX_PREWARM_DELAY_MS);
   later(() => reconcile(actions.reconcileUsage), 0);
   later(() => reconcile(actions.reconcileApprovals), 0);
   every(() => reconcile(actions.reconcileUsage), USAGE_MAINTENANCE_MS);
   every(() => reconcile(actions.reconcileApprovals), APPROVAL_CONTINUATION_MS);
 
-  every(() => void actions.refreshTargets().catch(() => undefined), TARGET_REFRESH_MS);
+  every(() => reconcile(actions.refreshTargets), TARGET_REFRESH_MS);
 
   // inhub DB 调度器：llm 等中枢内目标也从 bz_jobs 队列认领，避免依赖建单进程的内存 promise。
   // kick 提供低延迟，tick 提供兜底与多实例拾取；认领本身在 DB 里原子化。
-  every(() => void actions.drainInhub(1).catch(() => undefined), INHUB_DRAIN_MS);
+  every(() => reconcile(() => actions.drainInhub(1)), INHUB_DRAIN_MS);
 
   // 自监控：启动 1 分钟后首跑，避开冷启动误报。
   later(() => {
-    void actions.monitor();
-    every(() => void actions.monitor(), MONITOR_INTERVAL_MS);
+    reconcile(actions.monitor);
+    every(() => reconcile(actions.monitor), MONITOR_INTERVAL_MS);
   }, MONITOR_DELAY_MS);
 
   // 工具源 spec 自动刷新：每分钟扫一遍，按各源 auto_refresh_min 节流。
-  every(() => void actions.refreshSpecs().catch(() => undefined), SPEC_REFRESH_MS);
+  every(() => reconcile(actions.refreshSpecs), SPEC_REFRESH_MS);
 
   // 知识库数据源连接器：每分钟扫一遍到点的（变更/出错记审计，平稳无事不刷流水）。
   if (deps.kbSync) {
-    every(() => void actions.syncKnowledgeBases().catch(() => undefined), KB_SYNC_MS);
+    every(() => reconcile(actions.syncKnowledgeBases), KB_SYNC_MS);
   }
 
-  every(() => void actions.reapStaleWork(), REAPER_INTERVAL_MS);
+  every(() => reconcile(actions.reapStaleWork), REAPER_INTERVAL_MS);
 
   // 执行日志清理：只删除超龄且已确认 completed 的行；未决状态必须保留给人工对账。
-  every(() => void actions.cleanupToolCalls(), TOOL_CALL_CLEANUP_MS);
+  every(() => reconcile(actions.cleanupToolCalls), TOOL_CALL_CLEANUP_MS);
 
   if (deps.cfg.auditRetentionDays > 0) {
-    later(() => void actions.cleanupAudit(), 60_000);
-    every(() => void actions.cleanupAudit(), AUDIT_RETENTION_CLEANUP_MS);
+    later(() => reconcile(actions.cleanupAudit), 60_000);
+    every(() => reconcile(actions.cleanupAudit), AUDIT_RETENTION_CLEANUP_MS);
   }
 
   return {
@@ -455,12 +457,12 @@ export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSc
       for (const timer of timers.splice(0)) clearTimeout(timer);
     },
     async drain(drainMs = 30_000) {
-      if (evidenceWork.size === 0) return true;
+      if (acceptedWork.size === 0) return true;
       const bounded = Number.isFinite(drainMs) ? Math.max(0, Math.floor(drainMs)) : 0;
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
         return await Promise.race([
-          Promise.allSettled([...evidenceWork]).then(() => true),
+          Promise.allSettled([...acceptedWork]).then(() => true),
           new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), bounded); }),
         ]);
       } finally { if (timer) clearTimeout(timer); }

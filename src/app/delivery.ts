@@ -10,6 +10,7 @@ import type { Job } from '../core/contracts/types';
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import { notificationBackgroundWorkFor } from '../core/runtime/notification-background-work';
 
 export interface DeliveryDeps {
   cfg: AppConfig;
@@ -55,7 +56,7 @@ export async function spawnDeliveryJobFor(deps: DeliveryDeps, parent: Job): Prom
       await deps.stateStore.appendAudit({ ts: deps.now(), job_id: parent.job_id, request_id: parent.request_id, event: sent.ok ? 'channel_delivered' : 'channel_delivery_error', detail: { channel: channelName, to: recipient, ...(sent.ok ? {} : { error: sent.error }) } });
       if (!sent.ok) {
         void sendAlertWithDeps(outboundRuntime, `delivery_failed_${channelName}`, `渠道回流送达失败（${channelName} → ${recipient}）：${String(sent.error ?? '未知').slice(0, 200)}。用户可能未收到结果，关联任务 ${parent.job_id}。`).catch(() => { /* 告警失败不阻塞 */ });
-        void deps.configStore?.deliveryDlq.record({ parentJobId: parent.job_id, channel: channelName, recipient, content: String(text), error: String(sent.error ?? '') }).catch(() => undefined);
+        if (deps.configStore) void notificationBackgroundWorkFor(deps.stateStore).track('delivery-dlq', () => deps.configStore!.deliveryDlq.record({ parentJobId: parent.job_id, channel: channelName, recipient, content: String(text), error: String(sent.error ?? ''), deliveryKind: 'native_channel' }));
       }
       return;
     }
@@ -153,7 +154,7 @@ export async function spawnDeliveryJobFor(deps: DeliveryDeps, parent: Job): Prom
     await deps.stateStore.appendAudit({ ts: deps.now(), job_id: parent.job_id, request_id: parent.request_id, event: sent.ok ? 'channel_delivered' : 'channel_delivery_error', detail: { channel: channelName, to: single ? recipients[0] : `${recipients.length}人`, via: 'delivery', ...(sent.ok ? { thread_id: threadId ?? null } : { error: sent.error }) } });
     if (!sent.ok) {
       void sendAlertWithDeps(outboundRuntime, `delivery_failed_${channelName}`, `渠道送达失败（${channelName} → ${single ? recipients[0] : recipients.length + '人'}）：${String(sent.error ?? '未知').slice(0, 200)}。收件人可能未收到，关联任务 ${parent.job_id}。`).catch(() => { /* 告警失败不阻塞 */ });
-      void deps.configStore?.deliveryDlq.record({ parentJobId: parent.job_id, channel: channelName, recipient: recipients.join('|'), content: String(body), error: String(sent.error ?? '') }).catch(() => undefined);
+      if (deps.configStore) void notificationBackgroundWorkFor(deps.stateStore).track('delivery-dlq', () => deps.configStore!.deliveryDlq.record({ parentJobId: parent.job_id, channel: channelName, recipient: recipients.join('|'), content: String(body), error: String(sent.error ?? ''), deliveryKind: 'native_channel' }));
     }
     return;
   }

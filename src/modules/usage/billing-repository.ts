@@ -413,8 +413,12 @@ export class BillingRepository {
   }
   private reconciliationCursor: { updatedAt: number; id: string } | null = null;
   private reconciliationFlight: Promise<void> | null = null;
+  private reconciliationStarted = false;
   private reconciliationProgress: UsageReconciliationProgress = { scanned: 0, settled: 0, deferred: 0, failed: 0, hasMore: false };
   getReconciliationProgress(): UsageReconciliationProgress { return { ...this.reconciliationProgress }; }
+  getReconciliationSnapshot(): UsageReconciliationProgress | undefined {
+    return this.reconciliationStarted ? this.getReconciliationProgress() : undefined;
+  }
   reconcilePendingUsage(): Promise<void> {
     if (this.reconciliationFlight) return this.reconciliationFlight;
     const work = this.reconcilePage();
@@ -427,6 +431,7 @@ export class BillingRepository {
     // advances past unpriceable/failing records; no row can pin the oldest page.
     // A new owner starts from the beginning, then makes the same bounded progress.
     const progress: UsageReconciliationProgress = { scanned: 0, settled: 0, deferred: 0, failed: 0, hasMore: false };
+    this.reconciliationStarted = true;
     this.reconciliationProgress = progress;
     const scan = () => {
       const cursor = this.reconciliationCursor;
@@ -501,6 +506,10 @@ export class BillingRepository {
   }
 }
 const repositories = new WeakMap<UsageRepository, BillingRepository>();
+/** Read the last bounded page only. Does not initialize billing or query records. */
+export function usageReconciliationSnapshotFor(repository: UsageRepository): UsageReconciliationProgress | undefined {
+  return repositories.get(repository)?.getReconciliationSnapshot();
+}
 export function getBillingRepository(repository: UsageRepository): BillingRepository {
   let value = repositories.get(repository);
   if (!value) { value = new BillingRepository(repository); repositories.set(repository, value); }

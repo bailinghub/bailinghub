@@ -3,7 +3,8 @@ import test from 'node:test';
 import type { AppConfig } from '../core/config/config';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
-import { createOperationalMetricsEndpointFor } from './operational-metrics';
+import { createOperationalMetricsEndpointFor, type OperationalMetricsDeps } from './operational-metrics';
+import { UsageRepository } from '../modules/usage/repository';
 
 const metrics = {
   enabled: true,
@@ -15,6 +16,7 @@ function endpoint(input: {
   store: RuntimeStateStore;
   configStore?: ConfigStoreContract | null;
   logger?: Pick<Console, 'error'>;
+  notificationWork?: OperationalMetricsDeps['notificationWork'];
 }) {
   return createOperationalMetricsEndpointFor({
     cfg: { root: process.cwd(), metrics } as Pick<AppConfig, 'root' | 'metrics'>,
@@ -24,6 +26,7 @@ function endpoint(input: {
     isPaused: () => false,
     auditFailures: { snapshot: () => ({ total: 3, lastFailureAt: null }) },
     logger: input.logger,
+    notificationWork: input.notificationWork,
     build: { version: 'test', commit: 'abc123' },
   });
 }
@@ -70,4 +73,37 @@ test('operational metrics: a stalled collector is bounded by the configured time
   assert.ok(Date.now() - startedAt < 500);
   assert.match(text, /bailinghub_metrics_collector_success\{collector="state"\} 0/);
   assert.match(logs[0]!, /"failure":"timeout"/);
+});
+
+test('maintenance scrape reads in-memory usage and notification snapshots without database or provider work', async () => {
+  let reads = 0, snapshots = 0;
+  const usage = new UsageRepository(() => { reads++; throw new Error('No SQL or provider calls during maintenance scrape'); });
+  const configStore = { usage, observability: {} } as unknown as ConfigStoreContract;
+  const target = endpoint({ store: {} as RuntimeStateStore, configStore, notificationWork: { snapshot() {
+    snapshots++;
+    return { draining: false, drainTimeouts: 0, kinds: [{ kind: 'callback', inFlight: 1, completed: 2, failed: 3,
+      oldestPendingAgeMs: 1000, lastStartedAt: null, lastCompletedAt: null, lastFailedAt: null }] };
+  } } });
+  const text = await target.scrape();
+  assert.equal(reads, 0);
+  assert.equal(snapshots, 1);
+  assert.match(text, /bailinghub_metrics_collector_success\{collector="maintenance"\} 1/);
+  assert.match(text, /bailinghub_background_work_in_flight\{source="notification",kind="callback"\} 1/);
+  assert.match(text, /bailinghub_background_work_in_flight\{source="usage",kind="settlement"\} 0/);
+  assert.doesNotMatch(text, /bailinghub_maintenance_last_page_records/); // No billing page was initialized by the scrape.
+});
+
+test('maintenance snapshot failures leave existing metrics available and redact raw errors', async () => {
+  const logs: string[] = [];
+  const text = await endpoint({ store: {} as RuntimeStateStore,
+    notificationWork: { snapshot() { throw new Error('PRIVATE_TENANT_ACCOUNT_JOB_ROUTE_PROMPT_TOKEN_BODY'); } },
+    logger: { error(message) { logs.push(message); } },
+  }).scrape();
+  assert.match(text, /bailinghub_up 1/);
+  assert.match(text, /bailinghub_runtime_queue\{state="running"\} 1/);
+  assert.match(text, /bailinghub_metrics_collector_success\{collector="maintenance"\} 0/);
+  assert.doesNotMatch(text, /bailinghub_background_work_in_flight/);
+  assert.equal(logs.length, 1);
+  assert.match(logs[0]!, /"collector":"maintenance"/);
+  assert.doesNotMatch(logs[0]!, /PRIVATE|TENANT|ACCOUNT|JOB|ROUTE|PROMPT|TOKEN|BODY/);
 });

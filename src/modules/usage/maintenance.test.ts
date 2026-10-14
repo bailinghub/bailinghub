@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { UsageRepository } from './repository';
-import { getBillingRepository } from './billing-repository';
-import { runUsageMaintenanceFor } from './maintenance';
+import { getBillingRepository, usageReconciliationSnapshotFor } from './billing-repository';
+import { runUsageMaintenanceFor, usageMaintenanceSnapshotFor } from './maintenance';
 
 function owner() {
   const repository = new UsageRepository(() => { throw new Error('No database is used in this synthetic port test'); });
@@ -59,4 +59,20 @@ test('a slow SQL failure starts its bounded retry delay at failure completion', 
   await runUsageMaintenanceFor(repository, () => clock); assert.equal(attempts, 1);
   clock = 180000;
   await runUsageMaintenanceFor(repository, () => clock); assert.equal(attempts, 2);
+});
+
+test('maintenance and reconciliation snapshots remain readonly during backoff and do not initialize billing', async () => {
+  const untouched = new UsageRepository(() => { throw new Error('Snapshot must not access SQL'); });
+  assert.equal(usageReconciliationSnapshotFor(untouched), undefined);
+  assert.deepEqual(usageMaintenanceSnapshotFor(untouched, 0), { running: false, consecutiveFailures: 0, retryAfterMs: 0 });
+  assert.equal(usageReconciliationSnapshotFor(untouched), undefined);
+  const { repository, tokens } = owner();
+  tokens.reconcilePendingUsage = async () => { throw new Error('PRIVATE_DATABASE_BODY'); };
+  await runUsageMaintenanceFor(repository, 1000);
+  const snapshot = usageMaintenanceSnapshotFor(repository, 2000);
+  assert.deepEqual(snapshot, { running: false, consecutiveFailures: 1, retryAfterMs: 59000 });
+  snapshot.consecutiveFailures = 100;
+  assert.equal(usageMaintenanceSnapshotFor(repository, 61000).consecutiveFailures, 1);
+  assert.equal(usageReconciliationSnapshotFor(repository), undefined); // The mocked method did not start a real bounded page.
+  assert.doesNotMatch(JSON.stringify(snapshot), /PRIVATE_DATABASE/);
 });

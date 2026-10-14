@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { UsageRepository } from './repository';
-import { BillingRepository } from './billing-repository';
+import { getBillingRepository, usageReconciliationSnapshotFor } from './billing-repository';
 
 const price = { source: 'openrouter', currency: 'USD', modelId: 'synthetic', endpointId: 'synthetic', fetchedAt: 1,
   lines: [{ billable: 'output_image', unit: 'image', costUsd: '0.1' }] };
@@ -43,7 +43,7 @@ function fixture(count = 51) {
     throw new Error('Unexpected synthetic statement');
   } };
   const repository = { getPool: () => executor, withTransaction: async (fn: (c: any) => Promise<any>) => fn(executor) } as unknown as UsageRepository;
-  return { tokens: new BillingRepository(repository), records, ledger, attempts, statements, period };
+  return { tokens: getBillingRepository(repository), records, ledger, attempts, statements, period };
 }
 test('fifty unpriceable originals cannot starve the fifty-first payable result, including equal timestamps', async () => {
   const h = fixture();
@@ -68,4 +68,18 @@ test('concurrent reconciliation shares one page rather than skipping its cursor'
   assert.equal(h.tokens.reconcilePendingUsage(), first);
   await first;
   assert.equal(h.attempts.length, 50);
+});
+
+test('readonly reconciliation snapshot is absent before the first page and returns detached aggregate values afterward', async () => {
+  const h = fixture(2);
+  assert.equal(usageReconciliationSnapshotFor(h.tokens.repository), undefined);
+  const before = h.statements.length;
+  assert.equal(usageReconciliationSnapshotFor(h.tokens.repository), undefined);
+  assert.equal(h.statements.length, before);
+  await h.tokens.reconcilePendingUsage();
+  const snapshot = usageReconciliationSnapshotFor(h.tokens.repository)!;
+  assert.equal(snapshot.scanned, 2);
+  snapshot.scanned = 999;
+  assert.equal(usageReconciliationSnapshotFor(h.tokens.repository)!.scanned, 2);
+  assert.doesNotMatch(JSON.stringify(snapshot), /account|request|SYNTHETIC|result_json/);
 });

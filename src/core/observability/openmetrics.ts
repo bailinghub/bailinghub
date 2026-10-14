@@ -13,6 +13,23 @@ export interface CollectorResult<T> {
   value?: T;
 }
 
+export interface BackgroundWorkMetricsSnapshot {
+  draining?: boolean;
+  drainTimeouts?: number;
+  kinds: Array<{ kind: string; inFlight: number; completed: number; failed: number; oldestPendingAgeMs: number;
+    lastStartedAt: string | null; lastCompletedAt: string | null; lastFailedAt: string | null }>;
+}
+
+export interface RuntimeMaintenanceMetricsSnapshot {
+  capturedAtMs: number;
+  usage?: BackgroundWorkMetricsSnapshot;
+  notification?: BackgroundWorkMetricsSnapshot;
+  approval?: BackgroundWorkMetricsSnapshot;
+  usageReconciliation?: { scanned: number; settled: number; deferred: number; failed: number; hasMore: boolean };
+  approvalReconciliation?: { scanned: number; completed: number; pending: number; failed: number };
+  usageRetry?: { running: boolean; consecutiveFailures: number; retryAfterMs: number };
+}
+
 export interface OperationalMetricsDocument {
   version: string;
   commit: string;
@@ -20,6 +37,7 @@ export interface OperationalMetricsDocument {
   queue: { running: number; waiting: number };
   state: CollectorResult<JobOperationalMetricsSnapshot>;
   controlPlane: CollectorResult<ControlPlaneOperationalMetricsSnapshot>;
+  maintenance?: CollectorResult<RuntimeMaintenanceMetricsSnapshot>;
   auditWriteFailuresTotal: number;
   scrapeDurationSeconds: number;
 }
@@ -36,6 +54,75 @@ function family(lines: string[], name: string, help: string, type: 'counter' | '
   lines.push(`# HELP ${name} ${help}`);
   lines.push(`# TYPE ${name} ${type}`);
   lines.push(...samples);
+}
+
+// Never render a caller-supplied kind, phase, status or source as a label.
+const BACKGROUND_KINDS = {
+  usage: ['model-completion', 'settlement', 'response-cleanup', 'usage-reconciliation', 'reference-price-refresh'],
+  notification: ['callback', 'delivery', 'approval-notification', 'alert', 'delivery-dlq'],
+  approval: ['approval-continuation'],
+} as const;
+
+function renderMaintenance(lines: string[], snapshot: RuntimeMaintenanceMetricsSnapshot): void {
+  const flight: string[] = [], oldest: string[] = [], finished: string[] = [], timestamps: string[] = [], ages: string[] = [];
+  const draining: string[] = [], timeouts: string[] = [];
+  for (const source of ['usage', 'notification', 'approval'] as const) {
+    const value = snapshot[source];
+    if (!value) continue;
+    if (value.draining !== undefined) draining.push(`bailinghub_background_draining{source="${source}"} ${value.draining ? 1 : 0}`);
+    if (value.drainTimeouts !== undefined) timeouts.push(`bailinghub_background_drain_timeouts_total{source="${source}"} ${finite(value.drainTimeouts)}`);
+    for (const kind of BACKGROUND_KINDS[source]) {
+      const work = value.kinds.find(row => row.kind === kind);
+      if (!work) continue;
+      const labels = `source="${source}",kind="${kind}"`;
+      flight.push(`bailinghub_background_work_in_flight{${labels}} ${finite(work.inFlight)}`);
+      oldest.push(`bailinghub_background_work_oldest_pending_age_seconds{${labels}} ${finite(work.oldestPendingAgeMs) / 1000}`);
+      for (const outcome of ['completed', 'failed'] as const) {
+        finished.push(`bailinghub_background_work_finished_total{${labels},outcome="${outcome}"} ${finite(work[outcome])}`);
+      }
+      for (const phase of ['started', 'completed', 'failed'] as const) {
+        const at = work[phase === 'started' ? 'lastStartedAt' : phase === 'completed' ? 'lastCompletedAt' : 'lastFailedAt'];
+        const epoch = at === null ? NaN : Date.parse(at);
+        timestamps.push(`bailinghub_background_work_last_run_timestamp_seconds{${labels},phase="${phase}"} ${Number.isFinite(epoch) ? epoch / 1000 : 0}`);
+        // Missing history is explicit as timestamp=0; do not invent an age of zero.
+        if (Number.isFinite(epoch)) ages.push(`bailinghub_background_work_last_run_age_seconds{${labels},phase="${phase}"} ${Math.max(0, finite(snapshot.capturedAtMs - epoch)) / 1000}`);
+      }
+    }
+  }
+  const groups: Array<[string, string, 'counter' | 'gauge', string[]]> = [
+    ['bailinghub_background_work_in_flight', 'Accepted process-local continuations currently in flight.', 'gauge', flight],
+    ['bailinghub_background_work_oldest_pending_age_seconds', 'Age of the oldest accepted process-local continuation.', 'gauge', oldest],
+    ['bailinghub_background_work_finished_total', 'Process-local continuation outcomes, not recipient delivery acknowledgements.', 'counter', finished],
+    ['bailinghub_background_work_last_run_timestamp_seconds', 'Last observed start or completion time; zero means never observed.', 'gauge', timestamps],
+    ['bailinghub_background_work_last_run_age_seconds', 'Age since the last observed start or completion, omitted when never observed.', 'gauge', ages],
+    ['bailinghub_background_draining', 'Whether an owning background tracker has stopped new maintenance admission.', 'gauge', draining],
+    ['bailinghub_background_drain_timeouts_total', 'Process-local background drain calls that exhausted their budget.', 'counter', timeouts],
+  ];
+  for (const [name, help, type, samples] of groups) if (samples.length) family(lines, name, help, type, samples);
+
+  const progress: string[] = [];
+  if (snapshot.usageReconciliation) {
+    for (const outcome of ['scanned', 'settled', 'deferred', 'failed'] as const) {
+      progress.push(`bailinghub_maintenance_last_page_records{kind="usage-reconciliation",outcome="${outcome}"} ${finite(snapshot.usageReconciliation[outcome])}`);
+    }
+    family(lines, 'bailinghub_maintenance_last_page_has_more', 'Whether the last usage reconciliation page reached its bounded scan size.', 'gauge', [
+      `bailinghub_maintenance_last_page_has_more{kind="usage-reconciliation"} ${snapshot.usageReconciliation.hasMore ? 1 : 0}`,
+    ]);
+  }
+  if (snapshot.approvalReconciliation) {
+    for (const outcome of ['scanned', 'completed', 'pending', 'failed'] as const) {
+      progress.push(`bailinghub_maintenance_last_page_records{kind="approval-continuation",outcome="${outcome}"} ${finite(snapshot.approvalReconciliation[outcome])}`);
+    }
+  }
+  if (progress.length) family(lines, 'bailinghub_maintenance_last_page_records', 'Aggregate records processed in the latest/current bounded maintenance page, not total persisted backlog.', 'gauge', progress);
+  if (snapshot.usageRetry) {
+    family(lines, 'bailinghub_usage_maintenance_consecutive_failures', 'Current bounded usage maintenance failure backoff count.', 'gauge', [
+      `bailinghub_usage_maintenance_consecutive_failures ${finite(snapshot.usageRetry.consecutiveFailures)}`,
+    ]);
+    family(lines, 'bailinghub_usage_maintenance_retry_after_seconds', 'Seconds until the current usage maintenance retry backoff expires.', 'gauge', [
+      `bailinghub_usage_maintenance_retry_after_seconds ${finite(snapshot.usageRetry.retryAfterMs) / 1000}`,
+    ]);
+  }
 }
 
 /** Render only fixed, low-cardinality labels. Job, tenant, principal and argument data never enter this document. */
@@ -55,10 +142,12 @@ export function renderOperationalMetrics(document: OperationalMetricsDocument): 
   family(lines, 'bailinghub_metrics_collector_available', 'Whether an optional metrics collector is implemented.', 'gauge', [
     `bailinghub_metrics_collector_available{collector="state"} ${document.state.available ? 1 : 0}`,
     `bailinghub_metrics_collector_available{collector="control_plane"} ${document.controlPlane.available ? 1 : 0}`,
+    `bailinghub_metrics_collector_available{collector="maintenance"} ${document.maintenance?.available ? 1 : 0}`,
   ]);
   family(lines, 'bailinghub_metrics_collector_success', 'Whether an optional collector succeeded during this scrape.', 'gauge', [
     `bailinghub_metrics_collector_success{collector="state"} ${document.state.success ? 1 : 0}`,
     `bailinghub_metrics_collector_success{collector="control_plane"} ${document.controlPlane.success ? 1 : 0}`,
+    `bailinghub_metrics_collector_success{collector="maintenance"} ${document.maintenance?.success ? 1 : 0}`,
   ]);
 
   if (document.state.value) {
@@ -91,6 +180,8 @@ export function renderOperationalMetrics(document: OperationalMetricsDocument): 
       `bailinghub_executors{state="offline"} ${finite(control.executorsOffline)}`,
     ]);
   }
+
+  if (document.maintenance?.value) renderMaintenance(lines, document.maintenance.value);
 
   family(lines, 'bailinghub_audit_write_failures_total', 'Audit ledger write failures observed by this process.', 'counter', [
     `bailinghub_audit_write_failures_total ${finite(document.auditWriteFailuresTotal)}`,

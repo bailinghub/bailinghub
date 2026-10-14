@@ -4,6 +4,7 @@
 // 不建任何 job、不过 LLM、逐字送达——正式通知所见即所得；与「执行器拉取(wecom-notify)」那套解耦（内部告警不再走它）。
 import { sendWecomText, sendWecomMedia, sendWecomCard, uploadWecomMedia, type WecomAccessTokenCache } from '../adapters/channels/wecom-api';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import { cancelResponseBody, readResponseBody, ResponseBodyLimitError } from '../core/platform/http-body';
 
 export interface ChannelSendResult {
   ok: boolean;
@@ -23,13 +24,15 @@ async function fetchBinary(url: string, maxBytes = 20 * 1024 * 1024): Promise<{ 
   if (!/^https?:\/\//i.test(url)) return { error: 'URL 必须是 http(s)' };
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
-    if (!r.ok) return { error: `拉取失败 HTTP ${r.status}` };
-    const ab = await r.arrayBuffer();
+    if (!r.ok) { cancelResponseBody(r); return { error: `拉取失败 HTTP ${r.status}` }; }
+    const ab = await readResponseBody(r, maxBytes);
     if (!ab.byteLength) return { error: '内容为空' };
-    if (ab.byteLength > maxBytes) return { error: `超过 ${Math.round(maxBytes / 1048576)}MB 上限` };
     const mime = ((r.headers.get('content-type') || '').split(';')[0] || '').trim() || 'application/octet-stream';
     return { buf: Buffer.from(ab), mime };
-  } catch (e) { return { error: `拉取异常 ${String(e instanceof Error ? e.message : e).slice(0, 80)}` }; }
+  } catch (e) {
+    if (e instanceof ResponseBodyLimitError) return { error: `超过 ${Math.round(maxBytes / 1048576)}MB 上限` };
+    return { error: `拉取异常 ${String(e instanceof Error ? e.message : e).slice(0, 80)}` };
+  }
 }
 /** 给上传素材取个带扩展名的文件名（企微 media/upload 需要）：优先 URL 末段，其次按 mime/类型兜底。 */
 function fileNameFor(url: string, mime: string, kind: 'image' | 'file'): string {

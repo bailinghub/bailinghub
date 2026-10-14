@@ -616,7 +616,9 @@ test('Agent direct: transport uncertainty and lost client receipts resume the or
           attempts++;
           if (failure === 'fetch_rejected') throw new TypeError('synthetic transport failure');
           if (failure === 'client_receipt_lost') return new Response('{"ok":true}', { status: 200 });
-          return { status: 200, text: async () => { throw new TypeError('synthetic response body loss'); } } as unknown as Response;
+          return new Response(new ReadableStream({
+            start(controller) { controller.error(new TypeError('synthetic response body loss')); },
+          }), { status: 200 });
         });
         const fx = fixture('https://business.invalid');
         if (kind === 'idempotent_write') {

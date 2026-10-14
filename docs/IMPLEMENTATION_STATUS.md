@@ -6,7 +6,7 @@
 
 ## 版本与阅读口径
 
-- 正式发行基线：[v0.9.2](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.2)，对应 [v0.9.2 源码 Tag](https://github.com/bailinghub/bailinghub/tree/v0.9.2)。下表已有机制及后文的关闭修复属于该版本；不代表默认安装后已启用所有可选功能。
+- 正式发行基线：[v0.9.2](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.2)，对应 [v0.9.2 源码 Tag](https://github.com/bailinghub/bailinghub/tree/v0.9.2)。下表已有机制及标注版本的修复属于该版本；末节的未发布候选另列，不代表默认安装后已启用所有可选功能。
 - 历史基线：[v0.9.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.0)，对应提交 [`dae5260ede6565080d21e94ae63d52f3a7d23556`](https://github.com/bailinghub/bailinghub/tree/dae5260ede6565080d21e94ae63d52f3a7d23556)。原 Tag 的异步关闭缺口在后文保留；源码、npm、镜像和具体部署应分别核验，不能从新版文档推导旧制品已修复。
 - 表中的测试链接是**公开测试代码及其检查范围**，不是本页重新执行所得的通过记录。单元测试、模拟供应商响应、MySQL 集成测试和完整 demo 验证分别说明各自覆盖的条件。未执行或跳过的测试不能写成已通过，也不能据此把已有机制写成“计划实现”。
 - 版本发行内容与升级前提以 [v0.9.2 说明](RELEASE_NOTES_v0.9.2.md) 和 [升级指南](UPGRADE_v0.9.2.md) 为准。适配客户端、应用迁移、模型凭据、存储和具体业务授权仍需各自配置、验证。
@@ -79,3 +79,7 @@ Core v0.9.1 增加了每个 `UsageRepository` 独立拥有的 [后台工作登�
 ## Core v0.9.2 的可靠性修复
 
 [安装凭据、结算维护与审批补续](CORE_RELIABILITY.md)记录新安装安全随机源失败关闭、无新流量的结算维护及审批决策的持久补续。配套新增 065/066 增量迁移。公开测试包括[安装器故障回归](../scripts/install-secrets.test.mjs)、[结算 MySQL 回归](../src/modules/usage/billing-reconciliation.mysql.test.ts)、[审批补续回归](../src/app/approval-continuations.test.ts)与[审批 MySQL/进程回归](../src/app/approval-continuations.mysql.test.ts)。这些是Core v0.9.2的实现与检查范围；不扩展历史v0.9.1制品的保证。
+
+## 尚未发布的收包与通知候选
+
+[HTTP 与通知候选](CORE_RELIABILITY.md#尚未发布的-http-与通知候选)汇聚有限收包、UTF-8 视图预算、正常关闭通知排空、原执行器通知死信防重复入队与 067 迁移的公开源码和合成回归入口；[运维指标](OPERATIONS.md)记录只读维护快照边界。这些实现尚未进入正式 Tag、npm 或镜像，不属于上方 v0.9.2 制品；正常关闭和仓储断点测试不证明全部通知意图的崩溃补投或生产送达。

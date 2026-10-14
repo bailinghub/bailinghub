@@ -1,5 +1,6 @@
 import type { FileRef } from '../../core/platform/content';
 import type { ResolvedCredential } from './perception';
+import { cancelResponseBody, readResponseBody, ResponseBodyLimitError } from '../../core/platform/http-body';
 
 export interface FileConfig {
   /** 文件处理凭证名；留空复用 brain 凭证 */
@@ -153,10 +154,12 @@ async function fetchFile(file: FileRef, index: number, maxBytes: number): Promis
   const name = fileName(file, index);
   try {
     const resp = await fetch(file.url, { signal: AbortSignal.timeout(FILE_TIMEOUT_MS) });
-    if (!resp.ok) return { ok: false, name, text: `文件下载失败（HTTP ${resp.status}）：${file.url}` };
+    if (!resp.ok) {
+      cancelResponseBody(resp);
+      return { ok: false, name, text: `文件下载失败（HTTP ${resp.status}）：${file.url}` };
+    }
     const mime = String(resp.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
-    const ab = await resp.arrayBuffer();
-    if (ab.byteLength > maxBytes) return { ok: false, name, mime, bytes: ab.byteLength, text: `文件过大（${ab.byteLength} bytes > ${maxBytes} bytes），未读取内容：${file.url}` };
+    const ab = await readResponseBody(resp, maxBytes);
     const extracted = await extractFileText(file, mime, ab);
     return {
       ok: extracted.ok,
@@ -168,6 +171,10 @@ async function fetchFile(file: FileRef, index: number, maxBytes: number): Promis
       text: extracted.text,
     };
   } catch (e) {
+    if (e instanceof ResponseBodyLimitError) {
+      return { ok: false, name, ...(e.source === 'stream' ? { bytes: e.observedBytes } : {}),
+        text: `文件过大（超过 ${maxBytes} bytes 上限），已停止下载：${file.url}` };
+    }
     const isTimeout = (e as Error)?.name === 'TimeoutError';
     return { ok: false, name, text: isTimeout ? `文件下载超时（${FILE_TIMEOUT_MS}ms）：${file.url}` : `文件读取失败：${String(e).slice(0, 200)}` };
   }
@@ -215,7 +222,7 @@ export async function buildFileContext(opts: {
     : FILE_MODE_DEFAULT;
   if (!opts.files.length || mode === 'off' || mode === 'inline') return '';
 
-  const maxBytes = Math.max(1024, Math.min(Number(cfg.max_bytes ?? FILE_MAX_BYTES_DEFAULT) || FILE_MAX_BYTES_DEFAULT, 100 * 1024 * 1024));
+  const maxBytes = Math.floor(Math.max(1024, Math.min(Number(cfg.max_bytes ?? FILE_MAX_BYTES_DEFAULT) || FILE_MAX_BYTES_DEFAULT, 100 * 1024 * 1024)));
   const maxChars = Math.max(1000, Math.min(Number(cfg.max_chars ?? FILE_MAX_CHARS_DEFAULT) || FILE_MAX_CHARS_DEFAULT, 200000));
   const lines: string[] = [];
   const perFileChars = Math.max(1000, Math.floor(maxChars / Math.max(1, opts.files.length)));

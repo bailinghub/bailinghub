@@ -7,6 +7,8 @@ import { JOB_STATUSES, TERMINAL_JOB_STATUSES, type AuditEntry, type Job } from '
 import type { JobOperationalMetricsSnapshot, RuntimeStateStore } from '../../core/state/state-contracts';
 import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../../core/contracts/approval-continuation';
 import { approvalRequeuePlan } from '../../core/state/approval-continuation';
+import { deliveryRequeuePlan } from '../../core/state/delivery-replay';
+import type { DeliveryRequeueInput, DeliveryRequeueOutcome } from '../../core/contracts/delivery-replay';
 
 /** jsonl 后端：本地烟测与最小私有部署。状态仍是中枢自己的，不进业务库。 */
 export class JsonlStore implements RuntimeStateStore {
@@ -62,7 +64,7 @@ export class JsonlStore implements RuntimeStateStore {
   private async writeJob(jobId: string, patch: Partial<Job>, expectedStatuses?: Array<Job['status']>): Promise<Job | null> {
     const cur = this.jobs.get(jobId);
     if (!cur || (expectedStatuses && !expectedStatuses.includes(cur.status))) return null;
-    const { approval_continuation_keys: _ignored, ...ordinaryPatch } = patch;
+    const { approval_continuation_keys: _ignored, delivery_replay_keys: _ignoredDelivery, ...ordinaryPatch } = patch;
     const next: Job = { ...cur, ...ordinaryPatch, updated_at: new Date().toISOString() };
     await this.persist(next);
     this.jobs.set(jobId, next);
@@ -92,6 +94,19 @@ export class JsonlStore implements RuntimeStateStore {
 
   async getJob(jobId: string): Promise<Job | null> {
     return this.jobs.get(jobId) ?? null;
+  }
+
+  async requeueDeliveryJobOnce(input: DeliveryRequeueInput): Promise<DeliveryRequeueOutcome> {
+    return await this.serialJobWrite(async () => {
+      const plan = deliveryRequeuePlan(this.jobs.get(input.job_id) ?? null, input);
+      if (plan.patch) {
+        if (!input.isOriginalDelivery || !await input.isOriginalDelivery()) return 'conflict';
+        const next = { ...this.jobs.get(input.job_id)!, ...plan.patch, updated_at: new Date().toISOString() };
+        await this.persist(next);
+        this.jobs.set(input.job_id, next);
+      }
+      return plan.outcome;
+    });
   }
 
   async claimNextJob(targets: string[], executorId: string, leaseMs: number): Promise<Job | null> {

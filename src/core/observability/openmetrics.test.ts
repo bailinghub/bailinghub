@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderOperationalMetrics } from './openmetrics';
+import type { RuntimeMaintenanceMetricsSnapshot } from './openmetrics';
 
 test('OpenMetrics renderer: emits fixed low-cardinality families and escapes build labels', () => {
   const text = renderOperationalMetrics({
@@ -54,4 +55,31 @@ test('OpenMetrics renderer: unavailable optional collectors are explicit and do 
   assert.match(text, /bailinghub_metrics_collector_success\{collector="control_plane"\} 0/);
   assert.doesNotMatch(text, /bailinghub_job_records/);
   assert.doesNotMatch(text, /bailinghub_approvals_pending/);
+});
+
+test('maintenance renderer allows only fixed sources, kinds, phases and page outcomes', () => {
+  const known = { kind: 'model-completion', inFlight: 2, completed: 4, failed: 1, oldestPendingAgeMs: 3000,
+    lastStartedAt: new Date(1000).toISOString(), lastCompletedAt: null, lastFailedAt: new Date(2000).toISOString() };
+  const snapshot: RuntimeMaintenanceMetricsSnapshot = {
+    capturedAtMs: 5000,
+    usage: { draining: true, drainTimeouts: 2, kinds: [known,
+      { ...known, kind: 'PRIVATE_ACCOUNT_PROMPT_TOKEN_ROUTE' }] },
+    usageReconciliation: { scanned: 50, settled: 1, deferred: 48, failed: 1, hasMore: true },
+    approvalReconciliation: { scanned: 3, completed: 1, pending: 1, failed: 1 },
+    usageRetry: { running: false, consecutiveFailures: 1, retryAfterMs: 2500 },
+  };
+  const text = renderOperationalMetrics({ version: 'test', commit: 'abc', paused: false, queue: { running: 0, waiting: 0 },
+    state: { available: false, success: false }, controlPlane: { available: false, success: false },
+    maintenance: { available: true, success: true, value: snapshot }, auditWriteFailuresTotal: 0, scrapeDurationSeconds: 0 });
+  assert.match(text, /bailinghub_background_work_in_flight\{source="usage",kind="model-completion"\} 2/);
+  assert.match(text, /bailinghub_background_work_oldest_pending_age_seconds\{source="usage",kind="model-completion"\} 3/);
+  assert.match(text, /bailinghub_background_work_finished_total\{source="usage",kind="model-completion",outcome="failed"\} 1/);
+  assert.match(text, /bailinghub_background_work_last_run_age_seconds\{source="usage",kind="model-completion",phase="started"\} 4/);
+  assert.match(text, /bailinghub_background_work_last_run_timestamp_seconds\{source="usage",kind="model-completion",phase="completed"\} 0/);
+  assert.doesNotMatch(text, /bailinghub_background_work_last_run_age_seconds[^\n]*phase="completed"/);
+  assert.match(text, /bailinghub_background_drain_timeouts_total\{source="usage"\} 2/);
+  assert.match(text, /bailinghub_maintenance_last_page_records\{kind="usage-reconciliation",outcome="failed"\} 1/);
+  assert.match(text, /bailinghub_maintenance_last_page_records\{kind="approval-continuation",outcome="pending"\} 1/);
+  assert.match(text, /bailinghub_usage_maintenance_retry_after_seconds 2\.5/);
+  assert.doesNotMatch(text, /PRIVATE_ACCOUNT|PROMPT|TOKEN|ROUTE/);
 });

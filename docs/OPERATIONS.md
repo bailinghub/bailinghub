@@ -121,11 +121,19 @@ scrape_configs:
 | `bailinghub_approvals_pending` | 待决策的工具审批数 |
 | `bailinghub_executors` | 按 online / offline 统计的执行器数 |
 | `bailinghub_audit_write_failures_total` | 当前进程累计审计写入失败数 |
+| `bailinghub_background_work_in_flight` / `bailinghub_background_work_oldest_pending_age_seconds` | 按固定 source / kind 统计已接纳的后台工作及最老在途年龄 |
+| `bailinghub_background_work_finished_total` | 当前 owner 的 continuation 完成/失败数，按固定 outcome 区分 |
+| `bailinghub_background_work_last_run_timestamp_seconds` / `bailinghub_background_work_last_run_age_seconds` | 最近 started / completed / failed 时间及距今秒数；从未观察到时 timestamp=0，age 不输出 |
+| `bailinghub_background_draining` / `bailinghub_background_drain_timeouts_total` | Usage/通知 tracker 的关闭排空状态及耗尽预算的 drain 调用次数 |
+| `bailinghub_maintenance_last_page_records` / `bailinghub_maintenance_last_page_has_more` | 当前/最近一页 usage、审批续执行处理进度；usage 达到固定扫描页大小时 has_more=1 |
+| `bailinghub_usage_maintenance_consecutive_failures` / `bailinghub_usage_maintenance_retry_after_seconds` | Usage 核对的有界连续失败数和退避剩余秒数 |
 | `bailinghub_metrics_collector_available` | 状态库/控制面采集器是否实现 |
 | `bailinghub_metrics_collector_success` | 对应采集器在本次抓取中是否成功 |
 | `bailinghub_metrics_scrape_duration_seconds` | 本次聚合和渲染耗时 |
 
 指标标签是固定、低基数集合，不包含 `job_id`、租户、主体、路由参数或业务载荷。单个可选采集器超时或失败时，端点仍返回其余指标，并把对应 `bailinghub_metrics_collector_success` 置为 0；日志只记录采集器类别和失败类型，不记录异常正文或业务数据。JSONL 状态后端可提供任务指标，但没有 MySQL 控制面聚合时，`control_plane` 会标记为不可用。
+
+`maintenance` 采集器只读当前 owner 内存，不查询明细、不触发核对或模型请求。固定 source 为 `usage`、`notification`、`approval`；kind 只包含现有模型完成、结算、响应清理、usage 核对、价格刷新、回调、通知送达、审批通知、告警、送达 DLQ 和审批续执行。工作完成数统计 Promise/continuation 的终态，不等于接收方确认送达次数；一轮审批核对可完成但保留失败记录，应同时看 last_page 的 `failed`。进程/owner 重建会重置这些计数。last_page 不是数据库里 pending/unknown 的总数或最老年龄，`has_more=1` 也不是精确积压量；不可用的可选模块不输出伪造零数据。
 
 建议至少告警：
 
@@ -133,6 +141,7 @@ scrape_configs:
 - `bailinghub_jobs_expired_leases > 0`。
 - `bailinghub_queue_oldest_queued_age_seconds` 持续超过本业务的最大等待目标。
 - `bailinghub_audit_write_failures_total` 增长。
+- `bailinghub_background_work_finished_total{outcome="failed"}` 或 drain timeout 增长，后台在途年龄持续超出关闭/任务目标；使用最近运行 age 和 last_page 失败数判断维护是否持续推进。
 - 预期在线的执行器进入 `offline`，或近期错误/拒绝终态占比异常升高。
 
 指标是外部监控输入，不替代 `/health/ready`、业务系统最终授权、审计账本或控制台诊断。
@@ -208,6 +217,9 @@ scrape_configs:
 - 审批等待：审批意图在数据库中持久化，不依赖实例内存。
 - 外部工具或模型失败：任务记录错误与 trace，是否重试由路由和错误类型决定。
 - 审计写入失败：安全关键工具调用按 fail-closed 处理；非关键运行事件不阻塞业务，但应进入运维告警与指标。
+- 正常关闭：Kernel 按同一关闭预算等待已接受的回调、送达派生、审批通知、告警和 DLQ 插入，再释放数据库/渠道资源；排空超时保留资源，宿主可在工作完成后重试 `close()`。后台失败日志只报告固定工作类别。
+- 送达死信重投：内置渠道继续通过渠道凭证发送；自定义 `X-notify` 死信只重排原失败通知子任务，回复 `queued` 表示已进入执行器队列。永久 DLQ 重投标记与原子入队一起保存，重复请求或 resolve 回包丢失不会重复入队，业务父任务不会重跑。旧死信按原 Job 验证承接器，绑定不符返回 409，旧扩展缺少重投端口返回 503；人工可检查原通知子任务。
+- 上述排空不提供 SIGKILL 后的全量通知 outbox：已创建的执行器任务仍由持久队列恢复；直接 webhook 和父终态到通知子任务创建之间的持久补投仍是独立边界。接收方需要按原事件 ID 去重，部分或未知送达不能盲目重发。
 
 ## 8. 安全基线
 

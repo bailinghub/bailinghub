@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TOOL_DEFINITION_SCHEMA_VERSION, type ToolDefinition } from './tool-definition';
-import { argsHash, buildToolRuntime, toolCallIdempotencyKey, type ToolExecutionJournalEntry, type ToolRuntimeDeps } from './tools';
+import { argsHash, AUDIT_MAX_BYTES, buildToolRuntime, toolCallIdempotencyKey, type ToolExecutionJournalEntry, type ToolRuntimeDeps } from './tools';
 
 function mkTool(over: Partial<ToolDefinition>): ToolDefinition {
   return {
@@ -21,6 +21,7 @@ function mkRuntime(
   tool: ToolDefinition,
   audit: ToolRuntimeDeps['audit'] = async () => { /* noop */ },
   ledger = new Map<string, ToolExecutionJournalEntry>(),
+  overrides: Partial<ToolRuntimeDeps> = {},
 ) {
   const deps: ToolRuntimeDeps = {
     provider: { name: 'p', base_url: 'http://x.invalid', secret: 's', timeout_ms: 5000, rate_limit_per_min: 0, log_payload: false } as any,
@@ -60,7 +61,7 @@ function mkRuntime(
       },
     },
   };
-  return buildToolRuntime(deps);
+  return buildToolRuntime({ ...deps, ...overrides });
 }
 
 function mkRuntimeWithApprovals(tool: ToolDefinition) {
@@ -115,7 +116,7 @@ function mkRuntimeWithApprovals(tool: ToolDefinition) {
 async function withFetchCounter(fn: (count: () => number) => Promise<void>): Promise<void> {
   let n = 0;
   const orig = globalThis.fetch;
-  globalThis.fetch = (async () => { n++; return { status: 200, text: async () => '{"ok":true}' } as unknown as Response; }) as typeof fetch;
+  globalThis.fetch = (async () => { n++; return new Response('{"ok":true}', { status: 200 }); }) as typeof fetch;
   try { await fn(() => n); } finally { globalThis.fetch = orig; }
 }
 
@@ -222,6 +223,121 @@ test('副作用工具：下游超时后冻结执行，恢复或重跑不得再�
   }
 });
 
+test('工具响应传输：200/302/500 正文超限都取消并冻结，恢复不得重投写入', async (t) => {
+  for (const status of [200, 302, 500]) {
+    for (const declared of [false, true]) {
+      await t.test(`status=${status}, declared=${declared}`, async (t) => {
+        let calls = 0;
+        let pulls = 0;
+        let cancels = 0;
+        const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+        t.mock.method(globalThis, 'fetch', async () => {
+          calls++;
+          return new Response(new ReadableStream<Uint8Array>({
+            pull(controller) {
+              pulls++;
+              controller.enqueue(new Uint8Array(pulls === 1 ? 32 : 1));
+            },
+            cancel() { cancels++; },
+          }, { highWaterMark: 0 }), { status, headers: declared ? { 'content-length': '33' } : {} });
+        });
+        const ledger = new Map<string, ToolExecutionJournalEntry>();
+        const runtime = mkRuntime(mkTool({}), async (event, detail) => { audits.push({ event, detail }); }, ledger, { maxResponseBodyBytes: 32 });
+        const first = await runtime.invoke('create_thing', { x: 1 });
+        assert.equal(first.ok, false);
+        assert.equal(first.status, 0, 'headers alone cannot confirm a write after body loss');
+        assert.equal(first.governance_state, 'reconciliation_required');
+        assert.equal(first.auto_retry_allowed, false);
+        assert.equal(runtime.executionUncertainty()?.state, 'uncertain');
+        assert.equal(cancels, 1);
+        assert.equal(pulls, declared ? 0 : 2);
+        assert.equal(audits.some((audit) => audit.event === 'tool_result'), false);
+        const recovered = mkRuntime(mkTool({}), undefined, ledger, { maxResponseBodyBytes: 32 });
+        assert.equal((await recovered.invoke('create_thing', { x: 1 })).ok, false);
+        assert.equal(calls, 1);
+      });
+    }
+  }
+});
+
+test('工具默认传输预算：超过固定5 MiB的声明也不能确认小正文写入', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response('synthetic', {
+    status: 200, headers: { 'content-length': String(5 * 1024 * 1024 + 1) },
+  }));
+  const runtime = mkRuntime(mkTool({}));
+  const result = await runtime.invoke('create_thing', {});
+  assert.equal(result.ok, false);
+  assert.equal(result.governance_state, 'reconciliation_required');
+  assert.equal(result.auto_retry_allowed, false);
+  assert.equal(runtime.executionUncertainty()?.state, 'uncertain');
+});
+
+test('工具响应传输：body timeout 保留原信号和 unknown 结果，不记录半截成功', async (t) => {
+  let calls = 0;
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  t.mock.method(globalThis, 'fetch', async (_url: unknown, init: RequestInit) => {
+    calls++;
+    return new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"ok":'));
+        init.signal!.addEventListener('abort', () => controller.error(init.signal!.reason), { once: true });
+      },
+    }), { status: 200 });
+  });
+  const runtime = mkRuntime(mkTool({ timeoutMs: 20 }), async (event, detail) => { audits.push({ event, detail }); });
+  const watchdog = setTimeout(() => undefined, 1000);
+  try {
+    const result = await runtime.invoke('create_thing', { x: 1 });
+    assert.equal(result.ok, false);
+    assert.equal(result.governance_state, 'reconciliation_required');
+    assert.match(runtime.executionUncertainty()?.reason ?? '', /超时/);
+    assert.equal(audits.some((audit) => audit.event === 'tool_result'), false);
+    await runtime.invoke('create_thing', { x: 1 });
+    assert.equal(calls, 1);
+  } finally { clearTimeout(watchdog); }
+});
+
+test('工具响应视图：中文的模型和审计 UTF-8 字节预算真实有界', async (t) => {
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  const value = '汉'.repeat(AUDIT_MAX_BYTES);
+  t.mock.method(globalThis, 'fetch', async () => new Response(value));
+  const def = mkTool({ inputSchema: { type: 'object', properties: { x: { type: 'string' } } } });
+  const runtime = mkRuntime(def, async (event, detail) => { audits.push({ event, detail }); }, undefined,
+    { provider: { name: 'p', base_url: 'https://synthetic.invalid', secret: 'synthetic', timeout_ms: 5000, rate_limit_per_min: 0, log_payload: true } as any });
+  const result = await runtime.invoke('create_thing', { x: value });
+  assert.equal(result.ok, true);
+  assert.equal(Buffer.byteLength(result.text), 8190);
+  assert.equal(result.text.includes('\ufffd'), false);
+  const call = audits.find((entry) => entry.event === 'tool_call')!.detail;
+  assert.equal(call.args_bytes, Buffer.byteLength(JSON.stringify({ x: value })));
+  assert.ok(Buffer.byteLength(String(call.args)) <= AUDIT_MAX_BYTES);
+  assert.equal(call.args_truncated, true);
+  const response = audits.find((entry) => entry.event === 'tool_result')!.detail;
+  assert.equal(response.resp_bytes, Buffer.byteLength(value));
+  assert.ok(Buffer.byteLength(String(response.resp)) <= AUDIT_MAX_BYTES);
+  assert.equal(response.resp_truncated, true);
+});
+
+test('工具响应视图：敏感工具仍脱敏，响应字节数保持实际输入计数', async (t) => {
+  const audits: Array<{ event: string; detail: Record<string, unknown> }> = [];
+  t.mock.method(globalThis, 'fetch', async () => new Response(new Uint8Array([255])));
+  const runtime = mkRuntime(mkTool({ sensitive: true }), async (event, detail) => { audits.push({ event, detail }); }, undefined,
+    { provider: { name: 'p', base_url: 'https://synthetic.invalid', secret: 'synthetic', timeout_ms: 5000, rate_limit_per_min: 0, log_payload: true } as any });
+  await runtime.invoke('create_thing', { x: 42 });
+  const response = audits.find((entry) => entry.event === 'tool_result')!.detail;
+  assert.equal(response.resp_bytes, 1, 'replacement decoding must not alter consumed byte count');
+  assert.equal(response.resp, '<1 bytes>');
+  assert.equal(audits.find((entry) => entry.event === 'tool_call')!.detail.args, '["x"]');
+});
+
+test('工具响应视图：空响应 fallback 也遵守极小字节预算', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 204 }));
+  const runtime = mkRuntime(mkTool({}), undefined, undefined, { truncateBytes: 1 });
+  const result = await runtime.invoke('create_thing', {});
+  assert.equal(result.ok, true);
+  assert.ok(Buffer.byteLength(result.text) <= 1);
+});
+
 test('副作用工具：崩溃遗留 dispatching 占位时，新运行时 fail-closed 且不外发', async () => {
   const callArgs = { x: 10 };
   const hash = argsHash(callArgs);
@@ -268,7 +384,7 @@ test('副作用工具：发送稳定的下游幂等键，且该键与任务、�
   let seen = '';
   globalThis.fetch = (async (_url, init) => {
     seen = String((init?.headers as Record<string, string>)['x-bailing-idempotency-key'] ?? '');
-    return { status: 200, text: async () => '{"ok":true}' } as unknown as Response;
+    return new Response('{"ok":true}', { status: 200 });
   }) as typeof fetch;
   try {
     await rt.invoke('create_thing', { x: 9 });
@@ -347,7 +463,7 @@ test('工具调用：path/header/query/body 参数按 ToolDefinition.paramIn 组
     seenUrl = String(url);
     seenHeaders = init?.headers;
     seenBody = init?.body;
-    return { status: 200, text: async () => '{"ok":true}' } as unknown as Response;
+    return new Response('{"ok":true}', { status: 200 });
   }) as typeof fetch;
   try {
     await rt.invoke('update_staff', { store_id: 's 1', staff_id: 'u/2', tenant: 't1', dry_run: true, name: 'Alice' });

@@ -9,6 +9,7 @@ import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { AppConfig } from '../core/config/config';
 import { isAgentToolInvocationJob } from './agent-tool-job';
+import { notificationBackgroundWorkFor } from '../core/runtime/notification-background-work';
 
 /** 重跑时的"已批准调用清单"提示：审批车道 B 的另一半。 */
 export async function approvedNoteForJobFor(config: ConfigStoreContract | null, jobId: string): Promise<string | undefined> {
@@ -67,7 +68,7 @@ export function approvalDepsForStores(
       });
     },
     async notify(id, snap) {
-      await notifyApprovalFor(config, state, job, provider, toolsCfg, sourceCfg, id, snap, appConfig, nowFn, sleepFn, targetRegistry);
+      await notificationBackgroundWorkFor(state).track('approval-notification', () => notifyApprovalFor(config, state, job, provider, toolsCfg, sourceCfg, id, snap, appConfig, nowFn, sleepFn, targetRegistry));
     },
   };
 }

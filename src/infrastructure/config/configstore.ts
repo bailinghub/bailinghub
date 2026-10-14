@@ -63,7 +63,8 @@ export type ToolEmbeddingRepositoryContract = ToolEmbeddingRepository;
 export type KnowledgeRepositoryContract = Pick<MysqlKnowledgeRepository, keyof MysqlKnowledgeRepository>;
 export type KbDatasourceRepositoryContract = Pick<MysqlKbDatasourceRepository, keyof MysqlKbDatasourceRepository>;
 export type { InstanceBrandingRepositoryContract };
-export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, keyof DeliveryDlqLedger>;
+export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, Exclude<keyof DeliveryDlqLedger, 'ensureExecutorReplay'>>
+  & Partial<Pick<DeliveryDlqLedger, 'ensureExecutorReplay'>>;
 export type ObservabilityLedgerContract =
   Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>
   & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>>;
