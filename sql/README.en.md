@@ -62,3 +62,9 @@ For incompatible changes, use a transition window and document the upgrade path.
 ## Naming
 
 Use `NNN_short_description.sql` with three-digit increasing numbers. Gaps are allowed. New files should use the current maximum number plus one.
+
+## Core 0.9.3: migration 067 for notification DLQ replay
+
+`067_delivery_dlq_replay.sql` adds DLQ `delivery_kind`, `notification_job_id`, `executor_replay_key` and Job `delivery_replay_keys` for original notification binding and separate admission markers. Legacy rows remain without bulk-guessing kinds. Replay verifies the original notification child rather than rerunning its business parent.
+
+Explicitly apply 067 before all new Core MySQL DLQ reads/writes, including native-channel record/get, and match state/config adapters. Startup does not migrate. Rollback retains queues, markers and history. Older artifact schema manifests do not automatically accept 067; verify in an isolated copy without clearing markers to replay or deleting migration rows to bypass checks. See the [0.9.3 upgrade guide](../docs/UPGRADE_v0.9.3.en.md).

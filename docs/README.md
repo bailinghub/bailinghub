@@ -9,9 +9,11 @@
 | 文档 | 用途 |
 |---|---|
 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) · [English](IMPLEMENTATION_STATUS.en.md) | Core 能力归属、正式发行与主分支状态、公开证据和未覆盖范围。 |
+| [RELEASE_NOTES_v0.9.3.md](RELEASE_NOTES_v0.9.3.md) · [English](RELEASE_NOTES_v0.9.3.en.md) | v0.9.3：有限收包、通知关闭与原通知死信重投，含维护指标。 |
+| [UPGRADE_v0.9.3.md](UPGRADE_v0.9.3.md) · [English](UPGRADE_v0.9.3.en.md) | 067 显式迁移、配套 DLQ/state 仓储、回退 manifest 与标记保留。 |
 | [RELEASE_NOTES_v0.9.2.md](RELEASE_NOTES_v0.9.2.md) · [English](RELEASE_NOTES_v0.9.2.en.md) | v0.9.2：安全安装、自动结算与原审批补续，含部署诊断与进程回归。 |
 | [UPGRADE_v0.9.2.md](UPGRADE_v0.9.2.md) · [English](UPGRADE_v0.9.2.en.md) | 065/066显式迁移、配套仓储、原记录核对及回退限制。 |
-| [CORE_RELIABILITY.md](CORE_RELIABILITY.md) · [English](CORE_RELIABILITY.en.md) | 安装凭据、公平结算维护、审批补续与合成验收边界。 |
+| [CORE_RELIABILITY.md](CORE_RELIABILITY.md) · [English](CORE_RELIABILITY.en.md) | 安装凭据、结算/审批补续、有限收包、通知关闭/重投与合成验收边界。 |
 | [RELEASE_NOTES_v0.9.1.md](RELEASE_NOTES_v0.9.1.md) · [English](RELEASE_NOTES_v0.9.1.en.md) | v0.9.1：异步 usage 关闭修复、公开能力索引与通用安全治理。 |
 | [UPGRADE_v0.9.1.md](UPGRADE_v0.9.1.md) · [English](UPGRADE_v0.9.1.en.md) | 0.9.0 补丁升级、原请求核对、制品 manifest 与关闭验收；无新增 SQL/API。 |
 | [RELEASE_NOTES_v0.9.0.md](RELEASE_NOTES_v0.9.0.md) · [English](RELEASE_NOTES_v0.9.0.en.md) | v0.9.0：可选模型计费、统一套餐额度与文生图工具。 |

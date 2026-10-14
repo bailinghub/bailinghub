@@ -80,3 +80,9 @@ Host 需把官方 SQL 一起打包，并通过现有迁移入口显式执行；�
 ## 命名
 
 `NNN_简短描述.sql`，三位编号递增。编号只用于排序，**允许缺号**；新文件取当前最大编号 +1 即可。
+
+## Core 0.9.3：067 通知死信重投
+
+`067_delivery_dlq_replay.sql` 增加 DLQ 的 `delivery_kind`、`notification_job_id`、`executor_replay_key` 及 Job 的 `delivery_replay_keys`，保存原通知绑定和独立入队标记。旧行保留，不批量猜测类型；重投时核对原通知子任务，不能重跑业务父任务。
+
+启动新 Core 的全部 MySQL DLQ 读写前显式应用 067，包含原生渠道 record/get，并配套 state/config 仓储。运行时不自动迁移。回退保留队列、标记和账本；旧制品 schema manifest 不保证接受 067，须在隔离副本核验，不能删标记重投或删迁移记录绕过检查。见[0.9.3 升级指南](../docs/UPGRADE_v0.9.3.md)。

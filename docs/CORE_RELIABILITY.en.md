@@ -1,8 +1,8 @@
-# Installation secrets, settlement maintenance and approval continuation
+# Core reliability: secrets, continuation, bounded bodies and notifications
 
 [简体中文](CORE_RELIABILITY.md)
 
-The installation, settlement and approval sections describe fixes and checks in Core 0.9.2. The historical v0.9.1 artifacts do not contain these changes. Verify each deployment's source identity and migration ledger separately. The final section describes an unreleased HTTP/notification candidate and does not extend the formal v0.9.2 guarantees.
+Installation, settlement and approval fixes are available from Core 0.9.2; the final HTTP/notification section is available from Core 0.9.3. Historical artifacts do not contain later fixes. Verify each deployment's source, artifact and migration ledger separately; updated documentation does not establish an upgrade.
 
 ## Installation secrets
 
@@ -58,7 +58,7 @@ Fixtures require a dedicated MySQL on local `127.0.0.1:16307`, an empty root pas
 
 See the [capability and public evidence index](IMPLEMENTATION_STATUS.en.md) for implementation and test links.
 
-## Unreleased HTTP and notification candidate
+## Core v0.9.3 HTTP and notification fixes
 
 Tool HTTP bodies have a separate default transport budget of 5 MiB. Content-Length can reject early, while streaming checks count actual fetch-decoded bytes even when the length is absent or understated. Excess bodies are cancelled and partial contents discarded. HTTP 200 headers cannot establish a completed write: body loss/overflow retains the original unknown-outcome and idempotency path without automatic redispatch. Model and audit views have separate UTF-8 byte budgets. Remote files retain configured max_bytes (20 MiB by default); channel attachments have a 20 MiB download limit. These bound downloads, not decompression or parser resources. See [bounded body tests](../src/core/platform/http-body.test.ts), [tool recovery tests](../src/core/contracts/tools-idempotency.test.ts) and [file tests](../src/adapters/llm/file.test.ts).
 
@@ -66,7 +66,7 @@ Each Kernel tracks actual callback, delivery, approval webhook, alert and DLQ co
 
 [Migration 067](../sql/067_delivery_dlq_replay.sql) adds DLQ kind, original notification child and replay identity, plus an independent state-store queue marker. Native channels retain their sender. Executor DLQs requeue only the verified original notification child, retaining recipient, full input and request/job identities; they never rerun the business parent. queued acknowledges admission, not receipt. Concurrent calls and lost queue/resolve acknowledgements cannot re-admit the same DLQ identity. A later failed notification produces a new DLQ that an operator may separately handle. JSONL remains single-writer.
 
-Apply 067 before these MySQL DLQ paths. Custom stores need the optional ensureExecutorReplay and requeueDeliveryJobOnce methods; without them, executor replay is explicitly unavailable rather than sent through the wrong channel. Before rollback, stop related writers and retain migration, queue and marker evidence. Deleting markers and resubmitting is not recovery. Self-hosted and Host upgrades/rollbacks remain separate operational actions.
+Apply 067 before new Core MySQL DLQ reads/writes, including native-channel record/get. Custom stores need the optional ensureExecutorReplay and requeueDeliveryJobOnce methods; without them, executor replay is explicitly unavailable rather than sent through the wrong channel. Before rollback, stop related writers and retain migration, queue and marker evidence. Deleting markers and resubmitting is not recovery. Older artifact schema manifests may reject 067 history; verify rollback compatibility in an isolated copy without deleting migration rows to bypass checks. Deployment and independent Host upgrades/rollbacks remain separate operational actions.
 
 Default tests cover [original notification replay](../src/app/delivery-dlq-replay.test.ts). The MySQL fixture uses dedicated localhost MySQL and random schemas to check old-data upgrade, concurrent admission, injected acknowledgement exceptions after real COMMIT, resolve failure and store reopening, invalid business bindings and long Unicode content. It tests storage interruption boundaries, not real process killing or production receipt:
 
@@ -76,4 +76,4 @@ BAILING_NOTIFICATION_BASELINE_ROOT=/absolute/clean/core-v0.9.2 \
 node --import tsx --test src/app/delivery-dlq-replay.mysql.test.ts
 ```
 
-[Fixed-label metrics](OPERATIONS.en.md) expose process-local pending work, failures, drain timeouts and the latest settlement/approval page. Scrapes read memory without starting model requests. Candidate source and test links do not establish published artifacts or deployed environments.
+[Fixed-label metrics](OPERATIONS.en.md) expose process-local pending work, failures, drain timeouts and the latest settlement/approval page. Scrapes read memory without starting model requests. Test links do not establish executed passing runs or deployed environments. Verify formal artifact identity and deployment acceptance separately.

@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.2.en.md).
+Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.3.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,17 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.9.3 - Bounded bodies and reliable notification shutdown
+
+Version date: 2026-10-14. A patch from Core 0.9.2; MCP / Agent Client SDK 0.7.0 and DSH 0.7.0 remain unchanged. See [release notes](RELEASE_NOTES_v0.9.3.en.md) and the [upgrade guide](UPGRADE_v0.9.3.en.md).
+
+- Fix full buffering before body/attachment checks: tool bodies default to 5 MiB, files retain configured limits and channel attachments use 20 MiB, counting actual fetch-decoded bytes while reading. Model/audit views use UTF-8 byte budgets. Overflow discards partial bodies; dispatched writes retain original identity, idempotency and unknown outcome without redispatch.
+- Fix graceful close omitting notification work: per-Kernel tracking covers actual callbacks, delivery creation, approval webhooks, alerts and DLQ writes, sharing the close budget with dynamic children and started maintenance producers. Timeouts preserve resources for same-instance retry. No durable outbox for all notification intents is added.
+- Fix executor DLQs selecting native senders: verify original bindings and requeue only the original notification child, retaining full input and request/job identity. Atomic admission/markers deduplicate concurrent calls, lost acknowledgements and failed resolve/store reopening for the same DLQ. queued does not mean receipt; the business parent is never rerun.
+- Add read-only, fixed-label background snapshots for in-flight/failures/recent runs, drain timeouts, latest settlement/approval pages and backoff. Read no business details, start no model request and do not claim persisted backlog counts.
+- Add 067 DLQ kind/original-child/replay identity and Job admission markers. Explicitly migrate before new Core MySQL DLQ reads/writes and match adapters. Rollback retains queues/markers/history and separately verifies old schema-manifest compatibility in isolation. Dependency versions and the exact Mammoth exception expiry are unchanged.
+- Add public synthetic and dedicated MySQL regressions for bodies, Unicode, close, old-data upgrade, concurrency and exceptions after real COMMIT. Notification tests cover storage interruption, not full SIGKILL recovery or production receipt. ACC, independent Hosts, clients and separate adapters do not release with this Core patch.
 
 ## v0.9.2 - Secure installation and persisted continuation
 
