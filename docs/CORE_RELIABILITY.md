@@ -1,8 +1,8 @@
-# 安装凭据、结算维护与审批补续
+# Core 可靠性：凭据、补续、收包与通知
 
 [English](CORE_RELIABILITY.en.md)
 
-前面的安装凭据、结算维护和审批补续描述 Core 0.9.2 的修复及检查范围。历史 v0.9.1 Tag、npm 包和安装镜像不包含这些修改；具体部署需核对其源码与迁移账本。末节单独描述尚未发布的 HTTP/通知候选，不能把它扩展为正式 v0.9.2 的保证。
+安装凭据、结算维护和审批补续从 Core 0.9.2 提供，末节的 HTTP/通知修复从 Core 0.9.3 提供。历史制品不包含后续版本的修改；具体部署需核对其源码、制品与迁移账本，不能从新版文档推导已经升级。
 
 ## 安装凭据
 
@@ -58,7 +58,7 @@ node --import tsx --test --test-concurrency=4 \
 
 公开实现和测试入口见[能力与证据索引](IMPLEMENTATION_STATUS.md)。
 
-## 尚未发布的 HTTP 与通知候选
+## Core v0.9.3 的 HTTP 与通知修复
 
 工具 HTTP 正文有独立的 5 MiB 默认传输预算；收到 Content-Length 后可以提前拒绝，仍逐块按 fetch 解码后的实际字节检查，缺少或低报长度不能绕过。超限停止下载并丢弃部分正文。HTTP 200 响应头不足以确认写入完成：正文超限/丢失沿原结果未知路径处理，保留原调用及幂等标识，不自动重投。模型视图和审计载荷分别按 UTF-8 字节截断。远程文件读取沿用配置的 max_bytes（默认 20 MiB），渠道附件下载为 20 MiB，均在收包时检查；这些是下载预算，不是解压/解析器资源保证。见[有限收包测试](../src/core/platform/http-body.test.ts)、[工具恢复测试](../src/core/contracts/tools-idempotency.test.ts)和[文件测试](../src/adapters/llm/file.test.ts)。
 
@@ -66,7 +66,7 @@ node --import tsx --test --test-concurrency=4 \
 
 [067 迁移](../sql/067_delivery_dlq_replay.sql)新增 DLQ 类型、原通知子任务及重投标识，并新增状态仓独立入队标记。原生渠道仍调用原生送达；执行器死信只重排已核对的原通知子任务，保留原收件人、完整输入和 request/job 标识，不重跑业务父任务。返回 queued 表示入队，不表示收件方已收到。并发或入队成功但确认/resolve 写入失败时，同一死信标识不再二次入队；重新失败产生的新死信可由运营者另行处理。JSONL 仍限单 writer。
 
-应用 067 后才能使用这些 MySQL DLQ 入口；自定义仓储需实现可选的 ensureExecutorReplay 与 requeueDeliveryJobOnce，否则执行器重投明确 unavailable，不降级到错误渠道。回退前停止相关写入并保留迁移账本、队列和标记；删除标记再重投不是恢复。自用与 Host 的升级/回滚需各自协调，不由本候选自动部署。
+启动新 Core 的 MySQL DLQ 读写前必须应用 067，包括原生渠道的 record/get；自定义仓储需实现可选的 ensureExecutorReplay 与 requeueDeliveryJobOnce，否则执行器重投明确 unavailable，不降级到错误渠道。回退前停止相关写入并保留迁移账本、队列和标记；删除标记再重投不是恢复。旧制品的 schema manifest 未必接受 067 账本，代码回退须先在隔离副本核验兼容，不能删除迁移记录绕过检查。具体部署与独立 Host 的升级/回滚需各自协调，不由 Core 发行自动部署。
 
 默认测试覆盖[原通知重投](../src/app/delivery-dlq-replay.test.ts)。MySQL 专项使用专用本机 MySQL 和随机测试库，检查旧数据升级、并发入队、真实提交后的确认异常注入、resolve 失败后仓储重开、错误业务绑定及长中文内容；这是仓储断点测试，不是实际杀进程或生产送达验收：
 
@@ -76,4 +76,4 @@ BAILING_NOTIFICATION_BASELINE_ROOT=/absolute/clean/core-v0.9.2 \
 node --import tsx --test src/app/delivery-dlq-replay.mysql.test.ts
 ```
 
-后台维护可通过[固定标签指标](OPERATIONS.md)观察在途、失败、关闭超时、最近一页结算/审批进度；抓取只读内存，不触发模型请求。候选源码及测试入口不等于已发布制品或已部署环境。
+后台维护可通过[固定标签指标](OPERATIONS.md)观察在途、失败、关闭超时、最近一页结算/审批进度；抓取只读内存，不触发模型请求。测试入口不等于实际通过记录或已部署环境；正式制品身份和部署验收分别核验。
