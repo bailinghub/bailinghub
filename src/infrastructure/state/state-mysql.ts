@@ -9,6 +9,8 @@ import { mysqlJobUpdatePlan } from './state-mysql-update-plan';
 import { MysqlPoolOwner, type MysqlPoolResource } from '../mysql/pool-owner';
 import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../../core/contracts/approval-continuation';
 import { approvalRequeuePlan } from '../../core/state/approval-continuation';
+import { deliveryRequeuePlan } from '../../core/state/delivery-replay';
+import { isOriginalExecutorDelivery, type DeliveryRequeueInput, type DeliveryRequeueOutcome } from '../../core/contracts/delivery-replay';
 
 /** mysql 后端：生产状态库。对应 sql/001_init_state.sql 的 bz_ 表。 */
 export class MysqlStore implements RuntimeStateStore {
@@ -80,6 +82,31 @@ export class MysqlStore implements RuntimeStateStore {
   async updateJobIfStatus(jobId: string, expectedStatuses: Array<Job['status']>, patch: Partial<Job>): Promise<Job | null> {
     if (!expectedStatuses.length) return null;
     return this.writeJob(jobId, patch, expectedStatuses);
+  }
+
+  async requeueDeliveryJobOnce(input: DeliveryRequeueInput): Promise<DeliveryRequeueOutcome> {
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [rows] = await conn.query('SELECT * FROM bz_jobs WHERE job_id=? FOR UPDATE', [input.job_id]);
+      const row = (rows as any[])[0];
+      const job = row ? rowToJob(row) : null;
+      const plan = deliveryRequeuePlan(job, input);
+      if (plan.patch) {
+        const [dlqs] = await conn.query('SELECT * FROM bz_delivery_dlq WHERE id=? FOR UPDATE', [input.dlq_id]);
+        const dlq = (dlqs as any[])[0];
+        if (!dlq || dlq.resolved || dlq.executor_replay_key !== input.replay_key || !isOriginalExecutorDelivery(dlq, job)) {
+          await conn.commit(); return 'conflict';
+        }
+        const update = mysqlJobUpdatePlan(plan.patch, new Date().toISOString());
+        await conn.query(`UPDATE bz_jobs SET ${update.assignments.join(',')},delivery_replay_keys=? WHERE job_id=?`,
+          [...update.values, json(plan.patch.delivery_replay_keys), input.job_id]);
+      }
+      await conn.commit();
+      return plan.outcome;
+    } catch (error) {
+      await conn.rollback().catch(() => undefined); throw error;
+    } finally { conn.release(); }
   }
 
   private async writeJob(jobId: string, patch: Partial<Job>, expectedStatuses?: Array<Job['status']>): Promise<Job | null> {

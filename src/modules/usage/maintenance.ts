@@ -6,6 +6,14 @@ const RETRY_MAX_MS = 5 * 60_000;
 interface MaintenanceState { flight: Promise<void> | null; retryAt: number; failures: number }
 const owners = new WeakMap<UsageRepository, MaintenanceState>();
 
+export function usageMaintenanceSnapshotFor(repository: UsageRepository, clock = performance.now()): {
+  running: boolean; consecutiveFailures: number; retryAfterMs: number;
+} {
+  const state = owners.get(repository);
+  return { running: Boolean(state?.flight), consecutiveFailures: state?.failures ?? 0,
+    retryAfterMs: Math.max(0, (state?.retryAt ?? 0) - clock) };
+}
+
 /** Shared startup/tick/HTTP fallback port. No timer, credentials or provider transport. */
 export function runUsageMaintenanceFor(repository: UsageRepository | null, clock: number | (() => number) = () => performance.now()): Promise<void> {
   if (!repository || !repository.backgroundWork.acceptingRequests) return Promise.resolve();

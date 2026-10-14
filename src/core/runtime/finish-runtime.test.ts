@@ -144,6 +144,8 @@ test('finishJob: delivery 子任务最终失败时告警并写 DLQ', async () =>
     recipient: 'zhangsan',
     content: '投递正文',
     error: '发送失败',
+    deliveryKind: 'executor_target',
+    notificationJobId: 'job-1',
   }]);
 });
 

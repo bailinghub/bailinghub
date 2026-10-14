@@ -14,6 +14,7 @@ import type { Principal } from '../app/auth';
 import type { ChannelMessage, ChannelSendResult } from '../app/channels';
 import { isAgentToolInvocationJob } from '../app/agent-tool-job';
 import { continueApprovalDecisionFor, supportsApprovalContinuations } from '../app/approval-continuations';
+import { classifyDeliveryDlq, replayExecutorDeliveryDlq, DeliveryReplayError } from '../app/delivery-dlq-replay';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
 
@@ -292,6 +293,19 @@ export async function handleAdminRuntimeApiFor(
     const d = await configStore.deliveryDlq.get(id);
     if (!d) { send(res, 404, { error: '死信不存在' }); return true; }
     if (d.resolved) { send(res, 200, { ok: true, note: '已处理过，未重复重投' }); return true; }
+    try {
+      if (await classifyDeliveryDlq(d, stateStore) === 'executor_target') {
+        const replay = await replayExecutorDeliveryDlq(d, configStore.deliveryDlq, stateStore);
+        await stateStore.appendAudit({ ts: deps.now(), job_id: d.notification_job_id || d.parent_job_id || '-', request_id: 'delivery-dlq',
+          event: 'dlq_executor_requeued', detail: { id, target: d.channel, ...replay } }).catch(() => undefined);
+        send(res, 200, { ok: true, ...replay, notification_job_id: d.notification_job_id || d.parent_job_id });
+        return true;
+      }
+    } catch (error) {
+      const status = error instanceof DeliveryReplayError ? error.status : 503;
+      const code = error instanceof DeliveryReplayError ? error.code : 'delivery_dlq_replay_unavailable';
+      send(res, status, { error: code, code }); return true;
+    }
     const sent = await deps.channelSend(d.channel, d.recipient, d.content).catch((e) => ({ ok: false as const, error: String(e) }));
     if (sent.ok) await configStore.deliveryDlq.resolve(id);
     await stateStore.appendAudit({ ts: deps.now(), job_id: '-', request_id: 'delivery-dlq', event: sent.ok ? 'dlq_resend_ok' : 'dlq_resend_failed', detail: { id, channel: d.channel, to: d.recipient, ...(sent.ok ? {} : { error: (sent as { error?: string }).error }) } }).catch(() => undefined);

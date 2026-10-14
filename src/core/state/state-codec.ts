@@ -32,6 +32,7 @@ export function rowToJob(r: any): Job {
     error: r.error ?? undefined,
     metadata: parse(r.metadata) ?? {},
     approval_continuation_keys: parse(r.approval_continuation_keys),
+    delivery_replay_keys: parse(r.delivery_replay_keys),
     callback_url: r.callback_url ?? undefined,
     dispatch: parse(r.dispatch),
     attempts: r.attempts != null ? Number(r.attempts) : 0,

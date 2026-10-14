@@ -142,3 +142,31 @@ test('a throwing failure reporter cannot keep rejected work live or replace its 
   owner.beginDrain();
   assert.equal(await owner.drain(100), true);
 });
+
+test('fixed-kind snapshots expose accepted work age and outcomes without error bodies or mutable state', async () => {
+  let now = 1000;
+  const owner = new UsageBackgroundWork(() => now), held = gate();
+  const pending = owner.track('model-completion', () => held.promise);
+  const failed = owner.track('settlement', async () => { throw new Error('PRIVATE_PROVIDER_BODY_TOKEN'); });
+  await assert.rejects(failed);
+  now = 5000;
+  const snapshot = owner.snapshot();
+  assert.equal(snapshot.kinds.find(value => value.kind === 'model-completion')!.inFlight, 1);
+  assert.equal(snapshot.kinds.find(value => value.kind === 'model-completion')!.oldestPendingAgeMs, 4000);
+  assert.equal(snapshot.kinds.find(value => value.kind === 'settlement')!.failed, 1);
+  assert.equal(snapshot.kinds.find(value => value.kind === 'settlement')!.lastFailedAt, new Date(1000).toISOString());
+  assert.doesNotMatch(JSON.stringify(snapshot), /PRIVATE_PROVIDER|TOKEN/);
+  snapshot.kinds[0]!.completed = 1000;
+  assert.equal(owner.snapshot().kinds[0]!.completed, 0);
+  owner.beginDrain();
+  assert.equal(await owner.drain(0), false);
+  assert.equal(owner.snapshot().drainTimeouts, 1);
+  held.release(); await pending;
+  assert.equal(await owner.drain(100), true);
+  const done = owner.snapshot();
+  assert.equal(done.draining, true);
+  assert.equal(done.kinds[0]!.inFlight, 0);
+  assert.equal(done.kinds[0]!.oldestPendingAgeMs, 0);
+  assert.equal(done.kinds[0]!.completed, 1);
+  assert.equal(done.kinds[0]!.lastCompletedAt, new Date(5000).toISOString());
+});

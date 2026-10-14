@@ -9,6 +9,7 @@ import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { AppConfig } from '../core/config/config';
 import { requireServerToken } from '../core/platform/server-token';
+import { notificationBackgroundWorkFor, type NotificationBackgroundKind } from '../core/runtime/notification-background-work';
 
 export { signBody };
 
@@ -63,7 +64,13 @@ export async function secretForJobWithDeps(deps: Pick<OutboundRuntimeDeps, 'cfg'
 }
 
 const OUTBOUND_BACKOFF_MS = [0, 2000, 10_000]; // 共 3 次尝试
-export async function postSignedWithDeps(deps: Pick<OutboundRuntimeDeps, 'stateStore' | 'now' | 'sleep' | 'fetch'>, url: string, payload: unknown, secret: string, audit: { job_id: string; request_id: string; event: string }): Promise<boolean> {
+export function postSignedWithDeps(deps: Pick<OutboundRuntimeDeps, 'stateStore' | 'now' | 'sleep' | 'fetch'>, url: string, payload: unknown, secret: string, audit: { job_id: string; request_id: string; event: string }): Promise<boolean> {
+  const kind: NotificationBackgroundKind = audit.event.startsWith('approval_') ? 'approval-notification'
+    : audit.event.startsWith('alert') ? 'alert' : audit.event === 'callback' ? 'callback' : 'delivery';
+  return notificationBackgroundWorkFor(deps.stateStore).track(kind, () => postSignedInner(deps, url, payload, secret, audit), sent => !sent);
+}
+
+async function postSignedInner(deps: Pick<OutboundRuntimeDeps, 'stateStore' | 'now' | 'sleep' | 'fetch'>, url: string, payload: unknown, secret: string, audit: { job_id: string; request_id: string; event: string }): Promise<boolean> {
   const body = JSON.stringify(payload);
   for (let i = 0; i < OUTBOUND_BACKOFF_MS.length; i++) {
     if (OUTBOUND_BACKOFF_MS[i]! > 0) await deps.sleep(OUTBOUND_BACKOFF_MS[i]!);
@@ -101,7 +108,11 @@ export async function fireCallbackWithDeps(deps: OutboundRuntimeDeps, url: strin
 // 渠道规则使用 channelSend 直推（复用渠道凭证），通用 webhook 使用签名 HTTP 直发；
 // 两种出口都不创建需要执行器认领的任务，避免告警链路因执行器离线而积压。
 const alertSentAtByStore = new WeakMap<RuntimeStateStore, Map<string, number>>();
-export async function sendAlertWithDeps(deps: OutboundRuntimeDeps, key: string, text: string): Promise<void> {
+export function sendAlertWithDeps(deps: OutboundRuntimeDeps, key: string, text: string): Promise<void> {
+  return notificationBackgroundWorkFor(deps.stateStore).track('alert', () => sendAlertInner(deps, key, text));
+}
+
+async function sendAlertInner(deps: OutboundRuntimeDeps, key: string, text: string): Promise<void> {
   const rules = deps.configStore ? await deps.configStore.alertRules.matching(key).catch(() => []) : [];
   const a = deps.cfg.alerts;
   const webhookUrl = (a && a.type === 'webhook' && a.url) ? a.url : '';

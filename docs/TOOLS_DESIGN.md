@@ -267,6 +267,7 @@ X-Bailing-Idempotency-Key: 副作用调用的稳定幂等键（只读/声明幂�
 
 - **签名只有一套：`sha256=`（算法名，非版本号）**。构造 = `sha256=` + `HMAC_SHA256(secret, "<ts>.<METHOD>.<path?query>.<sha256(body)>.<On-Behalf-Of>.<Job-Id>")`，把"谁、为哪个任务"也钉进 HMAC，杜绝窗口内重放篡头换租户/绕幂等。**spec 拉取共用同一套构造**（无操作主体/任务，三者签空串、GET body 也空），300s 时间窗。中枢只发 `sha256=`，`Verify` 与三份单文件参考（`docs/examples/bailing-tool-verify.{php,mjs,py}`）也只验 `sha256=`；
 - 超时默认 10s（provider 的 `timeout_ms` 可配）。只读或显式声明幂等的调用可按路由重试策略重新执行；副作用调用不得把超时、断连或审计降级伪装成可安全重试；
+- 业务工具 HTTP 响应另有固定 **5 MiB** 收包预算，与模型回流 **8 KiB**、审计字段 **64 KiB** 的 UTF-8 字节预算独立。先检查过大的 `Content-Length`，仍逐块累计 fetch 解压后的正文 bytes；缺失或低报长度不能绕过上限。超限立即请求取消正文，不接受部分正文作为成功证据；已尝试外发的写操作仍按原 Job / invocation 与幂等键对账，不自动补发。该上限属于 Core 运行时，没有新增 ACC 字段；
 - **副作用执行日志**：对于非只读、非声明幂等的业务工具，中枢在外发前持久化 `dispatching`，收到 HTTP 响应后写 `response_recorded`，结果审计与终态账本都成功后才写 `completed`；
 - **账本缺失即拒绝**：运行时没有持久化执行日志，或无法在外发前写入占位时，副作用工具直接拒绝且请求不会发出；不能退回“先调用、成功后再记”的旧模式；
 - **不确定结果冻结**：超时、网络断连、进程重启后遗留的 `dispatching`、结果审计失败形成的 `evidence_degraded`，以及响应已记录但终态提交失败形成的 `response_recorded`，都会返回结构化 `reconciliation_required`，并明确 `auto_retry_allowed=false`。恢复任务会在调用模型前扫描未决执行日志；同一任务再次执行时不依赖模型重新选中该工具，也不会向业务系统外发第二次请求；

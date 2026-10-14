@@ -4,6 +4,7 @@ import { effectiveToolRateLimit, type RateLimitRequest, type RateLimitDecision }
 // 中枢只做 reach（白名单/风险闸/限流/签名/审计）；authority（这个人能不能做）永远由业务侧验签后裁决。
 import { createHash, createHmac } from 'node:crypto';
 import { AgentTaskControlError } from '../runtime/agent-task-control';
+import { readResponseBody, truncateUtf8 } from '../platform/http-body';
 import type { ToolProvider } from './types';
 import { schemaAtPath, schemaTypes, valueMatchesSchemaType, type ToolConfirmCondition, type ToolDefinition } from './tool-definition';
 import { toolSummary } from './tool-definition';
@@ -219,18 +220,17 @@ function escapeRegExp(s: string): string {
  */
 function modelFacingToolResponse(fullText: string, status: number, truncateBytes: number, contentType: string): string {
   const limit = Math.max(0, truncateBytes);
-  if (status >= 200 && status < 300) return fullText.slice(0, limit);
-  if (status === 0) return fullText.slice(0, limit);
+  if (status >= 200 && status < 300) return truncateUtf8(fullText, limit);
+  if (status === 0) return truncateUtf8(fullText, limit);
 
   const looksLikeHtml = /text\/html/i.test(contentType)
     || /^\s*(?:<!doctype\s+html|<html\b)/i.test(fullText);
   if (looksLikeHtml) {
-    return `HTTP ${status}：业务工具返回 HTML 错误页（${fullText.length} 字符）。完整响应已保留在审计记录中。`
-      .slice(0, limit);
+    return truncateUtf8(`HTTP ${status}：业务工具返回 HTML 错误页（${fullText.length} 字符）。响应按独立预算保留在审计记录中。`, limit);
   }
 
-  const errorText = fullText.trim().slice(0, Math.min(limit, 2048));
-  return (errorText ? `HTTP ${status}：${errorText}` : `HTTP ${status} 空响应`).slice(0, limit);
+  const errorText = truncateUtf8(fullText.trim(), Math.min(limit, 2048));
+  return truncateUtf8(errorText ? `HTTP ${status}：${errorText}` : `HTTP ${status} 空响应`, limit);
 }
 
 // ---- 限流（进程内滑窗，三层：每任务 max_calls 由调用方计数 / 每工具 ACC execution.rate_limit / 工具源总闸）----
@@ -278,6 +278,8 @@ export const TOOL_INLINE_MAX = 12;
  * 真实字节数始终另记 resp_bytes/args_bytes，超封顶记 *_truncated=true，绝不静默丢。64KB 覆盖绝大多数业务响应。
  */
 export const AUDIT_MAX_BYTES = 65536;
+/** Independent HTTP body budget; the application uses this fixed default, not an ACC field. */
+export const TOOL_RESPONSE_MAX_BYTES = 5 * 1024 * 1024;
 
 /** 大脑可用的工具运行时：清单（喂 LLM）+ 受治理的调用句柄。由 server 在派发时装配并注入 AdapterContext。 */
 export interface ToolRuntime {
@@ -427,6 +429,8 @@ export interface ToolRuntimeDeps {
   jobId: string;
   clientAppId: string;
   truncateBytes: number;            // 工具结果回流截断（默认 8192）
+  /** Trusted runtime assembly only; independent from model/audit view budgets. */
+  maxResponseBodyBytes?: number;
   approvedNote?: string;            // 重跑时已批准调用清单提示
   approvals?: ApprovalDeps;         // 不注入 = high/confirm 一律拦
   /** A trusted assembly supplies these hooks; model parameters cannot create a task or permit. */
@@ -458,6 +462,8 @@ export interface ToolRuntimeDeps {
 }
 
 export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
+  const responseMaxBytes = d.maxResponseBodyBytes ?? TOOL_RESPONSE_MAX_BYTES;
+  if (!Number.isSafeInteger(responseMaxBytes) || responseMaxBytes <= 0) throw new RangeError('Invalid tool response byte limit');
   const byName = new Map(d.allowedTools.map((t) => [t.name, t]));
   const llmTools = d.allowedTools.map((t) => ({
     type: 'function' as const,
@@ -682,8 +688,9 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       // logFull 时入参全量入审计（封顶 AUDIT_MAX_BYTES，超出记 args_truncated；真实字节数 args_bytes 始终记）。
       const logFull = d.provider.log_payload && !t.sensitive;
       const argsStr = JSON.stringify(callArgs);
+      const argsBytes = Buffer.byteLength(argsStr, 'utf8');
       const argsLog = logFull
-        ? { args: argsStr.slice(0, AUDIT_MAX_BYTES), args_bytes: argsStr.length, ...(argsStr.length > AUDIT_MAX_BYTES ? { args_truncated: true } : {}) }
+        ? { args: truncateUtf8(argsStr, AUDIT_MAX_BYTES), args_bytes: argsBytes, ...(argsBytes > AUDIT_MAX_BYTES ? { args_truncated: true } : {}) }
         : { args: JSON.stringify(Object.keys(callArgs)) };
       await d.audit('tool_call', {
         provider: d.provider.name, tool: name, scope: t.scope, method: t.method, path: t.path,
@@ -740,6 +747,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       const started = Date.now();
       const timeoutMs = t.timeoutMs || d.provider.timeout_ms || 10000; // ACC execution.timeout_ms 单工具覆盖（慢接口放宽），缺省工具源超时
       let status = 0; let fullText = '';
+      let responseBytes = 0;
       let responseContentType = '';
       try {
         const r = await fetch(d.provider.base_url.replace(/\/+$/, '') + pathWithQuery, {
@@ -764,7 +772,9 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
         });
         status = r.status;
         responseContentType = r.headers?.get?.('content-type') ?? '';
-        fullText = await r.text();
+        const responseBody = await readResponseBody(r, responseMaxBytes);
+        responseBytes = responseBody.byteLength;
+        fullText = new TextDecoder().decode(responseBody);
       } catch (e) {
         const error = e instanceof Error && e.name === 'TimeoutError' ? `超时（${timeoutMs}ms）` : String(e);
         fullText = `调用结果不确定：${error}`;
@@ -809,7 +819,7 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       // 回流给模型的：受上下文预算 truncateBytes 截断（与审计留存解耦）
       const text = modelFacingToolResponse(fullText, status, d.truncateBytes, responseContentType);
       const ok = status >= 200 && status < 300;
-      const retText = text || `（HTTP ${status} 空响应）`;
+      const retText = text || truncateUtf8(`（HTTP ${status} 空响应）`, d.truncateBytes);
       if (idemHash && !d.taskControl) {
         try {
           await d.idempotency!.recordResponse(name, idemHash, { ok, status, text: retText });
@@ -834,8 +844,8 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       }
       // 审计留存：logFull 记全量响应（封顶 AUDIT_MAX_BYTES，超出记 resp_truncated）；resp_bytes 始终记真实字节数。
       const respLog = logFull
-        ? { resp: fullText.slice(0, AUDIT_MAX_BYTES), resp_bytes: fullText.length, ...(fullText.length > AUDIT_MAX_BYTES ? { resp_truncated: true } : {}) }
-        : { resp: `<${fullText.length} bytes>`, resp_bytes: fullText.length };
+        ? { resp: truncateUtf8(fullText, AUDIT_MAX_BYTES), resp_bytes: responseBytes, ...(Buffer.byteLength(fullText, 'utf8') > AUDIT_MAX_BYTES ? { resp_truncated: true } : {}) }
+        : { resp: `<${responseBytes} bytes>`, resp_bytes: responseBytes };
       try {
         await d.audit('tool_result', {
           tool: name,

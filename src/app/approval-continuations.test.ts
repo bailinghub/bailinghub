@@ -13,7 +13,7 @@ import { JsonlStore } from '../infrastructure/state/state-jsonl';
 import { ApprovalLedger } from '../infrastructure/config/config-approval-ledger';
 import { handleApprovalDecisionFor, type ApprovalDecisionDeps } from '../routes/approvals';
 import { handleAdminRuntimeApiFor } from '../routes/admin-runtime';
-import { continueApprovalDecisionFor, reconcileApprovalContinuationsFor, type ApprovalContinuationDeps } from './approval-continuations';
+import { continueApprovalDecisionFor, reconcileApprovalContinuationsFor, approvalContinuationMaintenanceSnapshotFor, type ApprovalContinuationDeps } from './approval-continuations';
 
 class Response {
   statusCode = 0;
@@ -118,6 +118,32 @@ async function fixture(status: Job['status'] = 'done', direct = false) {
     intent: () => intent, kicks: () => kicks,
     close: () => rm(directory, { recursive: true, force: true }) };
 }
+
+test('approval maintenance snapshots report page failures and isolated run history without enumerating records', async () => {
+  const one = await fixture(), two = await fixture();
+  try {
+    one.faults.queue = true;
+    await one.call();
+    assert.equal(await reconcileApprovalContinuationsFor(one.deps), 0);
+    const snapshot = approvalContinuationMaintenanceSnapshotFor(one.deps)!;
+    assert.deepEqual(snapshot.progress, { scanned: 1, completed: 0, pending: 0, failed: 1 });
+    assert.equal(snapshot.work.kinds[0]!.completed, 1); // A completed pass can retain failed individual intents.
+    assert.equal(snapshot.work.kinds[0]!.failed, 0);
+    assert.equal(approvalContinuationMaintenanceSnapshotFor(two.deps)!.work.kinds[0]!.completed, 0);
+    snapshot.progress!.failed = 1000;
+    let reads = 0;
+    one.ledger.pendingContinuations = async () => { reads++; throw new Error('PRIVATE_LEDGER_TOKEN_JOB_ID'); };
+    assert.equal(approvalContinuationMaintenanceSnapshotFor(one.deps)!.progress!.failed, 1);
+    assert.equal(reads, 0);
+    await assert.rejects(reconcileApprovalContinuationsFor(one.deps));
+    const failed = approvalContinuationMaintenanceSnapshotFor(one.deps)!;
+    assert.equal(reads, 1);
+    assert.equal(failed.work.kinds[0]!.failed, 1);
+    assert.equal(failed.work.kinds[0]!.inFlight, 0);
+    assert(failed.work.kinds[0]!.lastFailedAt);
+    assert.doesNotMatch(JSON.stringify(failed), /PRIVATE_LEDGER|TOKEN|JOB_ID/);
+  } finally { await one.close(); await two.close(); }
+});
 
 for (const failure of ['audit', 'queue'] as const) test(`decision submitted then ${failure} fails: identical callback resumes only original job`, async () => {
   const h = await fixture();

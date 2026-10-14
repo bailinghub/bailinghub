@@ -63,6 +63,7 @@ import { handleSendFor, type SendApiDeps } from '../routes/send';
 import { handleWecomInboundFor, WecomRuntimeState, type WecomApiDeps } from '../routes/wecom';
 import { WecomAccessTokenCache } from '../adapters/channels/wecom-api';
 import { DemoDatasetService } from '../services/demo-dataset';
+import { NotificationBackgroundWork, bindNotificationBackgroundWork } from '../core/runtime/notification-background-work';
 
 const timezoneClaims = new Map<string, number>();
 const MAX_KERNEL_CLOSE_DRAIN_MS = 10 * 60_000;
@@ -184,6 +185,11 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
   composition.cfgStore?.usage?.backgroundWork.setFailureReporter(kind => {
     logger.warn?.(`[Kernel ${instanceKey}] usage background ${kind} failed; original durable evidence is retained`);
   });
+  const notificationWork = new NotificationBackgroundWork();
+  bindNotificationBackgroundWork(composition.store, notificationWork);
+  notificationWork.setFailureReporter(kind => {
+    logger.warn?.(`[Kernel ${instanceKey}] notification background ${kind} failed`);
+  });
   const demoDataset = composition.cfgStore ? new DemoDatasetService(composition.cfgStore, cfg.demoDataset) : null;
   const runtimeHelpers = createRuntimeContextHelpers({
     cfg,
@@ -258,6 +264,7 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     isPaused,
     auditFailures: edition.auditFailures,
     logger,
+    notificationWork,
   });
 
   const runDeps: RunApiDeps = {
@@ -505,6 +512,8 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
         usageWork.beginDrain();
         if (!await usageWork.drain(remainingDrainMs())) throw new Error(`Kernel ${instanceKey} usage background drain timed out`);
       }
+      notificationWork.beginDrain();
+      if (!await notificationWork.drain(remainingDrainMs())) throw new Error(`Kernel ${instanceKey} notification background drain timed out`);
       targetRegistry.bindStore(null);
       wecomRuntimeState.dispose();
       wecomAccessTokenCache.dispose();

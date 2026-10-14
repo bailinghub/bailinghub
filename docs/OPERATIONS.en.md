@@ -96,13 +96,23 @@ Primary metrics:
 | `bailinghub_approvals_pending` | Tool approvals awaiting a decision |
 | `bailinghub_executors` | Registered executors by online or offline heartbeat state |
 | `bailinghub_audit_write_failures_total` | Audit-write failures observed by this process |
+| `bailinghub_background_work_in_flight` / `bailinghub_background_work_oldest_pending_age_seconds` | Accepted background work and oldest in-flight age by fixed source / kind |
+| `bailinghub_background_work_finished_total` | Continuation completion/failure outcomes observed by this owner, by fixed outcome |
+| `bailinghub_background_work_last_run_timestamp_seconds` / `bailinghub_background_work_last_run_age_seconds` | Latest started / completed / failed time and age; timestamp=0 and no age sample when never observed |
+| `bailinghub_background_draining` / `bailinghub_background_drain_timeouts_total` | Usage/notification tracker drain state and drain calls that exhausted their budget |
+| `bailinghub_maintenance_last_page_records` / `bailinghub_maintenance_last_page_has_more` | Current/latest usage and approval continuation page progress; usage has_more=1 when the bounded page size is reached |
+| `bailinghub_usage_maintenance_consecutive_failures` / `bailinghub_usage_maintenance_retry_after_seconds` | Bounded usage reconciliation failure streak and remaining retry backoff |
 | `bailinghub_metrics_collector_available` | Whether each optional collector is implemented |
 | `bailinghub_metrics_collector_success` | Whether each collector succeeded during this scrape |
 | `bailinghub_metrics_scrape_duration_seconds` | Collection and rendering duration |
 
 Labels are fixed and low-cardinality. They never include job IDs, tenants, principals, route arguments, or business payloads. If an optional collector times out or fails, the endpoint still returns the remaining metrics and sets that collector's `bailinghub_metrics_collector_success` to 0. Logs contain only the collector class and failure class, never exception text or business data. The JSONL state backend can expose job metrics; without the MySQL control-plane aggregation, `control_plane` is reported as unavailable.
 
+The `maintenance` collector reads owner-local memory only. It does not query records, trigger reconciliation or call a model provider. Fixed sources are `usage`, `notification` and `approval`; kinds cover only existing model completion, settlement, response cleanup, usage reconciliation, reference price refresh, callbacks, delivery, approval notifications, alerts, delivery DLQ and approval continuation work. Completion counters describe Promise/continuation outcomes, not recipient delivery acknowledgements. An approval pass can complete with failed individual records; check the last-page `failed` sample as well. Counters reset when the process/owner is recreated. Last-page progress is not the persisted pending/unknown backlog or its oldest age, and has_more is not an exact backlog size. Unavailable optional modules do not emit invented zero samples.
+
 At minimum, alert on collector failures, expired leases, sustained oldest-queue age above the service objective, increases in audit-write failures, expected executors becoming offline, and abnormal recent error or rejection ratios.
+
+Also watch increases in failed background continuations or drain timeouts, sustained in-flight age beyond the work/shutdown objective, and recent-run age plus last-page failures to confirm maintenance is progressing.
 
 Metrics feed external monitoring. They do not replace `/health/ready`, final business authorization, the audit ledger, or console diagnostics.
 
@@ -160,6 +170,9 @@ Recovery order:
 - Approval intents remain durable in MySQL.
 - Tool and model failures are recorded in job trace; retry behavior depends on route policy and error type.
 - Security-critical tool audit is fail-closed. Best-effort operational audit must still feed metrics and alerts.
+- Graceful close drains accepted callback, delivery, approval-notification, alert and DLQ continuations within the shared Kernel budget before closing database/channel resources. A timeout preserves resources for another close attempt. Background failure logs contain fixed work kinds only.
+- Native delivery DLQs retain channel credentials. Custom `X-notify` DLQs requeue only the original failed notification child; queued acknowledges executor admission, not receipt. A permanent DLQ marker is saved atomically with admission, so repeated calls or lost resolve replies do not admit it again or rerun the business parent. Legacy entries are checked against the original job; binding conflicts return 409 and adapters without replay ports return 503.
+- This drain does not provide a complete SIGKILL-safe notification outbox. Created executor jobs retain durable queue recovery; direct webhooks and the gap between parent termination and child creation remain separate recovery boundaries. Receivers should deduplicate original event identities; partial or unknown receipt must not be blindly resent.
 
 ## 8. Security Baseline
 

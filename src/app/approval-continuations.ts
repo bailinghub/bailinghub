@@ -1,4 +1,5 @@
 import type { ApprovalContinuation } from '../core/contracts/approval-continuation';
+import type { BackgroundWorkMetricsSnapshot } from '../core/observability/openmetrics';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ApprovalLedgerContract, ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { EngineRuntime } from './engine';
@@ -83,6 +84,29 @@ export async function continueApprovalDecisionFor(deps: ApprovalContinuationDeps
 }
 
 const passes = new WeakMap<ApprovalLedgerContract, Promise<number>>();
+export interface ApprovalContinuationProgress { scanned: number; completed: number; pending: number; failed: number }
+interface PassMetrics {
+  completed: number; failed: number; startedAt: string | null; completedAt: string | null; failedAt: string | null;
+  progress: ApprovalContinuationProgress;
+}
+const passMetrics = new WeakMap<ApprovalLedgerContract, PassMetrics>();
+
+/** Read process-local maintenance state; never enumerate approval/job records. */
+export function approvalContinuationMaintenanceSnapshotFor(
+  deps: Pick<ApprovalContinuationDeps, 'configStore' | 'stateStore'>,
+  nowMs = Date.now(),
+): { work: BackgroundWorkMetricsSnapshot; progress?: ApprovalContinuationProgress } | undefined {
+  if (!supportsApprovalContinuations(deps)) return undefined;
+  const ledger = deps.configStore!.approvals, value = passMetrics.get(ledger), running = passes.has(ledger);
+  const startedAt = value?.startedAt ?? null;
+  return {
+    work: { kinds: [{ kind: 'approval-continuation', inFlight: running ? 1 : 0,
+      completed: value?.completed ?? 0, failed: value?.failed ?? 0,
+      oldestPendingAgeMs: running && startedAt ? Math.max(0, nowMs - Date.parse(startedAt)) : 0,
+      lastStartedAt: startedAt, lastCompletedAt: value?.completedAt ?? null, lastFailedAt: value?.failedAt ?? null }] },
+    ...(value ? { progress: { ...value.progress } } : {}),
+  };
+}
 
 /** Await from boot/tick. One pass per owner; no detached timers or swallowed shutdown work. */
 export async function reconcileApprovalContinuationsFor(deps: ApprovalContinuationDeps, limit = 25): Promise<number> {
@@ -90,18 +114,35 @@ export async function reconcileApprovalContinuationsFor(deps: ApprovalContinuati
   const ledger = deps.configStore!.approvals;
   const active = passes.get(ledger);
   if (active) return await active;
+  let metrics = passMetrics.get(ledger);
+  if (!metrics) {
+    metrics = { completed: 0, failed: 0, startedAt: null, completedAt: null, failedAt: null,
+      progress: { scanned: 0, completed: 0, pending: 0, failed: 0 } };
+    passMetrics.set(ledger, metrics);
+  }
+  const owner = metrics;
+  owner.startedAt = deps.now();
+  owner.progress = { scanned: 0, completed: 0, pending: 0, failed: 0 };
   const work = (async () => {
     const intents = await ledger.pendingContinuations!(limit);
     let completed = 0;
     for (const intent of intents) {
       if (deps.isClosing?.()) break;
+      owner.progress.scanned++;
       try {
         const result = await continueApprovalDecisionFor(deps, intent.approval_id);
-        if (!result.pending) completed++;
-      } catch { /* Durable intent remains pending; later explicit pass retries it. */ }
+        if (!result.pending) { completed++; owner.progress.completed++; } else owner.progress.pending++;
+      } catch { owner.progress.failed++; /* Durable intent remains pending; later explicit pass retries it. */ }
     }
     return completed;
   })();
   passes.set(ledger, work);
-  try { return await work; } finally { if (passes.get(ledger) === work) passes.delete(ledger); }
+  try {
+    const completed = await work;
+    owner.completed++; owner.completedAt = deps.now();
+    return completed;
+  } catch (error) {
+    owner.failed++; owner.failedAt = deps.now();
+    throw error;
+  } finally { if (passes.get(ledger) === work) passes.delete(ledger); }
 }

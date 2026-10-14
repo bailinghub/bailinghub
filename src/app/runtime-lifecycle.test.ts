@@ -5,6 +5,7 @@ import type { ToolProvider } from '../core/contracts/types';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { ToolIndexService } from '../services/tools-index';
+import { notificationBackgroundWorkFor } from '../core/runtime/notification-background-work';
 import {
   createManagedRuntimeMaintenanceFor,
   createManagedRuntimeMaintenanceStateV1,
@@ -31,6 +32,94 @@ function toolProvider(name: string, input: Partial<ToolProvider> = {}): ToolProv
     ...input,
   };
 }
+
+interface CapturedTimer { fire(): void; ms: number; interval: boolean; unref(): void }
+async function withCapturedTimers<T>(action: (timers: CapturedTimer[]) => Promise<T>): Promise<T> {
+  const timers: CapturedTimer[] = [];
+  const originalTimeout = globalThis.setTimeout, originalInterval = globalThis.setInterval, originalClear = globalThis.clearTimeout;
+  const register = (interval: boolean) => ((fn: () => void, ms: number) => {
+    const timer: CapturedTimer = { fire: fn, ms, interval, unref() {} };
+    timers.push(timer); return timer;
+  });
+  globalThis.setTimeout = register(false) as unknown as typeof setTimeout;
+  globalThis.setInterval = register(true) as unknown as typeof setInterval;
+  globalThis.clearTimeout = (() => {}) as typeof clearTimeout;
+  try { return await action(timers); } finally {
+    globalThis.setTimeout = originalTimeout; globalThis.setInterval = originalInterval; globalThis.clearTimeout = originalClear;
+  }
+}
+
+test('standalone stop waits for a monitor producer before notification drain can release resources', async () => {
+  let releaseMonitor!: () => void, enteredMonitor!: () => void, enteredFetch!: () => void, releaseFetch!: () => void;
+  const monitorGate = new Promise<void>(resolve => { releaseMonitor = resolve; });
+  const monitorEntered = new Promise<void>(resolve => { enteredMonitor = resolve; });
+  const sendEntered = new Promise<void>(resolve => { enteredFetch = resolve; });
+  const sendGate = new Promise<void>(resolve => { releaseFetch = resolve; });
+  const stateStore = { async listJobsByStatus() { return []; }, async appendAudit() {} } as unknown as RuntimeStateStore;
+  const notifications = notificationBackgroundWorkFor(stateStore);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { enteredFetch(); await sendGate; return new Response('', { status: 200 }); };
+  let resourcesClosed = false;
+  const schedulers = await withCapturedTimers(async timers => {
+    const target = startRuntimeSchedulersFor({
+      cfg: { auditRetentionDays: 0, server: { token: 'synthetic-only' }, brand: { name: 'Synthetic' },
+        alerts: { type: 'webhook', url: 'https://synthetic.invalid/alert', cooldown_min: 0 } } as AppConfig,
+      configStore: { executors: { async list() { return []; } }, alertRules: { async matching() { return []; } },
+        observability: { async monitorSnapshot() { enteredMonitor(); await monitorGate; return { errors_15m: 5, oldest_queued_min: 0 }; } },
+      } as unknown as ConfigStoreContract,
+      stateStore, kbService: null, kbSync: null, toolIndex: null, isPaused: () => false,
+      async refreshTargets() {}, kickInhubScheduler() {}, async drainInhubScheduler() { return 0; },
+      async recoverInhubJobs() { return 0; }, now: () => new Date().toISOString(), async sleep() {},
+    });
+    timers.find(timer => !timer.interval && timer.ms === 60000)!.fire();
+    await monitorEntered;
+    return target;
+  });
+  const closeResources = async (budget: number) => {
+    if (!await schedulers.drain!(budget)) return false;
+    notifications.beginDrain();
+    if (!await notifications.drain(budget)) return false;
+    resourcesClosed = true;
+    return true;
+  };
+  try {
+    schedulers.stop();
+    assert.equal(await closeResources(1), false);
+    assert.equal(resourcesClosed, false);
+    assert.equal(notifications.snapshot().draining, false, 'the producer must drain before the child tracker starts draining');
+    releaseMonitor(); await sendEntered;
+    assert.equal(await schedulers.drain!(100), true);
+    assert.equal(await closeResources(1), false);
+    assert.equal(resourcesClosed, false);
+    assert.ok(notifications.snapshot().kinds.find(value => value.kind === 'alert')!.inFlight > 0);
+    releaseFetch();
+    assert.equal(await closeResources(100), true);
+    assert.equal(resourcesClosed, true);
+  } finally {
+    releaseMonitor(); releaseFetch(); schedulers.stop();
+    await schedulers.drain!(100); await notifications.drain(100); globalThis.fetch = originalFetch;
+  }
+});
+
+test('standalone stopped callbacks cannot admit maintenance or create the recurring monitor timer', async () => {
+  let targetRefreshes = 0, drains = 0;
+  await withCapturedTimers(async timers => {
+    const schedulers = startRuntimeSchedulersFor({
+      cfg: { auditRetentionDays: 0 } as AppConfig, configStore: null,
+      stateStore: {} as RuntimeStateStore, kbService: null, kbSync: null, toolIndex: null,
+      isPaused: () => false, async refreshTargets() { targetRefreshes++; }, kickInhubScheduler() {},
+      async drainInhubScheduler() { drains++; return 0; }, async recoverInhubJobs() { return 0; },
+      now: () => new Date().toISOString(), async sleep() {},
+    });
+    const registered = timers.length;
+    schedulers.stop();
+    for (const timer of [...timers]) timer.fire();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(timers.length, registered);
+    assert.equal(targetRefreshes, 0); assert.equal(drains, 0);
+    assert.equal(await schedulers.drain!(0), true);
+  });
+});
 
 test('initializeRuntimeLifecycleFor: Store 初始化后、目标刷新前执行启动契约', async () => {
   const events: string[] = [];

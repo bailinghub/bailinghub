@@ -2,7 +2,7 @@
 
 [简体中文](CORE_RELIABILITY.md)
 
-This page describes the fixes and checks in Core 0.9.2. The historical v0.9.1 tag, npm package and installation images do not contain these later changes. Verify each deployment's source identity and migration ledger separately.
+The installation, settlement and approval sections describe fixes and checks in Core 0.9.2. The historical v0.9.1 artifacts do not contain these changes. Verify each deployment's source identity and migration ledger separately. The final section describes an unreleased HTTP/notification candidate and does not extend the formal v0.9.2 guarantees.
 
 ## Installation secrets
 
@@ -57,3 +57,23 @@ node --import tsx --test --test-concurrency=4 \
 Fixtures require a dedicated MySQL on local `127.0.0.1:16307`, an empty root password, and permission to create/drop test databases. Never point them at shared or production databases. Approval acceptance includes actual child-process SIGKILL, recovery in a different PID, lost COMMIT acknowledgements, concurrent continuation and missing-migration rollback. This establishes behavior in the fixtures, not real-provider availability, physical power-loss durability or production business acceptance. Skipped database tests do not count as passes.
 
 See the [capability and public evidence index](IMPLEMENTATION_STATUS.en.md) for implementation and test links.
+
+## Unreleased HTTP and notification candidate
+
+Tool HTTP bodies have a separate default transport budget of 5 MiB. Content-Length can reject early, while streaming checks count actual fetch-decoded bytes even when the length is absent or understated. Excess bodies are cancelled and partial contents discarded. HTTP 200 headers cannot establish a completed write: body loss/overflow retains the original unknown-outcome and idempotency path without automatic redispatch. Model and audit views have separate UTF-8 byte budgets. Remote files retain configured max_bytes (20 MiB by default); channel attachments have a 20 MiB download limit. These bound downloads, not decompression or parser resources. See [bounded body tests](../src/core/platform/http-body.test.ts), [tool recovery tests](../src/core/contracts/tools-idempotency.test.ts) and [file tests](../src/adapters/llm/file.test.ts).
+
+Each Kernel tracks actual callback, delivery, approval webhook, alert and DLQ continuations, draining them before resource closure within the shared close budget. Accepted work can register children during drain. Stopped standalone timers also drain already-started maintenance producers, so a monitor waiting on SQL cannot register an alert after notification drain. Timeouts preserve resources for another close attempt on the same instance. See the [tracker](../src/core/runtime/notification-background-work.ts), [real Kernel close tests](../src/app/kernel-notification-lifecycle.test.ts), [scheduler tests](../src/app/runtime-lifecycle.test.ts) and [outbound tests](../src/app/notification-outbound.test.ts). This covers graceful close. A durable outbox for all notification intents is still absent; it does not promise complete HTTP notification recovery after SIGKILL.
+
+[Migration 067](../sql/067_delivery_dlq_replay.sql) adds DLQ kind, original notification child and replay identity, plus an independent state-store queue marker. Native channels retain their sender. Executor DLQs requeue only the verified original notification child, retaining recipient, full input and request/job identities; they never rerun the business parent. queued acknowledges admission, not receipt. Concurrent calls and lost queue/resolve acknowledgements cannot re-admit the same DLQ identity. A later failed notification produces a new DLQ that an operator may separately handle. JSONL remains single-writer.
+
+Apply 067 before these MySQL DLQ paths. Custom stores need the optional ensureExecutorReplay and requeueDeliveryJobOnce methods; without them, executor replay is explicitly unavailable rather than sent through the wrong channel. Before rollback, stop related writers and retain migration, queue and marker evidence. Deleting markers and resubmitting is not recovery. Self-hosted and Host upgrades/rollbacks remain separate operational actions.
+
+Default tests cover [original notification replay](../src/app/delivery-dlq-replay.test.ts). The MySQL fixture uses dedicated localhost MySQL and random schemas to check old-data upgrade, concurrent admission, injected acknowledgement exceptions after real COMMIT, resolve failure and store reopening, invalid business bindings and long Unicode content. It tests storage interruption boundaries, not real process killing or production receipt:
+
+```bash
+BAILING_NOTIFICATION_TEST_MYSQL=1 BAILING_NOTIFICATION_TEST_MYSQL_PORT=16307 \
+BAILING_NOTIFICATION_BASELINE_ROOT=/absolute/clean/core-v0.9.2 \
+node --import tsx --test src/app/delivery-dlq-replay.mysql.test.ts
+```
+
+[Fixed-label metrics](OPERATIONS.en.md) expose process-local pending work, failures, drain timeouts and the latest settlement/approval page. Scrapes read memory without starting model requests. Candidate source and test links do not establish published artifacts or deployed environments.

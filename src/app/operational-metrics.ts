@@ -4,11 +4,16 @@ import {
   renderOperationalMetrics,
   type CollectorResult,
   type ControlPlaneOperationalMetricsSnapshot,
+  type BackgroundWorkMetricsSnapshot,
+  type RuntimeMaintenanceMetricsSnapshot,
 } from '../core/observability/openmetrics';
 import { buildVersionInfo } from '../core/platform/version';
 import type { AuditFailureTracker } from '../core/state/audit-observability';
 import type { JobOperationalMetricsSnapshot, RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import { usageReconciliationSnapshotFor } from '../modules/usage/billing-repository';
+import { usageMaintenanceSnapshotFor } from '../modules/usage/maintenance';
+import { approvalContinuationMaintenanceSnapshotFor } from './approval-continuations';
 
 export interface OperationalMetricsEndpoint {
   readonly enabled: boolean;
@@ -23,6 +28,7 @@ export interface OperationalMetricsDeps {
   queue: { stats(): { running: number; waiting: number } };
   isPaused(): boolean;
   auditFailures: Pick<AuditFailureTracker, 'snapshot'>;
+  notificationWork?: { snapshot(nowMs?: number): BackgroundWorkMetricsSnapshot };
   logger?: Pick<Console, 'error'>;
   now?: () => number;
   build?: { version: string; commit: string };
@@ -51,7 +57,7 @@ function buildIdentity(root: string): { version: string; commit: string } {
 }
 
 async function collect<T>(
-  collector: 'state' | 'control_plane',
+  collector: 'state' | 'control_plane' | 'maintenance',
   action: (() => Promise<T>) | undefined,
   timeoutMs: number,
   logger: Pick<Console, 'error'>,
@@ -96,7 +102,7 @@ export function createOperationalMetricsEndpointFor(deps: OperationalMetricsDeps
     async scrape(): Promise<string> {
       const startedAt = now();
       const snapshotAt = now();
-      const [state, controlPlane] = await Promise.all([
+      const [state, controlPlane, maintenance] = await Promise.all([
         collect<JobOperationalMetricsSnapshot>(
           'state',
           stateCollector ? () => stateCollector(snapshotAt) : undefined,
@@ -109,6 +115,22 @@ export function createOperationalMetricsEndpointFor(deps: OperationalMetricsDeps
           deps.cfg.metrics.scrapeTimeoutMs,
           logger,
         ),
+        collect<RuntimeMaintenanceMetricsSnapshot>(
+          'maintenance',
+          async () => {
+            const usage = deps.configStore?.usage;
+            const approval = approvalContinuationMaintenanceSnapshotFor({ configStore: deps.configStore, stateStore: deps.store }, snapshotAt);
+            return {
+              capturedAtMs: snapshotAt,
+              ...(usage ? { usage: usage.backgroundWork.snapshot(snapshotAt), usageReconciliation: usageReconciliationSnapshotFor(usage),
+                usageRetry: usageMaintenanceSnapshotFor(usage) } : {}),
+              ...(deps.notificationWork ? { notification: deps.notificationWork.snapshot(snapshotAt) } : {}),
+              ...(approval ? { approval: approval.work, approvalReconciliation: approval.progress } : {}),
+            };
+          },
+          deps.cfg.metrics.scrapeTimeoutMs,
+          logger,
+        ),
       ]);
       return renderOperationalMetrics({
         ...build,
@@ -116,6 +138,7 @@ export function createOperationalMetricsEndpointFor(deps: OperationalMetricsDeps
         queue: deps.queue.stats(),
         state,
         controlPlane,
+        maintenance,
         auditWriteFailuresTotal: deps.auditFailures.snapshot().total,
         scrapeDurationSeconds: Math.max((now() - startedAt) / 1000, 0),
       });
