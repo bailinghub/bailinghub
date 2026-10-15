@@ -26,6 +26,7 @@ const AUDIT_RETENTION_CLEANUP_MS = 6 * 60 * 60 * 1000;
 const TOOL_INDEX_PREWARM_DELAY_MS = 0;
 const USAGE_MAINTENANCE_MS = 60_000;
 const APPROVAL_CONTINUATION_MS = 60_000;
+const NOTIFICATION_OUTBOX_MS = 5_000;
 
 // 兜底：定期把派发后长时间未回报的 dispatched 任务重排回队列（执行器/网络异常时不至于卡死）。
 // 阈值需大于最长任务耗时（出厂能力档上限 6min），这里取 20min。
@@ -60,6 +61,8 @@ export interface RuntimeLifecycleDeps {
   afterStoresInitialized?: () => Promise<void>;
   /** Reconcile already-decided approvals; never creates a new user decision. */
   reconcileApprovalContinuations?: () => Promise<void>;
+  /** Deliver saved notification intents; never re-executes the business job. */
+  reconcileNotifications?: () => Promise<void>;
   /** 可嵌入宿主必须注入 Kernel 自己的 registry；默认实例仅服务旧 OSS 包装。 */
   targetRegistry?: TargetRegistry;
 }
@@ -126,6 +129,7 @@ async function runToolIndexPrewarmFor(deps: RuntimeLifecycleDeps): Promise<void>
 interface RuntimeMaintenanceActions {
   reconcileUsage(): Promise<void>;
   reconcileApprovals(): Promise<void>;
+  reconcileNotifications(): Promise<void>;
   prewarmToolIndexes(): Promise<void>;
   refreshTargets(): Promise<void>;
   drainInhub(maxClaims?: number): Promise<number>;
@@ -146,6 +150,7 @@ function runtimeMaintenanceActionsFor(deps: RuntimeLifecycleDeps): RuntimeMainte
   return {
     reconcileUsage: () => runUsageMaintenanceFor(deps.configStore?.usage ?? null),
     reconcileApprovals: () => deps.reconcileApprovalContinuations?.() ?? Promise.resolve(),
+    reconcileNotifications: () => deps.reconcileNotifications?.() ?? Promise.resolve(),
     prewarmToolIndexes: () => runToolIndexPrewarmFor(deps),
     async refreshTargets() {
       await deps.refreshTargets();
@@ -313,6 +318,7 @@ export function createManagedRuntimeMaintenanceFor(
     // Neither task sends provider requests or restores client orchestration.
     scheduled('usage-maintenance', 0, USAGE_MAINTENANCE_MS, actions.reconcileUsage, false),
     scheduled('approval-continuations', 0, APPROVAL_CONTINUATION_MS, actions.reconcileApprovals, false),
+    scheduled('notification-outbox', 0, NOTIFICATION_OUTBOX_MS, actions.reconcileNotifications, false),
     scheduled('boot-recovery', 2_000, null, actions.recoverBoot),
     scheduled('target-refresh', TARGET_REFRESH_MS, TARGET_REFRESH_MS, actions.refreshTargets),
     scheduled('monitor', MONITOR_DELAY_MS, MONITOR_INTERVAL_MS, actions.monitor),
@@ -418,8 +424,10 @@ export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSc
   later(() => reconcile(actions.prewarmToolIndexes), TOOL_INDEX_PREWARM_DELAY_MS);
   later(() => reconcile(actions.reconcileUsage), 0);
   later(() => reconcile(actions.reconcileApprovals), 0);
+  later(() => reconcile(actions.reconcileNotifications), 0);
   every(() => reconcile(actions.reconcileUsage), USAGE_MAINTENANCE_MS);
   every(() => reconcile(actions.reconcileApprovals), APPROVAL_CONTINUATION_MS);
+  every(() => reconcile(actions.reconcileNotifications), NOTIFICATION_OUTBOX_MS);
 
   every(() => reconcile(actions.refreshTargets), TARGET_REFRESH_MS);
 

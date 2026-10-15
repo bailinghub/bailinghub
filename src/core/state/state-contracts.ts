@@ -1,6 +1,7 @@
 import type { AuditEntry, Job, JobStatus } from '../contracts/types';
 import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../contracts/approval-continuation';
 import type { DeliveryRequeueInput, DeliveryRequeueOutcome } from '../contracts/delivery-replay';
+import type { NotificationOutboxRepository } from '../contracts/notification-outbox';
 
 export interface JobOperationalMetricsSnapshot {
   byStatus: Record<JobStatus, number>;
@@ -50,6 +51,9 @@ export interface RuntimeLockRepository {
 }
 
 export interface RuntimeStateStore extends JobRepository, AuditLedger, RuntimeLockRepository {
+  readonly notificationOutbox?: NotificationOutboxRepository;
+  /** Fenced terminal transition and notification intentions in the same durable write. */
+  completeJobWithNotifications?(original: Job, patch: Partial<Job>, context?: { brandName?: string }): Promise<Job | null>;
   /** Atomic original-job queue transition + permanent decision marker; no substitute operation. */
   requeueApprovedJobOnce?(input: ApprovalRequeueInput): Promise<ApprovalRequeueOutcome>;
   /** Original failed notification child + permanent DLQ key in one state transaction. */

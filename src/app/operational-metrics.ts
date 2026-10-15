@@ -120,8 +120,17 @@ export function createOperationalMetricsEndpointFor(deps: OperationalMetricsDeps
           async () => {
             const usage = deps.configStore?.usage;
             const approval = approvalContinuationMaintenanceSnapshotFor({ configStore: deps.configStore, stateStore: deps.store }, snapshotAt);
+            const jobOutbox = deps.store.completeJobWithNotifications ? deps.store.notificationOutbox : undefined;
+            const approvalOutbox = deps.configStore?.approvals?.createWithNotification ? deps.configStore.notificationOutbox : undefined;
+            const notificationOutbox: NonNullable<RuntimeMaintenanceMetricsSnapshot['notificationOutbox']> = await Promise.all([
+              (async () => ({ source: 'jobs' as const, available: !!jobOutbox,
+                ...(jobOutbox ? { snapshot: await jobOutbox.snapshot({ kinds: ['callback', 'delivery', 'delivery-dlq'], now: new Date(snapshotAt).toISOString() }) } : {}) }))(),
+              (async () => ({ source: 'approvals' as const, available: !!approvalOutbox,
+                ...(approvalOutbox ? { snapshot: await approvalOutbox.snapshot({ kinds: ['approval-notification'], now: new Date(snapshotAt).toISOString() }) } : {}) }))(),
+            ]);
             return {
               capturedAtMs: snapshotAt,
+              notificationOutbox,
               ...(usage ? { usage: usage.backgroundWork.snapshot(snapshotAt), usageReconciliation: usageReconciliationSnapshotFor(usage),
                 usageRetry: usageMaintenanceSnapshotFor(usage) } : {}),
               ...(deps.notificationWork ? { notification: deps.notificationWork.snapshot(snapshotAt) } : {}),

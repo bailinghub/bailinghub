@@ -1,0 +1,39 @@
+{
+  "name": "@bailinghub/mammoth-library",
+  "version": "1.12.0-bailinghub.1",
+  "author": "Michael Williamson <mike@zwobble.org>",
+  "description": "BailingHub library-only distribution of Mammoth 1.12.0; no command-line interface",
+  "keywords": [
+    "docx",
+    "html",
+    "office",
+    "word",
+    "markdown",
+    "md"
+  ],
+  "main": "./lib/index.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mwilliamson/mammoth.js.git"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.6",
+    "base64-js": "^1.5.1",
+    "bluebird": "~3.4.0",
+    "dingbat-to-unicode": "^1.0.1",
+    "jszip": "^3.7.1",
+    "lop": "^0.4.2",
+    "path-is-absolute": "^1.0.0",
+    "underscore": "^1.13.1",
+    "xmlbuilder": "^10.0.0"
+  },
+  "browser": {
+    "./lib/unzip.js": "./browser/unzip.js",
+    "./lib/docx/files.js": "./browser/docx/files.js"
+  },
+  "license": "BSD-2-Clause",
+  "engines": {
+    "node": ">=12.0.0"
+  },
+  "private": true
+}

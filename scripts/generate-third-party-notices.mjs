@@ -26,7 +26,7 @@ function collectPackages() {
     for (const [path, entry] of Object.entries(lock.packages ?? {})) {
       if (!path || !entry?.version) continue;
       if (!entry.license) throw new Error(`${source.lockfile}: ${path} is missing license metadata`);
-      const name = packageName(path);
+      const name = entry.name ?? packageName(path);
       const key = `${source.distribution}\0${name}\0${entry.version}`;
       const dependencyClass = entry.dev ? 'build/test' : 'runtime';
       const previous = packages.get(key);
@@ -48,7 +48,7 @@ function collectPackages() {
 
 function render() {
   const rows = collectPackages().map((pkg) =>
-    `| ${pkg.distribution} | [${markdown(pkg.name)}](https://www.npmjs.com/package/${pkg.name}) | ${markdown(pkg.version)} | ${markdown(pkg.license)} | ${pkg.dependencyClass} |`,
+    `| ${pkg.distribution} | [${markdown(pkg.name)}](${pkg.name === '@bailinghub/mammoth-library' ? 'vendor/mammoth-library/LICENSE' : `https://www.npmjs.com/package/${pkg.name}`}) | ${markdown(pkg.version)} | ${markdown(pkg.license)} | ${pkg.dependencyClass} |`,
   );
   return `# Third-Party Notices
 
@@ -64,6 +64,10 @@ Regenerate it with \`npm run notices:generate\` and verify it with \`npm run not
 
 - BailingHub and its demo business service use the official [Node.js](https://github.com/nodejs/node) 22 Bookworm Slim image as their default container base. Node.js and the Debian packages in that image retain their own licenses and notices.
 - The default Docker Compose topology runs [MySQL Community Server](https://www.mysql.com/products/community/) 8.4 as a separate service. The public mirror configured by BailingHub is a redistribution of the upstream MySQL image; operators may replace it through \`BAILING_MYSQL_IMAGE\`. MySQL Community Server is licensed by its upstream project under GPL terms and is not relicensed as part of BailingHub.
+
+## Vendored DOCX Library
+
+The library-only [Mammoth distribution](vendor/mammoth-library/SOURCE.json) preserves the upstream BSD-2-Clause [license](vendor/mammoth-library/LICENSE) and library source. BailingHub removes its command-line interface and argparse dependency, uses a distinct package name/version, and bundles it for npm consumers. See the [source and audit policy](docs/DOCX_DEPENDENCY.md) for reproducibility and upstream advisory checks.
 
 ## JavaScript Dependency Inventory
 

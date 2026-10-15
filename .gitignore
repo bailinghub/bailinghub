@@ -12,6 +12,7 @@ data/
 .oss-dist/
 .oss-publish/
 bailinghub-*.tgz
+!vendor/bailinghub-mammoth-library-1.12.0-bailinghub.1.tgz
 config.json
 .env
 .paused

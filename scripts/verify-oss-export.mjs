@@ -30,6 +30,9 @@ function verifyGitBoundary() {
     run('git', ['add', '.'], repoDir);
     run('git', ['commit', '-q', '-m', 'chore: verify oss export'], repoDir);
     const files = output('git', ['ls-files'], repoDir).trim().split(/\r?\n/).filter(Boolean);
+    if (!files.includes('vendor/bailinghub-mammoth-library-1.12.0-bailinghub.1.tgz')) {
+      throw new Error('OSS git export must retain the local DOCX library archive');
+    }
     const gitignore = readFileSync(join(repoDir, '.gitignore'), 'utf8');
   const requiredGitignoreRules = [
     '.oss-dist/',

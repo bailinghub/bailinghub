@@ -15,6 +15,7 @@ import type { ChannelMessage, ChannelSendResult } from '../app/channels';
 import { isAgentToolInvocationJob } from '../app/agent-tool-job';
 import { continueApprovalDecisionFor, supportsApprovalContinuations } from '../app/approval-continuations';
 import { classifyDeliveryDlq, replayExecutorDeliveryDlq, DeliveryReplayError } from '../app/delivery-dlq-replay';
+import { handleAdminNotificationsFor } from './admin-notifications';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
 
@@ -165,6 +166,7 @@ export async function handleAdminRuntimeApiFor(
   res: ServerResponse,
   principal: Principal,
 ): Promise<boolean> {
+  if (await handleAdminNotificationsFor(deps, method, path, req, res, principal)) return true;
   if (!deps.configStore) return false;
   const configStore = deps.configStore;
   const stateStore = deps.stateStore;
@@ -293,6 +295,19 @@ export async function handleAdminRuntimeApiFor(
     const d = await configStore.deliveryDlq.get(id);
     if (!d) { send(res, 404, { error: '死信不存在' }); return true; }
     if (d.resolved) { send(res, 200, { ok: true, note: '已处理过，未重复重投' }); return true; }
+    if (d.event_id) {
+      const event = await stateStore.notificationOutbox?.get(d.event_id)
+        ?? await configStore.notificationOutbox?.get(d.event_id);
+      if (!event) { send(res, 503, { error: 'notification_durability_unavailable' }); return true; }
+      // A delivery-dlq event only records a failed executor child; its original
+      // child still uses the 067 replay marker below. Native sends, by contrast,
+      // must have exactly one retry entry point with uncertainty confirmation.
+      if (event.kind !== 'delivery-dlq') {
+        send(res, 409, { error: '请到任务页的「通知送达」中核对并重新处理此通知',
+          code: 'notification_outbox_retry_required', event_id: event.event_id, kind: event.kind });
+        return true;
+      }
+    }
     try {
       if (await classifyDeliveryDlq(d, stateStore) === 'executor_target') {
         const replay = await replayExecutorDeliveryDlq(d, configStore.deliveryDlq, stateStore);

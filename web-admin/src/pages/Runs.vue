@@ -264,6 +264,9 @@
           </el-collapse>
         </div>
       </el-tab-pane>
+      <el-tab-pane label="通知送达" name="notifications">
+        <NotificationOutboxPanel v-if="activeTab === 'notifications'" ref="notificationPanel" />
+      </el-tab-pane>
     </el-tabs>
   </el-card>
 
@@ -451,6 +454,7 @@ import { useMe } from '../store';
 import RichText from '../components/RichText.vue';
 import HelpTip from '../components/HelpTip.vue';
 import ClientConversations from '../components/ClientConversations.vue';
+import NotificationOutboxPanel from '../components/NotificationOutboxPanel.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -524,7 +528,8 @@ interface DetailTraceGroup {
 }
 
 const s = useMe();
-const activeTab = ref<'threads' | 'runs' | 'trace'>('threads');
+const activeTab = ref<'threads' | 'runs' | 'trace' | 'notifications'>('threads');
+const notificationPanel = ref<InstanceType<typeof NotificationOutboxPanel> | null>(null);
 const conversationView = ref<'audit' | 'legacy'>('audit');
 const auditConversationId = ref(''), auditTurnId = ref('');
 const clientConversations = ref<InstanceType<typeof ClientConversations> | null>(null);
@@ -962,7 +967,8 @@ function onConversationView(): void {
   if (conversationView.value === 'legacy' && !threadsLoaded.value) void loadThreads();
 }
 function refresh(): void {
-  if (activeTab.value === 'threads' && conversationView.value === 'audit') void clientConversations.value?.refresh();
+  if (activeTab.value === 'notifications') void notificationPanel.value?.refresh();
+  else if (activeTab.value === 'threads' && conversationView.value === 'audit') void clientConversations.value?.refresh();
   else if (activeTab.value === 'threads') { void loadThreads(); if (curThread.value) void openThread(curThread.value); }
   else if (activeTab.value === 'trace') { if (traceJobInput.value.trim()) void lookupJobTrace(); }
   else void load();

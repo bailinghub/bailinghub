@@ -64,6 +64,8 @@ import { handleWecomInboundFor, WecomRuntimeState, type WecomApiDeps } from '../
 import { WecomAccessTokenCache } from '../adapters/channels/wecom-api';
 import { DemoDatasetService } from '../services/demo-dataset';
 import { NotificationBackgroundWork, bindNotificationBackgroundWork } from '../core/runtime/notification-background-work';
+import { bindNotificationOutboxWake } from '../core/runtime/notification-outbox-work';
+import { reconcileNotificationOutboxFor } from './notification-outbox';
 
 const timezoneClaims = new Map<string, number>();
 const MAX_KERNEL_CLOSE_DRAIN_MS = 10 * 60_000;
@@ -241,6 +243,10 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     now,
     sleep,
     targetRegistry,
+    reconcileNotifications: async () => {
+      await reconcileNotificationOutboxFor({ cfg, configStore: composition.cfgStore, stateStore: composition.store,
+        now, sleep, targetRegistry, channelSendFor: kernelChannelSendFor, isClosing: () => closing || closed });
+    },
     reconcileApprovalContinuations: async () => {
       await reconcileApprovalContinuationsFor({
         configStore: composition.cfgStore,
@@ -254,6 +260,8 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
       ? undefined
       : async () => { await bootstrapInitialAdmin(cfg.bootstrapAdmin, { admins: composition.cfgStore?.admins ?? null }); },
   };
+
+  bindNotificationOutboxWake(composition.store, () => lifecycleDeps.reconcileNotifications!());
 
   const brandingProvider = input.brandingProvider ?? edition.brandingProvider;
   const metrics = createOperationalMetricsEndpointFor({

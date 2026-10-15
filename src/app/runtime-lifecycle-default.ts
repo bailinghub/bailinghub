@@ -13,8 +13,14 @@ import {
 } from './runtime-lifecycle';
 import { bootstrapInitialAdmin } from './admin-bootstrap';
 import { reconcileApprovalContinuationsFor } from './approval-continuations';
+import { reconcileNotificationOutboxFor } from './notification-outbox';
+import { bindNotificationOutboxWake } from '../core/runtime/notification-outbox-work';
 
 export function defaultRuntimeLifecycleDeps(): RuntimeLifecycleDeps {
+  const reconcileNotifications = () => reconcileNotificationOutboxFor({
+    cfg, configStore: cfgStore, stateStore: store, now, sleep, targetRegistry,
+  });
+  bindNotificationOutboxWake(store, reconcileNotifications);
   return {
     cfg,
     configStore: cfgStore,
@@ -30,6 +36,7 @@ export function defaultRuntimeLifecycleDeps(): RuntimeLifecycleDeps {
     now,
     sleep,
     targetRegistry,
+    reconcileNotifications,
     reconcileApprovalContinuations: async () => {
       await reconcileApprovalContinuationsFor({
         configStore: cfgStore, stateStore: store,

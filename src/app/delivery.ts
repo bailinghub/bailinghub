@@ -1,7 +1,7 @@
 // 送达层：把任务终态结果交给业务侧或用户侧。
 // engine 只负责在 finish 后触发本模块；本模块负责 webhook、内置渠道直投、自定义 notify 执行器子任务。
 import { randomUUID } from 'node:crypto';
-import { outboundRuntimeDepsFor, postSignedWithDeps, secretForJobWithDeps, sendAlertWithDeps } from './outbound';
+import { outboundRuntimeDepsFor, postSignedWithDeps, postSignedNotificationWithDeps, secretForJobWithDeps, sendAlertWithDeps, type NotificationSendOutcome } from './outbound';
 import { channelScopeKey, channelSendFor } from './channels';
 import { extractAttachments } from '../core/platform/content';
 import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
@@ -20,6 +20,120 @@ export interface DeliveryDeps {
   sleep: (ms: number) => Promise<void>;
   targetRegistry?: TargetRegistry;
   channelSendFor?: typeof channelSendFor;
+}
+
+/** Verify the original notification binding when a concurrent insert or its ACK is lost. */
+export async function createNotificationChildOnce(state: RuntimeStateStore, child: Job): Promise<Job> {
+  const matches = (existing: Job) => existing.source === 'delivery' && existing.target === child.target
+    && existing.input === child.input && existing.metadata?.parent_job_id === child.metadata?.parent_job_id
+    && existing.metadata?.approval_id === child.metadata?.approval_id;
+  const existing = await state.findByRequestId(child.request_id);
+  if (existing) {
+    if (!matches(existing)) throw new Error('notification_child_binding_conflict');
+    return existing;
+  }
+  try { await state.createJob(child); return child; }
+  catch (error) {
+    const saved = await state.findByRequestId(child.request_id);
+    if (!saved || !matches(saved)) throw error;
+    return saved;
+  }
+}
+
+/** Durable result delivery; never launches or requeues the business parent. */
+export async function deliverNotificationFor(deps: DeliveryDeps, parent: Job, eventId: string, brandName = deps.cfg.brand.name): Promise<NotificationSendOutcome> {
+  if (parent.source === 'delivery' || parent.metadata?.no_delivery) return { status: 'skipped' };
+  const outbound = outboundRuntimeDepsFor({ ...deps, channelSendFor: deps.channelSendFor });
+  const d = routeDeliveryConfig(parent.dispatch?.delivery);
+  const nativeWecom = parent.status === 'done' && parent.source?.startsWith('wecom:');
+  const result = parent.result ?? {};
+  const rawText = typeof result.text === 'string' ? result.text : parent.raw_result || '';
+  const content = parent.status === 'error'
+    ? `【${parent.dispatch?.route_name || '任务'}】执行失败：${String(parent.error ?? '未知错误').slice(0, 500)}`
+    : renderDeliveryMessage(parent, brandName);
+  const wecomRecipient = String(parent.metadata?.wecom_userid ?? '').trim();
+  const useWecom = nativeWecom && !!wecomRecipient && !!rawText;
+  if (!useWecom && (!d?.type || !content || (parent.status === 'error' && d.type !== 'webhook'))) return { status: 'skipped' };
+  if (!useWecom && d?.type === 'webhook') {
+    const url = String(d.url ?? '').trim();
+    if (!url) return { status: 'skipped', error: 'Webhook destination missing' };
+    return postSignedNotificationWithDeps(outbound, url, {
+      kind: 'delivery', job_id: parent.job_id, request_id: parent.request_id,
+      route_name: parent.dispatch?.route_name ?? '', status: parent.status, message: content,
+      text: typeof result.text === 'string' ? result.text : null,
+      attachments: extractAttachments(typeof result.text === 'string' ? result.text : ''),
+      report: result.report ?? null, error: parent.error ?? null, metadata: parent.metadata ?? {}, finished_at: parent.updated_at,
+    }, await secretForJobWithDeps(outbound, parent), eventId,
+    { job_id: parent.job_id, request_id: parent.request_id, event: 'delivery_webhook' });
+  }
+  // Native replies must survive more than one approved continuation of a Job.
+  // Deduplicate one saved terminal event, not all future replies from that Job.
+  // Explicit delivery routes retain their existing once-per-parent policy.
+  const requestId = useWecom ? `deliver_${eventId}` : `deliver_${parent.job_id}`;
+  if (useWecom || d?.type === 'channel') {
+    const channel = useWecom ? parent.source!.slice('wecom:'.length) : String(d!.channel ?? '').trim();
+    const raw = useWecom ? wecomRecipient : (d?.to_field ? parent.metadata?.[String(d.to_field)] : undefined);
+    const parsed = (Array.isArray(raw) ? raw.map(String) : String(raw ?? '').split('|')).map(value => value.trim()).filter(Boolean);
+    const recipients = [...new Set(parsed.length ? parsed : String(d?.to ?? '').split('|').map(value => value.trim()).filter(Boolean))].slice(0, 1000);
+    if (!channel || !recipients.length) return { status: 'skipped', error: 'Channel destination missing' };
+    const previous = await deps.stateStore.findByRequestId(requestId);
+    if (previous) {
+      if (previous.source !== 'delivery' || previous.metadata?.parent_job_id !== parent.job_id) return { status: 'failed', error: 'notification_child_binding_conflict' };
+      if (previous.status === 'done') return { status: 'skipped', error: 'Original delivery already recorded' };
+      if (previous.metadata?.notification_event_id !== eventId) return { status: 'failed', error: 'Original delivery failed; use its delivery dead letter' };
+    }
+    const text = rawText.trim() ? rawText : content;
+    const send = deps.channelSendFor ?? channelSendFor;
+    const sent = await send(deps.configStore, channel, recipients.join('|'), text)
+      .catch(() => ({ ok: false, error: 'Channel acknowledgement unavailable', mayHaveCommitted: true }));
+    const child: Job = { job_id: previous?.job_id ?? randomUUID(), request_id: requestId, status: sent.ok ? 'done' : 'error',
+      target: 'channel-send', profile: 'delivery', project: '', source: 'delivery',
+      input_preview: text.slice(0, 200), input: text,
+      result: sent.ok ? { text, channel, to: recipients } : undefined, error: sent.ok ? undefined : sent.error,
+      metadata: { parent_job_id: parent.job_id, parent_request_id: parent.request_id, notification_event_id: eventId,
+        outbound: true, via: 'delivery', channel, recipients: recipients.length, ...(recipients.length === 1 ? { recipient: recipients[0] } : {}) },
+      created_at: previous?.created_at ?? deps.now(), updated_at: deps.now() };
+    if (previous) await deps.stateStore.updateJob(previous.job_id, { status: child.status, result: child.result, error: child.error });
+    else await createNotificationChildOnce(deps.stateStore, child);
+    if (sent.ok) {
+      // History is observability; a history failure must not resend an acknowledged message.
+      const config = deps.configStore;
+      if (config) {
+        const ch = await config.channels.get(channel).catch(() => null);
+        if (ch) for (const recipient of recipients) {
+          try {
+            const principal = (ch.kind === 'wecom' ? `wxuid:${recipient}` : `${ch.kind}:${recipient}`).slice(0, 64);
+            const thread = await config.conversations.resolveThread(ch.route_key, channelScopeKey(ch.kind, ch.name, recipient), principal);
+            await config.conversations.appendMessage({ thread_id: thread, direction: 'out', channel: 'delivery', principal_id: principal, job_id: parent.job_id, content: text });
+          } catch { /* acknowledged channel result is retained */ }
+        }
+      }
+      return { status: 'completed' };
+    }
+    const recipientLabel = recipients.length === 1 ? recipients[0] : `${recipients.length}人`;
+    void sendAlertWithDeps(outbound, `delivery_failed_${channel}`,
+      `${useWecom ? '渠道回流送达失败' : '渠道送达失败'}（${channel} → ${recipientLabel}）：${String(sent.error ?? '未知').slice(0, 200)}。收件人可能未收到，关联任务 ${parent.job_id}。`)
+      .catch(() => { /* Best-effort alert is tracked for close; it cannot change delivery recovery. */ });
+    if (deps.configStore) await deps.configStore.deliveryDlq.record({ parentJobId: parent.job_id, channel,
+      recipient: recipients.join('|'), content: text, error: sent.error ?? 'Channel delivery failed', deliveryKind: 'native_channel', eventId });
+    return { status: sent.mayHaveCommitted ? 'uncertain' : 'failed', error: sent.error ?? 'Channel delivery failed' };
+  }
+  const target = `${d!.type}-notify`;
+  const definition = (deps.targetRegistry ?? defaultTargetRegistry).get(target);
+  const to = String((d?.to_field ? parent.metadata?.[String(d.to_field)] : undefined) || d?.to || '').trim();
+  if (!definition || definition.kind !== 'executor' || !definition.enabled || !to) return { status: 'skipped', error: 'Notification executor or recipient unavailable' };
+  const existing = await deps.stateStore.findByRequestId(requestId);
+  if (existing && existing.metadata?.notification_event_id !== eventId) {
+    if (existing.source !== 'delivery' || existing.metadata?.parent_job_id !== parent.job_id) return { status: 'failed', error: 'notification_child_binding_conflict' };
+    // Preserve the existing deliver_<parent> policy across a legitimate business rerun.
+    return { status: 'skipped', error: 'Original delivery already queued' };
+  }
+  await createNotificationChildOnce(deps.stateStore, { job_id: randomUUID(), request_id: requestId, status: 'queued',
+    target, profile: 'delivery', project: '', source: 'delivery', thread_id: parent.thread_id, session_id: randomUUID(),
+    input_preview: content.slice(0, 200), input: content, dispatch: { target_config: d! },
+    metadata: { to, parent_job_id: parent.job_id, parent_request_id: parent.request_id, notification_event_id: eventId },
+    created_at: deps.now(), updated_at: deps.now() });
+  return { status: 'completed' };
 }
 
 /**

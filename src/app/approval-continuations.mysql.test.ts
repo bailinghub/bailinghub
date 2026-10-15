@@ -15,7 +15,7 @@ const enabled = process.env.BAILING_APPROVAL_CONTINUATION_TEST_MYSQL === '1';
 
 async function fixture() {
   const database = `approval_acceptance_${randomUUID().replaceAll('-', '')}`;
-  const mysql = { host: '127.0.0.1', port: 16307, user: 'root', password: '', database, connectionLimit: 8 };
+  const mysql = { host: '127.0.0.1', port: Number(process.env.BAILING_APPROVAL_CONTINUATION_TEST_MYSQL_PORT ?? 16307), user: 'root', password: '', database, connectionLimit: 8 };
   const admin = createPool({ ...mysql, database: undefined });
   await admin.query(`CREATE DATABASE \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`);
   const pool = createPool({ ...mysql, timezone: 'Z' });

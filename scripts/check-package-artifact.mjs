@@ -57,6 +57,9 @@ const requiredFiles = [
   'demo/business/server.mjs',
   'web/console/index.html',
   'web/widget/widget.js',
+  'vendor/bailinghub-mammoth-library-1.12.0-bailinghub.1.tgz',
+  'vendor/mammoth-library/LICENSE',
+  'vendor/mammoth-library/SOURCE.json',
 ];
 
 function run(command, args, cwd) {
@@ -89,6 +92,18 @@ function parsePackManifest(stdout) {
 function consumerSmokeSource(expectedVersion) {
   return `
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
+
+const corePackage = import.meta.resolve('bailinghub/package.json');
+const coreRequire = createRequire(corePackage);
+const mammoth = coreRequire('mammoth');
+assert.equal(coreRequire('mammoth/package.json').name, '@bailinghub/mammoth-library');
+assert.equal(coreRequire('mammoth/package.json').bin, undefined);
+const { makeDocxFixture } = await import(new URL('scripts/docx-fixtures.mjs', corePackage));
+const buffer = await makeDocxFixture();
+assert.match((await mammoth.extractRawText({ buffer })).value, /中文核对报告/);
+assert.match((await mammoth.convertToHtml({ buffer })).value, /<h1>中文核对报告<\\/h1>/);
+for (const name of ['argparse', 'sprintf-js']) assert.throws(() => coreRequire.resolve(name), { code: 'MODULE_NOT_FOUND' });
 
 const expectedExports = ${JSON.stringify(expectedRuntimeExports)};
 const api = await import('bailinghub/kernel-api/v1');
@@ -173,6 +188,10 @@ try {
     ['--import', 'tsx', '--input-type=module', '--eval', consumerSmokeSource(String(manifest.version ?? ''))],
     consumerDirectory,
   );
+  const audit = JSON.parse(run(npmCommand, ['audit', '--json'], consumerDirectory));
+  if (audit?.auditReportVersion !== 2 || audit?.metadata?.vulnerabilities?.total !== 0 || Object.keys(audit.vulnerabilities ?? {}).length !== 0) {
+    throw new Error('Packed Core consumer must have zero raw dependency findings');
+  }
 
   console.log(
     `✓ npm Core artifact passed (${manifest.entryCount ?? manifest.files.length} files, ` +

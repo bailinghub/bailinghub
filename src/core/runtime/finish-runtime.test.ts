@@ -168,3 +168,23 @@ test('deliveryFailureRecipient: recipient 优先，其次 to，最后问号', ()
   assert.equal(deliveryFailureRecipient(job({ metadata: { to: 'b' } })), 'b');
   assert.equal(deliveryFailureRecipient(job({ metadata: {} })), '?');
 });
+
+test('durable finish atomically commits once and never performs a second direct send after an audit failure', async () => {
+  const events: Record<string, unknown[]> = {};
+  const original = job({ callback_url: 'https://synthetic.invalid/callback' });
+  const d = deps(original, events); let completions = 0;
+  d.store.completeJobWithNotifications = async (observed, patch) => { completions++; assert.equal(observed, original); return { ...observed, ...patch }; };
+  d.store.updateJob = async () => { throw new Error('non-atomic terminal write forbidden'); };
+  d.store.appendAudit = async () => { throw new Error('audit unavailable after committed terminal'); };
+  const result = await finishJob(original, { status: 'done', result: { text: 'frozen' } }, d);
+  await tick();
+  assert.equal(result?.status, 'done'); assert.equal(completions, 1);
+  assert.equal(events.callbacks, undefined); assert.equal(events.deliveries, undefined);
+});
+
+test('stale durable completion does not append completion audit or trigger notification and ledger work', async () => {
+  const events: Record<string, unknown[]> = {}; const original = job(); const d = deps(original, events);
+  d.store.completeJobWithNotifications = async () => null;
+  assert.equal(await finishJob(original, { status: 'done', result: { text: 'late' } }, d), null);
+  await tick(); assert.deepEqual(events.audits, []); assert.equal(events.messages, undefined); assert.equal(events.callbacks, undefined);
+});

@@ -273,14 +273,14 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
   async function processJob(job: Job, route: Route | null, projectPath: string | null, fullInput: string, session: SessionTarget): Promise<void> {
     await deps.queue.run(async () => {
       if (deps.isPaused()) {
-        await deps.stateStore.updateJob(job.job_id, { status: 'rejected', error: 'kill switch 暂停', executor_id: undefined, claimed_at: undefined, lease_until: undefined, dispatched_at: undefined, claim_token: undefined });
-        deps.jobStream?.seal(job.job_id);
+        await finish(job, { status: 'rejected', error: 'kill switch 暂停' });
         return;
       }
       const claimed = job.status === 'running'
         ? job
         : await deps.stateStore.updateJobIfStatus(job.job_id, ['queued'], {
           status: 'running',
+          claim_token: randomUUID(),
           run_after: undefined,
           claimed_at: deps.now(),
           lease_until: new Date(Date.now() + INHUB_JOB_LEASE_MS).toISOString(),
@@ -392,7 +392,8 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
       sleep: deps.sleep,
       channelSendFor: deps.channelSendFor,
     });
-    await finishJob(job, patch, {
+    const completed = await finishJob(job, patch, {
+      brandName: deps.cfg.brand.name,
       store: deps.stateStore,
       conversationLedger: deps.configStore?.conversations,
       deliveryDlq: deps.configStore?.deliveryDlq,
@@ -410,7 +411,7 @@ export function createEngineRuntime(deps: EngineRuntimeDeps): EngineRuntime {
       sendAlert: (key, text) => sendAlertWithDeps(outboundRuntime, key, text),
       summarizeThread: summaryRuntime.maybeSummarizeThread,
     });
-    deps.jobStream?.seal(job.job_id);
+    if (completed) deps.jobStream?.seal(job.job_id);
   }
 
   return {

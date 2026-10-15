@@ -3,9 +3,11 @@
 import type { AuditEntry } from '../contracts/types';
 import type { Job } from '../contracts/types';
 import { notificationBackgroundWorkFor } from './notification-background-work';
+import { wakeNotificationOutboxFor } from './notification-outbox-work';
 
 export interface FinishStateStoreLike {
   updateJob(jobId: string, patch: Partial<Job>): Promise<Job | null>;
+  completeJobWithNotifications?(original: Job, patch: Partial<Job>, context?: { brandName?: string }): Promise<Job | null>;
   appendAudit(entry: AuditEntry): Promise<void>;
 }
 
@@ -18,6 +20,7 @@ export interface FinishDeliveryDlqLike {
 }
 
 export interface FinishRuntimeDeps {
+  brandName?: string;
   store: FinishStateStoreLike;
   conversationLedger?: FinishConversationLedgerLike | null;
   deliveryDlq?: FinishDeliveryDlqLike | null;
@@ -45,11 +48,16 @@ export async function finishJob(job: Job, patch: Partial<Job>, deps: FinishRunti
   const finalPatch: Partial<Job> = terminal
     ? { ...patch, executor_id: undefined, claimed_at: undefined, lease_until: undefined, dispatched_at: undefined, claim_token: undefined }
     : patch;
-  const updated = await deps.store.updateJob(job.job_id, finalPatch);
+  const durable = terminal && !!deps.store.completeJobWithNotifications;
+  const updated = durable
+    ? await deps.store.completeJobWithNotifications!(job, finalPatch, { brandName: deps.brandName })
+    : await deps.store.updateJob(job.job_id, finalPatch);
+  if (!updated) return null; // A stale completion must neither send nor seal a newer run.
+  if (durable) wakeNotificationOutboxFor(deps.store);
   await deps.store.appendAudit({
     ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event: 'finished',
     detail: { status: patch.status, cost_usd: updated?.usage?.cost_usd ?? 0 },
-  });
+  }).catch(() => undefined); // The committed terminal/outbox must not be overwritten by an outer error handler.
 
   const threadId = updated?.thread_id ?? job.thread_id;
   // 总账记出站（done 才记；失败不阻塞）。必须 await 后再交棒，保证同会话下一条装配能看到本条回复。
@@ -62,10 +70,10 @@ export async function finishJob(job: Job, patch: Partial<Job>, deps: FinishRunti
     }
   }
 
-  if (updated && job.callback_url) void notifications.track('callback', () => deps.fireCallback(job.callback_url!, updated));
+  if (!durable && job.callback_url) void notifications.track('callback', () => deps.fireCallback(job.callback_url!, updated));
 
   // 送达层：done 或 error 都进（spawnDeliveryJob 内裁决：失败只回调 webhook 不推人渠道）。
-  if (updated && (updated.status === 'done' || updated.status === 'error')) {
+  if (!durable && (updated.status === 'done' || updated.status === 'error')) {
     void notifications.track('delivery', async () => { try { await deps.spawnDeliveryJob(updated); } catch (e) {
       await deps.store.appendAudit({ ts: deps.now(), job_id: job.job_id, request_id: job.request_id, event: 'delivery_error', detail: { error: String(e) } });
       throw e;
@@ -79,7 +87,7 @@ export async function finishJob(job: Job, patch: Partial<Job>, deps: FinishRunti
     void notifications.track('alert', () => deps.sendAlert(`delivery_failed_${job.target}`,
       `送达任务最终失败（渠道 ${job.target}，收件人 ${to}）：${err}。收件人可能未收到结果，请到控制台「任务」查 ${job.job_id} 并手动补发。`)
     );
-    if (deps.deliveryDlq) void notifications.track('delivery-dlq', () => deps.deliveryDlq!.record({ parentJobId: job.job_id, channel: String(job.target ?? ''), recipient: to, content: job.input ?? '', error: err, deliveryKind: 'executor_target', notificationJobId: job.job_id }));
+    if (!durable && deps.deliveryDlq) void notifications.track('delivery-dlq', () => deps.deliveryDlq!.record({ parentJobId: job.job_id, channel: String(job.target ?? ''), recipient: to, content: job.input ?? '', error: err, deliveryKind: 'executor_target', notificationJobId: job.job_id }));
   }
 
   return updated;

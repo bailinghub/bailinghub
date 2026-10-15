@@ -107,3 +107,18 @@ test('maintenance snapshot failures leave existing metrics available and redact 
   assert.match(logs[0]!, /"collector":"maintenance"/);
   assert.doesNotMatch(logs[0]!, /PRIVATE|TENANT|ACCOUNT|JOB|ROUTE|PROMPT|TOKEN|BODY/);
 });
+
+test('durable notification scrape partitions shared-store aggregates without invoking delivery or exposing records', async () => {
+  const kinds: string[][] = [];
+  const repo = { async snapshot(options: { kinds: string[] }) {
+    kinds.push(options.kinds);
+    return { counts: { pending: options.kinds.includes('callback') ? 2 : 1, processing: 0, completed: 3, skipped: 0, failed: 0, uncertain: 1 }, oldestPendingAgeSeconds: 12, expiredLeases: 0 };
+  } };
+  const configStore = { approvals: { createWithNotification: async () => { throw new Error('must not create'); } }, notificationOutbox: repo, observability: {} } as unknown as ConfigStoreContract;
+  const store = { notificationOutbox: repo, completeJobWithNotifications: async () => { throw new Error('must not complete job'); } } as unknown as RuntimeStateStore;
+  const text = await endpoint({ store, configStore }).scrape();
+  assert.deepEqual(kinds, [['callback', 'delivery', 'delivery-dlq'], ['approval-notification']]);
+  assert.match(text, /bailinghub_notification_outbox_records\{source="jobs",status="pending"\} 2/);
+  assert.match(text, /bailinghub_notification_outbox_records\{source="approvals",status="pending"\} 1/);
+  assert.doesNotMatch(text, /notification_event_id|lease_token|payload_json/);
+});

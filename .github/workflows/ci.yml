@@ -36,6 +36,9 @@ jobs:
     env:
       BAILING_USAGE_TEST_MYSQL: '1'
       BAILING_APPROVAL_CONTINUATION_TEST_MYSQL: '1'
+      BAILING_NOTIFICATION_OUTBOX_TEST_MYSQL: '1'
+      BAILING_NOTIFICATION_TEST_MYSQL: '1'
+      BAILING_NOTIFICATION_OUTBOX_BASELINE_ROOT: ${{ github.workspace }}/.notification-baseline
     services:
       mysql:
         image: mysql:8.4@sha256:85b9bf2e29cf836ecb8c2a15a935d4ba0c606631dff1dd79531a11983c638f2a # 8.4.11, amd64/arm64
@@ -58,7 +61,12 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: node --import tsx --test --test-concurrency=4 "src/modules/usage/*.test.ts" src/app/kernel-usage-lifecycle.mysql.test.ts src/app/approval-continuations.mysql.test.ts
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 6412a35334237736cdfdef4d0bf9668fc1ad6cdc # Core v0.9.3, through migration 067
+          path: .notification-baseline
+          persist-credentials: false
+      - run: node --import tsx --test --test-concurrency=4 "src/modules/usage/*.test.ts" src/app/kernel-usage-lifecycle.mysql.test.ts src/app/approval-continuations.mysql.test.ts src/app/delivery-dlq-replay.mysql.test.ts src/infrastructure/state/notification-outbox-storage.test.ts
 
   model-process-recovery:
     name: model process recovery + MySQL
@@ -131,6 +139,8 @@ jobs:
       - run: npm run docs:check
       - run: npm run release:audit
       - run: npm run audit:deps:test
+      - run: npm run docx:vendor:verify-upstream
+      - run: npm run docx:test
       - run: node scripts/dependency-audit.mjs --scope core
 
   github-boundary:
@@ -169,6 +179,8 @@ jobs:
         working-directory: web-admin
       - run: node scripts/dependency-audit.mjs --scope web-admin
       - run: npx playwright install --with-deps chromium
+      - run: npm run docx:browser:test
+      - run: npm run notification:console:test
       - run: npm run e2e:console
 
   sdk-contract:

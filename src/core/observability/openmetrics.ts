@@ -1,5 +1,6 @@
 import { JOB_STATUSES, TERMINAL_JOB_STATUSES } from '../contracts/types';
 import type { JobOperationalMetricsSnapshot } from '../state/state-contracts';
+import { NOTIFICATION_STATUSES, type NotificationSnapshot } from '../contracts/notification-outbox';
 
 export interface ControlPlaneOperationalMetricsSnapshot {
   pendingApprovals: number;
@@ -28,6 +29,7 @@ export interface RuntimeMaintenanceMetricsSnapshot {
   usageReconciliation?: { scanned: number; settled: number; deferred: number; failed: number; hasMore: boolean };
   approvalReconciliation?: { scanned: number; completed: number; pending: number; failed: number };
   usageRetry?: { running: boolean; consecutiveFailures: number; retryAfterMs: number };
+  notificationOutbox?: Array<{ source: 'jobs' | 'approvals'; available: boolean; snapshot?: NotificationSnapshot }>;
 }
 
 export interface OperationalMetricsDocument {
@@ -101,6 +103,21 @@ function renderMaintenance(lines: string[], snapshot: RuntimeMaintenanceMetricsS
   for (const [name, help, type, samples] of groups) if (samples.length) family(lines, name, help, type, samples);
 
   const progress: string[] = [];
+  if (snapshot.notificationOutbox) {
+    const availability: string[] = [], records: string[] = [], pendingAge: string[] = [], expired: string[] = [];
+    for (const source of ['jobs', 'approvals'] as const) {
+      const row = snapshot.notificationOutbox.find(item => item.source === source);
+      availability.push(`bailinghub_notification_outbox_available{source="${source}"} ${row?.available ? 1 : 0}`);
+      if (!row?.snapshot) continue;
+      for (const status of NOTIFICATION_STATUSES) records.push(`bailinghub_notification_outbox_records{source="${source}",status="${status}"} ${finite(row.snapshot.counts[status])}`);
+      pendingAge.push(`bailinghub_notification_outbox_oldest_pending_age_seconds{source="${source}"} ${finite(row.snapshot.oldestPendingAgeSeconds)}`);
+      expired.push(`bailinghub_notification_outbox_expired_leases{source="${source}"} ${finite(row.snapshot.expiredLeases)}`);
+    }
+    family(lines, 'bailinghub_notification_outbox_available', 'Availability of atomic notification intent persistence for built-in sources.', 'gauge', availability);
+    if (records.length) family(lines, 'bailinghub_notification_outbox_records', 'Persisted notification intents by state; completed includes durable queue handoff and is not a human receipt.', 'gauge', records);
+    if (pendingAge.length) family(lines, 'bailinghub_notification_outbox_oldest_pending_age_seconds', 'Age of the oldest pending or processing notification intent.', 'gauge', pendingAge);
+    if (expired.length) family(lines, 'bailinghub_notification_outbox_expired_leases', 'Expired notification leases awaiting recovery or uncertainty classification.', 'gauge', expired);
+  }
   if (snapshot.usageReconciliation) {
     for (const outcome of ['scanned', 'settled', 'deferred', 'failed'] as const) {
       progress.push(`bailinghub_maintenance_last_page_records{kind="usage-reconciliation",outcome="${outcome}"} ${finite(snapshot.usageReconciliation[outcome])}`);
