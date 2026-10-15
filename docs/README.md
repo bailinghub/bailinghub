@@ -9,6 +9,10 @@
 | 文档 | 用途 |
 |---|---|
 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) · [English](IMPLEMENTATION_STATUS.en.md) | Core 能力归属、正式发行与主分支状态、公开证据和未覆盖范围。 |
+| [RELEASE_NOTES_v0.9.4.md](RELEASE_NOTES_v0.9.4.md) · [English](RELEASE_NOTES_v0.9.4.en.md) | v0.9.4：DOCX 依赖处置、通知持久化与控制台补发。 |
+| [UPGRADE_v0.9.4.md](UPGRADE_v0.9.4.md) · [English](UPGRADE_v0.9.4.en.md) | 068 显式迁移、状态/配置库、事件去重和回退限制。 |
+| [NOTIFICATION_DURABILITY.md](NOTIFICATION_DURABILITY.md) · [English](NOTIFICATION_DURABILITY.en.md) | 通知保存、恢复、人工处置、持久指标和外部送达边界。 |
+| [DOCX_DEPENDENCY.md](DOCX_DEPENDENCY.md) · [English](DOCX_DEPENDENCY.en.md) | 固定 Mammoth 库来源、CLI 链移除和严格审计。 |
 | [RELEASE_NOTES_v0.9.3.md](RELEASE_NOTES_v0.9.3.md) · [English](RELEASE_NOTES_v0.9.3.en.md) | v0.9.3：有限收包、通知关闭与原通知死信重投，含维护指标。 |
 | [UPGRADE_v0.9.3.md](UPGRADE_v0.9.3.md) · [English](UPGRADE_v0.9.3.en.md) | 067 显式迁移、配套 DLQ/state 仓储、回退 manifest 与标记保留。 |
 | [RELEASE_NOTES_v0.9.2.md](RELEASE_NOTES_v0.9.2.md) · [English](RELEASE_NOTES_v0.9.2.en.md) | v0.9.2：安全安装、自动结算与原审批补续，含部署诊断与进程回归。 |

@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.3.en.md).
+Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.4.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,17 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.9.4 - DOCX dependency remediation and durable notifications
+
+Version date: 2026-10-15. A patch from Core 0.9.3; MCP / Agent Client SDK 0.7.0 and DSH 0.7.0 remain unchanged. See [release notes](RELEASE_NOTES_v0.9.4.en.md) and the [upgrade guide](UPGRADE_v0.9.4.en.md).
+
+- Retain official Mammoth 1.12.0 parsing sources, types and license while a pinned library archive removes the unused CLI and argparse → sprintf-js chain. Core/console, npm/source/Docker share this distribution; retire the temporary exception. Require zero raw findings in both trees and query direct advisories under the original Mammoth name, without claiming an upstream fix or safety of arbitrary documents.
+- Atomically persist terminal Jobs/intents in MySQL and approvals/prompts in their configuration database; JSONL syncs one compound record and remains single-writer. Startup/maintenance recovers bounded pages with lease-token fencing, stable event identity and frozen snapshots; no historical bulk backfill or business-parent rerun.
+- Webhooks await actual responses and use bounded, at-least-once retries with receiver event-ID deduplication. Native partial/unknown receipt becomes uncertain for operator verification. Retain 067 original executor-notification replay; native-event-linked DLQs recover through one outbox path.
+- Add bundled console notification lists, filters, summaries and permission-controlled retry, with uncertain-state confirmation and stale-state conflicts. Fixed jobs/approvals metrics expose persistent counts, ages and leases without bodies or recipients. No automatic cleanup policy is added; ordinary alerts and legacy adapters remain best effort.
+- Add migration 068's outbox and nullable unique DLQ event reference. Explicitly migrate both actual MySQL database roles before new reads/writes; historical SQL is unchanged. Rollback preserves records, markers, receipts and history; old code does not process the new outbox, and restoring backups cannot undo external messages.
+- Add public DOCX compatibility/consumption, browser console, actual JSONL SIGKILL, MySQL atomicity/lost acknowledgements, lease fencing and 067-to-068 migration regressions. Synthetic data/local receivers do not replace live channels, deployment acceptance or production rollback drills. ACC, independent Hosts and clients upgrade through their own procedures.
 
 ## v0.9.3 - Bounded bodies and reliable notification shutdown
 

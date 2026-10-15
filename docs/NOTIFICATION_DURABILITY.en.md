@@ -2,7 +2,7 @@
 
 [简体中文](NOTIFICATION_DURABILITY.md)
 
-This page describes changes in the current source that have not yet shipped in a new product release. Historical Core v0.9.3 artifacts provide graceful drain and migration 067 dead-letter replay only. The scope is Core and its bundled console; ACC and independent consumers are unchanged.
+Durable notifications are available from Core v0.9.4. Historical Core v0.9.3 artifacts provide graceful drain and migration 067 dead-letter replay only. The scope is Core and its bundled console; ACC and independent consumers are unchanged.
 
 ## Persistence boundary
 

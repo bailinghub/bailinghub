@@ -29,13 +29,13 @@ You choose which business APIs become available. BailingHub connects the convers
   <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
 </picture>
 
-## v0.9.3: bounded bodies and reliable notification shutdown
+## v0.9.4: DOCX dependency remediation and durable notifications
 
-Tool responses and remote attachments are bounded during reading. Oversized write responses retain the original unknown outcome without redispatch. Graceful close drains actual callbacks, notifications and DLQ writes. Executor dead letters replay only the original notification child, with permanent markers deduplicating admission for the same DLQ. New read-only metrics expose background maintenance.
+DOCX parsing retains official Mammoth 1.12.0 library sources while removing the unused CLI dependency chain and retiring its audit exception. Built-in stores persist task terminal states and approval creation together with their notification intents. Recovery sends the original notification without rerunning business tasks. The bundled console adds notification management under Tasks, with persistent backlog metrics.
 
-The component set is **Core 0.9.3 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**. Explicitly apply **067** before new MySQL DLQ reads/writes; earlier upgrades also apply missing preceding migrations. Shared USD allowance, the unified multiplier and client orchestration remain unchanged. Notification drain covers graceful shutdown, without a full durable notification outbox. A release does not establish a deployment has upgraded.
+The component set is **Core 0.9.4 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**. Explicitly apply **068** to the state and configuration databases actually in use, plus missing preceding migrations for older upgrades. Webhooks use at-least-once delivery with receiver deduplication by stable event ID; native partial or unknown receipt requires manual verification. Shared USD allowance, the unified multiplier and client orchestration remain unchanged. A release does not establish a deployment has upgraded.
 
-[Release notes](docs/RELEASE_NOTES_v0.9.3.en.md) · [Upgrade guide](docs/UPGRADE_v0.9.3.en.md) · [Reliability and migrations](docs/CORE_RELIABILITY.en.md) · [Previous release](docs/RELEASE_NOTES_v0.9.2.en.md)
+[Release notes](docs/RELEASE_NOTES_v0.9.4.en.md) · [Upgrade guide](docs/UPGRADE_v0.9.4.en.md) · [Notification boundaries](docs/NOTIFICATION_DURABILITY.en.md) · [Previous release](docs/RELEASE_NOTES_v0.9.3.en.md)
 
 ## Operate the System by Conversation
 
@@ -125,7 +125,7 @@ To explore before installing, use the [online experience](https://trial.bailingh
 To run the complete disposable loop locally:
 
 ```bash
-git clone --branch v0.9.3 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.9.4 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -214,7 +214,7 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
 - [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.
 - [English Documentation Map](docs/README.en.md) — the complete public documentation index.
-- [Changelog](docs/CHANGELOG.en.md) and [v0.9.3](docs/RELEASE_NOTES_v0.9.3.en.md) — current release changes and upgrade notes.
+- [Changelog](docs/CHANGELOG.en.md) and [v0.9.4](docs/RELEASE_NOTES_v0.9.4.en.md) — current release changes and upgrade notes.
 
 ## Feedback and Ecosystem
 
