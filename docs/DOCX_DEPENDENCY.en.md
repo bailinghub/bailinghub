@@ -2,7 +2,7 @@
 
 [中文](DOCX_DEPENDENCY.md)
 
-Core file context uses `extractRawText`; the bundled console converts knowledge-base DOCX files through `convertToHtml` and then Markdown. Both retain the original Mammoth 1.12.0 parsing implementation.
+Core file context uses `extractRawText`; the bundled console converts knowledge-base DOCX files through `convertToHtml` and then Markdown. Both existing paths retain the original Mammoth 1.12.0 parsing implementation; Core v0.9.4 changes to the library distribution described below.
 
 ## Library distribution boundary
 
@@ -23,4 +23,4 @@ The distributed archive has fixed integrity. Different npm/gzip versions may enc
 - `npm run docx:test` covers Core's actual adapter, Chinese text, paragraphs and whitespace, headings/lists/tables/links/images, empty documents and corrupt archives. Raw text preserves upstream semantics: double newlines separate paragraphs; Word soft breaks add no character.
 - Build the console, then run `npm run docx:browser:test` for the actual browser bundle and existing image placeholders. `npm run package:artifact:check` exercises both library APIs, the dependency chain and zero raw audit findings in a real independent npm consumer.
 
-An upstream update requires an explicit source pin and custom version change, change review, rebuilt archive and both lockfiles, refreshed notices and all gates above. `node scripts/vendor-mammoth.mjs --refresh` only rebuilds the pinned source; it never tracks latest automatically. Existing installations receive this change only through a future BailingHub release and their own upgrade process.
+An upstream update requires an explicit source pin and custom version change, change review, rebuilt archive and both lockfiles, refreshed notices and all gates above. `node scripts/vendor-mammoth.mjs --refresh` only rebuilds the pinned source; it never tracks latest automatically. Existing installations receive this change only through their own upgrade to a BailingHub artifact containing it; publication does not upgrade deployments.

@@ -27,13 +27,13 @@
 
 在线体验环境只用于了解产品和配置方式。请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
 
-## v0.9.3：有限收包与通知可靠收尾
+## v0.9.4：DOCX 依赖修复与通知持久化
 
-HTTP 工具正文与远程附件在收包时执行限额，超限写操作保留原调用的未知结果，不自动重发。正常关闭等待回调、通知和死信记录的实际收尾；执行器死信只重投原通知子任务，并以持久标记防止同一死信重复入队。新增只读后台维护指标。
+DOCX 解析保留官方 Mammoth 1.12.0 库源码，移除未使用的 CLI 依赖链并退役原审计例外。内置仓储将任务终态、审批创建与通知意图一起持久保存；重启后补发原通知，不重跑业务任务。自带控制台新增「任务 → 通知送达」和持久积压指标。
 
-配套为 **Core 0.9.3 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**。升级须显式应用 **067**，更早版本补齐前序迁移；新 MySQL DLQ 读写须先就绪。共享 USD 额度、统一倍率与客户端编排保持。通知排空覆盖正常关闭，未提供全量持久通知 outbox；发行不代表具体环境已升级。
+配套为 **Core 0.9.4 + MCP / Agent Client SDK 0.7.0 + DSH 0.7.0**。升级须向实际使用的状态库和配置库显式应用 **068**，更早版本补齐前序迁移。Webhook 采用至少一次送达，接收方按稳定事件 ID 去重；原生渠道的部分或未知送达须人工核对。共享 USD 额度、统一倍率与客户端编排保持，发行不代表具体环境已升级。
 
-[版本说明](docs/RELEASE_NOTES_v0.9.3.md) · [升级指南](docs/UPGRADE_v0.9.3.md) · [可靠性与迁移](docs/CORE_RELIABILITY.md) · [上一版本](docs/RELEASE_NOTES_v0.9.2.md)
+[版本说明](docs/RELEASE_NOTES_v0.9.4.md) · [升级指南](docs/UPGRADE_v0.9.4.md) · [通知边界](docs/NOTIFICATION_DURABILITY.md) · [上一版本](docs/RELEASE_NOTES_v0.9.3.md)
 
 ## 适合哪些团队
 
@@ -115,7 +115,7 @@ HTTP 工具正文与远程附件在收包时执行限额，超限写操作保留
 在本机启动中枢、MySQL、Demo 业务系统、工具源、路由和接入方：
 
 ```bash
-git clone --branch v0.9.3 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.9.4 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -199,7 +199,7 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 | 集中开启本地智能体与工具 | [四步配置指南](docs/LOCAL_AGENT_SETUP.md) · [系统说明](docs/AGENT_SYSTEM_INFO.md) |
 | 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |
 | 理解架构与长期取舍 | [架构](docs/ARCHITECTURE.md) · [项目愿景](VISION.md) |
-| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.9.3](docs/RELEASE_NOTES_v0.9.3.md) |
+| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.9.4](docs/RELEASE_NOTES_v0.9.4.md) |
 
 完整中英文文档地图见 [docs/README.md](docs/README.md)。公共 API、SDK、Schema、Docker Demo 与代码标识保持语言中立。
 

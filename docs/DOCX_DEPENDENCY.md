@@ -2,7 +2,7 @@
 
 [English](DOCX_DEPENDENCY.en.md)
 
-Core 文件上下文使用 `extractRawText`，自带控制台知识库导入使用 `convertToHtml` 后转 Markdown。这两个入口继续使用 Mammoth 1.12.0 的原始解析代码。
+Core 文件上下文使用 `extractRawText`，自带控制台知识库导入使用 `convertToHtml` 后转 Markdown。这两个既有入口继续使用 Mammoth 1.12.0 的原始解析代码；从 Core v0.9.4 起改用下述库分发。
 
 ## 库分发边界
 
@@ -23,4 +23,4 @@ Core 与控制台通过同一个仓内 `.tgz` 安装，运行依赖分别进入�
 - `npm run docx:test` 验证 Core 实际入口、中文、段落和空白、标题/列表/表格/链接/图片，以及空文档和损坏包。原始文本沿用上游语义：段落用双换行分隔，Word 软换行不额外输出字符。
 - 先构建控制台，再执行 `npm run docx:browser:test`，验证实际浏览器 bundle 和既有图片占位行为；`npm run package:artifact:check` 验证真实 npm 消费者的两个库 API、依赖链和零原始审计。
 
-维护者更新上游版本时，先修改来源固定值与定制版本，复核变化，再重建归档与两棵锁树，更新第三方清单并完整运行上述门禁。`node scripts/vendor-mammoth.mjs --refresh` 仅重建当前固定来源，不自动追踪 latest；没有新发布的 BailingHub 制品前，已安装实例不会自动获得此修复。
+维护者更新上游版本时，先修改来源固定值与定制版本，复核变化，再重建归档与两棵锁树，更新第三方清单并完整运行上述门禁。`node scripts/vendor-mammoth.mjs --refresh` 仅重建当前固定来源，不自动追踪 latest；已安装实例只有升级到含此改动的 BailingHub 制品后才会获得修复；发行不自动升级具体环境。

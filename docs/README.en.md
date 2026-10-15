@@ -7,6 +7,10 @@ This directory contains public documentation for the open-source BailingHub proj
 | Document | Purpose |
 |---|---|
 | [IMPLEMENTATION_STATUS.en.md](IMPLEMENTATION_STATUS.en.md) · [Chinese](IMPLEMENTATION_STATUS.md) | Core ownership, formal releases versus main, public evidence, and uncovered scope. |
+| [RELEASE_NOTES_v0.9.4.en.md](RELEASE_NOTES_v0.9.4.en.md) · [Chinese](RELEASE_NOTES_v0.9.4.md) | v0.9.4: DOCX dependency remediation, durable notifications and console recovery. |
+| [UPGRADE_v0.9.4.en.md](UPGRADE_v0.9.4.en.md) · [Chinese](UPGRADE_v0.9.4.md) | Explicit migration 068, state/configuration databases, event deduplication and rollback limits. |
+| [NOTIFICATION_DURABILITY.en.md](NOTIFICATION_DURABILITY.en.md) · [Chinese](NOTIFICATION_DURABILITY.md) | Notification persistence, recovery, operator actions, persistent metrics and external delivery limits. |
+| [DOCX_DEPENDENCY.en.md](DOCX_DEPENDENCY.en.md) · [Chinese](DOCX_DEPENDENCY.md) | Pinned Mammoth library provenance, CLI-chain removal and strict auditing. |
 | [RELEASE_NOTES_v0.9.3.en.md](RELEASE_NOTES_v0.9.3.en.md) · [Chinese](RELEASE_NOTES_v0.9.3.md) | v0.9.3: bounded bodies, graceful notification close and original-notification DLQ replay, with maintenance metrics. |
 | [UPGRADE_v0.9.3.en.md](UPGRADE_v0.9.3.en.md) · [Chinese](UPGRADE_v0.9.3.md) | Explicit migration 067, matching DLQ/state adapters, rollback manifests and preserved markers. |
 | [RELEASE_NOTES_v0.9.2.en.md](RELEASE_NOTES_v0.9.2.en.md) · [Chinese](RELEASE_NOTES_v0.9.2.md) | v0.9.2: secure installation, automatic settlement and original approval continuation, with deployment diagnostics and process tests. |

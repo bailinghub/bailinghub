@@ -68,3 +68,11 @@ Use `NNN_short_description.sql` with three-digit increasing numbers. Gaps are al
 `067_delivery_dlq_replay.sql` adds DLQ `delivery_kind`, `notification_job_id`, `executor_replay_key` and Job `delivery_replay_keys` for original notification binding and separate admission markers. Legacy rows remain without bulk-guessing kinds. Replay verifies the original notification child rather than rerunning its business parent.
 
 Explicitly apply 067 before all new Core MySQL DLQ reads/writes, including native-channel record/get, and match state/config adapters. Startup does not migrate. Rollback retains queues, markers and history. Older artifact schema manifests do not automatically accept 067; verify in an isolated copy without clearing markers to replay or deleting migration rows to bypass checks. See the [0.9.3 upgrade guide](../docs/UPGRADE_v0.9.3.en.md).
+
+## Core 0.9.4: migration 068 for durable notifications
+
+`068_notification_outbox.sql` creates `bz_notification_outbox` for notification intents, frozen snapshots, retries and leases; it adds nullable `event_id` and a unique index to `bz_delivery_dlq`. Migration 067 and earlier SQL remain unchanged. Historical completed tasks and old approvals are not backfilled as new notifications.
+
+Explicitly apply 068 to the actual state and configuration databases before new Core MySQL Job/approval writes or notification reads/writes. `npm run db:init` handles only `state.mysql`; use official `migrateBailingHubCoreSchema` separately for an independent MySQL configuration database, or migrate once when shared. JSONL state needs no SQL, but its MySQL configuration database still needs migration. Startup never migrates automatically.
+
+Rollback preserves outbox, dead-letter links, replay markers, receipts and migration history. Old code does not process the new outbox, and old manifests may reject 068. Stop writers and validate a consistent recovery combination in isolation; never delete migration history to bypass checks. Restoring backups cannot undo sent messages. See the [0.9.4 upgrade guide](../docs/UPGRADE_v0.9.4.en.md) and [durable notifications](../docs/NOTIFICATION_DURABILITY.en.md).

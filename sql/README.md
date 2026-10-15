@@ -86,3 +86,11 @@ Host 需把官方 SQL 一起打包，并通过现有迁移入口显式执行；�
 `067_delivery_dlq_replay.sql` 增加 DLQ 的 `delivery_kind`、`notification_job_id`、`executor_replay_key` 及 Job 的 `delivery_replay_keys`，保存原通知绑定和独立入队标记。旧行保留，不批量猜测类型；重投时核对原通知子任务，不能重跑业务父任务。
 
 启动新 Core 的全部 MySQL DLQ 读写前显式应用 067，包含原生渠道 record/get，并配套 state/config 仓储。运行时不自动迁移。回退保留队列、标记和账本；旧制品 schema manifest 不保证接受 067，须在隔离副本核验，不能删标记重投或删迁移记录绕过检查。见[0.9.3 升级指南](../docs/UPGRADE_v0.9.3.md)。
+
+## Core 0.9.4：068 持久通知
+
+`068_notification_outbox.sql` 新建 `bz_notification_outbox`，保存通知意图、冻结快照、重试和租约；为 `bz_delivery_dlq` 增加可空 `event_id` 与唯一索引。067 及以前 SQL 保持原样，不把历史已完成任务或旧审批回填为新通知。
+
+新 Core 的 MySQL 任务/审批写入和通知读写之前，向实际状态库及配置库显式应用 068。`npm run db:init` 只处理 `state.mysql`；独立 MySQL 配置库须额外使用官方 `migrateBailingHubCoreSchema` 入口，共库仅迁移一次。JSONL 状态无需 SQL，但其 MySQL 配置库仍需迁移。运行时不自动迁移。
+
+回退保留 outbox、死信关联、重投标记、回执及迁移账本；旧代码不处理新 outbox，旧 manifest 可能拒绝 068。先停写并在隔离副本验证一致恢复组合，不能删除账本绕过检查，备份恢复也不能撤销已发送的消息。详见 [0.9.4 升级指南](../docs/UPGRADE_v0.9.4.md)及[通知持久化](../docs/NOTIFICATION_DURABILITY.md)。

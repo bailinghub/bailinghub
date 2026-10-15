@@ -219,7 +219,7 @@ scrape_configs:
 - 审计写入失败：安全关键工具调用按 fail-closed 处理；非关键运行事件不阻塞业务，但应进入运维告警与指标。
 - 正常关闭：Kernel 按同一关闭预算等待已接受的回调、送达派生、审批通知、告警和 DLQ 插入，再释放数据库/渠道资源；排空超时保留资源，宿主可在工作完成后重试 `close()`。后台失败日志只报告固定工作类别。
 - 送达死信重投：内置渠道继续通过渠道凭证发送；自定义 `X-notify` 死信只重排原失败通知子任务，回复 `queued` 表示已进入执行器队列。永久 DLQ 重投标记与原子入队一起保存，重复请求或 resolve 回包丢失不会重复入队，业务父任务不会重跑。旧死信按原 Job 验证承接器，绑定不符返回 409，旧扩展缺少重投端口返回 503；人工可检查原通知子任务。
-- 历史 v0.9.3 的排空不提供 SIGKILL 后的全量通知 outbox。当前尚未发布的源码增加[通知持久化](NOTIFICATION_DURABILITY.md)和 068 迁移：新终态/审批创建与意图同事务，重启仅补通知；普通告警及旧扩展保留尽力发送边界。接收方仍需按事件 ID 去重，部分或未知送达不能盲目重发。
+- 历史 v0.9.3 的排空不提供 SIGKILL 后的全量通知 outbox。Core v0.9.4 增加[通知持久化](NOTIFICATION_DURABILITY.md)和 068 迁移：新终态/审批创建与意图同事务，重启仅补通知；普通告警及旧扩展保留尽力发送边界。接收方仍需按事件 ID 去重，部分或未知送达不能盲目重发。
 
 ## 8. 安全基线
 
@@ -242,6 +242,6 @@ scrape_configs:
 - 已验证备份可恢复。
 - 已设置队列积压、错误率、executor 离线和送达死信告警。
 
-### 尚未发布的持久通知指标
+### Core v0.9.4 的持久通知指标
 
 `bailinghub_notification_outbox_available{source}` 表示内置持久端口可用性；`bailinghub_notification_outbox_records{source,status}` 为各状态数量；`bailinghub_notification_outbox_oldest_pending_age_seconds{source}` 和 `bailinghub_notification_outbox_expired_leases{source}` 为最老待处理年龄及过期领取数。source 固定为 `jobs` / `approvals`。这些聚合从持久仓储读取，区别于重启后归零的后台 Promise 计数；旧扩展缺少能力时只输出 available=0，不捏造 backlog=0。查询失败沿用采集失败/超时状态，不触发补发。
