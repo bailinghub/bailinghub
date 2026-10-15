@@ -11,11 +11,14 @@ import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../../core/co
 import { approvalRequeuePlan } from '../../core/state/approval-continuation';
 import { deliveryRequeuePlan } from '../../core/state/delivery-replay';
 import { isOriginalExecutorDelivery, type DeliveryRequeueInput, type DeliveryRequeueOutcome } from '../../core/contracts/delivery-replay';
+import { completionMatches, terminalNotifications } from '../../core/state/notification-outbox';
+import { insertNotificationEvents, MysqlNotificationOutbox } from './notification-outbox-mysql';
 
 /** mysql 后端：生产状态库。对应 sql/001_init_state.sql 的 bz_ 表。 */
 export class MysqlStore implements RuntimeStateStore {
   private pool!: Pool;
   private readonly poolOwner: MysqlPoolResource;
+  readonly notificationOutbox = new MysqlNotificationOutbox(() => this.pool);
 
   constructor(cfg: AppConfig['state']['mysql'], poolOwner?: MysqlPoolResource) {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);
@@ -52,6 +55,32 @@ export class MysqlStore implements RuntimeStateStore {
 
   async updateJob(jobId: string, patch: Partial<Job>): Promise<Job | null> {
     return this.writeJob(jobId, patch);
+  }
+
+  async completeJobWithNotifications(original: Job, patch: Partial<Job>, context?: { brandName?: string }): Promise<Job | null> {
+    if (!['done', 'error', 'rejected'].includes(String(patch.status))) return null;
+    return this.writeTerminalJob(original.job_id, patch, undefined, original, context);
+  }
+
+  private async writeTerminalJob(jobId: string, patch: Partial<Job>, expectedStatuses?: Job['status'][], original?: Job,
+    context?: { brandName?: string }): Promise<Job | null> {
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [rows]: any = await connection.query('SELECT * FROM bz_jobs WHERE job_id=? FOR UPDATE', [jobId]);
+      const previous = rows[0] ? rowToJob(rows[0]) : null;
+      if (!previous || (expectedStatuses && !expectedStatuses.includes(previous.status)) || (original && !completionMatches(previous, original))) {
+        await connection.commit(); return null;
+      }
+      const update = mysqlJobUpdatePlan(patch, new Date().toISOString());
+      await connection.query(`UPDATE bz_jobs SET ${update.assignments.join(',')} WHERE job_id=?`, [...update.values, jobId]);
+      const [updatedRows]: any = await connection.query('SELECT * FROM bz_jobs WHERE job_id=?', [jobId]);
+      const updated = rowToJob(updatedRows[0]);
+      await insertNotificationEvents(connection, terminalNotifications(previous, updated, context));
+      await connection.commit();
+      return updated;
+    } catch (error) { await connection.rollback().catch(() => undefined); throw error; }
+    finally { connection.release(); }
   }
 
   async requeueApprovedJobOnce(input: ApprovalRequeueInput): Promise<ApprovalRequeueOutcome> {
@@ -110,6 +139,7 @@ export class MysqlStore implements RuntimeStateStore {
   }
 
   private async writeJob(jobId: string, patch: Partial<Job>, expectedStatuses?: Array<Job['status']>): Promise<Job | null> {
+    if (['done', 'error', 'rejected'].includes(String(patch.status))) return this.writeTerminalJob(jobId, patch, expectedStatuses);
     const plan = mysqlJobUpdatePlan(patch, new Date().toISOString());
     const whereStatus = expectedStatuses?.length ? ` AND status IN (${expectedStatuses.map(() => '?').join(',')})` : '';
     const [r]: any = await this.pool.query(
@@ -312,11 +342,12 @@ export class MysqlStore implements RuntimeStateStore {
 
   async expireStaleQueued(ttlMs: number): Promise<number> {
     const cutoff = dt(new Date(Date.now() - ttlMs).toISOString());
-    const [r]: any = await this.pool.query(
-      "UPDATE bz_jobs SET status='error', error='排队超时：执行器长时间不可用，任务已过期（避免恢复后陈旧任务全量重放）', updated_at=? WHERE status='queued' AND created_at < ?",
-      [dt(new Date().toISOString()), cutoff],
-    );
-    return r?.affectedRows ?? 0;
+    const [rows]: any = await this.pool.query("SELECT job_id FROM bz_jobs WHERE status='queued' AND created_at<? ORDER BY created_at LIMIT 500", [cutoff]);
+    let count = 0;
+    for (const row of rows) if (await this.updateJobIfStatus(row.job_id, ['queued'], {
+      status: 'error', error: '排队超时：执行器长时间不可用，任务已过期（避免恢复后陈旧任务全量重放）',
+    })) count++;
+    return count;
   }
 
   async countInflightByThread(threadId: number): Promise<number> {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { outboundRuntimeDepsFor, postSignedWithDeps, secretForJobWithDeps } from './outbound';
+import { outboundRuntimeDepsFor, postSignedWithDeps, postSignedNotificationWithDeps, secretForJobWithDeps, type NotificationSendOutcome } from './outbound';
 import type { ApprovalDeps, ApprovalIntentSnap } from '../core/contracts/tools';
-import { approvalConfig, type RouteToolsConfig, type ToolSourceConfig } from '../core/config/tools-config';
+import { approvalConfig, type RouteToolsConfig, type ToolSourceConfig, type ToolApprovalConfig } from '../core/config/tools-config';
 import type { Job, ToolProvider } from '../core/contracts/types';
 import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
 import { subjectOf } from './tool-context';
@@ -10,6 +10,16 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { AppConfig } from '../core/config/config';
 import { isAgentToolInvocationJob } from './agent-tool-job';
 import { notificationBackgroundWorkFor } from '../core/runtime/notification-background-work';
+import { wakeNotificationOutboxFor } from '../core/runtime/notification-outbox-work';
+import type { ApprovalNotificationPayload } from '../core/contracts/notification-outbox';
+import { createNotificationChildOnce } from './delivery';
+
+function notificationDestination(tools: RouteToolsConfig, config: AppConfig): ToolApprovalConfig | undefined {
+  const value = approvalConfig(tools) ?? config.alerts;
+  if (!value?.type) return undefined;
+  // Freeze routing coordinates only; provider/channel credentials stay in their own stores.
+  return { type: value.type, ...(value.url ? { url: value.url } : {}), ...(value.to ? { to: value.to } : {}) };
+}
 
 /** 重跑时的"已批准调用清单"提示：审批车道 B 的另一半。 */
 export async function approvedNoteForJobFor(config: ConfigStoreContract | null, jobId: string): Promise<string | undefined> {
@@ -60,15 +70,32 @@ export function approvalDepsForStores(
     async create(snap) {
       const onBehalfOf = subjectOf(job, sourceCfg);
       const intent = approvalIntentFor(job, provider, sourceCfg, snap, onBehalfOf);
-      return await cs.approvals.create({
+      const approval = {
         job_id: job.job_id, request_id: job.request_id, provider: provider.name,
         tool: snap.tool, scope: snap.scope, risk: snap.risk, policy: snap.policy, reason: snap.reason,
         method: snap.method, path: snap.path, summary: snap.summary,
         args_json: snap.args_json, args_hash: snap.args_hash, intent, on_behalf_of: onBehalfOf || undefined,
-      });
+      };
+      if (cs.approvals.createWithNotification) {
+        const id = await cs.approvals.createWithNotification(approval, {
+          job, provider_name: provider.name, subject: onBehalfOf, subject_field: sourceCfg.subject_field,
+          snap, brand_name: appConfig.brand.name,
+          destination: notificationDestination(toolsCfg, appConfig),
+        });
+        wakeNotificationOutboxFor(state);
+        return id;
+      }
+      return cs.approvals.create(approval);
     },
     async notify(id, snap) {
-      await notificationBackgroundWorkFor(state).track('approval-notification', () => notifyApprovalFor(config, state, job, provider, toolsCfg, sourceCfg, id, snap, appConfig, nowFn, sleepFn, targetRegistry));
+      if (cs.approvals.createWithNotification) { wakeNotificationOutboxFor(state); return; }
+      // Compatibility for external ledgers without the durable creation port.
+      await notificationBackgroundWorkFor(state).track('approval-notification', async () => {
+        await notifyApprovalPayloadFor(config, state, { approval_id: id, job, provider_name: provider.name,
+          subject: subjectOf(job, sourceCfg), subject_field: sourceCfg.subject_field, snap, brand_name: appConfig.brand.name,
+          destination: notificationDestination(toolsCfg, appConfig),
+        }, appConfig, nowFn, sleepFn, targetRegistry);
+      });
     },
   };
 }
@@ -102,20 +129,27 @@ function approvalIntentFor(job: Job, provider: ToolProvider, sourceCfg: ToolSour
   };
 }
 
-async function notifyApprovalFor(
+export async function notifyApprovalPayloadFor(
   config: ConfigStoreContract | null,
   state: RuntimeStateStore,
-  job: Job,
-  provider: ToolProvider,
-  toolsCfg: RouteToolsConfig,
-  sourceCfg: ToolSourceConfig,
-  approvalId: number,
-  snap: ApprovalIntentSnap,
+  payload: ApprovalNotificationPayload,
   appConfig: AppConfig,
   nowFn: () => string,
   sleepFn: (ms: number) => Promise<void>,
   targetRegistry: TargetRegistry,
-): Promise<void> {
+  eventId?: string,
+): Promise<NotificationSendOutcome> {
+  const { job, snap, approval_id: approvalId } = payload;
+  const provider = { name: payload.provider_name } as ToolProvider;
+  const sourceCfg = { provider: payload.provider_name, allow: [], subject_field: payload.subject_field };
+  const subject = payload.subject;
+  const brandName = payload.brand_name ?? appConfig.brand.name;
+  if (eventId) {
+    if (!config) return { status: 'failed', error: 'Approval repository unavailable' };
+    const approval = await config.approvals.get(approvalId);
+    if (!approval || approval.job_id !== job.job_id || approval.request_id !== job.request_id) return { status: 'failed', error: 'approval_notification_binding_conflict' };
+    if (approval.status !== 'pending') return { status: 'skipped', error: 'Approval already decided' };
+  }
   const outboundRuntime = outboundRuntimeDepsFor({
     cfg: appConfig,
     configStore: config,
@@ -123,10 +157,9 @@ async function notifyApprovalFor(
     now: nowFn,
     sleep: sleepFn,
   });
-  const subject = subjectOf(job, sourceCfg);
   const intent = approvalIntentFor(job, provider, sourceCfg, snap, subject);
   const content = [
-    `【${appConfig.brand.name}】工具调用待审批`,
+    `【${brandName}】工具调用待审批`,
     `审批单：${approvalId}`,
     ...(snap.summary ? [`动作：${snap.summary}`] : []),
     `触发原因：${snap.reason}`,
@@ -136,25 +169,31 @@ async function notifyApprovalFor(
     isAgentToolInvocationJob(job)
       ? '请到控制台「工具审批」页处理；批准后由原本地 Agent 用 invocation_id 续执行，中枢不启动模型重跑。'
       : '请到控制台「工具审批」页处理；批准后任务将自动重跑完成该操作。',
-    '', `—— ${appConfig.brand.name}`,
+    '', `—— ${brandName}`,
   ].join('\n');
-  const ap = approvalConfig(toolsCfg)
-    ?? (appConfig.alerts ? { type: appConfig.alerts.type, url: appConfig.alerts.url, to: appConfig.alerts.to } : undefined);
+  const ap = payload.destination;
+  const post = async (url: string, body: Record<string, unknown>, event: string): Promise<NotificationSendOutcome> => {
+    const secret = await secretForJobWithDeps(outboundRuntime, job);
+    const audit = { job_id: job.job_id, request_id: job.request_id, event };
+    if (eventId) return postSignedNotificationWithDeps(outboundRuntime, url, body, secret, eventId, audit);
+    void postSignedWithDeps(outboundRuntime, url, body, secret, audit);
+    return { status: 'completed' };
+  };
   if (!ap || !ap['type']) {
     await state.appendAudit({ ts: nowFn(), job_id: job.job_id, request_id: job.request_id, event: 'approval_notify_skipped', detail: { approval_id: approvalId, reason: '未配置审批通知渠道（路由 tools.approval 与 config alerts 均空），请在控制台「工具审批」处理' } });
-    return;
+    return { status: 'skipped', error: 'Approval destination not configured' };
   }
   const type = String(ap['type']);
   if ((type === 'business_webhook' || type === 'approval_webhook') && ap['url']) {
     let args: unknown = {};
     try { args = JSON.parse(snap.args_json || '{}'); } catch { args = snap.args_json; }
-    void postSignedWithDeps(outboundRuntime, String(ap['url']), {
+    return post(String(ap['url']), {
       kind: 'tool_approval_request',
       approval_id: approvalId,
       job_id: job.job_id,
       request_id: job.request_id,
       route: job.dispatch?.route_name,
-      subject: subjectOf(job, sourceCfg) || undefined,
+      subject: subject || undefined,
       provider: provider.name,
       tool: snap.tool,
       scope: snap.scope,
@@ -194,30 +233,28 @@ async function notifyApprovalFor(
         },
       },
       metadata: job.metadata ?? {},
-    }, await secretForJobWithDeps(outboundRuntime, job), { job_id: job.job_id, request_id: job.request_id, event: 'approval_intent_webhook' });
-    return;
+    }, 'approval_intent_webhook');
   }
   if (type === 'webhook' && ap['url']) {
-    void postSignedWithDeps(outboundRuntime, String(ap['url']), {
+    return post(String(ap['url']), {
       kind: 'tool_approval', approval_id: approvalId, job_id: job.job_id, request_id: job.request_id,
       tool: snap.tool, scope: snap.scope, risk: snap.risk, policy: snap.policy, reason: snap.reason, args: snap.args_json, intent: { approval_id: approvalId, ...intent }, message: content,
-    }, await secretForJobWithDeps(outboundRuntime, job), { job_id: job.job_id, request_id: job.request_id, event: 'approval_notify' });
-    return;
+    }, 'approval_notify');
   }
   const targetName = `${type}-notify`;
   if (targetRegistry.get(targetName)?.kind !== 'executor' || !ap['to']) {
     await state.appendAudit({ ts: nowFn(), job_id: job.job_id, request_id: job.request_id, event: 'approval_notify_skipped', detail: { approval_id: approvalId, reason: `送达类型 ${type} 不可用（需注册 ${targetName} 执行器目标且配收件人）` } });
-    return;
+    return { status: 'skipped', error: 'Approval notification executor or recipient unavailable' };
   }
   const reqId = `approval_${approvalId}`;
-  if (await state.findByRequestId(reqId)) return;
   const child: Job = {
     job_id: randomUUID(), request_id: reqId, status: 'queued',
     target: targetName, profile: 'delivery', project: '', source: 'delivery',
     session_id: randomUUID(), input_preview: content.slice(0, 200), input: content,
-    dispatch: { target_config: ap }, metadata: { to: String(ap['to']), approval_id: approvalId, parent_job_id: job.job_id },
+    dispatch: { target_config: ap }, metadata: { to: String(ap['to']), approval_id: approvalId, parent_job_id: job.job_id, ...(eventId ? { notification_event_id: eventId } : {}) },
     created_at: nowFn(), updated_at: nowFn(),
   };
-  await state.createJob(child);
-  await state.appendAudit({ ts: nowFn(), job_id: job.job_id, request_id: job.request_id, event: 'approval_notify_queued', detail: { approval_id: approvalId, type, to: ap['to'], child_job: child.job_id } });
+  await createNotificationChildOnce(state, child);
+  await state.appendAudit({ ts: nowFn(), job_id: job.job_id, request_id: job.request_id, event: 'approval_notify_queued', detail: { approval_id: approvalId, type, to: ap['to'], child_job: child.job_id } }).catch(() => undefined);
+  return { status: 'completed' };
 }

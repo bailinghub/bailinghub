@@ -19,7 +19,7 @@
 
 ### 安全文档
 
-[安全政策](SECURITY.md)、[治理](GOVERNANCE.md)、[贡献流程](CONTRIBUTING.md)、[Security Insights](security-insights.yml)、[工具治理](docs/TOOLS.en.md)、[Kernel Host API](docs/KERNEL_HOST_API.md)、[Agent Client 授权](docs/AGENT_CLIENT_QUICKSTART.md)、[原调用只读回执](docs/INVOCATION_RECEIPTS.md)、[模型网关](docs/MODEL_BILLING.md)、[依赖例外政策](security/dependency-audit-exceptions.json)。
+[安全政策](SECURITY.md)、[治理](GOVERNANCE.md)、[贡献流程](CONTRIBUTING.md)、[Security Insights](security-insights.yml)、[工具治理](docs/TOOLS.en.md)、[Kernel Host API](docs/KERNEL_HOST_API.md)、[Agent Client 授权](docs/AGENT_CLIENT_QUICKSTART.md)、[原调用只读回执](docs/INVOCATION_RECEIPTS.md)、[模型网关](docs/MODEL_BILLING.md)、[依赖例外政策](https://github.com/bailinghub/bailinghub/blob/d3073cc3700343f6367b8914b1e6753ec9e9d645/security/dependency-audit-exceptions.json)。
 
 ## 项目概况
 
@@ -117,7 +117,9 @@ Core 不裁定用户的法定业务权利，不保证模型正确，不是任意
 
 ### 已知问题与剩余工作
 
-- `sprintf-js` 的 GHSA-hp3w-g68c-fv3c 在已复核 Mammoth CLI 依赖链中仍未修复。精确、源码绑定的[例外政策](security/dependency-audit-exceptions.json)于 2026-11-09 到期，不是漏洞修复，也不允许使用 CLI；新发现、路径/源码消费变化或到期继续阻断。
+后续源码说明（2026-10-15）：下列依赖例外描述保留 0.9.0 自评基线，链接固定到该基线。当前源码已采用[库分发消链及严格零例外审计](docs/DOCX_DEPENDENCY.md)；这不改变旧版本评估，也不代表旧部署已升级。
+
+- `sprintf-js` 的 GHSA-hp3w-g68c-fv3c 在已复核 Mammoth CLI 依赖链中仍未修复。精确、源码绑定的[例外政策](https://github.com/bailinghub/bailinghub/blob/d3073cc3700343f6367b8914b1e6753ec9e9d645/security/dependency-audit-exceptions.json)于 2026-11-09 到期，不是漏洞修复，也不允许使用 CLI；新发现、路径/源码消费变化或到期继续阻断。
 - 需要用管理员证据和 SDK 归档内容复核对应需求，不替换原扫描结果。
 - 41 Not Run 需按适当成熟度确认适用性与证据，既不是 41 个已确认缺陷，也不是自动通过。更广威胁测试、独立复核、生成 SBOM、制品签名覆盖与事件演练仍需补证。
 - 观察定时扫描，及时保留将过期的扫描制品。凭据、执行/审批、宿主边界、迁移、依赖或发行实践变化时更新自评。

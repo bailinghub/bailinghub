@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { mkdir, open, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { completeTraceEntry } from '../../core/runtime/trace-runtime';
 import { JOB_STATUSES, TERMINAL_JOB_STATUSES, type AuditEntry, type Job } from '../../core/contracts/types';
@@ -9,6 +9,9 @@ import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../../core/co
 import { approvalRequeuePlan } from '../../core/state/approval-continuation';
 import { deliveryRequeuePlan } from '../../core/state/delivery-replay';
 import type { DeliveryRequeueInput, DeliveryRequeueOutcome } from '../../core/contracts/delivery-replay';
+import type { NotificationEvent } from '../../core/contracts/notification-outbox';
+import { completionMatches, terminalJob, terminalNotifications } from '../../core/state/notification-outbox';
+import { JsonlNotificationOutbox } from './notification-outbox-jsonl';
 
 /** jsonl 后端：本地烟测与最小私有部署。状态仍是中枢自己的，不进业务库。 */
 export class JsonlStore implements RuntimeStateStore {
@@ -16,9 +19,15 @@ export class JsonlStore implements RuntimeStateStore {
   private readonly byRequest = new Map<string, string>();
   private readonly locks = new Map<string, { owner: string; expiresAt: number }>();
   private jobWrite: Promise<void> = Promise.resolve();
+  private writeFailed = false;
+  readonly notificationOutbox = new JsonlNotificationOutbox(work => this.serialJobWrite(work),
+    events => this.persistRecord({ kind: 'notification-events', events }));
 
   private async serialJobWrite<T>(write: () => Promise<T>): Promise<T> {
-    const work = this.jobWrite.then(write);
+    const work = this.jobWrite.then(() => {
+      if (this.writeFailed) throw new Error('jsonl_journal_reopen_required');
+      return write();
+    });
     this.jobWrite = work.then(() => undefined, () => undefined);
     return await work;
   }
@@ -28,18 +37,34 @@ export class JsonlStore implements RuntimeStateStore {
   async init(): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
     if (!existsSync(this.path)) return;
-    const text = await readFile(this.path, 'utf8');
-    for (const line of text.split('\n')) {
+    let bytes = await readFile(this.path);
+    // A killed append may leave an incomplete final line. Never concatenate a
+    // subsequent record onto that fragment, or silently skip damaged middle data.
+    if (bytes.length && bytes[bytes.length - 1] !== 10) {
+      const boundary = bytes.lastIndexOf(10) + 1;
+      const tail = bytes.subarray(boundary).toString('utf8');
+      let complete = false;
+      try { JSON.parse(tail); complete = true; } catch { /* incomplete tail */ }
+      const file = await open(this.path, 'r+');
+      try {
+        if (complete) { await file.write(Buffer.from('\n'), 0, 1, bytes.length); bytes = Buffer.concat([bytes, Buffer.from('\n')]); }
+        else { await file.truncate(boundary); bytes = bytes.subarray(0, boundary); }
+        await file.sync();
+      } finally { await file.close(); }
+    }
+    for (const line of bytes.toString('utf8').split('\n')) {
       const l = line.trim();
       if (!l) continue;
       try {
-        const rec = JSON.parse(l) as { kind?: string; job?: Job };
+        const rec = JSON.parse(l) as { kind?: string; job?: Job; notifications?: NotificationEvent[]; events?: NotificationEvent[] };
         if (rec.kind === 'job' && rec.job) {
           this.jobs.set(rec.job.job_id, rec.job);
           this.byRequest.set(rec.job.request_id, rec.job.job_id);
+          if (rec.notifications) this.notificationOutbox.publish(rec.notifications);
         }
+        if (rec.kind === 'notification-events' && rec.events) this.notificationOutbox.publish(rec.events);
       } catch {
-        /* 跳过坏行 */
+        throw new Error('jsonl_journal_corrupt_record');
       }
     }
   }
@@ -51,6 +76,9 @@ export class JsonlStore implements RuntimeStateStore {
 
   async createJob(job: Job): Promise<void> {
     await this.serialJobWrite(async () => {
+      if (this.jobs.has(job.job_id) || this.byRequest.has(job.request_id)) {
+        throw Object.assign(new Error('job_identity_conflict'), { code: 'ER_DUP_ENTRY' });
+      }
       await this.persist(job);
       this.jobs.set(job.job_id, job);
       this.byRequest.set(job.request_id, job.job_id);
@@ -61,13 +89,22 @@ export class JsonlStore implements RuntimeStateStore {
     return await this.serialJobWrite(async () => this.writeJob(jobId, patch));
   }
 
-  private async writeJob(jobId: string, patch: Partial<Job>, expectedStatuses?: Array<Job['status']>): Promise<Job | null> {
+  async completeJobWithNotifications(original: Job, patch: Partial<Job>, context?: { brandName?: string }): Promise<Job | null> {
+    return this.serialJobWrite(async () => {
+      if (!terminalJob({ ...original, ...patch }) || !completionMatches(this.jobs.get(original.job_id) ?? null, original)) return null;
+      return this.writeJob(original.job_id, patch, undefined, context);
+    });
+  }
+
+  private async writeJob(jobId: string, patch: Partial<Job>, expectedStatuses?: Array<Job['status']>, context?: { brandName?: string }): Promise<Job | null> {
     const cur = this.jobs.get(jobId);
     if (!cur || (expectedStatuses && !expectedStatuses.includes(cur.status))) return null;
     const { approval_continuation_keys: _ignored, delivery_replay_keys: _ignoredDelivery, ...ordinaryPatch } = patch;
     const next: Job = { ...cur, ...ordinaryPatch, updated_at: new Date().toISOString() };
-    await this.persist(next);
+    const events = terminalNotifications(cur, next, context);
+    await this.persist(next, events);
     this.jobs.set(jobId, next);
+    this.notificationOutbox.publish(events);
     return next;
   }
 
@@ -217,8 +254,7 @@ export class JsonlStore implements RuntimeStateStore {
     let n = 0;
     for (const job of this.jobs.values()) {
       if (job.status === 'queued' && job.created_at && new Date(job.created_at).getTime() < cutoff) {
-        await this.updateJob(job.job_id, { status: 'error', error: '排队超时：执行器长时间不可用，任务已过期（避免恢复后陈旧任务全量重放）' });
-        n++;
+        if (await this.updateJobIfStatus(job.job_id, ['queued'], { status: 'error', error: '排队超时：执行器长时间不可用，任务已过期（避免恢复后陈旧任务全量重放）' })) n++;
       }
     }
     return n;
@@ -300,14 +336,29 @@ export class JsonlStore implements RuntimeStateStore {
   }
 
   async appendAudit(entry: AuditEntry): Promise<void> {
-    await appendFile(this.path, JSON.stringify({ kind: 'audit', entry: completeTraceEntry(entry) }) + '\n', 'utf8');
+    await this.serialJobWrite(() => this.persistRecord({ kind: 'audit', entry: completeTraceEntry(entry) }));
   }
 
   async pruneAuditOlderThan(_cutoffIso: string): Promise<number> {
     return 0;
   }
 
-  private async persist(job: Job): Promise<void> {
-    await appendFile(this.path, JSON.stringify({ kind: 'job', job }) + '\n', 'utf8');
+  async close(): Promise<void> { await this.jobWrite; }
+
+  private async persist(job: Job, notifications: NotificationEvent[] = []): Promise<void> {
+    await this.persistRecord({ kind: 'job', job, ...(notifications.length ? { notifications } : {}) });
+  }
+
+  private async persistRecord(record: unknown): Promise<void> {
+    try {
+      const file = await open(this.path, 'a');
+      try { await file.writeFile(JSON.stringify(record) + '\n', 'utf8'); await file.sync(); }
+      finally { await file.close(); }
+    } catch (error) {
+      // A write/sync acknowledgement can be ambiguous. Reopen the journal before
+      // accepting another mutation instead of creating a second terminal event.
+      this.writeFailed = true;
+      throw error;
+    }
   }
 }

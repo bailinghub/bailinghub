@@ -83,3 +83,7 @@ Keep this page and its Chinese companion aligned. Retain the distinction between
 ## Core v0.9.3 body and notification fixes
 
 The [HTTP and notification fixes](CORE_RELIABILITY.en.md#core-v093-http-and-notification-fixes) index public source and synthetic regression entry points for bounded bodies, UTF-8 views, graceful notification drain, original executor notification DLQ admission deduplication and migration 067. [Operational metrics](OPERATIONS.en.md) document read-only maintenance snapshots. These changes are available from Core v0.9.3, not in historical v0.9.2 artifacts. Graceful-close and storage-interruption tests do not establish complete crash recovery of all notification intents or production receipt. Verify Tag, npm, images and each deployment separately.
+
+## Unreleased dependency and notification changes
+
+Current source adds [DOCX dependency remediation](DOCX_DEPENDENCY.en.md) and [durable notifications](NOTIFICATION_DURABILITY.en.md), including bundled console management and incremental migration 068. These are source and public verification entry points, not a new release or consumer upgrade; historical v0.9.3 evidence is unchanged.

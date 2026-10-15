@@ -3,6 +3,24 @@ import test from 'node:test';
 import { renderOperationalMetrics } from './openmetrics';
 import type { RuntimeMaintenanceMetricsSnapshot } from './openmetrics';
 
+test('durable notification metrics expose fixed aggregates and distinguish an unavailable source', () => {
+  const text = renderOperationalMetrics({ version: 'candidate', commit: 'candidate', paused: false,
+    queue: { running: 0, waiting: 0 }, state: { available: false, success: false },
+    controlPlane: { available: false, success: false }, auditWriteFailuresTotal: 0, scrapeDurationSeconds: 0,
+    maintenance: { available: true, success: true, value: { capturedAtMs: 1,
+      notificationOutbox: [ { source: 'jobs', available: true, snapshot: { counts: {
+        pending: 3, processing: 1, completed: 7, skipped: 2, failed: 1, uncertain: 2,
+        'secret-user-input': 100,
+      } as any, oldestPendingAgeSeconds: 42, expiredLeases: 1 } },
+      { source: 'approvals', available: false }, { source: 'secret-job-id', available: true } as any ],
+    } },
+  });
+  assert.match(text, /bailinghub_notification_outbox_records\{source="jobs",status="pending"\} 3/);
+  assert.match(text, /bailinghub_notification_outbox_available\{source="approvals"\} 0/);
+  assert.match(text, /bailinghub_notification_outbox_oldest_pending_age_seconds\{source="jobs"\} 42/);
+  assert.doesNotMatch(text, /notification_outbox_records\{source="approvals"|secret-user-input|secret-job-id/);
+});
+
 test('OpenMetrics renderer: emits fixed low-cardinality families and escapes build labels', () => {
   const text = renderOperationalMetrics({
     version: '0.1.8"test',

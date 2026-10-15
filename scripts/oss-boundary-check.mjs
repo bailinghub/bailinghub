@@ -156,7 +156,9 @@ for (const file of packFiles) {
 for (const file of packFiles.filter((file) => /\.(?:ts|tsx|js|mjs|vue|json|sql|md|yml|yaml|php|py|sh|html|css|txt)$/.test(file))) {
   const text = read(file);
   if (!text) continue;
-  if (file !== 'LICENSE' && forbiddenPublicWording.test(text)) {
+  // The bundled JSZip/pako license comments retain their original wording.
+  // Path, private implementation and metadata checks still apply below.
+  if (file !== 'LICENSE' && !/^node_modules\/(?:jszip|pako)\//.test(file) && forbiddenPublicWording.test(text)) {
     findings.push(`${file}: use neutral public wording for private extension boundaries`);
   }
   if (!guardScriptFiles.has(file)) {

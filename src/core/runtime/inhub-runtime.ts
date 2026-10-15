@@ -2,6 +2,7 @@
 // 不依赖 runtime 单例，也不 import engine；engine 只把 processJob 回调注入进来。
 import type { RetryDecision } from './execution-runtime';
 import type { AuditEntry, Job, Route, SessionTarget } from '../contracts/types';
+import { wakeNotificationOutboxFor } from './notification-outbox-work';
 
 export type InhubProcessJob = (
   job: Job,
@@ -13,6 +14,7 @@ export type InhubProcessJob = (
 
 export interface InhubStoreLike {
   updateJob(jobId: string, patch: Partial<Job>): Promise<Job | null>;
+  completeJobWithNotifications?(original: Job, patch: Partial<Job>): Promise<Job | null>;
   updateJobIfStatus(jobId: string, expectedStatuses: Array<Job['status']>, patch: Partial<Job>): Promise<Job | null>;
   claimNextInhubJob(targets: string[], workerId: string, leaseMs: number): Promise<Job | null>;
   listJobsByStatus(statuses: Array<Job['status']>, olderThanMs?: number): Promise<Job[]>;
@@ -64,6 +66,12 @@ export function createInhubRuntime(deps: InhubRuntimeDeps): InhubRuntime {
   const retryTimers = new Set<InhubTimeoutHandle>();
   const activeRuns = new Set<Promise<void>>();
   let drainInFlight: Promise<number> | null = null;
+  const failClaimed = async (job: Job, error: string) => {
+    const patch: Partial<Job> = { status: 'error', error, executor_id: undefined, claimed_at: undefined, lease_until: undefined, claim_token: undefined };
+    if (deps.store.completeJobWithNotifications) {
+      if (await deps.store.completeJobWithNotifications(job, patch)) wakeNotificationOutboxFor(deps.store);
+    } else await deps.store.updateJobIfStatus(job.job_id, ['running', 'queued'], patch);
+  };
 
   const cancelTimer = deps.clearTimeoutFn ?? ((timer: InhubTimeoutHandle) => {
     clearTimeout(timer as ReturnType<typeof setTimeout>);
@@ -90,7 +98,7 @@ export function createInhubRuntime(deps: InhubRuntimeDeps): InhubRuntime {
 
   const run = (job: Job, route: Route | null, projectPath: string | null, fullInput: string, session: SessionTarget) => {
     const work = deps.runSerial(job.thread_id, () => deps.processJob(job, route, projectPath, fullInput, session)).catch(async (e) => {
-      await deps.store.updateJob(job.job_id, { status: 'error', error: `处理异常：${String(e)}`, executor_id: undefined, claimed_at: undefined, lease_until: undefined, claim_token: undefined });
+      await failClaimed(job, `处理异常：${String(e)}`);
     });
     activeRuns.add(work);
     void work.finally(() => activeRuns.delete(work)).catch(() => undefined);
@@ -117,7 +125,7 @@ export function createInhubRuntime(deps: InhubRuntimeDeps): InhubRuntime {
           const prepared = await deps.prepareClaimedJob(claimed);
           run(prepared.job, prepared.route, prepared.projectPath, prepared.fullInput, prepared.session);
         } catch (e) {
-          await deps.store.updateJob(claimed.job_id, { status: 'error', error: `装配异常：${String(e)}`, executor_id: undefined, claimed_at: undefined, lease_until: undefined, claim_token: undefined });
+          await failClaimed(claimed, `装配异常：${String(e)}`);
         }
       }
       return n;

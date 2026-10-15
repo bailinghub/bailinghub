@@ -135,6 +135,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     [/^\/admin\/api\/channels/, 'channels:read', 'channels:write'], // 入站渠道（含平台密钥），默认仅 admin（*）可管
     [/^\/admin\/api\/alert-rules/, 'channels:read', 'channels:write'], // 告警通知规则（系统告警→渠道→收件人），随渠道权限
     [/^\/admin\/api\/delivery-dlq/, 'runs:read', 'runs:write'], // 送达死信队列（查看/重投），运行面操作
+    [/^\/admin\/api\/notification-outbox/, 'runs:read', 'runs:write'],
     [/^\/admin\/api\/version/, 'audit:read', 'audit:read'], // 版本/数据库结构状态：系统可观测
   ];
   for (const [re, readPerm, writePerm] of PERM_RULES) {

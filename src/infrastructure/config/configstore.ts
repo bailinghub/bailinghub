@@ -14,6 +14,8 @@ import { AlertRuleRepository } from './config-alert-rule-repository';
 import { ChatConfigRepository } from './config-chat-repository';
 import { RateLimitLedger } from './config-rate-limit-ledger';
 import { ApprovalLedger } from './config-approval-ledger';
+import type { NotificationOutboxRepository } from '../../core/contracts/notification-outbox';
+import { MysqlNotificationOutbox } from '../state/notification-outbox-mysql';
 import { ConversationLedger } from './config-conversation-ledger';
 import { ExecutorLedger } from './config-executor-ledger';
 import { ToolCallLedger } from './config-tool-call-ledger';
@@ -53,8 +55,8 @@ export type ChatConfigRepositoryContract = Pick<ChatConfigRepository, keyof Chat
 export type RateLimitLedgerContract = Omit<Pick<RateLimitLedger, keyof RateLimitLedger>, 'consumeAll'>
   & Partial<Pick<RateLimitLedger, 'consumeAll'>>;
 export type ApprovalLedgerContract =
-  Omit<Pick<ApprovalLedger, keyof ApprovalLedger>, 'forJobs' | 'decideWithContinuation' | 'getContinuation' | 'pendingContinuations' | 'markContinuationAuditRecorded' | 'completeContinuation'>
-  & Partial<Pick<ApprovalLedger, 'forJobs' | 'decideWithContinuation' | 'getContinuation' | 'pendingContinuations' | 'markContinuationAuditRecorded' | 'completeContinuation'>>;
+  Omit<Pick<ApprovalLedger, keyof ApprovalLedger>, 'forJobs' | 'decideWithContinuation' | 'getContinuation' | 'pendingContinuations' | 'markContinuationAuditRecorded' | 'completeContinuation' | 'createWithNotification'>
+  & Partial<Pick<ApprovalLedger, 'forJobs' | 'decideWithContinuation' | 'getContinuation' | 'pendingContinuations' | 'markContinuationAuditRecorded' | 'completeContinuation' | 'createWithNotification'>>;
 export type ConversationLedgerContract = Pick<ConversationLedger, keyof ConversationLedger>;
 export type ExecutorLedgerContract = Pick<ExecutorLedger, keyof ExecutorLedger>;
 export type ToolCallLedgerContract = Pick<ToolCallLedger, keyof ToolCallLedger>;
@@ -63,8 +65,8 @@ export type ToolEmbeddingRepositoryContract = ToolEmbeddingRepository;
 export type KnowledgeRepositoryContract = Pick<MysqlKnowledgeRepository, keyof MysqlKnowledgeRepository>;
 export type KbDatasourceRepositoryContract = Pick<MysqlKbDatasourceRepository, keyof MysqlKbDatasourceRepository>;
 export type { InstanceBrandingRepositoryContract };
-export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, Exclude<keyof DeliveryDlqLedger, 'ensureExecutorReplay'>>
-  & Partial<Pick<DeliveryDlqLedger, 'ensureExecutorReplay'>>;
+export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, Exclude<keyof DeliveryDlqLedger, 'ensureExecutorReplay' | 'resolveByEventId'>>
+  & Partial<Pick<DeliveryDlqLedger, 'ensureExecutorReplay' | 'resolveByEventId'>>;
 export type ObservabilityLedgerContract =
   Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>
   & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>>;
@@ -74,6 +76,7 @@ export type AgentConversationAuditRepositoryContract = Omit<Pick<AgentConversati
   & Partial<Pick<AgentConversationAuditRepository, 'createCrossBinding' | 'supportsCrossBindingMembers'>>;
 
 export interface ConfigStoreContract {
+  readonly notificationOutbox?: NotificationOutboxRepository;
   readonly routes: RouteRepositoryContract;
   readonly clients: ClientRepositoryContract;
   readonly credentials: CredentialRepositoryContract;
@@ -131,6 +134,7 @@ export class ConfigStore implements ConfigStoreContract {
   readonly chatEntries = new ChatConfigRepository(() => this.pool);
   readonly rateLimits = new RateLimitLedger(() => this.pool);
   readonly approvals = new ApprovalLedger(() => this.pool);
+  readonly notificationOutbox = new MysqlNotificationOutbox(() => this.pool);
   readonly conversations = new ConversationLedger(() => this.pool);
   readonly executors = new ExecutorLedger(() => this.pool);
   readonly toolCalls = new ToolCallLedger(() => this.pool);

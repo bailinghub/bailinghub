@@ -40,8 +40,8 @@ Maintainers can supply deployment-specific markers at audit time through either:
 
 For example, a protected test environment may set `BAILING_PUBLIC_DENYLIST_JSON='["DEPLOYMENT_ONLY_MARKER_ALPHA_42"]'`. Audit failures report only the marker index and never echo its value. The external file path is rejected when it resolves inside the repository.
 
-## Time-limited dependency exception
+## DOCX dependency assurance
 
-[GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) remains open in `sprintf-js`, introduced by the Mammoth command-line dependency chain. No patched release is currently available. The runtime and console use Mammoth library APIs; reviewed DOCX extraction and HTML conversion do not load `argparse` or `sprintf-js`, including when document text contains the reported precision payloads.
+Core and its bundled console use a reproducible library-only Mammoth distribution. It retains the original parsing sources and license while removing the unused command-line interface and its `argparse → sprintf-js` dependency chain. The previous time-limited exception for [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) is retired; no dependency finding is currently excepted.
 
-The [audit policy](security/dependency-audit-exceptions.json) records the exact advisory, dependency versions and paths, reviewed source hashes, owner and expiry of 2026-11-09. `npm run audit:deps` retains the raw findings and blocks new findings, changed dependency or source usage, and expired exceptions. This exception is not a vulnerability fix and does not apply to using Mammoth's command-line interface. Re-review the exception when modifying the DOCX adapters or their dependency chain; remove it when an appropriate upstream fix is available.
+`npm run audit:deps` requires zero raw findings, verifies the vendored source/archive, and separately queries direct advisories under the original upstream `mammoth` name and version. Registry failure, changed source/distribution, any finding or a reintroduced CLI dependency blocks the gate. See [DOCX source and audit policy](docs/DOCX_DEPENDENCY.en.md) ([中文](docs/DOCX_DEPENDENCY.md)) for reproduction, compatibility tests and the npm/Docker/source-export boundaries. This is not a general document-safety certification or an assertion that upstream sprintf-js is patched.

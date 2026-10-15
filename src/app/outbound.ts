@@ -64,6 +64,34 @@ export async function secretForJobWithDeps(deps: Pick<OutboundRuntimeDeps, 'cfg'
 }
 
 const OUTBOUND_BACKOFF_MS = [0, 2000, 10_000]; // 共 3 次尝试
+export type NotificationSendOutcome = { status: 'completed' | 'skipped' | 'retry' | 'failed' | 'uncertain'; error?: string };
+
+/** One durable attempt. The outbox owns retries; the signed body binds the stable event ID. */
+export async function postSignedNotificationWithDeps(
+  deps: Pick<OutboundRuntimeDeps, 'stateStore' | 'now' | 'fetch'>,
+  url: string, payload: Record<string, unknown>, secret: string, eventId: string,
+  audit: { job_id: string; request_id: string; event: string },
+): Promise<NotificationSendOutcome> {
+  const body = JSON.stringify({ ...payload, notification_event_id: eventId });
+  const ts = Date.now().toString();
+  let outcome: NotificationSendOutcome;
+  try {
+    const response = await deps.fetch(url, {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-bailing-timestamp': ts,
+        'x-bailing-signature': `sha256=${signBody(secret, ts, body)}`, 'x-bailing-event-id': eventId },
+      body, signal: AbortSignal.timeout(10_000),
+    });
+    void response.body?.cancel().catch(() => undefined);
+    outcome = response.ok ? { status: 'completed' }
+      : { status: response.status === 429 || response.status >= 500 ? 'retry' : 'failed', error: `webhook_http_${response.status}` };
+  } catch {
+    // An acknowledgement may be lost. Receivers deduplicate the signed event ID.
+    outcome = { status: 'retry', error: 'webhook_acknowledgement_unavailable' };
+  }
+  await deps.stateStore.appendAudit({ ts: deps.now(), ...audit,
+    detail: { notification_event_id: eventId, outcome: outcome.status, ...(outcome.error ? { error: outcome.error } : {}) } }).catch(() => undefined);
+  return outcome;
+}
 export function postSignedWithDeps(deps: Pick<OutboundRuntimeDeps, 'stateStore' | 'now' | 'sleep' | 'fetch'>, url: string, payload: unknown, secret: string, audit: { job_id: string; request_id: string; event: string }): Promise<boolean> {
   const kind: NotificationBackgroundKind = audit.event.startsWith('approval_') ? 'approval-notification'
     : audit.event.startsWith('alert') ? 'alert' : audit.event === 'callback' ? 'callback' : 'delivery';

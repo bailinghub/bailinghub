@@ -1,125 +1,89 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { evaluateScope, collectUsage } from './dependency-audit.mjs';
+import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { checkVendor } from './vendor-mammoth.mjs';
+import { evaluateScope, evaluateUpstreamAudit, auditUpstream } from './dependency-audit.mjs';
 
-const load = name => JSON.parse(readFileSync(new URL(name, import.meta.url), 'utf8'));
-const policy = load('../security/dependency-audit-exceptions.json');
-const now = new Date('2026-10-10T03:00:00Z');
 function fixture(scope = 'core') {
-  const audit = { auditReportVersion: 2, vulnerabilities: structuredClone(policy.scopes[scope].knownAuditRows), metadata: { vulnerabilities: { info: 0, low: 0, moderate: 3, high: 0, critical: 0, total: 3 } } };
-  const lock = load(scope === 'core' ? '../package-lock.json' : '../web-admin/package-lock.json');
-  return { scope, audit, lock, usage: structuredClone(policy.scopes[scope].reviewedUsageFiles), policy: structuredClone(policy), now };
+  return { scope, audit: { auditReportVersion: 2, vulnerabilities: {}, metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 } } }, lock: { packages: {} } };
 }
 for (const scope of ['core', 'web-admin']) {
-  test(`${scope}: reviewed advisory passes while preserving all three moderate findings`, () => {
+  test(`${scope}: zero raw findings pass without an exception or expiry`, () => {
     const result = evaluateScope(fixture(scope));
-    assert.equal(result.pass, true);
-    assert.equal(result.rawCounts.moderate, 3);
-    assert.equal(result.rawCounts.total, 3);
-    assert.equal(result.exceptedRows, 3);
-    assert.equal(result.unexceptedRows, 0);
+    assert.equal(result.pass, true); assert.equal(result.rawCounts.total, 0); assert.equal(result.exceptedRows, 0);
   });
 }
-test('exception expires at the exact boundary', () => {
-  const input = fixture(); input.now = new Date(policy.expiresAt);
-  assert.equal(evaluateScope(input).pass, false);
-});
-test('exception cannot begin before the approval period or exceed 30 days', () => {
-  const input = fixture(); input.now = new Date('2026-10-09T23:59:59Z');
-  assert.equal(evaluateScope(input).pass, false);
-  input.now = now; input.policy.expiresAt = '2026-11-10T00:00:00Z';
-  assert.equal(evaluateScope(input).pass, false);
-});
-test('a new moderate finding is blocked rather than globally ignored', () => {
-  const input = fixture();
-  input.audit.vulnerabilities.newPackage = { name: 'newPackage', severity: 'moderate', via: [{ url: 'https://github.com/advisories/GHSA-new' }], nodes: ['node_modules/newPackage'] };
-  input.audit.metadata.vulnerabilities.moderate++;
-  input.audit.metadata.vulnerabilities.total++;
-  const result = evaluateScope(input);
-  assert.equal(result.pass, false); assert.equal(result.rawCounts.moderate, 4); assert.equal(result.unexceptedRows, 1);
-});
-test('an additional advisory on the accepted package is blocked', () => {
-  const input = fixture(); input.audit.vulnerabilities['sprintf-js'].via.push({ url: 'https://github.com/advisories/GHSA-new', severity: 'high' });
-  assert.equal(evaluateScope(input).pass, false);
-});
-test('adding an unrelated advisory to both policy and audit cannot broaden the exception', () => {
-  const input = fixture();
-  const row = { name: 'anotherPackage', severity: 'moderate', via: [{ url: 'https://github.com/advisories/GHSA-new', severity: 'moderate' }], nodes: ['node_modules/anotherPackage'] };
-  input.policy.scopes.core.knownAuditRows.anotherPackage = structuredClone(row);
-  input.audit.vulnerabilities.anotherPackage = row;
-  input.audit.metadata.vulnerabilities.moderate++;
-  input.audit.metadata.vulnerabilities.total++;
-  assert.equal(evaluateScope(input).pass, false);
-});
-test('changing or appending an advisory in both policy and audit is blocked', () => {
-  const input = fixture();
-  for (const rows of [input.policy.scopes.core.knownAuditRows, input.audit.vulnerabilities]) {
-    rows['sprintf-js'].via[0].url = 'https://github.com/advisories/GHSA-new';
+for (const severity of ['info', 'low', 'moderate', 'high', 'critical']) {
+  test(`all ${severity} findings block`, () => {
+    const input = fixture();
+    input.audit.vulnerabilities.package = { name: 'package', severity };
+    input.audit.metadata.vulnerabilities[severity] = 1;
+    input.audit.metadata.vulnerabilities.total = 1;
+    const result = evaluateScope(input);
+    assert.equal(result.pass, false); assert.equal(result.unexceptedRows, 1);
+  });
+}
+test('audit errors, invalid rows, malformed metadata and mismatched counts fail closed', () => {
+  for (const audit of [null, {}, { error: 'registry unavailable' }, { ...fixture().audit, vulnerabilities: [] }, { ...fixture().audit, metadata: undefined }, { ...fixture().audit, vulnerabilities: { unknown: null } }]) {
+    assert.equal(evaluateScope({ ...fixture(), audit }).pass, false);
   }
+  const input = fixture(); input.audit.metadata.vulnerabilities.total = 1;
   assert.equal(evaluateScope(input).pass, false);
-  const next = fixture();
-  for (const rows of [next.policy.scopes.core.knownAuditRows, next.audit.vulnerabilities]) {
-    rows['sprintf-js'].via.push({ url: 'https://github.com/advisories/GHSA-new', severity: 'moderate' });
+});
+test('retired CLI packages and nested dependency references are rejected even with a clean audit', () => {
+  for (const packages of [{ 'node_modules/argparse': { version: '2.0.1' } }, { 'node_modules/x/node_modules/sprintf-js': { version: '1.1.3' } }, { 'vendor/mammoth-library': { dependencies: { argparse: '*' } } }]) {
+    assert.equal(evaluateScope({ ...fixture(), lock: { packages } }).pass, false);
   }
-  assert.equal(evaluateScope(next).pass, false);
+  assert.equal(evaluateScope({ ...fixture(), lock: {} }).pass, false);
 });
-test('rewriting the reviewed dependency chain in both policy and audit is blocked', () => {
-  const input = fixture();
-  for (const rows of [input.policy.scopes.core.knownAuditRows, input.audit.vulnerabilities]) {
-    rows.argparse.via = ['anotherPackage'];
-    rows['sprintf-js'].effects = ['anotherPackage'];
-  }
-  assert.equal(evaluateScope(input).pass, false);
+test('upstream query accepts only an empty direct advisory report', () => {
+  assert.equal(evaluateUpstreamAudit({}).pass, true);
+  assert.equal(evaluateUpstreamAudit({ mammoth: [] }).pass, true);
+  for (const report of [null, [], { error: 'failure' }, { mammoth: {} }, { mammoth: [{ id: 1, severity: 'high' }] }]) assert.equal(evaluateUpstreamAudit(report).pass, false);
 });
-test('removing a reviewed policy row cannot redefine the approved exception', () => {
-  const input = fixture();
-  delete input.policy.scopes.core.knownAuditRows.argparse;
-  delete input.audit.vulnerabilities.argparse;
-  input.audit.metadata.vulnerabilities.moderate--;
-  input.audit.metadata.vulnerabilities.total--;
-  assert.equal(evaluateScope(input).pass, false);
+test('registry failures cannot become a clean upstream audit', async () => {
+  await assert.rejects(auditUpstream(async () => ({ ok: false, status: 503 })), /HTTP 503/);
+  await assert.rejects(auditUpstream(async () => { throw new Error('offline'); }), /offline/);
+  await assert.rejects(auditUpstream(async () => ({ ok: true, json: async () => { throw new Error('invalid JSON'); } })), /invalid JSON/);
+  const result = await auditUpstream(async (_url, options) => {
+    assert.deepEqual(JSON.parse(options.body), { mammoth: ['1.12.0'] });
+    return { ok: true, json: async () => ({ mammoth: [{ id: 9 }] }) };
+  });
+  assert.equal(result.pass, false);
 });
-test('a changed audit node or suggested fix cannot silently broaden the exception', () => {
-  const input = fixture(); input.audit.vulnerabilities['sprintf-js'].nodes.push('node_modules/new/node_modules/sprintf-js');
-  assert.equal(evaluateScope(input).pass, false);
-  const next = fixture(); next.audit.vulnerabilities['sprintf-js'].fixAvailable = true;
-  assert.equal(evaluateScope(next).pass, false);
-});
-test('a changed dependency version or additional installed copy is blocked', () => {
-  const input = fixture(); input.lock.packages['node_modules/mammoth'].version = '1.13.0';
-  assert.equal(evaluateScope(input).pass, false);
-  const next = fixture(); next.lock.packages['node_modules/new/node_modules/sprintf-js'] = { version: '1.0.3' };
-  assert.equal(evaluateScope(next).pass, false);
-});
-test('a new package consuming the same vulnerable copy is blocked', () => {
-  const input = fixture(); input.lock.packages['node_modules/new-consumer'] = { version: '1.0.0', dependencies: { 'sprintf-js': '~1.0.2' } };
-  assert.equal(evaluateScope(input).pass, false);
-});
-test('new CLI usage and modified reviewed library usage are blocked', () => {
-  const input = fixture(); input.usage['src/new-cli.ts'] = 'unreviewed';
-  assert.equal(evaluateScope(input).pass, false);
-  const next = fixture(); next.usage['src/adapters/llm/file.ts'] = 'modified';
-  assert.equal(evaluateScope(next).pass, false);
-});
-test('filesystem inventory detects a new source CLI and package script CLI', () => {
-  const root = mkdtempSync(join(tmpdir(), 'dependency-audit-usage-'));
+
+
+test('vendor gate rejects source tampering, a self-rehashed different archive and missing npm bundling', () => {
+  const base = mkdtempSync(join(tmpdir(), 'docx-vendor-gate-'));
   try {
-    mkdirSync(join(root, 'src'));
-    writeFileSync(join(root, 'src/new-cli.ts'), "spawn('mammoth', ['input.docx']);\n");
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { convert: 'mammoth input.docx' } }));
-    const usage = collectUsage(root, 'core');
-    assert.ok(usage['src/new-cli.ts']);
-    assert.ok(usage['package.json#scripts.convert']);
-    const input = fixture(); input.usage = usage;
-    assert.equal(evaluateScope(input).pass, false);
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});
-test('failed audit payload and misleading aggregate counts fail closed', () => {
-  const input = fixture(); input.audit.error = { code: 'EACCESS' };
-  assert.equal(evaluateScope(input).pass, false);
-  const next = fixture(); next.audit.metadata.vulnerabilities.total = 0;
-  assert.equal(evaluateScope(next).pass, false);
+    cpSync(new URL('../vendor/', import.meta.url), join(base, 'vendor'), { recursive: true });
+    cpSync(new URL('../package.json', import.meta.url), join(base, 'package.json'));
+    mkdirSync(join(base, 'web-admin'));
+    cpSync(new URL('../web-admin/package.json', import.meta.url), join(base, 'web-admin/package.json'));
+    cpSync(new URL('../package-lock.json', import.meta.url), join(base, 'package-lock.json'));
+    cpSync(new URL('../web-admin/package-lock.json', import.meta.url), join(base, 'web-admin/package-lock.json'));
+    const source = join(base, 'vendor/mammoth-library/lib/raw-text.js');
+    const original = readFileSync(source); writeFileSync(source, '// changed');
+    assert.throws(() => checkVendor(base), /Vendor source changed/); writeFileSync(source, original);
+    const distributionPath = join(base, 'vendor/mammoth-library-distribution.json');
+    const distribution = JSON.parse(readFileSync(distributionPath));
+    const archivePath = join(base, 'vendor', distribution.file);
+    const archive = readFileSync(archivePath);
+    const alternate = join(base, 'alternate');
+    cpSync(join(base, 'vendor/mammoth-library'), alternate, { recursive: true });
+    writeFileSync(join(alternate, 'lib/raw-text.js'), '// substituted parser');
+    execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', base], { cwd: alternate, stdio: 'pipe' });
+    const changedArchive = readFileSync(join(base, distribution.file));
+    writeFileSync(archivePath, changedArchive);
+    writeFileSync(distributionPath, JSON.stringify({ ...distribution, sha256: createHash('sha256').update(changedArchive).digest('hex') }));
+    assert.throws(() => checkVendor(base), /archive does not match the reviewed source/);
+    writeFileSync(archivePath, archive); writeFileSync(distributionPath, JSON.stringify(distribution));
+    const manifestPath = join(base, 'package.json'); const manifest = JSON.parse(readFileSync(manifestPath));
+    delete manifest.bundleDependencies; writeFileSync(manifestPath, JSON.stringify(manifest));
+    assert.throws(() => checkVendor(base), /Core must bundle/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });

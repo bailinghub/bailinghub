@@ -13,6 +13,10 @@ Regenerate it with `npm run notices:generate` and verify it with `npm run notice
 - BailingHub and its demo business service use the official [Node.js](https://github.com/nodejs/node) 22 Bookworm Slim image as their default container base. Node.js and the Debian packages in that image retain their own licenses and notices.
 - The default Docker Compose topology runs [MySQL Community Server](https://www.mysql.com/products/community/) 8.4 as a separate service. The public mirror configured by BailingHub is a redistribution of the upstream MySQL image; operators may replace it through `BAILING_MYSQL_IMAGE`. MySQL Community Server is licensed by its upstream project under GPL terms and is not relicensed as part of BailingHub.
 
+## Vendored DOCX Library
+
+The library-only [Mammoth distribution](vendor/mammoth-library/SOURCE.json) preserves the upstream BSD-2-Clause [license](vendor/mammoth-library/LICENSE) and library source. BailingHub removes its command-line interface and argparse dependency, uses a distinct package name/version, and bundles it for npm consumers. See the [source and audit policy](docs/DOCX_DEPENDENCY.md) for reproducibility and upstream advisory checks.
+
 ## JavaScript Dependency Inventory
 
 The package license texts and copyright notices remain in the installed package distributions. The table below is an inventory, not a replacement for those upstream license files.
@@ -23,6 +27,7 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [@babel/helper-validator-identifier](https://www.npmjs.com/package/@babel/helper-validator-identifier) | 7.29.7 | MIT | runtime |
 | Console | [@babel/parser](https://www.npmjs.com/package/@babel/parser) | 7.29.9 | MIT | runtime |
 | Console | [@babel/types](https://www.npmjs.com/package/@babel/types) | 7.29.8 | MIT | runtime |
+| Console | [@bailinghub/mammoth-library](vendor/mammoth-library/LICENSE) | 1.12.0-bailinghub.1 | BSD-2-Clause | runtime |
 | Console | [@ctrl/tinycolor](https://www.npmjs.com/package/@ctrl/tinycolor) | 4.2.0 | MIT | runtime |
 | Console | [@element-plus/icons-vue](https://www.npmjs.com/package/@element-plus/icons-vue) | 2.3.2 | MIT | runtime |
 | Console | [@esbuild/aix-ppc64](https://www.npmjs.com/package/@esbuild/aix-ppc64) | 0.25.12 | MIT | build/test |
@@ -56,7 +61,6 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [@floating-ui/utils](https://www.npmjs.com/package/@floating-ui/utils) | 0.2.11 | MIT | runtime |
 | Console | [@jridgewell/sourcemap-codec](https://www.npmjs.com/package/@jridgewell/sourcemap-codec) | 1.6.0 | MIT | runtime |
 | Console | [@mixmark-io/domino](https://www.npmjs.com/package/@mixmark-io/domino) | 2.2.0 | BSD-2-Clause | runtime |
-| Console | [@popperjs/core](https://www.npmjs.com/package/@popperjs/core) | 2.11.8 | MIT | runtime |
 | Console | [@rollup/rollup-android-arm-eabi](https://www.npmjs.com/package/@rollup/rollup-android-arm-eabi) | 4.61.1 | MIT | build/test |
 | Console | [@rollup/rollup-android-arm64](https://www.npmjs.com/package/@rollup/rollup-android-arm64) | 4.61.1 | MIT | build/test |
 | Console | [@rollup/rollup-darwin-arm64](https://www.npmjs.com/package/@rollup/rollup-darwin-arm64) | 4.61.1 | MIT | build/test |
@@ -82,6 +86,7 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [@rollup/rollup-win32-ia32-msvc](https://www.npmjs.com/package/@rollup/rollup-win32-ia32-msvc) | 4.61.1 | MIT | build/test |
 | Console | [@rollup/rollup-win32-x64-gnu](https://www.npmjs.com/package/@rollup/rollup-win32-x64-gnu) | 4.61.1 | MIT | build/test |
 | Console | [@rollup/rollup-win32-x64-msvc](https://www.npmjs.com/package/@rollup/rollup-win32-x64-msvc) | 4.61.1 | MIT | build/test |
+| Console | [@sxzz/popperjs-es](https://www.npmjs.com/package/@sxzz/popperjs-es) | 2.11.8 | MIT | runtime |
 | Console | [@types/estree](https://www.npmjs.com/package/@types/estree) | 1.0.9 | MIT | build/test |
 | Console | [@types/lodash](https://www.npmjs.com/package/@types/lodash) | 4.17.24 | MIT | runtime |
 | Console | [@types/lodash-es](https://www.npmjs.com/package/@types/lodash-es) | 4.17.12 | MIT | runtime |
@@ -101,7 +106,6 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [@vueuse/metadata](https://www.npmjs.com/package/@vueuse/metadata) | 14.3.0 | MIT | runtime |
 | Console | [@vueuse/shared](https://www.npmjs.com/package/@vueuse/shared) | 14.3.0 | MIT | runtime |
 | Console | [@xmldom/xmldom](https://www.npmjs.com/package/@xmldom/xmldom) | 0.8.15 | MIT | runtime |
-| Console | [argparse](https://www.npmjs.com/package/argparse) | 1.0.10 | MIT | runtime |
 | Console | [async-validator](https://www.npmjs.com/package/async-validator) | 4.2.5 | MIT | runtime |
 | Console | [base64-js](https://www.npmjs.com/package/base64-js) | 1.5.1 | MIT | runtime |
 | Console | [bluebird](https://www.npmjs.com/package/bluebird) | 3.4.7 | MIT | runtime |
@@ -126,7 +130,6 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [lodash-unified](https://www.npmjs.com/package/lodash-unified) | 1.0.3 | MIT | runtime |
 | Console | [lop](https://www.npmjs.com/package/lop) | 0.4.2 | BSD-2-Clause | runtime |
 | Console | [magic-string](https://www.npmjs.com/package/magic-string) | 0.30.21 | MIT | runtime |
-| Console | [mammoth](https://www.npmjs.com/package/mammoth) | 1.12.0 | BSD-2-Clause | runtime |
 | Console | [memoize-one](https://www.npmjs.com/package/memoize-one) | 6.0.0 | MIT | runtime |
 | Console | [nanoid](https://www.npmjs.com/package/nanoid) | 3.3.20 | MIT | runtime |
 | Console | [normalize-wheel-es](https://www.npmjs.com/package/normalize-wheel-es) | 1.2.0 | BSD-3-Clause | runtime |
@@ -143,7 +146,6 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [safe-buffer](https://www.npmjs.com/package/safe-buffer) | 5.1.2 | MIT | runtime |
 | Console | [setimmediate](https://www.npmjs.com/package/setimmediate) | 1.0.5 | MIT | runtime |
 | Console | [source-map-js](https://www.npmjs.com/package/source-map-js) | 1.2.2 | BSD-3-Clause | runtime |
-| Console | [sprintf-js](https://www.npmjs.com/package/sprintf-js) | 1.0.3 | BSD-3-Clause | runtime |
 | Console | [string_decoder](https://www.npmjs.com/package/string_decoder) | 1.1.1 | MIT | runtime |
 | Console | [tinyglobby](https://www.npmjs.com/package/tinyglobby) | 0.2.17 | MIT | build/test |
 | Console | [turndown](https://www.npmjs.com/package/turndown) | 7.2.4 | MIT | runtime |
@@ -156,6 +158,7 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [vue-demi](https://www.npmjs.com/package/vue-demi) | 0.14.10 | MIT | runtime |
 | Console | [vue-router](https://www.npmjs.com/package/vue-router) | 4.6.4 | MIT | runtime |
 | Console | [xmlbuilder](https://www.npmjs.com/package/xmlbuilder) | 10.1.1 | MIT | runtime |
+| Hub | [@bailinghub/mammoth-library](vendor/mammoth-library/LICENSE) | 1.12.0-bailinghub.1 | BSD-2-Clause | runtime |
 | Hub | [@esbuild/aix-ppc64](https://www.npmjs.com/package/@esbuild/aix-ppc64) | 0.28.1 | MIT | runtime |
 | Hub | [@esbuild/android-arm](https://www.npmjs.com/package/@esbuild/android-arm) | 0.28.1 | MIT | runtime |
 | Hub | [@esbuild/android-arm64](https://www.npmjs.com/package/@esbuild/android-arm64) | 0.28.1 | MIT | runtime |
@@ -198,7 +201,6 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [@xmldom/xmldom](https://www.npmjs.com/package/@xmldom/xmldom) | 0.8.15 | MIT | runtime |
 | Hub | [ajv](https://www.npmjs.com/package/ajv) | 8.20.0 | MIT | build/test |
 | Hub | [ajv-formats](https://www.npmjs.com/package/ajv-formats) | 3.0.1 | MIT | build/test |
-| Hub | [argparse](https://www.npmjs.com/package/argparse) | 1.0.10 | MIT | runtime |
 | Hub | [aws-ssl-profiles](https://www.npmjs.com/package/aws-ssl-profiles) | 1.1.2 | MIT | runtime |
 | Hub | [base64-js](https://www.npmjs.com/package/base64-js) | 1.5.1 | MIT | runtime |
 | Hub | [bluebird](https://www.npmjs.com/package/bluebird) | 3.4.7 | MIT | runtime |
@@ -222,7 +224,6 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [long](https://www.npmjs.com/package/long) | 5.3.2 | Apache-2.0 | runtime |
 | Hub | [lop](https://www.npmjs.com/package/lop) | 0.4.2 | BSD-2-Clause | runtime |
 | Hub | [lru.min](https://www.npmjs.com/package/lru.min) | 1.1.4 | MIT | runtime |
-| Hub | [mammoth](https://www.npmjs.com/package/mammoth) | 1.12.0 | BSD-2-Clause | runtime |
 | Hub | [mysql2](https://www.npmjs.com/package/mysql2) | 3.24.3 | MIT | runtime |
 | Hub | [named-placeholders](https://www.npmjs.com/package/named-placeholders) | 1.1.6 | MIT | runtime |
 | Hub | [option](https://www.npmjs.com/package/option) | 0.2.4 | BSD-2-Clause | runtime |
@@ -237,7 +238,6 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [safe-buffer](https://www.npmjs.com/package/safe-buffer) | 5.1.2 | MIT | runtime |
 | Hub | [safer-buffer](https://www.npmjs.com/package/safer-buffer) | 2.1.2 | MIT | runtime |
 | Hub | [setimmediate](https://www.npmjs.com/package/setimmediate) | 1.0.5 | MIT | runtime |
-| Hub | [sprintf-js](https://www.npmjs.com/package/sprintf-js) | 1.0.3 | BSD-3-Clause | runtime |
 | Hub | [sql-escaper](https://www.npmjs.com/package/sql-escaper) | 1.5.1 | MIT | runtime |
 | Hub | [string_decoder](https://www.npmjs.com/package/string_decoder) | 1.1.1 | MIT | runtime |
 | Hub | [tsx](https://www.npmjs.com/package/tsx) | 4.22.4 | MIT | runtime |

@@ -29,7 +29,7 @@ instance has been assessed.
 [Agent Client authorization](docs/AGENT_CLIENT_QUICKSTART.en.md),
 [invocation inspection](docs/INVOCATION_RECEIPTS.md),
 [model gateway](docs/MODEL_BILLING.en.md), and
-[dependency exception policy](security/dependency-audit-exceptions.json).
+[dependency exception policy](https://github.com/bailinghub/bailinghub/blob/d3073cc3700343f6367b8914b1e6753ec9e9d645/security/dependency-audit-exceptions.json).
 
 ## Overview
 
@@ -224,9 +224,11 @@ time objective have not been established by this assessment.
 
 ### Known issues and remaining work
 
+Source follow-up (2026-10-15): the exception below records the 0.9.0 assessment baseline and links to that revision. Current source uses the [library-only distribution and strict audit](docs/DOCX_DEPENDENCY.en.md). This does not revise the historical assessment or establish that older deployments have been upgraded.
+
 - `sprintf-js` advisory GHSA-hp3w-g68c-fv3c remains unresolved in the reviewed
   Mammoth CLI dependency chain. The narrowly scoped, source-bound exception in
-  [the policy](security/dependency-audit-exceptions.json) expires on 2026-11-09;
+  [the policy](https://github.com/bailinghub/bailinghub/blob/d3073cc3700343f6367b8914b1e6753ec9e9d645/security/dependency-audit-exceptions.json) expires on 2026-11-09;
   it is not a vulnerability fix or permission to use the CLI. New findings,
   changed paths/source usage and expiry remain blocking conditions.
 - Manual review must reconcile administrative controls and the SDK archive

@@ -49,12 +49,12 @@ async function fixture(upgrade = false) {
   }
 }
 
-test('MySQL v0.9.2 data upgrades to 067 once and preserves old native/executor records', { skip: !enabled || !baselineRoot }, async () => {
+test('MySQL v0.9.2 data upgrades through 068 once and preserves old native/executor records', { skip: !enabled || !baselineRoot }, async () => {
   const h = await fixture(true);
   try {
     const [before]: any = await h.pool.query('SELECT id,parent_job_id,channel,recipient,content,error,resolved FROM bz_delivery_dlq ORDER BY id');
     const upgrade = await migrateBailingHubCoreSchema({ mysql: h.mysql, logger: { log() {}, warn() {} } });
-    assert.deepEqual(upgrade.appliedFiles, [migrationName]);
+    assert.deepEqual(upgrade.appliedFiles, [migrationName, '068_notification_outbox.sql']);
     const [after]: any = await h.pool.query('SELECT id,parent_job_id,channel,recipient,content,error,resolved FROM bz_delivery_dlq ORDER BY id');
     assert.deepEqual(after, before);
     assert.equal(await classifyDeliveryDlq((await h.ledger.get(h.executorId))!, h.store), 'executor_target');

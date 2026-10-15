@@ -340,7 +340,7 @@ try {
     for (const match of findPublicContentDenylistMatches(text, privateExactTextDenylist)) {
       findings.push(`${file}: ${match}`);
     }
-    if (file !== 'LICENSE' && forbiddenPublicWording.test(text)) {
+    if (file !== 'LICENSE' && !/^node_modules\/(?:jszip|pako)\//.test(file) && forbiddenPublicWording.test(text)) {
       findings.push(`${file}: use neutral public wording for private extension boundaries`);
     }
     if (!guardScriptFiles.has(file)) {

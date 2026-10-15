@@ -4,6 +4,7 @@ FROM ${NODE_IMAGE}
 WORKDIR /app
 
 COPY package*.json ./
+COPY vendor/ ./vendor/
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 COPY web-admin/package*.json ./web-admin/

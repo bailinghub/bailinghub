@@ -11,7 +11,7 @@
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
     "element-plus": "^2.9.0",
-    "mammoth": "^1.12.0",
+    "mammoth": "file:../vendor/bailinghub-mammoth-library-1.12.0-bailinghub.1.tgz",
     "pinia": "^2.3.0",
     "turndown": "^7.2.4",
     "vue": "^3.5.13",

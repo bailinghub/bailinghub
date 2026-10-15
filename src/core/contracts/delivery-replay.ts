@@ -12,6 +12,7 @@ export interface DeliveryDlqRecord {
   delivery_kind?: DeliveryKind | null;
   notification_job_id?: string | null;
   executor_replay_key?: string | null;
+  event_id?: string | null;
 }
 
 export interface DeliveryRequeueInput {

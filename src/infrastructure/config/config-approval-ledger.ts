@@ -1,6 +1,9 @@
 import { dt, rowToolApproval } from '../../core/config/config-codec';
 import type { ToolApproval } from '../../core/contracts/types';
 import type { ApprovalContinuation, ApprovalContinuationDecisionOptions } from '../../core/contracts/approval-continuation';
+import type { ApprovalNotificationDraft } from '../../core/contracts/notification-outbox';
+import { newNotification } from '../../core/state/notification-outbox';
+import { insertNotificationEvents } from '../state/notification-outbox-mysql';
 
 export class ApprovalLedger {
   private continuationCursor = 0;
@@ -9,7 +12,26 @@ export class ApprovalLedger {
   private get pool(): any { return this.poolOf(); }
 
   async create(a: Omit<ToolApproval, 'id' | 'status' | 'created_at'>): Promise<number> {
-    const [r]: any = await this.pool.query(
+    return this.insertApproval(this.pool, a);
+  }
+
+  async createWithNotification(a: Omit<ToolApproval, 'id' | 'status' | 'created_at'>, draft: ApprovalNotificationDraft): Promise<number> {
+    if (draft.job.job_id !== a.job_id || draft.job.request_id !== a.request_id || draft.snap.args_hash !== a.args_hash
+      || draft.snap.tool !== a.tool || draft.provider_name !== a.provider) throw new Error('approval_notification_binding_mismatch');
+    const connection = await this.pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      const id = await this.insertApproval(connection, a);
+      await insertNotificationEvents(connection, [newNotification(`approval:${id}`, 'approval-notification',
+        { ...draft, approval_id: id }, new Date().toISOString())]);
+      await connection.commit();
+      return id;
+    } catch (error) { await connection.rollback().catch(() => undefined); throw error; }
+    finally { connection.release(); }
+  }
+
+  private async insertApproval(connection: any, a: Omit<ToolApproval, 'id' | 'status' | 'created_at'>): Promise<number> {
+    const [r]: any = await connection.query(
       'INSERT INTO bz_tool_approvals (job_id,request_id,provider,tool,scope,risk,policy,reason,method,path,summary,args_json,args_hash,intent_json,on_behalf_of,status,created_at) ' +
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',?)",
       [a.job_id, a.request_id, a.provider, a.tool, a.scope, a.risk, a.policy ?? null, a.reason ?? null,

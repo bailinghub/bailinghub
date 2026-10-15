@@ -173,6 +173,9 @@ const packName = createPackageTarball();
 try {
   execFileSync('tar', [...tarNoMetadataArgs, '-xzf', packName, '-C', outRoot], { cwd: root, env: tarEnv, stdio: 'inherit' });
   renameSync(join(outRoot, 'package'), exportDir);
+  // npm consumers need the bundled library; source exports reinstall the exact
+  // dependency tree from the lockfiles and the included library archive.
+  rmSync(join(exportDir, 'node_modules'), { recursive: true, force: true });
   // npm runtime artifacts carry the generated console. The OSS source export
   // remains reproducible source and lets installation/build steps create it.
   rmSync(join(exportDir, 'web', 'console'), { recursive: true, force: true });

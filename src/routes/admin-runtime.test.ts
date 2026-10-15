@@ -250,3 +250,28 @@ test('a tool job receives the conversation backlink only after the original run 
   }
   assert.deepEqual(lookups, [RUN_ID]);
 });
+
+test('event-linked native dead letters have one retry entry point, while legacy native rows retain their path', async () => {
+  const deps = depsFor();
+  let sends = 0, resolves = 0;
+  const row = { id: 1, resolved: false, event_id: 'durable-delivery-event', channel: 'email', recipient: 'synthetic', content: 'synthetic', parent_job_id: 'parent', delivery_kind: 'native_channel' };
+  (deps.configStore as any).deliveryDlq = { get: async () => row, resolve: async () => { resolves++; } };
+  (deps.stateStore as any).notificationOutbox = { get: async () => ({ event_id: row.event_id, kind: 'delivery', status: 'uncertain' }) };
+  (deps.stateStore as any).appendAudit = async () => {};
+  deps.channelSend = async () => { sends++; return { ok: true }; };
+  const invoke = async () => {
+    const res = new FakeResponse();
+    await handleAdminRuntimeApiFor(deps, 'POST', '/admin/api/delivery-dlq/1/resend', {} as IncomingMessage,
+      res as unknown as ServerResponse, { kind: 'admin', via: 'session', username: 'operator', role: 'admin' });
+    return res;
+  };
+  const blocked = await invoke();
+  assert.equal(blocked.statusCode, 409);
+  assert.equal(blocked.json().code, 'notification_outbox_retry_required');
+  assert.equal(sends, 0); assert.equal(resolves, 0);
+  (deps.stateStore as any).notificationOutbox.get = async () => null;
+  assert.equal((await invoke()).statusCode, 503, 'an unavailable event cannot bypass durability');
+  row.event_id = '';
+  assert.equal((await invoke()).statusCode, 200);
+  assert.equal(sends, 1); assert.equal(resolves, 1);
+});

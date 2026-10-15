@@ -32,7 +32,7 @@ async function until(predicate: () => boolean, message: string) {
 async function fixture(schedulerMode: 'managed' | 'standalone' = 'managed') {
   const database = `kernel_usage_${randomUUID().replaceAll('-', '')}`;
   const dir = mkdtempSync(join(tmpdir(), 'bailinghub-usage-lifecycle-'));
-  const mysql = { host: '127.0.0.1', port: 16307, user: 'root', password: '', connectionLimit: 8 };
+  const mysql = { host: '127.0.0.1', port: Number(process.env.BAILING_USAGE_TEST_MYSQL_PORT ?? 16307), user: 'root', password: '', connectionLimit: 8 };
   const admin = createPool(mysql);
   const providerGate = gate();
   const cleanup: Array<() => void | Promise<unknown>> = [() => rmSync(dir, { recursive: true, force: true }), () => admin.end()];
