@@ -6,12 +6,13 @@
           <p><b>聊天入口（网页/小程序组件）不走接入方</b>——那是公开面（Origin 白名单 + 限速），不带 token。接入方在聊天里只有一个间接角色：「票据签发方」，业务后端用它的 token 给登录用户签身份票据（见右侧「聊天入口票据」列）。</p>
           <p><b>开始对接：</b>可直接到「触发路由」页点该路由的「调用代码」按钮，生成可粘贴的 HTTP / Node.js / Python / PHP 高频示例；Java、Go、.NET 与任意语言接入见官网 SDK 文档。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" @click="openCreate">新建接入方</el-button></div>
+        <el-button v-if="s.can('clients:write')" type="primary" style="margin-left: auto" @click="openCreate">新建接入方</el-button></div>
     </template>
-    <el-empty v-if="!list.length" description="还没有接入方：业务系统接入前先在这里发一把钥匙">
-      <el-button type="primary" @click="openCreate">发第一把</el-button>
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
+    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有接入方：业务系统接入前先在这里发一把钥匙">
+      <el-button v-if="s.can('clients:write')" type="primary" @click="openCreate">发第一把</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else v-loading="listLoading" :data="list">
       <el-table-column label="接入方" min-width="250" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="client-main">
@@ -73,11 +74,11 @@
       <el-table-column width="244" align="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="router.push({ path: '/agent-clients', query: { app: row.app_id } })">本地智能体配置</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="换钥？旧 token 立即作废，业务侧需同步更新。" width="240" @confirm="rotate(row)">
+          <el-button v-if="s.can('clients:write')" link type="primary" :disabled="Boolean(listError)" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="s.can('clients:write')" title="换钥？旧 token 立即作废，业务侧需同步更新。" width="240" @confirm="rotate(row)">
             <template #reference><el-button link type="warning">换钥</el-button></template>
           </el-popconfirm>
-          <el-popconfirm title="删除该接入方？其 token 立即失效。" width="220" @confirm="del(row.app_id)">
+          <el-popconfirm v-if="s.can('clients:write')" title="删除该接入方？其 token 立即失效。" width="220" @confirm="del(row.app_id)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
@@ -85,13 +86,14 @@
     </el-table>
   </el-card>
 
-  <el-drawer v-model="open" :title="editing ? '编辑接入方' : '新建接入方'" size="440px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑接入方' : '新建接入方'" size="440px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="resumedDraft" title="已恢复尚未保存的接入方配置，请选择需要授权的路由后保存。草稿只保留在当前页面会话中。" type="info" :closable="false" style="margin-bottom:12px" />
+    <el-form label-position="top" :disabled="saving || !s.can('clients:write')">
       <el-form-item>
         <template #label>{{ fieldTitle('app_id', 'AppID') }} <span v-if="fieldRequired('app_id')" class="field-required">*</span> <HelpTip :title="fieldTitle('app_id', 'AppID')">
           <p>{{ fieldDesc('app_id', '接入方的稳定标识。') }}</p>
         </HelpTip></template>
-        <el-input v-model="form.app_id" :disabled="editing" placeholder="留空自动生成，如 business-api" class="mono" />
+        <el-input v-model="form.app_id" :disabled="editing || saving" placeholder="留空自动生成，如 business-api" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('name', '名称') }} <span v-if="fieldRequired('name')" class="field-required">*</span> <HelpTip :title="fieldTitle('name', '名称')">
@@ -113,10 +115,18 @@
           <p>{{ fieldDesc('allowed_routes', '该接入方可触发哪些 route。') }}</p>
           <p><code>*</code> 表示全部路由，适合本地开发或完全受信的内部系统，生产环境慎用。</p>
         </HelpTip></template>
-        <el-select v-model="form.allowed_routes" multiple filterable allow-create default-first-option style="width: 100%" placeholder="选择或输入场景标识">
-          <el-option value="*" label="*（全部路由）" />
+        <el-select v-model="form.allowed_routes" multiple filterable allow-create style="width: 100%" placeholder="选择需要授权的具体路由">
           <el-option v-for="r in routeKeys" :key="r" :value="r" :label="r" />
+          <el-option value="*" label="*（全部当前及未来路由，请明确确认授权范围）" />
         </el-select>
+        <div v-if="routesLoading" class="muted hint">正在读取路由…</div>
+        <div v-else-if="routesError" class="hint"><span>{{ routesError }}</span> <el-button link type="primary" @click="loadRoutes">重试读取路由</el-button></div>
+        <div v-else-if="routesLoaded && !routeKeys.length" class="hint">
+          <span>还没有可选择的路由，请先创建业务场景；无需为此授权全部路由。</span>
+          <el-button v-if="s.can('routes:write')" link type="primary" @click="createRouteWithDraft">保留草稿，去创建路由</el-button>
+          <span v-else class="muted">请联系有路由配置权限的管理员创建。</span>
+        </div>
+        <div v-else-if="!s.can('routes:read')" class="muted hint">当前账号不能读取路由列表。请向管理员取得要授权的具体场景标识后填写。</div>
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('allowed_channels', '可推渠道白名单') }} <HelpTip :title="fieldTitle('allowed_channels', '可推渠道白名单')">
@@ -173,15 +183,17 @@
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon style="margin-bottom:12px" />
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button v-if="s.can('clients:write')" type="primary" :loading="saving" @click="save">保存</el-button>
     </template>
   </el-drawer>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
@@ -189,21 +201,37 @@ import { copyText, fmtTime } from '../util';
 import { useMe } from '../store';
 import HelpTip from '../components/HelpTip.vue';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
+import { useUnsavedForm } from '../use-unsaved-form';
+import { rememberClientRouteDraft, takeClientRouteDraft } from '../client-route-draft';
 
 const s = useMe();
 const router = useRouter();
+const route = useRoute();
 const clientSchema = useConfigSchema('client');
 const list = ref<any[]>([]);
+const listLoading = ref(false), listError = ref('');
+let listGeneration = 0;
 const routeKeys = ref<string[]>([]);
+const routesLoading = ref(false), routesLoaded = ref(false), routesError = ref('');
 const channelNames = ref<string[]>([]);
 // app_id → 它作为「票据签发方」服务的聊天入口列表（让接入方与聊天入口的关联可见）
 const ticketOf = ref<Record<string, string[]>>({});
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
+const saveError = ref(''), resumedDraft = ref(false);
 const form = reactive({ app_id: '', name: '', agent_authorize_url: '', allowed_routes: [] as string[], allowed_channels: [] as string[], rate_limit_per_min: 60, description: '', enabled: true });
 const budget = reactive<{ enabled: boolean; window: 'hour' | 'day' | 'month'; hard_cost_usd?: number; hard_tokens?: number }>({ enabled: false, window: 'day', hard_cost_usd: undefined, hard_tokens: undefined });
 let budgetRest: Record<string, unknown> = {};
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value,
+  snapshot: () => ({ form, budget, budgetRest }), name: '接入方配置' });
+const draftOwner = () => `${s.me?.via}:${s.me?.username}`;
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
+async function createRouteWithDraft(): Promise<void> {
+  if (saving.value || !s.can('routes:write') || !s.can('routes:read')) return;
+  rememberClientRouteDraft(draftOwner(), { form, budget, budgetRest, editing: editing.value, baseline: formGuard.baseline.value });
+  await formGuard.withPreservedDraft(() => router.push({ path: '/routes', query: { create: '1', return_to: 'clients' } }));
+}
 
 function fieldTitle(field: string, fallback: string): string {
   return schemaTitle(clientSchema.schema.value, field, fallback);
@@ -225,7 +253,22 @@ function previewTags(values: unknown, allLabel: string): string[] {
   return [...arr.slice(0, 3), `+${arr.length - 3}`];
 }
 
-async function load(): Promise<void> { list.value = await api('/admin/api/clients'); }
+async function load(): Promise<void> {
+  const generation = ++listGeneration;
+  listLoading.value = true;
+  try {
+    const rows = await api<any[]>('/admin/api/clients');
+    if (generation === listGeneration) { list.value = rows; listError.value = ''; }
+  } catch { if (generation === listGeneration) listError.value = list.value.length ? '接入方列表刷新失败，当前保留旧快照。' : '接入方列表读取失败，请重试。'; }
+  finally { if (generation === listGeneration) listLoading.value = false; }
+}
+async function loadRoutes(): Promise<void> {
+  if (!s.can('routes:read') || routesLoading.value) return;
+  routesLoading.value = true;
+  try { routeKeys.value = (await api<any[]>('/admin/api/routes')).map((r) => r.route_key); routesLoaded.value = true; routesError.value = ''; }
+  catch { routesError.value = '路由列表暂时无法读取，不能据此判断没有路由。'; }
+  finally { routesLoading.value = false; }
+}
 function splitKnown(obj: unknown, keys: string[]): [Record<string, unknown>, Record<string, unknown>] {
   const known: Record<string, unknown> = {};
   const rest: Record<string, unknown> = {};
@@ -266,54 +309,67 @@ function budgetPayload(): Record<string, unknown> | undefined {
   };
 }
 function openCreate(): void {
+  if (!s.can('clients:write') || saving.value || open.value) return;
   editing.value = false;
   Object.assign(form, { app_id: '', name: '', agent_authorize_url: '', allowed_routes: [], allowed_channels: [], rate_limit_per_min: 60, description: '', enabled: true });
   resetBudget();
+  saveError.value = ''; resumedDraft.value = false; formGuard.begin();
   open.value = true;
 }
 function openEdit(row: any): void {
+  if (!s.can('clients:write') || saving.value || open.value || listError.value) return;
   editing.value = true;
   Object.assign(form, { app_id: row.app_id, name: row.name, agent_authorize_url: row.agent_authorize_url || '', allowed_routes: [...(row.allowed_routes || [])], allowed_channels: [...(row.allowed_channels || [])], rate_limit_per_min: row.rate_limit_per_min ?? 60, description: row.description || '', enabled: !!row.enabled });
   hydrateBudget(row.budget);
+  saveError.value = ''; resumedDraft.value = false; formGuard.begin();
   open.value = true;
 }
 async function save(): Promise<void> {
-  if (!form.allowed_routes.length) { ElMessage.error('至少选一个路由（或 *）'); return; }
+  if (!s.can('clients:write') || saving.value) return;
+  saveError.value = '';
+  if (!form.allowed_routes.length) { saveError.value = '请选择至少一个需要授权的具体路由。没有路由时可先保留草稿并创建路由。'; return; }
   saving.value = true;
   try {
     const r = await api<{ app_id: string; token: string }>('/admin/api/clients', { method: 'POST', body: JSON.stringify({ ...form, budget: budgetPayload() }) });
-    open.value = false; await load();
+    formGuard.markSaved(); open.value = false; await load();
     if (!editing.value) {
-      await ElMessageBox.alert(`接入方 ${r.app_id} 的 token（业务侧 Authorization 用）：\n\n${r.token}`, '接入方已创建', { confirmButtonText: '复制 token' }).catch(() => undefined);
-      await copyText(r.token, 'token 已复制');
+      await ElMessageBox.alert(`接入方 ${r.app_id} 的 token（业务侧 Authorization 用）：\n\n${r.token}`, '接入方已创建', { confirmButtonText: '复制 token' })
+        .then(() => copyText(r.token, 'token 已复制')).catch(() => undefined);
     } else { ElMessage.success('已保存'); }
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 async function rotate(row: any): Promise<void> {
+  if (!s.can('clients:write')) return;
   try {
     const r = await api<{ token: string }>('/admin/api/clients', { method: 'POST', body: JSON.stringify({ ...row, rotate_token: true }) });
     await load(); await copyText(r.token, '新 token 已复制，请同步给业务侧');
   } catch (e) { ElMessage.error((e as Error).message); }
 }
 async function del(appId: string): Promise<void> {
+  if (!s.can('clients:write')) return;
   try { await api('/admin/api/clients/' + encodeURIComponent(appId), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
 // 列表只下发掩码 token；要完整值（配业务侧 Authorization）走显式取回，后端 clients:write 鉴权 + 审计留痕
 async function revealToken(appId: string): Promise<void> {
+  if (!s.can('clients:write')) return;
   try {
     const r = await api<{ token: string }>('/admin/api/clients/' + encodeURIComponent(appId) + '/token');
     await copyText(r.token, '完整 token 已复制');
   } catch (e) { ElMessage.error((e as Error).message); }
 }
 onMounted(async () => {
-  await Promise.all([clientSchema.load().catch(() => undefined), load()]);
+  const draft = takeClientRouteDraft(draftOwner());
+  if (draft && s.can('clients:write')) {
+    Object.assign(form, draft.form); Object.assign(budget, draft.budget); budgetRest = draft.budgetRest;
+    editing.value = draft.editing; resumedDraft.value = true; formGuard.begin(draft.baseline); open.value = true;
+  } else if (route.query.create === '1') openCreate();
+  await Promise.all([clientSchema.load().catch(() => undefined), load(), loadRoutes()]);
   if (s.can('channels:read')) {
     try { channelNames.value = (await api<any[]>('/admin/api/channels')).map((c) => c.name); } catch { /* 可选 */ }
   }
   if (s.can('routes:read')) {
-    try { routeKeys.value = (await api<any[]>('/admin/api/routes')).map((r) => r.route_key); } catch { /* 可选 */ }
     // 聊天入口（与路由同属调度配置权限）：建立 接入方→票据签发的聊天入口 反向映射
     try {
       const map: Record<string, string[]> = {};
@@ -324,6 +380,7 @@ onMounted(async () => {
     } catch { /* 可选 */ }
   }
 });
+watch(() => route.query.create, (create) => { if (create === '1') openCreate(); });
 </script>
 
 <style scoped>

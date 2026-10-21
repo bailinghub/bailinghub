@@ -6,12 +6,14 @@
           <p>完整生命周期、字段对照与对接三步，见官网「<b>开发文档</b>」。</p>
         </HelpTip>
         <el-button style="margin-left: auto" @click="openDocs('routes')">开发文档</el-button>
-        <el-button type="primary" @click="openCreate">新建路由</el-button></div>
+        <el-button v-if="s.can('routes:write')" type="primary" @click="openCreate">新建路由</el-button></div>
     </template>
-    <el-empty v-if="!list.length" description="还没有路由：业务系统的每个触发场景对应一条路由">
-      <el-button type="primary" @click="openCreate">建第一条</el-button>
+    <el-alert v-if="returnToClient" title="接入方草稿已临时保留，创建路由后可返回继续授权。刷新浏览器会丢失这份草稿。" type="info" :closable="false" show-icon style="margin-bottom:12px"><el-button link type="primary" @click="returnToClientDraft">返回接入方草稿</el-button></el-alert>
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
+    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有路由：业务系统的每个触发场景对应一条路由">
+      <el-button v-if="s.can('routes:write')" type="primary" @click="openCreate">建第一条</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else v-loading="listLoading" :data="list">
       <el-table-column label="场景" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="route-main">
@@ -57,8 +59,8 @@
           <div class="route-actions">
           <el-button link type="primary" @click="router.push({ path: '/agent-clients', query: { workspace: row.route_key } })">本地智能体配置</el-button>
           <el-button link type="primary" @click="openCode(row)">调用代码</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="删除该路由？业务侧再调用会报未知 route。" width="240" @confirm="del(row.route_key)">
+          <el-button v-if="s.can('routes:write')" link type="primary" :disabled="Boolean(listError)" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="s.can('routes:write')" title="删除该路由？业务侧再调用会报未知 route。" width="240" @confirm="del(row.route_key)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
           </div>
@@ -68,9 +70,10 @@
   </el-card>
 
   <!-- 新建/编辑路由 -->
-  <el-drawer v-model="open" :title="editing ? '编辑路由' : '新建路由'" size="640px">
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px" title="配置本地智能体时，可使用“智能体客户端 → 接入配置”，集中设置授权入口、系统说明、工具与审批。本页保留业务路由及高级治理设置。" />
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑路由' : '新建路由'" size="640px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="dependencyErrors.length" :title="`关联配置读取失败：${dependencyErrors.join('、')}。已有输入保持不变，不能据此判断这些配置不存在。`" type="warning" :closable="false" show-icon style="margin-bottom:12px"><el-button link :loading="dependenciesLoading" @click="loadDependencies">重试读取关联配置</el-button></el-alert>
+    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px" title="配置本地智能体时，可使用“本地智能体 → 接入配置”，集中设置授权入口、系统说明、工具与审批。本页保留业务路由及高级治理设置。" />
+    <el-form label-position="top" :disabled="saving || !s.can('routes:write')">
       <el-tabs v-model="routeFormTab" class="console-tabs route-form-tabs">
         <el-tab-pane label="基础与大脑" name="basic">
       <el-form-item>
@@ -78,7 +81,7 @@
           <p>{{ routeFieldDesc('route_key', '本场景的唯一标识，触发方凭它调用。') }}</p>
           <p><b>建好后不可改</b>（触发方代码里写死了它）；小写字母 / 数字 / 中划线。场景配置随时改，key 不变触发方就无感知。</p>
         </HelpTip></template>
-        <el-input v-model="form.route_key" :disabled="editing" placeholder="如 business-assistant" class="mono" />
+        <el-input v-model="form.route_key" :disabled="editing || saving" placeholder="如 business-assistant" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ routeFieldTitle('name', '名称') }} <span v-if="routeFieldRequired('name')" class="field-required">*</span> <HelpTip :title="routeFieldTitle('name', '名称')">
@@ -378,7 +381,7 @@
         <el-input v-model="mem.summary_model" placeholder="留空=用本路由凭证默认模型" class="mono" />
       </el-form-item>
       <el-collapse><el-collapse-item title="本地智能体运行设置（高级）" name="agent-runtime">
-      <p class="muted hint">日常接入请使用“智能体客户端 → 接入配置”。以下是同一工作空间的底层设置。</p>
+      <p class="muted hint">日常接入请使用“本地智能体 → 接入配置”。以下是同一工作空间的底层设置。</p>
       <el-form-item>
         <template #label>本地 Agent Runtime <HelpTip title="本地 Agent Runtime">
           <p>开启后，已通过业务网页授权的本地 Agent 可以读取本路由的安全运行档、会话记忆和按需工具定义，并在本地完成编排。</p>
@@ -629,9 +632,9 @@
           </HelpTip></template>
           <div class="agent-direct-write-actions">
             <span>当前目录已选 {{ agentDirectSelectedCatalogWriteCount }} / {{ agentDirectWriteOptions.length }}</span>
-            <el-button size="small" type="primary" plain :disabled="!agentDirectWriteOptions.length || agentDirectAllCurrentWritesSelected"
+            <el-button size="small" type="primary" plain :disabled="saving || !agentDirectWriteOptions.length || agentDirectAllCurrentWritesSelected"
               @click="selectAllCurrentAgentDirectWrites">全选当前写操作（{{ agentDirectWriteOptions.length }}）</el-button>
-            <el-button size="small" :disabled="!agentDirect.write_tools.length" @click="clearAgentDirectWrites">清空</el-button>
+            <el-button size="small" :disabled="saving || !agentDirect.write_tools.length" @click="clearAgentDirectWrites">清空</el-button>
           </div>
           <el-select v-model="agentDirect.write_tools" multiple filterable allow-create default-first-option
             style="width: 100%" placeholder="选择写操作，或手填精确 operationId" @change="onAgentDirectNamesChange('write_tools')">
@@ -716,8 +719,11 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon style="margin-bottom:12px" />
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button v-if="returnToClient" :disabled="saving" @click="returnToClientDraft">返回接入方草稿</el-button>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button v-if="s.can('routes:write')" type="primary" :loading="saving" @click="save">{{ returnToClient ? '保存并返回接入方' : '保存' }}</el-button>
     </template>
   </el-drawer>
 
@@ -870,8 +876,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { WarningFilled } from '@element-plus/icons-vue';
@@ -885,11 +891,19 @@ import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from 
 import { kernelOrigin } from '../runtime-path';
 import { EXACT_OPERATION_ID_RE, includesAllCurrentOperationIds, mergeExactOperationIds } from '../agent-direct-selection';
 import { buildRouteCallSnippets, canCallRoute } from '../route-call-snippets';
+import { useUnsavedForm } from '../use-unsaved-form';
+import { hasClientRouteDraft } from '../client-route-draft';
 
 const s = useMe();
 const router = useRouter();
+const route = useRoute();
+const returnToClient = computed(() => route.query.return_to === 'clients' && hasClientRouteDraft(`${s.me?.via}:${s.me?.username}`));
+async function returnToClientDraft(): Promise<void> { await router.push({ path: '/clients', query: { resume: 'route-create' } }); }
 const routeSchema = useConfigSchema('route');
 const list = ref<any[]>([]);
+const listLoading = ref(false), listError = ref('');
+let listGeneration = 0;
+const dependencyErrors = ref<string[]>([]), dependenciesLoading = ref(false);
 const projectNames = ref<string[]>([]);
 const clients = ref<any[]>([]);
 const chatEntries = ref<any[]>([]); // 用于判断当前路由是否被聊天入口/渠道入站使用（这些入口自动续聊、不读会话策略）
@@ -897,6 +911,7 @@ const channels = ref<any[]>([]);
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
+const saveError = ref('');
 const routeFormTab = ref<'basic' | 'audience' | 'knowledge' | 'delivery' | 'tools' | 'publish'>('basic');
 const form = reactive({
   route_key: '', name: '', target: 'llm', project: '', profile: '', permission: 'full',
@@ -976,6 +991,13 @@ const mem = reactive({ recent_messages: 12, recent_budget_chars: 3500, summary_e
 const agentClient = reactive({ configured: false, inherited: false, enabled: false, instructions: '', active_tool_limit: 8 });
 const budget = reactive<{ enabled: boolean; window: 'hour' | 'day' | 'month'; hard_cost_usd?: number; hard_tokens?: number }>({ enabled: false, window: 'day', hard_cost_usd: undefined, hard_tokens: undefined });
 let llmRest: Record<string, unknown> = {}, inputRest: Record<string, unknown> = {}, knRest: Record<string, unknown> = {}, dvRest: Record<string, unknown> = {}, rtRest: Record<string, unknown> = {}, tlRest: Record<string, unknown> = {}, agentDirectRest: Record<string, unknown> = {}, builtinRest: Record<string, unknown> = {}, sendRest: Record<string, unknown> = {}, apRest: Record<string, unknown> = {}, audienceRest: Record<string, unknown> = {}, memRest: Record<string, unknown> = {}, agentClientRest: Record<string, unknown> = {}, budgetRest: Record<string, unknown> = {};
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, name: '路由配置', retainedDraft: () => returnToClient.value,
+  snapshot: () => ({ form, llm, vis, voice, fileInput, kn, dv, rt, agentDirect, ap, au, mem, agentClient, budget,
+    // Catalog requests and loading flags are presentation state, not edits.
+    tools: { max_calls: tl.max_calls, send_channels: tl.send_channels,
+      sources: tl.sources.map(({ provider, allow, subject_field, rest }) => ({ provider, allow, subject_field, rest })) } }),
+});
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
 
 // 会话策略只对 /run API 触发生效；聊天入口与渠道入站走自己的 scope 自动续聊、不读此项。
 // 算出当前编辑路由被哪些入口/渠道使用，据此提示用户「本项在这条路由下到底有没有用」。
@@ -1271,7 +1293,15 @@ function coverage(row: any): { text: string; tagType: 'success' | 'danger' | 'wa
   return { text: `✓ ${online.length} 在线`, tagType: 'success', hint: `${online.length} 个在线执行器在认领调度目标「${row.target}」` };
 }
 
-async function load(): Promise<void> { list.value = await api('/admin/api/routes'); }
+async function load(): Promise<void> {
+  const generation = ++listGeneration;
+  listLoading.value = true;
+  try {
+    const rows = await api<any[]>('/admin/api/routes');
+    if (generation === listGeneration) { list.value = rows; listError.value = ''; }
+  } catch { if (generation === listGeneration) listError.value = list.value.length ? '路由列表刷新失败，当前保留旧快照。' : '路由列表读取失败，请重试。'; }
+  finally { if (generation === listGeneration) listLoading.value = false; }
+}
 function resetSubForms(): void {
   Object.assign(llm, { credential: '', model: '', system_prompt: '' });
   Object.assign(vis, { on: false, credential: '', model: '', mode: 'tool', max_calls: 6 }); visRest = {};
@@ -1290,13 +1320,16 @@ function resetSubForms(): void {
   llmRest = {}; inputRest = {}; knRest = {}; dvRest = {}; rtRest = {}; tlRest = {}; agentDirectRest = {}; audienceRest = {}; memRest = {}; agentClientRest = {}; budgetRest = {};
 }
 function openCreate(): void {
+  if (!s.can('routes:write') || saving.value || open.value) return;
   editing.value = false;
   routeFormTab.value = 'basic';
   Object.assign(form, { route_key: '', name: '', target: 'llm', project: '', profile: '', permission: 'full', session_policy: 'new', session_key_field: '', session_fixed_id: '', target_config: '', description: '', enabled: true });
   resetSubForms();
+  saveError.value = ''; formGuard.begin();
   open.value = true;
 }
 function openEdit(row: any): void {
+  if (!s.can('routes:write') || saving.value || open.value || listError.value) return;
   editing.value = true;
   routeFormTab.value = 'basic';
   const j = (o: unknown): string => (o && Object.keys(o as object).length ? JSON.stringify(o) : '');
@@ -1454,6 +1487,7 @@ function openEdit(row: any): void {
   });
   budgetRest = bur;
   for (const source of tl.sources) if (source.provider) void loadScopes(source);
+  saveError.value = ''; formGuard.begin();
   open.value = true;
 }
 function parseJson(label: string, text: string): Record<string, unknown> | undefined {
@@ -1463,6 +1497,8 @@ function parseJson(label: string, text: string): Record<string, unknown> | undef
   catch { throw new Error(`${label} 不是合法 JSON`); }
 }
 async function save(): Promise<void> {
+  if (!s.can('routes:write') || saving.value) return;
+  saveError.value = '';
   saving.value = true;
   try {
     // 防御：表单字段一律先 String 兜底再 trim，任何字段为 undefined/null 都不会炸（读到异常路由行也能编辑保存）
@@ -1596,11 +1632,14 @@ async function save(): Promise<void> {
       description: TR(form.description) || undefined, enabled: form.enabled,
     };
     await api('/admin/api/routes', { method: 'POST', body: JSON.stringify(body) });
-    ElMessage.success('已保存'); open.value = false; await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    formGuard.markSaved(); ElMessage.success('已保存'); open.value = false;
+    if (returnToClient.value) await returnToClientDraft();
+    else await load();
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 async function del(key: string): Promise<void> {
+  if (!s.can('routes:write')) return;
   try { await api('/admin/api/routes/' + encodeURIComponent(key), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
@@ -1655,42 +1694,52 @@ ${base}/connect/skills/connect-bailinghub-executor/SKILL.md
 5. 成功标准：控制台显示同一 executor_id 在线且 target 为「${r.target}」，专用测试任务返回真实处理结果而不是原样复读。`;
 });
 
+async function loadDependencies(): Promise<void> {
+  if (dependenciesLoading.value) return;
+  dependenciesLoading.value = true; dependencyErrors.value = [];
+  try {
+    if (s.can('targets:read')) {
+      try {
+        const ts = await api<any[]>('/admin/api/targets');
+        // 后缀不代表执行能力；合法自定义执行目标也可能以 -notify 结尾。
+        targetOptions.value = ts;
+        notifyTargetsRaw.value = ts.filter((t) => t.name.endsWith('-notify'));
+      } catch { dependencyErrors.value.push('调度目标'); }
+    }
+    if (s.can('runs:read')) {
+      try { execs.value = await api('/admin/api/executors'); } catch { dependencyErrors.value.push('执行器状态'); }
+    }
+    if (s.can('projects:read')) {
+      try { projectNames.value = (await api<any[]>('/admin/api/projects')).map((p) => p.name); } catch { dependencyErrors.value.push('项目目录'); }
+    }
+    if (s.can('clients:read')) {
+      try { clients.value = await api('/admin/api/clients'); } catch { dependencyErrors.value.push('接入方'); }
+    }
+    // 路由的入口/渠道绑定用于会话策略提示；读取失败时显示独立提示，不冒充空配置。
+    if (s.can('routes:read')) {
+      try { chatEntries.value = await api('/admin/api/chat-entries'); } catch { dependencyErrors.value.push('聊天入口'); }
+    }
+    if (s.can('channels:read')) {
+      try { channels.value = await api('/admin/api/channels'); } catch { dependencyErrors.value.push('渠道'); }
+    }
+    // 表单下拉的关联注册表（无权限时静默退化为 allow-create 手输）
+    if (s.can('credentials:read')) {
+      try { credOptions.value = await api('/admin/api/credentials'); } catch { dependencyErrors.value.push('模型凭证'); }
+    }
+    if (s.can('kb:read')) {
+      try { kbOptions.value = await api('/admin/api/kb'); } catch { dependencyErrors.value.push('知识库'); }
+    }
+    if (s.can('tools:read')) {
+      try { providerOptions.value = await api('/admin/api/tool-providers'); } catch { dependencyErrors.value.push('工具源'); }
+    }
+  } finally { dependenciesLoading.value = false; }
+}
 onMounted(async () => {
   void routeSchema.load().catch(() => undefined);
-  await load();
-  if (s.can('targets:read')) {
-    try {
-      const ts = await api<any[]>('/admin/api/targets');
-      // 送达承接者(*-notify)不作为路由 target，单独留给「送达」渠道下拉
-      targetOptions.value = ts.filter((t) => !t.name.endsWith('-notify'));
-      notifyTargetsRaw.value = ts.filter((t) => t.name.endsWith('-notify'));
-    } catch { /* 退化为内置 */ }
-  }
-  if (s.can('runs:read')) {
-    try { execs.value = await api('/admin/api/executors'); } catch { /* 覆盖度可选，无则不显示 */ }
-  }
-  if (s.can('projects:read')) {
-    try { projectNames.value = (await api<any[]>('/admin/api/projects')).map((p) => p.name); } catch { /* 可选 */ }
-  }
-  if (s.can('clients:read')) {
-    try { clients.value = await api('/admin/api/clients'); } catch { /* 可选 */ }
-  }
-  // 路由的入口/渠道绑定：用于「会话策略」上下文提示（判断本项在该路由下是否生效）。失败则静默退化为通用提示。
-  if (s.can('routes:read')) {
-    try { chatEntries.value = await api('/admin/api/chat-entries'); } catch { /* 可选 */ }
-    try { channels.value = await api('/admin/api/channels'); } catch { /* 可选 */ }
-  }
-  // 表单下拉的关联注册表（无权限时静默退化为 allow-create 手输）
-  if (s.can('credentials:read')) {
-    try { credOptions.value = await api('/admin/api/credentials'); } catch { /* 可选 */ }
-  }
-  if (s.can('kb:read')) {
-    try { kbOptions.value = await api('/admin/api/kb'); } catch { /* 可选 */ }
-  }
-  if (s.can('tools:read')) {
-    try { providerOptions.value = await api('/admin/api/tool-providers'); } catch { /* 可选 */ }
-  }
+  if (route.query.create === '1') openCreate();
+  await Promise.all([load(), loadDependencies()]);
 });
+watch(() => route.query.create, (create) => { if (create === '1') openCreate(); });
 </script>
 
 <style scoped>

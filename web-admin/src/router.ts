@@ -2,13 +2,14 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { useMe } from './store';
 import { kernelConsoleBase, kernelFetch } from './runtime-path';
+import { consoleEntry } from './console-entry';
 
-export const SETUP_PAGE = { path: 'setup', perm: 'audit:read', title: '上手向导' } as const;
+export const SETUP_PAGE = { path: 'setup', perm: 'audit:read', title: '接入向导' } as const;
 
 // 页面与所需权限（菜单渲染同源于此；后端接口另有二次拦截）。
 // 数组顺序 = 菜单显示顺序，也是常规默认落地优先级（进 `/` 落到第一个有权限的页 → 任务）。
 // 任务是唯一独立工作入口；其余按配置、接入、能力、运行、运营、资源与系统职责分组。
-// 上手向导是首次接入与低频自检入口，不常驻左侧主导航；路由保留，入口收敛到默认落地与右上角菜单。
+// 接入向导是首次接入与低频自检入口，不常驻左侧主导航；路由保留，入口保留在默认落地与顶栏。
 export const PAGES = [
   // ① 任务 —— 稳定运行后的默认工作台
   { path: 'runs', perm: 'runs:read', title: '任务', group: '场景' },
@@ -16,7 +17,7 @@ export const PAGES = [
   { path: 'routes', perm: 'routes:read', title: '触发路由', group: '场景配置' },
   // ③ 接入入口 —— 场景怎么被触发（谁/从哪触发）
   { path: 'clients', perm: 'clients:read', title: '接入方', group: '接入入口' },
-  { path: 'agent-clients', perm: 'clients:read', title: '智能体客户端', group: '接入入口' },
+  { path: 'agent-clients', perm: 'clients:read', title: '本地智能体', group: '接入入口' },
   { path: 'agent-tasks', perm: 'clients:read', title: '任务控制', group: '接入入口' },
   { path: 'chat', perm: 'routes:read', title: '聊天入口', group: '接入入口' },
   { path: 'channels', perm: 'channels:read', title: '入站渠道', group: '接入入口' },
@@ -31,7 +32,7 @@ export const PAGES = [
   // ⑥ 运行治理 —— 非默认运行配置与治理观察
   { path: 'executors', perm: 'runs:read', title: '执行器', group: '运行' },
   { path: 'approvals', perm: 'runs:read', title: '审批意图', group: '运行' },
-  // ⑦ 运营管理 —— 跨接入入口的账户、套餐与成本，不隶属于智能体客户端
+  // ⑦ 运营管理 —— 跨接入入口的账户、套餐与成本，不隶属于本地智能体
   { path: 'usage', perm: 'usage:read', title: '用户与用量', group: '运营管理' },
   { path: 'cost', perm: 'runs:read', title: '成本观测', group: '运营管理' },
   // ⑧ 系统 —— 平台管理（低频）
@@ -65,7 +66,7 @@ export const router = createRouter({
         { path: 'channels', component: () => import('./pages/Channels.vue'), meta: { perm: 'channels:read', title: '入站渠道' } },
         { path: 'projects', component: () => import('./pages/Projects.vue'), meta: { perm: 'projects:read', title: '项目目录' } },
         { path: 'clients', component: () => import('./pages/Clients.vue'), meta: { perm: 'clients:read', title: '接入方' } },
-        { path: 'agent-clients', component: () => import('./pages/AgentClients.vue'), meta: { perm: 'clients:read', title: '智能体客户端' } },
+        { path: 'agent-clients', component: () => import('./pages/AgentClients.vue'), meta: { perm: 'clients:read', title: '本地智能体' } },
         { path: 'agent-tasks', component: () => import('./pages/AgentTasks.vue'), meta: { perm: 'clients:read', title: '任务控制' } },
         { path: 'credentials', component: () => import('./pages/Credentials.vue'), meta: { perm: 'credentials:read', title: '模型凭证' } },
         { path: 'storage', component: () => import('./pages/StorageBuckets.vue'), meta: { perm: 'storage:read', title: '媒体存储' } },
@@ -79,39 +80,20 @@ export const router = createRouter({
   ],
 });
 
-async function readAdminList<T = Record<string, unknown>>(path: string): Promise<T[]> {
-  const r = await kernelFetch(path);
-  if (r.status === 401) throw new Error('unauthorized');
-  if (!r.ok) return [];
-  const data = await r.json().catch(() => []);
-  return Array.isArray(data) ? data : [];
-}
-
-async function shouldEnterSetup(s: ReturnType<typeof useMe>): Promise<boolean> {
-  if (!s.can(SETUP_PAGE.perm)) return false;
-  const [credentials, targets, providers, clients, routes] = await Promise.all([
-    s.can('credentials:read') ? readAdminList('/admin/api/credentials') : Promise.resolve([{}]),
-    s.can('targets:read') ? readAdminList<{ name?: string }>('/admin/api/targets') : Promise.resolve([{}]),
-    s.can('tools:read') ? readAdminList('/admin/api/tool-providers') : Promise.resolve([{}]),
-    s.can('clients:read') ? readAdminList('/admin/api/clients') : Promise.resolve([{}]),
-    s.can('routes:read') ? readAdminList('/admin/api/routes') : Promise.resolve([{}]),
-  ]);
-  const hasDemoTarget = targets.some((t) => (t as { name?: string }).name === 'demo-agent');
-  return routes.length === 0 || clients.length === 0 || targets.length === 0 || providers.length === 0 || (credentials.length === 0 && !hasDemoTarget);
-}
-
 router.beforeEach(async (to) => {
   const s = useMe();
   if (!s.fetched) await s.fetch().catch(() => null);
   if (to.path === '/login') return s.me ? '/' : true;
   if (!s.me) return { path: '/login', query: to.query };
   if (to.path === '/') {
-    try {
-      if (await shouldEnterSetup(s)) return '/' + SETUP_PAGE.path;
-    } catch {
+    const entry = s.can(SETUP_PAGE.perm)
+      ? await consoleEntry(kernelFetch, s.can('routes:read') && s.hasModule('routes') && s.can('clients:read') && s.hasModule('clients'))
+      : 'workspace';
+    if (entry === 'session-expired') {
       await s.logout();
       return { path: '/login', query: to.query };
     }
+    if (entry === 'setup') return '/' + SETUP_PAGE.path;
     const first = PAGES.find((p) => s.can(p.perm) && s.hasModule(p.path));
     if (!first) { await s.logout(); return { path: '/login', query: to.query }; } // 零权限账号（不应出现）
     return '/' + first.path;

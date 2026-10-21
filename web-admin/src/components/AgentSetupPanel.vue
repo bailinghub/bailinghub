@@ -14,6 +14,7 @@
           <h3>让用户通过业务系统确认身份</h3>
           <p class="description">复用当前接入方。账号、租户和业务权限仍由业务授权页确认。</p>
           <el-alert v-if="!me.can('clients:write')" type="info" :closable="false" title="当前账号可查看授权入口，保存需要接入方管理权限。" />
+          <el-alert v-if="clientSaveError" :title="clientSaveError" type="error" :closable="false" show-icon />
           <el-form label-position="top" :disabled="savingClient || !me.can('clients:write')">
             <el-form-item label="接入方标识"><el-input :model-value="client.app_id" readonly /></el-form-item>
             <el-form-item label="允许此接入方连接中枢"><el-switch v-model="client.enabled" /><span class="inline-note">停用会影响此接入方的其他入口。</span></el-form-item>
@@ -21,7 +22,7 @@
               <el-input v-model="client.agent_authorize_url" placeholder="https://business.example.com/agent/authorize" maxlength="2048" />
               <div class="field-note">填写业务系统提供的固定 HTTPS 地址。用户将在该页面登录并确认本次授权。</div>
             </el-form-item>
-            <el-form-item label="允许连接的工作空间">
+            <el-form-item label="允许连接的工作空间（业务路由）">
               <el-select v-model="client.allowed_routes" multiple filterable allow-create default-first-option style="width:100%" placeholder="选择已存在的工作空间">
                 <el-option v-for="item in workspaces" :key="item.route" :label="`${item.name} · ${item.route}`" :value="item.route" />
                 <el-option value="*" label="所有工作空间（包含以后新增的空间）" />
@@ -91,6 +92,7 @@
                 </el-form>
                 <el-collapse><el-collapse-item title="高级运行设置" name="advanced"><el-form label-position="top" :disabled="savingRoute || !me.can('routes:write')"><el-form-item label="每轮主动加载的工具上限"><el-input-number v-model="runtime.active_tool_limit" :min="1" :max="12" /></el-form-item><el-form-item label="本地编排补充规则"><el-input v-model="runtime.instructions" type="textarea" :rows="3" maxlength="20000" /><div class="field-note">延续已有运行规则；系统介绍应填写在上一步。</div></el-form-item></el-form></el-collapse-item></el-collapse>
               </section>
+              <el-alert v-if="routeSaveError" :title="routeSaveError" type="error" :closable="false" show-icon />
               <div class="section-footer"><span>{{ !me.can('routes:write') ? '当前账号没有工作空间修改权限' : routeDirty ? '工作空间有未保存修改' : '工作空间配置已同步' }}</span><el-button type="primary" :loading="savingRoute" :disabled="!routeDirty || !me.can('routes:write')" @click="saveRoute">保存工作空间</el-button></div>
             </template>
           </div>
@@ -99,9 +101,10 @@
         <section v-show="step === 3" class="setup-section">
           <h3>检查已保存的接入配置</h3><p class="description">连接配置只包含中枢地址、接入方和工作空间。用户登录后，实际可用工具会按原业务授权确定。</p>
           <el-alert v-if="clientDirty || routeDirty" title="还有未保存的修改。下方状态和连接配置仅反映已保存内容。" type="warning" :closable="false" show-icon />
+          <el-alert v-if="overviewError || overviewLoading" :title="overviewError ? '最新连接状态读取失败，请重试后生成配置。' : '正在核对最新连接状态…'" :type="overviewError ? 'error' : 'info'" :closable="false"><template #default><el-button v-if="overviewError" link @click="emit('retry-overview')">重新读取</el-button></template></el-alert>
           <div class="check-item"><span>接入方</span><b>{{ persistedClient?.enabled ? '已启用' : '已停用' }}</b></div>
           <div class="check-item"><span>业务授权入口</span><b>{{ persistedClient?.agent_authorize_url ? '已配置' : '尚未配置' }}</b></div>
-          <div v-for="item in savedWorkspaces" :key="item.route" class="workspace-result"><div><b>{{ item.name }}</b><code>{{ item.route }}</code></div><p>{{ workspaceStatus(item) }}</p><el-button type="primary" plain size="small" :disabled="!persistedClient?.enabled || !persistedClient?.agent_authorize_url || !item.enabled || !item.runtime_enabled" @click="emit('connect', { app_id: client.app_id, workspace: item.route })">生成连接配置</el-button></div>
+          <div v-for="item in savedWorkspaces" :key="item.route" class="workspace-result"><div><b>{{ item.name }}</b><code>{{ item.route }}</code></div><p>{{ overviewError || overviewLoading ? '等待核对当前连接状态' : workspaceStatus(item) }}</p><el-button type="primary" plain size="small" :disabled="overviewLoading || Boolean(overviewError) || savingClient || savingRoute || !persistedClient?.enabled || !persistedClient?.agent_authorize_url || !item.enabled || !item.runtime_enabled" @click="emit('connect', { app_id: client.app_id, workspace: item.route })">生成连接配置</el-button></div>
           <el-empty v-if="!savedWorkspaces.length" description="尚无可连接的工作空间。请先保存授权入口配置。" :image-size="70" />
           <p class="field-note">系统说明缺失不会阻断已有连接；工具范围与服务可用性将在授权后进一步校验。</p>
         </section>
@@ -111,7 +114,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { onBeforeRouteLeave } from 'vue-router';
+import { createFormExitGuard, needsUnloadWarning } from '../form-guard';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { kernelFetch } from '../runtime-path';
 import { useMe } from '../store';
@@ -120,12 +125,13 @@ interface Workspace { route: string; name: string; enabled: boolean; runtime_ena
 interface ClientSetup { app_id: string; name: string; enabled: boolean; agent_authorize_url: string | null; allowed_routes: string[]; revision: string }
 interface Tool { name: string; description?: string; scope: string; readonly: boolean; risk?: string; confirm_required?: boolean }
 interface Source { config: { provider: string; allow: string[]; [key: string]: any }; _key: number; _tools: Tool[]; _loaded: boolean; _loading: boolean; _error: string }
-const props = defineProps<{ modelValue: boolean; appId: string; workspaces: Workspace[]; initialWorkspace?: string }>();
+const props = defineProps<{ modelValue: boolean; appId: string; workspaces: Workspace[]; initialWorkspace?: string; overviewLoading?: boolean; overviewError?: string }>();
 const me = useMe();
-const emit = defineEmits(['update:modelValue', 'saved', 'connect']);
+const emit = defineEmits(['update:modelValue', 'saved', 'connect', 'retry-overview']);
 const steps = ['授权入口', '系统说明', '工具与审批', '检查连接'];
 const step = ref(0); const loading = ref(false); const loadError = ref('');
 const client = ref<ClientSetup | null>(null); const persistedClient = ref<ClientSetup | null>(null);
+const clientSaveError = ref(''); const routeSaveError = ref('');
 const clientBaseline = ref(''); const savingClient = ref(false);
 const workspaceKey = ref(''); const route = ref<any>(null); const routeBaseline = ref(''); const routeLoading = ref(false); const routeError = ref(''); const savingRoute = ref(false);
 const storageOptions = ref<Array<{ name: string; kind: string; enabled: boolean }>>([]);
@@ -191,17 +197,17 @@ function message(e: unknown): string { return e instanceof Error ? e.message : '
 async function saveClient(): Promise<void> {
   if (!client.value || savingClient.value || savingRoute.value || !me.can('clients:write')) return;
   const id = requestId; const appId = client.value.app_id; const payload = clone({ expected_revision: client.value.revision, ...clientValue() });
-  savingClient.value = true;
+  savingClient.value = true; clientSaveError.value = '';
   try {
     const saved = await api(`/admin/api/clients/${encodeURIComponent(appId)}/agent-setup`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (id !== requestId || client.value?.app_id !== appId || !props.modelValue) return;
     client.value = clone(saved); persistedClient.value = clone(saved); clientBaseline.value = JSON.stringify(clientValue()); emit('saved'); ElMessage.success('授权入口已保存');
-  } catch (e) { if (id === requestId) ElMessage.error(message(e)); } finally { if (id === requestId) savingClient.value = false; }
+  } catch (e) { if (id === requestId) clientSaveError.value = message(e); } finally { if (id === requestId) savingClient.value = false; }
 }
 async function selectWorkspace(key: string): Promise<void> {
   if (savingClient.value || savingRoute.value) return;
   if (routeDirty.value && !await discard()) return;
-  const id = ++requestId; workspaceKey.value = key; route.value = null; routeBaseline.value = ''; routeError.value = ''; routeLoading.value = true;
+  const id = ++requestId; workspaceKey.value = key; route.value = null; routeBaseline.value = ''; routeError.value = ''; routeSaveError.value = ''; routeLoading.value = true;
   try {
     const value = await api(`/admin/api/routes/${encodeURIComponent(key)}/agent-setup`);
     if (id !== requestId || !props.modelValue) return;
@@ -252,16 +258,22 @@ async function saveRoute(): Promise<void> {
   if (info.domains.some((x) => !x.trim() || x.length > 120) || info.boundaries.some((x) => !x.trim() || x.length > 160)) { ElMessage.warning('业务方向每项不超过120字，系统边界每项不超过160字。'); return; }
   if ([...direct.write_tools, ...direct.force_approval_tools].some((x) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(x)) || direct.force_approval_tools.some((x) => !direct.write_tools.includes(x))) { ElMessage.warning('写操作需要精确operationId；额外审批只能选择已允许的写操作。'); return; }
   const id = requestId; const key = workspaceKey.value; const payload = clone({ expected_revision: route.value.revision, ...routeValue() });
-  savingRoute.value = true;
+  savingRoute.value = true; routeSaveError.value = '';
   try {
     const saved = await api(`/admin/api/routes/${encodeURIComponent(key)}/agent-setup`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (id !== requestId || workspaceKey.value !== key || !props.modelValue) return;
     hydrateRoute(saved); emit('saved'); ElMessage.success('工作空间配置已保存');
-  } catch (e) { if (id === requestId) ElMessage.error(message(e)); } finally { if (id === requestId) savingRoute.value = false; }
+  } catch (e) { if (id === requestId) routeSaveError.value = message(e); } finally { if (id === requestId) savingRoute.value = false; }
 }
 async function discard(): Promise<boolean> { try { await ElMessageBox.confirm('有未保存的修改，离开会放弃这些修改。', '离开配置', { confirmButtonText: '放弃修改', cancelButtonText: '继续编辑', type: 'warning' }); return true; } catch { return false; } }
-async function beforeClose(done: () => void): Promise<void> { if (savingClient.value || savingRoute.value) return; if ((clientDirty.value || routeDirty.value) && !await discard()) return; emit('update:modelValue', false); done(); }
-function clear(): void { requestId++; savingClient.value = false; savingRoute.value = false; step.value = 0; client.value = null; persistedClient.value = null; route.value = null; workspaceKey.value = ''; sources.value = []; loadError.value = ''; routeError.value = ''; loading.value = false; }
+const exitState = { active: () => props.modelValue, dirty: () => clientDirty.value || routeDirty.value, saving: () => savingClient.value || savingRoute.value };
+const exitGuard = createFormExitGuard(exitState, discard, () => ElMessage.warning('正在保存，请等待本次请求完成后再离开。'));
+async function beforeClose(done: () => void): Promise<void> { if (await exitGuard.confirmLeave()) { emit('update:modelValue', false); done(); } }
+onBeforeRouteLeave(() => exitGuard.confirmLeave());
+function beforeUnload(event: BeforeUnloadEvent): void { if (needsUnloadWarning(exitState)) { event.preventDefault(); event.returnValue = ''; } }
+onMounted(() => window.addEventListener('beforeunload', beforeUnload));
+onUnmounted(() => window.removeEventListener('beforeunload', beforeUnload));
+function clear(): void { requestId++; clientSaveError.value = ''; routeSaveError.value = ''; savingClient.value = false; savingRoute.value = false; step.value = 0; client.value = null; persistedClient.value = null; route.value = null; workspaceKey.value = ''; sources.value = []; loadError.value = ''; routeError.value = ''; loading.value = false; }
 watch(() => [props.modelValue, props.appId], () => { if (props.modelValue && props.appId) void open(); });
 </script>
 

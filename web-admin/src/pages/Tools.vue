@@ -5,13 +5,14 @@
           <p>业务系统的 <b>Agent 可调接口清单</b>（OpenAPI + <code>x-agent-capability</code> 契约）；注册后在「触发路由」挂 tools 白名单，即可让 Agent 查 / 办业务。</p>
         </HelpTip>
         <el-button style="margin-left: auto" @click="openDocs('tools')">开发文档</el-button>
-        <el-button type="primary" @click="openCreate">注册工具源</el-button></div>
+        <el-button v-if="s.can('tools:write')" type="primary" @click="openCreate">注册工具源</el-button></div>
     </template>
-    <el-empty v-if="!list.length" description="还没有工具源：业务系统在自己的 OpenAPI 上声明 x-agent-capability 后，把 spec 注册进来">
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
+    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有工具源：业务系统在自己的 OpenAPI 上声明 x-agent-capability 后，把 spec 注册进来">
       <el-button @click="openDocs('tools')">查看开发文档</el-button>
-      <el-button type="primary" @click="openCreate">注册第一个</el-button>
+      <el-button v-if="s.can('tools:write')" type="primary" @click="openCreate">注册第一个</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else v-loading="listLoading" :data="list">
       <el-table-column label="工具源" min-width="270" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="tool-main">
@@ -86,11 +87,11 @@
       <el-table-column width="320" align="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="preview(row)">工具清单</el-button>
-          <el-button v-if="row.spec_source === 'url'" link type="primary" :loading="refreshing === row.name" @click="refresh(row.name)">刷新</el-button>
-          <el-button link type="primary" :loading="probing === row.name" @click="probeAuthz(row.name)">探针</el-button>
-          <el-button v-if="row.embed_credential" link type="primary" :loading="reindexing === row.name" @click="reindex(row.name)">重建索引</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="删除该工具源？挂它的路由会降级为纯对话。" width="250" @confirm="del(row.name)">
+          <el-button v-if="s.can('tools:write') && row.spec_source === 'url'" link type="primary" :loading="refreshing === row.name" @click="refresh(row.name)">刷新</el-button>
+          <el-button v-if="s.can('tools:write')" link type="primary" :loading="probing === row.name" @click="probeAuthz(row.name)">探针</el-button>
+          <el-button v-if="s.can('tools:write') && row.embed_credential" link type="primary" :loading="reindexing === row.name" @click="reindex(row.name)">重建索引</el-button>
+          <el-button v-if="s.can('tools:write')" link type="primary" :disabled="Boolean(listError)" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="s.can('tools:write')" title="删除该工具源？挂它的路由会降级为纯对话。" width="250" @confirm="del(row.name)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
@@ -99,15 +100,15 @@
   </el-card>
 
   <!-- 注册/编辑 -->
-  <el-drawer v-model="open" :title="editing ? '编辑工具源' : '注册工具源'" size="560px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑工具源' : '注册工具源'" size="560px" :before-close="formGuard.beforeClose" @closed="clearSecret">
+    <el-form label-position="top" :disabled="saving || !s.can('tools:write')">
       <el-tabs v-model="toolFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
         <template #label>{{ fieldTitle('name', '名称') }} <span v-if="fieldRequired('name')" class="field-required">*</span>
           <HelpTip :title="fieldTitle('name', '名称')"><p>{{ fieldDesc('name') }}</p></HelpTip>
         </template>
-        <el-input v-model="form.name" :disabled="editing" placeholder="如 demo-business / business-api" class="mono" />
+        <el-input v-model="form.name" :disabled="editing || saving" placeholder="如 demo-business / business-api" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('base_url', 'Base URL') }} <span v-if="fieldRequired('base_url')" class="field-required">*</span> <HelpTip :title="fieldTitle('base_url', 'Base URL')">
@@ -259,8 +260,10 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon style="margin-bottom:12px" />
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button v-if="s.can('tools:write')" type="primary" :loading="saving" @click="save">保存</el-button>
     </template>
   </el-drawer>
 
@@ -333,7 +336,7 @@
         <div class="debug-actions">
           <el-checkbox v-model="debugAllowRisky" size="small">允许实调高风险/审批工具</el-checkbox>
           <el-button size="small" @click="syncDebugJsonFromForm">生成 JSON</el-button>
-          <el-button type="primary" size="small" :loading="debugLoading" @click="runDebugInvoke">实调验证</el-button>
+          <el-button v-if="s.can('tools:write')" type="primary" size="small" :loading="debugLoading" @click="runDebugInvoke">实调验证</el-button>
         </div>
         <div v-if="debugResult" class="debug-result">
           <div class="debug-status">
@@ -391,7 +394,7 @@
                 · {{ row.readonly ? '只读' : '会改数据' }}
               </div>
               <div class="muted">业务声明：{{ row.rate_limit ? row.rate_limit.count + ' 次/' + rateWindowLabel[row.rate_limit.window] : row.rate_limit_per_min ? row.rate_limit_per_min + ' 次/分钟' : '未声明限额' }}。生效来源：{{ ({ declaration: '业务声明', provider_default: '中枢默认策略', tool_override: '指定工具覆盖' } as any)[row.effective_rate_limit?.source] || '业务声明' }}。</div>
-              <el-button text type="primary" @click="editLimitsFromPreview">设置限额</el-button>
+              <el-button v-if="s.can('tools:write')" text type="primary" @click="editLimitsFromPreview">设置限额</el-button>
               <template v-if="row.confirm_prompt">
                 <div class="td-sec">审批通知话术（ACC approval.prompt，{参数名} 由实参填充后发给审批人）</div>
                 <div class="td-text">{{ row.confirm_prompt }}</div>
@@ -429,6 +432,7 @@
 <script setup lang="ts">
 import ToolRateLimitEditor from '../components/ToolRateLimitEditor.vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
@@ -437,13 +441,18 @@ import { fmtTime } from '../util';
 import { useMe } from '../store';
 import HelpTip from '../components/HelpTip.vue';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
+import { useUnsavedForm } from '../use-unsaved-form';
 
 const s = useMe();
+const route = useRoute();
 const toolSchema = useConfigSchema('tool-provider');
 const list = ref<any[]>([]);
+const listLoading = ref(false), listError = ref('');
+let listGeneration = 0;
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
+const saveError = ref('');
 const toolFormTab = ref<'basic' | 'spec' | 'governance' | 'retrieval' | 'publish'>('basic');
 const refreshing = ref('');
 const reindexing = ref('');
@@ -468,11 +477,16 @@ function toolLimitLabel(limit: any): string {
   return limit?.enabled ? `${limit.count} 次/${rateWindowLabel[limit.window] || limit.window}` : '关闭';
 }
 function editLimitsFromPreview(): void {
+  if (!s.can('tools:write')) return;
   const row = list.value.find((item: any) => item.name === previewName.value);
   if (row) { openEdit(row); toolFormTab.value = 'governance'; }
 }
 const form = reactive({ name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', spec_access_policy: 'signed_required' as SpecAccessChoice, log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
 const editBaseline = ref<ToolProviderEditBaseline | null>(null);
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, name: '工具源配置',
+  snapshot: () => ({ form, defaultRate: toolRateDefault.value, overrides: toolRateOverrides.value }) });
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
+function clearSecret(): void { if (!open.value) form.secret = ''; }
 const historicalAccessPending = computed(() => editing.value
   && editBaseline.value?.spec_source === 'url'
   && editBaseline.value.spec_access_policy === 'legacy_unverified'
@@ -746,6 +760,7 @@ async function runRetrieveTest(): Promise<void> {
 }
 
 async function runDebugInvoke(): Promise<void> {
+  if (!s.can('tools:write')) return;
   if (!debugTool.value) { ElMessage.error('请选择工具'); return; }
   let args: Record<string, unknown> = {};
   try {
@@ -888,6 +903,7 @@ function paramRows(t: any): Array<{ name: string; loc: string; type: string; req
 
 // 取回完整签名密钥并复制（列表只给掩码；这把密钥要交给业务方验签，需随时可取）
 async function copySecret(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   try {
     const r = await api<{ secret: string }>(`/admin/api/tool-providers/${encodeURIComponent(name)}/secret`);
     await navigator.clipboard.writeText(r.secret);
@@ -896,11 +912,20 @@ async function copySecret(name: string): Promise<void> {
 }
 
 async function load(): Promise<void> {
-  list.value = await api('/admin/api/tool-providers');
+  const generation = ++listGeneration;
+  listLoading.value = true;
+  try {
+    const rows = await api<any[]>('/admin/api/tool-providers');
+    if (generation === listGeneration) { list.value = rows; listError.value = ''; }
+  } catch { if (generation === listGeneration) listError.value = list.value.length ? '工具源列表刷新失败，当前保留旧快照。' : '工具源列表读取失败，请重试。'; }
+  finally { if (generation === listGeneration) listLoading.value = false; }
   // 向量化凭证（工具检索选坐标系用）；无权限/失败不阻塞页面
-  try { embCreds.value = (await api<any[]>('/admin/api/credentials')).filter((c) => c.kind === 'embedding' || c.kind === 'both'); } catch { /* 可选 */ }
+  if (s.can('credentials:read')) {
+    try { embCreds.value = (await api<any[]>('/admin/api/credentials')).filter((c) => c.kind === 'embedding' || c.kind === 'both'); } catch { /* 可选 */ }
+  }
 }
 async function reindex(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   reindexing.value = name;
   try {
     const r = await api<{ total: number; added: string[]; changed: string[]; removed: string[] }>('/admin/api/tool-providers/' + encodeURIComponent(name) + '/reindex', { method: 'POST' });
@@ -909,6 +934,7 @@ async function reindex(name: string): Promise<void> {
   finally { reindexing.value = ''; }
 }
 async function probeAuthz(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   probing.value = name;
   try {
     const r = await api<{ authz_probe: any }>('/admin/api/tool-providers/' + encodeURIComponent(name) + '/authz-probe', { method: 'POST' });
@@ -919,6 +945,7 @@ async function probeAuthz(name: string): Promise<void> {
   finally { probing.value = ''; }
 }
 function openCreate(): void {
+  if (!s.can('tools:write') || saving.value || open.value) return;
   toolRateDefault.value = { mode: 'inherit' };
   toolRateOverrides.value = [];
   limitToolNames.value = [];
@@ -926,9 +953,11 @@ function openCreate(): void {
   editBaseline.value = null;
   toolFormTab.value = 'basic';
   Object.assign(form, { name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', spec_access_policy: 'signed_required', log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
+  saveError.value = ''; formGuard.begin();
   open.value = true;
 }
 function openEdit(row: any): void {
+  if (!s.can('tools:write') || saving.value || open.value || listError.value) return;
   toolRateDefault.value = JSON.parse(JSON.stringify(row.tool_rate_limits?.default ?? { mode: 'inherit' }));
   toolRateOverrides.value = Object.entries(row.tool_rate_limits?.overrides ?? {}).map(([name, policy]) => ({ name, policy: JSON.parse(JSON.stringify(policy)) as RatePolicy }));
   limitToolNames.value = [];
@@ -950,6 +979,7 @@ function openEdit(row: any): void {
     ? policy === 'legacy_unverified' ? '' : policy
     : 'signed_required';
   Object.assign(form, { name: row.name, base_url: row.base_url, secret: '', spec_source: row.spec_source, spec_url: row.spec_url || '', spec_json: '', spec_access_policy: policyChoice, log_payload: !!row.log_payload, timeout_ms: row.timeout_ms, rate_limit_per_min: row.rate_limit_per_min, auto_refresh_min: row.auto_refresh_min ?? 0, description: row.description || '', enabled: !!row.enabled, embed_credential: row.embed_credential || '', embed_model: row.embed_model || '', embed_dim: row.embed_dim || 1024 });
+  saveError.value = ''; formGuard.begin();
   open.value = true;
 }
 function onEmbedCred(): void {
@@ -972,27 +1002,29 @@ function historicalAccessSensitiveChange(): boolean {
     || (!baseline.enabled && form.enabled);
 }
 async function save(): Promise<void> {
+  if (!s.can('tools:write') || saving.value) return;
+  saveError.value = '';
   if (historicalAccessSensitiveChange()) {
     toolFormTab.value = 'spec';
-    ElMessage.warning('这项修改会改变接口清单拉取或重新启用历史工具源，请先确认签名保护或允许公开');
+    saveError.value = '这项修改会改变接口清单拉取或重新启用历史工具源，请先确认签名保护或允许公开';
     return;
-  }
-  if (form.spec_source === 'url' && form.spec_access_policy === 'public_allowed') {
-    try {
-      const message = historicalProtectedEvidence.value
-        ? '当前实测为正签可读、未签和错签均被拒绝。选择允许公开是在改变访问方式；需先让业务端允许匿名读取，否则刷新会失败。确认仍允许公开吗？'
-        : '任何能访问该 URL 的人都可以下载接口路径、参数、scope 与风险声明。工具调用仍需验签和授权。确认允许公开这份接口清单吗？';
-      await ElMessageBox.confirm(
-        message,
-        '确认公开接口清单',
-        { confirmButtonText: '确认允许公开', cancelButtonText: '返回修改', type: 'warning' },
-      );
-    } catch {
-      return;
-    }
   }
   saving.value = true;
   try {
+    if (form.spec_source === 'url' && form.spec_access_policy === 'public_allowed') {
+      try {
+        const message = historicalProtectedEvidence.value
+          ? '当前实测为正签可读、未签和错签均被拒绝。选择允许公开是在改变访问方式；需先让业务端允许匿名读取，否则刷新会失败。确认仍允许公开吗？'
+          : '任何能访问该 URL 的人都可以下载接口路径、参数、scope 与风险声明。工具调用仍需验签和授权。确认允许公开这份接口清单吗？';
+        await ElMessageBox.confirm(
+          message,
+          '确认公开接口清单',
+          { confirmButtonText: '确认允许公开', cancelButtonText: '返回修改', type: 'warning' },
+        );
+      } catch {
+        return;
+      }
+    }
     const names = toolRateOverrides.value.map((entry) => entry.name);
     if (new Set(names).size !== names.length || names.some((name) => !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))) throw new Error('指定工具覆盖的工具名不能为空、重复或包含特殊字符');
     const payload: Record<string, unknown> = { ...form, tool_rate_limits: {
@@ -1001,11 +1033,12 @@ async function save(): Promise<void> {
     // 历史 URL 工具源未确认时省略该字段：后端会保留既有 sentinel，空串绝不代表允许公开。
     if (form.spec_source === 'url' && form.spec_access_policy === '') delete payload.spec_access_policy;
     await api('/admin/api/tool-providers', { method: 'POST', body: JSON.stringify(payload) });
-    ElMessage.success('已保存（密钥不再回显完整值）'); open.value = false; await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    formGuard.markSaved(); ElMessage.success('已保存（密钥不再回显完整值）'); open.value = false; await load();
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 async function refresh(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   refreshing.value = name;
   try {
     const r = await api<{ tools: number }>('/admin/api/tool-providers/' + encodeURIComponent(name) + '/refresh', { method: 'POST' });
@@ -1031,12 +1064,15 @@ async function preview(row: any): Promise<void> {
   } catch (e) { ElMessage.error((e as Error).message); }
 }
 async function del(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   try { await api('/admin/api/tool-providers/' + encodeURIComponent(name), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
 onMounted(async () => {
+  if (route.query.create === '1') openCreate();
   await Promise.all([toolSchema.load().catch(() => undefined), load()]);
 });
+watch(() => route.query.create, (create) => { if (create === '1') openCreate(); });
 watch(debugTool, () => resetDebugForTool());
 </script>
 

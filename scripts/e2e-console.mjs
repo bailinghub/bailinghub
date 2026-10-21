@@ -564,6 +564,168 @@ async function verifyStatusFeedback(page, context, base) {
   console.log('✓ status feedback: failed/empty/stale and independent readiness passed');
 }
 
+async function verifyOnboardingAndForms(browser, base) {
+  const ctx = await browser.newContext();
+  await mockApi(ctx);
+  const p = await ctx.newPage();
+  const failures = [];
+  p.on('pageerror', error => failures.push(error.message));
+  let routeRows = [];
+  let routeReadFails = false;
+  let routeSaveFails = false;
+  let readonly = false;
+  let holdRouteSave;
+  let releaseRouteSave;
+  let routeWrites = 0;
+  let clientWrites = 0;
+  await ctx.route('**/admin/api/me', route => route.fulfill({ json: { username: 'operator', role: readonly ? 'viewer' : 'admin', perms: readonly ? ['audit:read', 'routes:read', 'clients:read', 'tools:read', 'runs:read', 'targets:read'] : ['*'] } }));
+  await ctx.route('**/admin/api/targets', route => route.fulfill({ json: [{ name: 'orders-notify', kind: 'executor', enabled: true, description: 'Existing execution target' }] }));
+  await ctx.route('**/admin/api/demo-dataset/status', route => route.fulfill({ json: { available: true, imported: false, empty: true } }));
+  await ctx.route('**/admin/api/routes', async route => {
+    if (route.request().method() === 'POST') {
+      routeWrites++;
+      if (holdRouteSave) await holdRouteSave;
+      if (routeSaveFails) return route.fulfill({ status: 503, json: { error: 'test: save unavailable' } });
+      const body = route.request().postDataJSON();
+      routeRows = [body];
+      return route.fulfill({ json: { ok: true } });
+    }
+    return route.fulfill(routeReadFails ? { status: 503, json: { error: 'test: config unavailable' } } : { json: routeRows });
+  });
+  await ctx.route('**/admin/api/clients', route => {
+    if (route.request().method() === 'POST') clientWrites++;
+    return route.fulfill({ json: [] });
+  });
+  await ctx.route('**/admin/api/agent-clients/overview*', route => route.fulfill({ json: { applications: [], setup_workspaces: [], workspaces: [], summary: {} } }));
+  await ctx.route('**/admin/api/agent-clients/sessions*', route => route.fulfill({ json: { list: [], total: 0 } }));
+  try {
+    await p.goto(`${base}/console/`);
+    await p.waitForURL('**/console/setup');
+    await expectVisible(p, '让业务系统调用 AI');
+    assert.equal(await p.getByRole('dialog', { name: '导入演示数据' }).count(), 0, 'first entry must not force an import dialog');
+    assert.deepEqual(await p.locator('.stepTop > b').allTextContents(), ['选择调度目标', '登记业务工具源', '创建触发路由', '创建接入方并关联路由', '发起一次真实业务调用']);
+    await p.getByRole('button', { name: /让本地智能体操作业务系统/ }).click();
+    await p.waitForURL('**/setup?flow=agent');
+    assert.deepEqual(await p.locator('.stepTop > b').allTextContents(), ['登记业务工具源', '准备工作空间（业务路由）', '创建接入方并关联路由', '配置业务授权与工具范围', '在本地客户端登录并验证']);
+    assert.equal(await p.locator('.modelNote').count(), 0);
+    await expectVisible(p, '新建时仍需绑定真实调度目标');
+    await expectVisible(p, '中枢模型目标（llm）需要模型凭证');
+    routeReadFails = true;
+    await p.getByRole('button', { name: '刷新', exact: true }).click();
+    await expectVisible(p, '读取失败');
+    assert.equal(await p.locator('.progressLine > b').innerText(), '业务配置准备 待确认');
+    await p.goto(`${base}/console/`);
+    await p.waitForURL('**/console/setup');
+    assert.equal(await p.locator('.user').innerText(), 'operator', 'network failure must not log the operator out');
+    routeReadFails = false;
+
+    // Edit three real drawers: cancellation keeps the same draft and discard closes.
+    for (const item of [
+      { path: 'routes', name: '新建路由', field: '如 业务助手' },
+      { path: 'clients', name: '新建接入方', field: '如 业务系统' },
+      { path: 'tools', name: '注册工具源', field: '如 business-api' },
+    ]) {
+      await p.goto(`${base}/console/${item.path}?create=1`);
+      const drawer = p.getByRole('dialog', { name: item.name, exact: true });
+      await drawer.waitFor();
+      const input = item.path === 'tools' ? drawer.locator('input').first() : drawer.getByPlaceholder(item.field, { exact: true });
+      await input.fill('kept-draft');
+      await drawer.getByRole('button', { name: '取消', exact: true }).click();
+      await p.getByRole('button', { name: '继续编辑', exact: true }).click();
+      await p.locator('.el-message-box').waitFor({ state: 'hidden' });
+      assert.equal(await input.inputValue(), 'kept-draft');
+      const unloadCancelled = await p.evaluate(() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; });
+      assert.equal(unloadCancelled, true, 'unsaved form must warn before a browser refresh');
+      await p.keyboard.press('Escape');
+      await p.getByRole('button', { name: '放弃修改', exact: true }).click();
+      await p.locator('.el-message-box').waitFor({ state: 'hidden' });
+      await drawer.waitFor({ state: 'hidden' });
+      assert.equal(await p.evaluate(() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }), false);
+    }
+    // A dependency detour keeps client fields in memory and never selects wildcard authorization.
+    await p.goto(`${base}/console/clients?create=1`);
+    let clientDrawer = p.getByRole('dialog', { name: '新建接入方', exact: true });
+    await clientDrawer.getByPlaceholder('如 业务系统', { exact: true }).fill('restored-business');
+    await expectVisible(p, '还没有可选择的路由');
+    await clientDrawer.getByRole('button', { name: '保留草稿，去创建路由' }).click();
+    await p.waitForURL('**/routes?create=1&return_to=clients');
+    const routeDrawer = p.getByRole('dialog', { name: '新建路由', exact: true });
+    await routeDrawer.getByPlaceholder('如 business-assistant', { exact: true }).fill('business-read');
+    await routeDrawer.getByPlaceholder('如 业务助手', { exact: true }).fill('Business read');
+    await routeDrawer.locator('.el-select__wrapper').first().click();
+    await p.getByRole('option', { name: /orders-notify/ }).click();
+    routeSaveFails = true;
+    await routeDrawer.getByRole('button', { name: '保存并返回接入方', exact: true }).click();
+    await expectVisible(p, '未能确认保存成功');
+    assert.equal(await routeDrawer.getByPlaceholder('如 业务助手', { exact: true }).inputValue(), 'Business read');
+    await p.getByRole('menuitem', { name: '任务', exact: true }).click({ force: true });
+    await p.getByRole('button', { name: '继续编辑', exact: true }).click();
+      await p.locator('.el-message-box').waitFor({ state: 'hidden' });
+    assert.match(p.url(), /routes/);
+    routeSaveFails = false;
+    holdRouteSave = new Promise(resolve => { releaseRouteSave = resolve; });
+    await routeDrawer.getByRole('button', { name: '保存并返回接入方', exact: true }).click();
+    await p.waitForFunction(() => [...document.querySelectorAll('.el-drawer input')].some(input => input.placeholder === '如 业务助手' && input.disabled));
+    assert.equal(await p.getByPlaceholder('如 business-assistant', { exact: true }).isDisabled(), true, 'route identity must also freeze during save');
+    await p.keyboard.press('Escape');
+    assert.equal(await routeDrawer.isVisible(), true, 'saving form must not close');
+    releaseRouteSave(); holdRouteSave = null;
+    await p.waitForURL('**/clients?resume=route-create');
+    clientDrawer = p.getByRole('dialog', { name: '新建接入方', exact: true });
+    await expectVisible(p, '已恢复尚未保存的接入方配置');
+    assert.equal(await clientDrawer.getByPlaceholder('如 业务系统', { exact: true }).inputValue(), 'restored-business');
+    await clientDrawer.getByRole('button', { name: '保存', exact: true }).click();
+    await expectVisible(p, '请选择至少一个需要授权的具体路由');
+    assert.equal(clientWrites, 0, 'new route must not silently expand client authorization');
+    assert.equal(await p.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }).includes('restored-business')), false);
+    await clientDrawer.getByRole('button', { name: '取消', exact: true }).click();
+    await p.getByRole('button', { name: '放弃修改', exact: true }).click();
+      await p.locator('.el-message-box').waitFor({ state: 'hidden' });
+    assert.equal(routeWrites, 2);
+
+    await p.goto(`${base}/console/`);
+    await p.waitForURL('**/console/runs');
+    readonly = true;
+    for (const item of [{ path: 'routes', button: '新建路由' }, { path: 'clients', button: '新建接入方' }, { path: 'tools', button: '注册工具源' }]) {
+      await p.goto(`${base}/console/${item.path}?create=1`);
+      await expectVisible(p, 'viewer');
+      assert.equal(await p.getByRole('button', { name: item.button, exact: true }).count(), 0);
+      assert.equal(await p.getByRole('dialog').count(), 0, 'read-only URL must not open a writable form');
+    }
+    await ctx.route('**/admin/api/agent-clients/overview*', route => route.fulfill({ status: 503, json: { error: 'test: overview unavailable' } }));
+    await p.goto(`${base}/console/agent-clients`);
+    await expectVisible(p, '读取接入配置失败');
+    assert.equal(await p.getByText('当前没有匹配的接入方', { exact: false }).count(), 0);
+    // A late successful snapshot must not erase a newer read failure.
+    let overviewReads = 0;
+    let releaseOldOverview;
+    const oldOverviewGate = new Promise(resolve => { releaseOldOverview = resolve; });
+    await ctx.route('**/admin/api/agent-clients/overview*', async route => {
+      if (++overviewReads === 1) {
+        await oldOverviewGate;
+        return route.fulfill({ json: { applications: [], setup_workspaces: [], workspaces: [], summary: {} } });
+      }
+      return route.fulfill({ status: 503, json: { error: 'newest overview failure' } });
+    });
+    const firstOverviewRequest = p.waitForRequest('**/admin/api/agent-clients/overview*');
+    await p.getByRole('button', { name: '重新读取', exact: true }).click();
+    await firstOverviewRequest;
+    await p.getByRole('button', { name: '重新读取', exact: true }).click();
+    await expectVisible(p, 'newest overview failure');
+    const oldOverviewResponse = p.waitForResponse(response => response.url().includes('/agent-clients/overview') && response.status() === 200);
+    releaseOldOverview();
+    await (await oldOverviewResponse).finished();
+    await p.waitForFunction(() => !document.querySelector('.el-loading-mask'));
+    await expectVisible(p, 'newest overview failure');
+    assert.equal(await p.getByText('当前没有匹配的接入方', { exact: false }).count(), 0);
+    assert.deepEqual(failures, []);
+    console.log('✓ onboarding and forms: paths, failed reads, dirty exit/refresh, save failure/in-flight, dependency detour and read-only roles passed');
+  } catch (error) {
+    console.error('onboarding failure state:', (await p.locator('body').innerText()).slice(-7000));
+    throw error;
+  } finally { if (releaseRouteSave) releaseRouteSave(); await ctx.close(); }
+}
+
 const server = createServer(serveStatic);
 const port = await listen(server);
 const browserChannel = String(process.env.PLAYWRIGHT_CHANNEL || '').trim();
@@ -580,16 +742,15 @@ page.on('pageerror', (e) => errors.push(e.message));
 try {
   await page.goto(`http://127.0.0.1:${port}/console/`, { waitUntil: 'networkidle' });
   await expectVisible(page, '触发路由');
-  await page.locator('.user').click();
-  await page.getByRole('menuitem', { name: '上手向导' }).click();
-  await expectVisible(page, '配置完成度');
+  await page.getByRole('button', { name: '接入向导', exact: true }).click();
+  await expectVisible(page, '业务配置准备');
   await expectVisible(page, '模型凭证');
   await expectVisible(page, '触发路由');
-  await expectVisible(page, '演示数据已导入，运行演示主体 Smoke');
+  await expectVisible(page, '演示数据已导入，运行演示验证');
   if (smokeRequests !== 0) throw new Error('导入演示数据后不应自动运行 Smoke');
-  const demoSmokeButton = page.getByRole('button', { name: '运行演示主体 Smoke' }).first();
+  const demoSmokeButton = page.getByRole('button', { name: '运行演示验证' }).first();
   if (!(await demoSmokeButton.getAttribute('class'))?.includes('el-button--primary')) {
-    throw new Error('演示数据已导入时，运行演示主体 Smoke 应是主 CTA');
+    throw new Error('演示数据已导入时，运行演示验证 应是主 CTA');
   }
   await demoSmokeButton.click();
   if (smokeRequests !== 1) throw new Error('Smoke 应只在用户点击后运行一次');
@@ -621,6 +782,7 @@ try {
   await page.getByRole('button', { name: '采用实测结果：签名保护' }).click();
   if (!await signedPolicy.isChecked()) throw new Error('采用实测结果后应选择签名保护');
   await page.getByRole('button', { name: '取消' }).click();
+  await page.getByRole('button', { name: '放弃修改', exact: true }).click();
 
   await page.getByRole('button', { name: '编辑' }).first().click();
   await page.getByRole('tab', { name: '治理', exact: true }).click();
@@ -713,6 +875,7 @@ try {
   await verifyStatusFeedback(page, context, `http://127.0.0.1:${port}`);
 
   await verifyRuntimeActions(page, context, `http://127.0.0.1:${port}`);
+  await verifyOnboardingAndForms(browser, `http://127.0.0.1:${port}`);
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
   console.log('✓ console e2e passed');
