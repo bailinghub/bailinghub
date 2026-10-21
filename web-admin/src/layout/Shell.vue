@@ -25,7 +25,7 @@
         <el-button v-if="route.path === '/usage' || route.path === '/usage-access'" class="mobile-nav-toggle" text :aria-expanded="mobileNavOpen" @click="mobileNavOpen = !mobileNavOpen">菜单</el-button>
         <span class="page-title">{{ route.meta.title }}</span>
         <span class="spacer" />
-        <span class="health" :class="{ bad: !healthy }">{{ healthy ? '中枢正常' : '中枢异常' }}</span>
+        <span class="health" :class="{ bad: healthy === false, pending: healthy === null }" title="仅表示服务连接状态；运行就绪情况请查看系统状态">{{ healthy === null ? '连接检查中' : healthy ? '服务在线' : '服务连接异常' }}</span>
         <span v-if="execText" class="health" :class="{ bad: execBad }">{{ execText }}</span>
         <el-dropdown v-if="configCenterPages.length" trigger="click" @command="onCmd">
           <span class="top-action">
@@ -161,11 +161,14 @@ function rememberGroupClose(index: string): void {
   saveOpenGroups(next);
 }
 
-const healthy = ref(true);
+const healthy = ref<boolean | null>(null);
 const execText = ref('');
 const execBad = ref(false);
 async function loadStatus(): Promise<void> {
-  try { healthy.value = (await (await kernelFetch('/health')).json()).status === 'ok'; }
+  try {
+    const response = await kernelFetch('/health');
+    healthy.value = response.ok && (await response.json()).status === 'ok';
+  }
   catch { healthy.value = false; }
   if (!s.can('runs:read')) return;
   try {
@@ -174,7 +177,10 @@ async function loadStatus(): Promise<void> {
     const off = st.executors.length - on;
     execText.value = st.executors.length ? `执行器 ${on}/${st.executors.length} 在线` : '';
     execBad.value = off > 0;
-  } catch { /* 状态条可选 */ }
+  } catch {
+    execText.value = '执行器状态读取失败';
+    execBad.value = true;
+  }
 }
 onMounted(() => {
   void loadStatus();
@@ -336,6 +342,7 @@ async function onCmd(cmd: string): Promise<void> {
 .spacer { flex: 1; }
 .health { font-size: 12px; color: var(--el-color-success); }
 .health.bad { color: var(--el-color-danger); }
+.health.pending { color: var(--el-text-color-secondary); }
 .top-action {
   display: inline-flex;
   align-items: center;

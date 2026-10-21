@@ -56,7 +56,7 @@
     "executor:watch": "tsx watch src/executor.ts",
     "typecheck": "tsc --noEmit",
     "installer:secrets:test": "node --test scripts/install-secrets.test.mjs",
-    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test": "node --import tsx --test \"src/**/*.test.ts\" \"web-admin/src/*.test.ts\"",
     "db:init": "tsx scripts/init-db.ts",
     "demo:seed": "tsx scripts/seed-demo.ts",
     "admin:create": "tsx scripts/create-admin.ts",

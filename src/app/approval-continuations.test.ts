@@ -66,6 +66,7 @@ async function fixture(status: Job['status'] = 'done', direct = false) {
   };
   const ledger = {
     get: async () => ({ ...approval }), getByDecisionId: async () => null,
+    list: async () => [{ ...approval }],
     decideWithContinuation: async (_id: number, decision: 'approved' | 'denied', by: string, opts: ApprovalContinuationDecisionOptions) => {
       if (approval.status !== 'pending') return approval.status === decision && approval.decision_id === opts.decision_id ? 'same' : 'conflict';
       approval.status = decision; approval.decision_id = opts.decision_id;
@@ -114,7 +115,17 @@ async function fixture(status: Job['status'] = 'done', direct = false) {
     { kind: 'admin', via: 'session', role: 'admin', username: 'fixture-operator' });
     return res;
   }
-  return { directory, path, store, job, approval, ledger, deps, faults, call, consoleCall,
+  async function consoleRead(pathname: string) {
+    const req = Object.assign(Readable.from([]), { method: 'GET', headers: {}, url: pathname });
+    const res = new Response();
+    await handleAdminRuntimeApiFor({ configStore, stateStore: store, now, isPaused: () => false,
+      queueStats: () => ({}), channelSend: async () => ({ ok: true }),
+      engineRuntime: { ...deps.engineRuntime, requeueForRerun: async () => { throw new Error('read must not requeue'); } },
+    }, 'GET', pathname.split('?')[0]!, req as IncomingMessage, res as unknown as ServerResponse,
+    { kind: 'admin', via: 'session', role: 'admin', username: 'fixture-operator' });
+    return res;
+  }
+  return { directory, path, store, job, approval, ledger, deps, faults, call, consoleCall, consoleRead,
     intent: () => intent, kicks: () => kicks,
     close: () => rm(directory, { recursive: true, force: true }) };
 }
@@ -294,6 +305,43 @@ test('manual Agent continuation preserves original invocation without Core infer
     await continueApprovalDecisionFor(h.deps, 7);
     assert.equal((await h.store.getJob(h.job.job_id))?.status, 'done');
     assert.equal(h.kicks(), 0);
+  } finally { await h.close(); }
+});
+
+test('console approval responses explain manual continuation and never offer a model rerun for Agent jobs', async () => {
+  const h = await fixture('done', true);
+  try {
+    const listed = await h.consoleRead('/admin/api/tool-approvals?status=all');
+    assert.equal(listed.body[0].continuation_mode, 'manual');
+    assert.equal(listed.body[0].continuation_pending, false);
+    const decision = await h.consoleCall();
+    assert.equal(decision.body.continuation_mode, 'manual');
+    assert.equal(decision.body.rerun, false);
+    assert.equal(decision.body.continuation_pending, false);
+    const { consoleExecution } = await import('../routes/admin-runtime-ux');
+    assert.deepEqual(consoleExecution((await h.store.getJob(h.job.job_id))!), { kind: 'agent_tool', rerun: { available: false, reason: 'original_client' } });
+    assert.equal((await h.store.getJob(h.job.job_id))?.status, 'done');
+    assert.equal(h.kicks(), 0);
+  } finally { await h.close(); }
+});
+
+test('console lists persisted decisions as pending recovery after a queue failure and then queued after recovery', async () => {
+  const h = await fixture();
+  try {
+    h.faults.queue = true;
+    const failure = await h.consoleCall();
+    assert.equal(failure.statusCode, 503);
+    assert.equal(failure.body.decision_recorded, true);
+    assert.equal(failure.body.continuation_mode, 'rerun');
+    const pending = (await h.consoleRead('/admin/api/tool-approvals?status=all')).body[0];
+    assert.equal(pending.status, 'approved');
+    assert.equal(pending.continuation_pending, true);
+    assert.equal(pending.job_status, 'done');
+    h.faults.queue = false;
+    await reconcileApprovalContinuationsFor(h.deps);
+    const queued = (await h.consoleRead('/admin/api/tool-approvals?status=all')).body[0];
+    assert.equal(queued.continuation_pending, false);
+    assert.equal(queued.job_status, 'queued');
   } finally { await h.close(); }
 });
 

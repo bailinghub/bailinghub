@@ -27,11 +27,12 @@
         <div v-show="conversationView === 'legacy'" class="convo">
           <!-- 左：会话列表 -->
           <div class="rail">
+            <el-alert v-if="threadsError" :title="threadsError" type="error" :closable="false" show-icon />
             <el-input v-model="threadQ" size="default" placeholder="搜会话：身份 / 接入方 / 内容 / 路由" clearable class="railsearch">
               <template #prefix><el-icon><Search /></el-icon></template>
             </el-input>
             <div v-loading="threadsLoading" class="raillist">
-              <el-empty v-if="!threadsLoading && !filteredThreads.length" :image-size="56"
+              <el-empty v-if="!threadsLoading && !threadsError && !filteredThreads.length" :image-size="56"
                 :description="threadQ ? '没有匹配的会话' : '还没有会话：业务/聊天接入后这里会出现'" />
               <div v-for="t in filteredThreads" :key="t.thread_id" class="threaditem"
                 :class="{ active: curThread === t.thread_id }" @click="openThread(t.thread_id)">
@@ -49,7 +50,8 @@
 
           <!-- 右：完整对话（聊天记录）+ 逐轮执行轨迹 -->
           <div ref="paneRef" class="pane" v-loading="threadDataLoading">
-            <el-empty v-if="!threadData && !threadDataLoading" :image-size="90" description="选择左侧记录，查看该授权或业务入口保存的消息与轨迹" />
+            <el-alert v-if="threadDataError" :title="threadDataError" type="error" :closable="false" show-icon />
+            <el-empty v-if="!threadData && !threadDataLoading && !threadDataError" :image-size="90" description="选择左侧记录，查看该授权或业务入口保存的消息与轨迹" />
             <template v-if="threadData">
               <div class="paneHead">
                 <div class="ph1">
@@ -138,7 +140,8 @@
       <!-- ============ 调度流：原有平铺列表，按时间审计每一次派发 ============ -->
       <el-tab-pane name="runs">
         <template #label><span><el-icon style="vertical-align:-2px"><List /></el-icon> 调度流</span></template>
-        <el-empty v-if="!list.length && !loading" description="还没有任务：业务系统接入后，触发记录会出现在这里" />
+        <el-alert v-if="runsError" :title="runsError" :description="list.length ? `正在展示旧快照，上次成功读取：${fmtTime(runsLoadedAt, true)}。` : '尚未取得任务列表，不能据此判断没有任务。'" type="error" :closable="false" show-icon />
+        <el-empty v-if="!list.length && !loading && !runsError" description="还没有任务：业务系统接入后，触发记录会出现在这里" />
         <el-table v-else :data="list" v-loading="loading" @row-click="openDetail" style="cursor: pointer">
           <el-table-column label="时间" width="130">
             <template #default="{ row }"><span class="muted">{{ fmtTime(row.created_at, true) }}</span></template>
@@ -183,7 +186,8 @@
             <template #append><el-button :loading="traceLookupLoading" @click="lookupJobTrace">追溯</el-button></template>
           </el-input>
         </div>
-        <el-empty v-if="!traceLookupResult && !traceLookupLoading && !traceLookupMatches.length" description="输入 job_id、request_id 或 client/thread/principal 查询一次任务" />
+        <el-alert v-if="traceLookupError" :title="traceLookupError" :description="traceLookupResult || traceLookupMatches.length ? `正在展示旧快照，上次成功读取：${fmtTime(traceLoadedAt, true)}。` : '此次未取得追溯结果，请刷新重试。'" type="error" :closable="false" show-icon />
+        <el-empty v-if="!traceLookupResult && !traceLookupLoading && !traceLookupMatches.length && !traceLookupError" description="输入 job_id、request_id 或 client/thread/principal 查询一次任务" />
         <el-table v-if="!traceLookupResult && traceLookupMatches.length" :data="traceLookupMatches" size="small" class="traceMatches" @row-click="openTraceMatch">
           <el-table-column label="时间" width="130"><template #default="{ row }">{{ fmtTime(row.created_at, true) }}</template></el-table-column>
           <el-table-column prop="request_id" label="request_id" min-width="180" show-overflow-tooltip />
@@ -270,7 +274,10 @@
     </el-tabs>
   </el-card>
 
-  <el-drawer v-model="detailOpen" size="min(920px, 92vw)" class="runDetailDrawer" :title="'任务详情 · ' + (detail?.request_id || detail?.job_id || '')">
+  <el-drawer v-model="detailOpen" size="min(920px, 92vw)" class="runDetailDrawer" :title="'任务详情 · ' + (detail?.request_id || detail?.job_id || '')" @closed="detailGeneration++">
+    <el-alert v-if="detailError" :title="detailError" :description="detail ? `当前保留旧快照（${fmtTime(detailLoadedAt, true)}），刷新成功前不能重新执行。` : '未取得任务详情，请重试。'" type="error" :closable="false" show-icon />
+    <div v-if="detailLoading" class="muted">正在读取任务详情…</div>
+    <el-button v-if="!detail && detailJobId && !detailLoading" @click="openDetail({ job_id: detailJobId })">重试读取任务</el-button>
     <template v-if="detail">
       <div class="detailHero">
         <div class="detailHeroMain">
@@ -290,13 +297,15 @@
           </div>
         </div>
         <div class="detailActions">
+          <el-button plain size="small" :loading="detailLoading" @click="openDetail(detail)">刷新快照</el-button>
           <el-button v-if="detail.conversation_audit_id" plain size="small" type="primary" @click="gotoAuditConversation(detail.conversation_audit_id, detail.client_turn_id)">客户端完整对话</el-button>
           <el-button v-if="detail.thread_id" plain size="small" @click="gotoThread(detail.thread_id)">原会话记录</el-button>
-          <el-popconfirm v-if="canRerun" title="重跑该任务？将复用原始输入与参数重新执行。" width="260" @confirm="rerun">
-            <template #reference><el-button type="primary" size="small">重跑</el-button></template>
+          <el-popconfirm v-if="canRerun" title="重新执行会复用原始输入和参数，可能再次调用模型、产生费用或业务写入；不会撤销上次结果。请先核对原任务确需重新执行。" width="350" @confirm="rerun">
+            <template #reference><el-button type="primary" size="small" :disabled="detailLoading || Boolean(detailError)" :loading="rerunning">重新执行任务</el-button></template>
           </el-popconfirm>
         </div>
       </div>
+      <el-alert v-if="detailRerunHint" :title="detailRerunHint" :type="detail.console_execution?.rerun?.reason === 'outcome_unknown' ? 'warning' : 'info'" :closable="false" show-icon />
       <el-alert v-if="detail.error" :title="detail.error" type="error" :closable="false" style="margin-bottom: 12px" />
 
       <div class="detailStats">
@@ -455,6 +464,7 @@ import RichText from '../components/RichText.vue';
 import HelpTip from '../components/HelpTip.vue';
 import ClientConversations from '../components/ClientConversations.vue';
 import NotificationOutboxPanel from '../components/NotificationOutboxPanel.vue';
+import { canOfferRerun, rerunHint } from '../runtime-feedback';
 
 const route = useRoute();
 const router = useRouter();
@@ -535,22 +545,30 @@ const auditConversationId = ref(''), auditTurnId = ref('');
 const clientConversations = ref<InstanceType<typeof ClientConversations> | null>(null);
 const list = ref<any[]>([]);
 const loading = ref(false);
+const runsError = ref(''), runsLoadedAt = ref('');
+let runsGeneration = 0;
 // 调度流分页：服务端按 offset 取，前端「加载更多」累加。每页 RUNS_PAGE 条；满页即推断还有更多。
 const RUNS_PAGE = 50;
 const runsMore = ref(false);
 const moreLoading = ref(false);
 const detailOpen = ref(false);
 const detail = ref<any | null>(null);
+const detailLoading = ref(false), detailError = ref(''), detailLoadedAt = ref(''), detailJobId = ref(''), rerunning = ref(false);
+let detailGeneration = 0;
 const traceEvents = ref<TraceEvent[]>([]);
 const traceSummary = ref<any | null>(null);
 const traceJobInput = ref('');
 const traceLookupLoading = ref(false);
 const traceLookupResult = ref<TracePayload | null>(null);
 const traceLookupMatches = ref<any[]>([]);
+const traceLookupError = ref(''), traceLoadedAt = ref('');
+let traceGeneration = 0, traceLoadedQuery = '';
 
 // ---- 会话视图状态 ----
 const threads = ref<any[]>([]);
 const threadsLoading = ref(false);
+const threadsError = ref('');
+let threadsGeneration = 0;
 const threadsLoaded = ref(false);
 const THREADS_PAGE = 80;
 const threadsMore = ref(false);
@@ -559,6 +577,7 @@ const threadQ = ref('');
 const curThread = ref<number | null>(null);
 const threadData = ref<{ thread: any; messages: ThreadMessage[] } | null>(null);
 const threadDataLoading = ref(false);
+const threadDataError = ref('');
 let threadLoadGeneration = 0;
 const paneRef = ref<HTMLElement | null>(null);
 // 逐轮执行轨迹缓存：job:<id> / agent-run:<id> 分开命名，避免两类 UUID 语义混淆。
@@ -708,8 +727,8 @@ const toolInjectSummary = computed(() => {
 const kbRefs = computed<any[]>(() => (Array.isArray(detail.value?.dispatch?.kb_refs) ? detail.value.dispatch.kb_refs : []));
 const assembledLen = computed(() => String(detail.value?.input || detail.value?.input_preview || '').length);
 const toolsSummary = computed(() => fmtTools(detail.value?.dispatch?.tools));
-const canRerun = computed(() =>
-  s.can('runs:write') && detail.value && !['queued', 'running', 'dispatched'].includes(detail.value.status));
+const canRerun = computed(() => s.can('runs:write') && canOfferRerun(detail.value?.console_execution));
+const detailRerunHint = computed(() => detail.value ? rerunHint(detail.value.console_execution) : '');
 const detailTraceCount = computed(() => Number(traceSummary.value?.event_count ?? traceEvents.value.length ?? 0));
 const detailWarningCount = computed(() => Number(traceSummary.value?.warning_count ?? traceEvents.value.filter((a) => a.severity === 'warning').length));
 const detailErrorCount = computed(() => Number(traceSummary.value?.error_count ?? traceEvents.value.filter((a) => a.severity === 'error').length));
@@ -880,34 +899,43 @@ function traceTokenCount(key: string): number {
 }
 
 async function load(): Promise<void> {
-  loading.value = true;
+  const generation = ++runsGeneration;
+  loading.value = true; runsError.value = '';
   try {
     const rows = await api<any[]>(`/admin/api/runs?limit=${RUNS_PAGE}&offset=0`);
-    list.value = rows; runsMore.value = rows.length === RUNS_PAGE;
-  } finally { loading.value = false; }
+    if (generation !== runsGeneration) return;
+    list.value = rows; runsMore.value = rows.length === RUNS_PAGE; runsLoadedAt.value = new Date().toISOString();
+  } catch { if (generation === runsGeneration) runsError.value = '暂时无法读取任务列表，请刷新重试。'; }
+  finally { if (generation === runsGeneration) loading.value = false; }
 }
 async function loadMoreRuns(): Promise<void> {
+  if (loading.value || moreLoading.value) return;
+  const generation = runsGeneration;
   moreLoading.value = true;
   try {
     const rows = await api<any[]>(`/admin/api/runs?limit=${RUNS_PAGE}&offset=${list.value.length}`);
-    list.value = list.value.concat(rows); runsMore.value = rows.length === RUNS_PAGE;
+    if (generation === runsGeneration) { list.value = list.value.concat(rows); runsMore.value = rows.length === RUNS_PAGE; }
   } catch (e) { ElMessage.error((e as Error).message); }
   finally { moreLoading.value = false; }
 }
 async function loadThreads(): Promise<void> {
-  threadsLoading.value = true;
+  const generation = ++threadsGeneration;
+  threadsLoading.value = true; threadsError.value = '';
   try {
     const rows = await api<any[]>(`/admin/api/threads?limit=${THREADS_PAGE}&offset=0`);
+    if (generation !== threadsGeneration) return;
     threads.value = rows; threadsLoaded.value = true; threadsMore.value = rows.length === THREADS_PAGE;
   }
-  catch (e) { ElMessage.error((e as Error).message); }
-  finally { threadsLoading.value = false; }
+  catch { if (generation === threadsGeneration) threadsError.value = threads.value.length ? '会话列表刷新失败，当前保留旧快照。' : '暂时无法读取会话列表，请刷新重试。'; }
+  finally { if (generation === threadsGeneration) threadsLoading.value = false; }
 }
 async function loadMoreThreads(): Promise<void> {
+  if (threadsLoading.value || threadsMoreLoading.value) return;
+  const generation = threadsGeneration;
   threadsMoreLoading.value = true;
   try {
     const rows = await api<any[]>(`/admin/api/threads?limit=${THREADS_PAGE}&offset=${threads.value.length}`);
-    threads.value = threads.value.concat(rows); threadsMore.value = rows.length === THREADS_PAGE;
+    if (generation === threadsGeneration) { threads.value = threads.value.concat(rows); threadsMore.value = rows.length === THREADS_PAGE; }
   } catch (e) { ElMessage.error((e as Error).message); }
   finally { threadsMoreLoading.value = false; }
 }
@@ -918,15 +946,16 @@ function scrollPaneToBottom(): void {
 }
 async function openThread(id: number): Promise<void> {
   const generation = ++threadLoadGeneration;
+  if (curThread.value !== id) threadData.value = null;
   curThread.value = id;
-  threadData.value = null; threadDataLoading.value = true;
+  threadDataLoading.value = true; threadDataError.value = '';
   // 切会话清空轨迹缓存（避免不同会话的 job 串台占内存）
   for (const k of Object.keys(traces)) delete traces[k];
   try {
     const data = await api<{ thread: any; messages: ThreadMessage[] }>('/admin/api/threads/' + id);
     if (generation === threadLoadGeneration) threadData.value = data;
   }
-  catch (e) { if (generation === threadLoadGeneration) ElMessage.error((e as Error).message); }
+  catch { if (generation === threadLoadGeneration) threadDataError.value = threadData.value ? '会话读取失败，当前展示旧快照，请刷新重试。' : '未能读取此会话，请刷新重试。'; }
   finally { if (generation === threadLoadGeneration) threadDataLoading.value = false; }
   if (generation === threadLoadGeneration && threadData.value) {
     await nextTick();
@@ -975,19 +1004,29 @@ function refresh(): void {
 }
 
 async function openDetail(row: any): Promise<void> {
-  detailOpen.value = true; detail.value = null; traceEvents.value = []; traceSummary.value = null; detailPanels.value = ['chain', 'result'];
+  const generation = ++detailGeneration;
+  if (detail.value?.job_id !== row.job_id) { detail.value = null; traceEvents.value = []; traceSummary.value = null; detailLoadedAt.value = ''; }
+  detailJobId.value = row.job_id; detailOpen.value = true; detailLoading.value = true; detailError.value = '';
+  detailPanels.value = ['chain', 'result'];
   try {
     const t = await api<TracePayload>('/admin/api/runs/' + row.job_id + '/trace');
+    if (generation !== detailGeneration) return;
     detail.value = t.job; traceEvents.value = normalizeTraceEvents(t); traceSummary.value = t.trace.summary ?? null;
-  } catch (e) { ElMessage.error((e as Error).message); }
+    detailLoadedAt.value = new Date().toISOString();
+  } catch { if (generation === detailGeneration) detailError.value = '暂时无法读取任务详情，请刷新重试。'; }
+  finally { if (generation === detailGeneration) detailLoading.value = false; }
 }
 async function lookupJobTrace(): Promise<void> {
   const raw = traceJobInput.value.trim();
   if (!raw) { ElMessage.error('请输入要追溯的标识'); return; }
   const q = traceLookupQuery(raw);
-  traceLookupLoading.value = true;
+  const generation = ++traceGeneration;
+  if (q !== traceLoadedQuery) { traceLookupResult.value = null; traceLookupMatches.value = []; }
+  traceLookupLoading.value = true; traceLookupError.value = '';
   try {
     const got = await api<TracePayload & { matches?: any[]; count?: number }>('/admin/api/runs/trace?' + q);
+    if (generation !== traceGeneration) return;
+    traceLoadedQuery = q; traceLoadedAt.value = new Date().toISOString();
     if (got.job) {
       traceLookupResult.value = got;
       traceLookupMatches.value = [];
@@ -996,11 +1035,8 @@ async function lookupJobTrace(): Promise<void> {
       traceLookupMatches.value = got.matches ?? [];
       if (!traceLookupMatches.value.length) ElMessage.warning('没有匹配的任务');
     }
-  } catch (e) {
-    traceLookupResult.value = null;
-    traceLookupMatches.value = [];
-    ElMessage.error((e as Error).message);
-  } finally { traceLookupLoading.value = false; }
+  } catch { if (generation === traceGeneration) traceLookupError.value = '暂时无法读取追溯结果，请刷新重试。'; }
+  finally { if (generation === traceGeneration) traceLookupLoading.value = false; }
 }
 function traceLookupQuery(raw: string): string {
   const p = new URLSearchParams();
@@ -1017,7 +1053,10 @@ async function openTraceMatch(row: any): Promise<void> {
 }
 function openTraceLookupDetail(): void {
   if (!traceLookupResult.value) return;
+  detailGeneration++; detailLoading.value = false;
   detail.value = traceLookupResult.value.job;
+  detailJobId.value = detail.value.job_id; detailLoadedAt.value = traceLoadedAt.value;
+  detailError.value = traceLookupError.value ? '追溯刷新失败，当前详情来自旧快照，请刷新核对。' : '';
   traceEvents.value = normalizeTraceEvents(traceLookupResult.value);
   traceSummary.value = traceLookupResult.value.trace.summary ?? null;
   detailPanels.value = ['chain', 'result'];
@@ -1093,11 +1132,17 @@ function gotoAuditConversation(id: string, turnId?: string): void {
   void router.replace({ query: { ...route.query, job: undefined, thread: undefined, conversation: id, turn: turnId || undefined } });
 }
 async function rerun(): Promise<void> {
+  if (!canRerun.value || detailLoading.value || detailError.value || rerunning.value) return;
+  const jobId = detail.value.job_id;
+  rerunning.value = true;
   try {
-    await api('/admin/api/runs/' + detail.value.job_id + '/rerun', { method: 'POST', body: '{}' });
-    ElMessage.success('已重新入队');
-    await openDetail(detail.value); await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    await api('/admin/api/runs/' + jobId + '/rerun', { method: 'POST', body: '{}' });
+    ElMessage.success('原任务已重新入队，尚未确认执行结果');
+    if (detailOpen.value && detailJobId.value === jobId) await openDetail({ job_id: jobId });
+    await load();
+  } catch (e) {
+    if (detailJobId.value === jobId) detailError.value = `重新执行请求未得到完整确认：${(e as Error).message}。请先刷新核对原任务状态，不要重复提交。`;
+  } finally { rerunning.value = false; }
 }
 async function openJobFromQuery(job: string): Promise<void> {
   if (!job || !/^[0-9a-f-]{36}$/i.test(job)) return;

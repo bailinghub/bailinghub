@@ -4,7 +4,7 @@
       <div class="head">
         <b>系统状态</b> <HelpTip title="系统状态是什么">
           <p>展示当前中枢代码版本、运行时、数据库迁移账本、对外契约版本和配置体检结果。</p>
-          <p>如果存在未应用数据库结构，应先执行部署流程里的 <code>npm run db:init</code>，再重启服务。</p>
+          <p>运行检查与 <code>/readyz</code> 使用同一检查逻辑，检查实际状态库和配置库的连接、迁移文件及校验值；不代表完整物理表结构或业务链路验证。</p>
           <p>配置体检会检查路由、目标、接入方、渠道、工具源、知识库、执行器令牌、工具源授权探针等跨配置引用，帮助定位“能保存但跑不通”的问题。</p>
         </HelpTip>
         <el-button size="small" :loading="loading" style="margin-left: auto" @click="load">刷新</el-button>
@@ -12,25 +12,25 @@
     </template>
 
     <div v-loading="loading">
-      <el-alert
-        v-if="data?.migrations.pending.length"
-        type="warning"
-        :closable="false"
-        show-icon
-        title="存在未应用数据库结构"
-        :description="data.migrations.pending.join(', ')"
-        style="margin-bottom: 14px" />
-      <div v-else-if="data" class="field-hint">数据库结构已匹配当前代码。</div>
-      <el-alert
-        v-if="diag && !diag.ok"
-        class="statusAlert"
-        :type="diag.errors ? 'error' : 'warning'"
-        :closable="false"
-        show-icon
+      <el-alert v-if="readinessError" type="error" :closable="false" show-icon
+        title="运行检查读取失败" :description="readinessError" class="statusAlert" />
+      <el-alert v-else-if="readiness" :type="readiness.ready ? 'success' : 'error'" :closable="false" show-icon
+        :title="readiness.ready ? '运行检查通过' : '运行检查未通过'"
+        :description="`检查时间：${fmtTime(readiness.checked_at, true)} · 状态库与配置库的连接、迁移文件及校验值检查`" class="statusAlert" />
+      <div v-else class="field-hint">{{ loading ? '正在检查运行状态…' : '尚未取得运行检查结果' }}</div>
+      <div v-if="readiness && readinessError" class="field-hint">以下为 {{ fmtTime(readiness.checked_at, true) }} 的旧快照，不能代表当前状态。</div>
+      <div v-if="readiness" class="field-hint">
+        数据库连接：{{ checkLabel(readiness.checks.database) }}；迁移文件与校验值：{{ checkLabel(readiness.checks.migrations.status) }}<span v-if="readiness.checks.migrations.pending">（{{ readiness.checks.migrations.pending }} 个文件待应用）</span>。
+        此检查不验证完整物理表结构或外部模型、工具的业务可用性。
+      </div>
+      <el-alert v-if="versionError" type="error" :closable="false" show-icon title="版本与配置库账本读取失败"
+        :description="versionError + (versionAt ? `；以下保留 ${fmtTime(versionAt, true)} 的旧快照` : '')" class="statusAlert" />
+      <el-alert v-if="diagError" type="error" :closable="false" show-icon title="配置体检读取失败"
+        :description="diagError + (diagAt ? `；以下保留 ${fmtTime(diagAt, true)} 的旧快照` : '')" class="statusAlert" />
+      <el-alert v-else-if="diag && !diag.ok" :type="diag.errors ? 'error' : 'warning'" :closable="false" show-icon
         :title="`配置体检：${diag.errors} 个错误 / ${diag.warnings} 个提醒`"
-        description="错误项通常会导致对应路由、入口或执行器不可用；提醒项不一定阻断运行，但建议在开源示例和生产部署中清理。"
-        style="margin-bottom: 14px" />
-      <div v-else-if="diag" class="field-hint">配置体检通过：未发现错误或提醒。</div>
+        description="错误项通常会导致对应路由、入口或执行器不可用；提醒项不一定阻断运行。" class="statusAlert" />
+      <div v-else-if="diag" class="field-hint">配置体检通过：未发现错误或提醒。检查时间：{{ fmtTime(diagAt, true) }}</div>
 
       <div class="statusGrid">
         <div class="statusBox">
@@ -39,25 +39,25 @@
           <em>版本 {{ data?.app.version || '—' }} · Node {{ data?.runtime.node || '—' }}</em>
         </div>
         <div class="statusBox">
-          <span class="muted">数据库结构</span>
-          <b><code>{{ data?.migrations.applied ?? 0 }} / {{ data?.migrations.total ?? 0 }}</code></b>
+          <span class="muted">配置库迁移账本</span>
+          <b><code>{{ data?.migrations.applied ?? '—' }} / {{ data?.migrations.total ?? '—' }}</code></b>
           <em>最新 {{ data?.migrations.latest || '—' }}</em>
         </div>
         <div class="statusBox">
           <span class="muted">最新已应用</span>
           <b><code>{{ data?.migrations.latest_applied || '—' }}</code></b>
-          <em>{{ data?.migrations.pending.length ? `${data.migrations.pending.length} 个待应用` : '账本已同步' }}</em>
+          <em>{{ !data ? '尚未读取' : data.migrations.pending.length ? `${data.migrations.pending.length} 个待应用` : '账本文件名齐备，运行状态以上方检查为准' }}</em>
         </div>
       </div>
 
       <div class="sub">契约版本</div>
-      <el-table :data="contractRows" size="small" empty-text="无数据">
+      <el-table :data="contractRows" size="small" :empty-text="versionError ? '版本信息读取失败' : loading ? '正在读取…' : '暂无契约数据'">
         <el-table-column prop="name" label="契约" min-width="180" show-overflow-tooltip />
         <el-table-column prop="version" label="版本" width="180"><template #default="{ row }"><code>{{ row.version }}</code></template></el-table-column>
       </el-table>
 
       <div class="sub">配置体检</div>
-      <el-table :data="diag?.diagnostics ?? []" size="small" empty-text="未发现问题" max-height="360">
+      <el-table :data="diag?.diagnostics ?? []" size="small" :empty-text="diagError ? '体检读取失败，请重试' : !diag ? '尚未取得体检结果' : '未发现问题'" max-height="360">
         <el-table-column label="级别" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.severity === 'error' ? 'danger' : 'warning'" effect="plain">{{ row.severity === 'error' ? '错误' : '提醒' }}</el-tag>
@@ -75,6 +75,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../request';
+import { fmtTime } from '../util';
 import HelpTip from '../components/HelpTip.vue';
 
 interface VersionInfo {
@@ -100,6 +101,21 @@ interface ConfigDiagnosticsReport {
   errors: number;
   warnings: number;
   diagnostics: ConfigDiagnostic[];
+}
+
+interface ReadinessInfo {
+  ready: boolean;
+  checked_at: string;
+  checks: { database: 'ok' | 'skipped' | 'failed'; migrations: { status: 'ok' | 'skipped' | 'pending' | 'failed'; pending: number } };
+}
+const readiness = ref<ReadinessInfo | null>(null);
+const readinessError = ref('');
+const versionError = ref('');
+const diagError = ref('');
+const versionAt = ref('');
+const diagAt = ref('');
+function checkLabel(status: string): string {
+  return ({ ok: '通过', skipped: '无需检查', failed: '未通过', pending: '有待应用迁移' } as Record<string, string>)[status] ?? '未知';
 }
 
 const data = ref<VersionInfo | null>(null);
@@ -131,16 +147,24 @@ function areaLabel(area: string): string {
 }
 
 async function load(): Promise<void> {
+  if (loading.value) return;
   loading.value = true;
   try {
-    const [version, diagnostics] = await Promise.all([
+    // Keep each result independent: a broken migration ledger must not hide a
+    // failed readiness report, and a rejected refresh must not look current.
+    const [runtime, version, diagnostics] = await Promise.allSettled([
+      api<ReadinessInfo>('/admin/api/readiness'),
       api<VersionInfo>('/admin/api/version'),
       api<ConfigDiagnosticsReport>('/admin/api/config-diagnostics'),
     ]);
-    data.value = version;
-    diag.value = diagnostics;
-  }
-  finally { loading.value = false; }
+    const at = new Date().toISOString();
+    if (runtime.status === 'fulfilled') { readiness.value = runtime.value; readinessError.value = ''; }
+    else readinessError.value = runtime.reason instanceof Error ? runtime.reason.message : '请求失败，请重试';
+    if (version.status === 'fulfilled') { data.value = version.value; versionAt.value = at; versionError.value = ''; }
+    else versionError.value = version.reason instanceof Error ? version.reason.message : '请求失败，请重试';
+    if (diagnostics.status === 'fulfilled') { diag.value = diagnostics.value; diagAt.value = at; diagError.value = ''; }
+    else diagError.value = diagnostics.reason instanceof Error ? diagnostics.reason.message : '请求失败，请重试';
+  } finally { loading.value = false; }
 }
 
 onMounted(load);
@@ -158,7 +182,7 @@ onMounted(load);
 code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .statusAlert {
   margin-bottom: 14px;
-  border-left: 3px solid var(--el-color-danger);
+
 }
 .statusAlert :deep(.el-alert__content) {
   display: grid;

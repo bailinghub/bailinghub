@@ -1,10 +1,11 @@
+import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 const root = resolve(process.cwd());
-const consoleDir = join(root, 'web', 'console');
+const consoleDir = resolve(process.env.BAILING_CONSOLE_DIR || join(root, 'web', 'console'));
 const mime = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -352,6 +353,217 @@ async function mockApi(context) {
   });
 }
 
+async function verifyCallSnippets(page, base) {
+  const disabled = { ...fixtures.clients[0], app_id: 'disabled-app', name: '停用的接入方', enabled: false };
+  fixtures.clients.push(disabled);
+  try {
+    await page.goto(`${base}/console/routes`);
+    await page.getByRole('button', { name: '调用代码', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: /调用代码/ });
+    await expectVisible(page, '运行前配置完整 Token');
+    await expectVisible(page, '1 个接入方可调用');
+    for (const language of ['HTTP / cURL', 'Node.js', 'Python', 'PHP', 'Agent 触发']) {
+      await dialog.getByRole('tab', { name: language, exact: true }).click();
+      const code = await dialog.locator('.snippet-code:visible').innerText();
+      assert.match(code, /BAILING_CLIENT_TOKEN/);
+      assert.doesNotMatch(code, /\*\*\*\*oken/);
+    }
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: '编辑', exact: true }).first().click();
+    await expectVisible(page, '执行行为提示');
+    await expectVisible(page, '此项是提示词约束，不是强制授权或沙箱');
+    await page.getByRole('button', { name: '取消', exact: true }).click();
+    console.log('✓ snippets: environment token, enabled clients and visible permission boundary passed');
+  } finally { fixtures.clients.pop(); }
+}
+
+async function verifyRuntimeActions(page, context, base) {
+  let approvalUnavailable = true;
+  let manual = true;
+  let continuationPending = false;
+  let decision = 'pending';
+  let used = false;
+  const row = () => ({ id: 900, job_id: fixtures.runs[0].job_id, status: decision,
+    summary: '演示审批', tool: 'example_write', provider: 'demo-business', risk: 'high', args_json: '{}',
+    created_at: '2026-01-01T01:02:03.000Z', used_at: used ? '2026-01-01T01:03:00.000Z' : null,
+    continuation_mode: manual ? 'manual' : 'rerun', continuation_pending: continuationPending, job_status: manual ? 'error' : 'queued' });
+  await context.route('**/admin/api/tool-approvals?**', route => route.fulfill(approvalUnavailable
+    ? { status: 503, json: { error: 'test: approvals unavailable' } }
+    : { json: new URL(route.request().url()).searchParams.get('status') === 'pending' && decision !== 'pending' ? [] : [row()] }));
+  await context.route('**/admin/api/tool-approvals/900/approve', route => {
+    decision = 'approved';
+    return route.fulfill({ json: { rerun: !manual && !continuationPending,
+      continuation_mode: manual ? 'manual' : 'rerun', continuation_pending: continuationPending } });
+  });
+  await page.goto(`${base}/console/approvals`);
+  await expectVisible(page, '暂时无法读取审批列表');
+  assert.equal(await page.getByText('没有待审批的调用', { exact: true }).count(), 0);
+  approvalUnavailable = false;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '演示审批');
+  const approve = async () => {
+    await page.getByRole('button', { name: '兜底批准', exact: true }).click();
+    await page.locator('.el-popconfirm').getByRole('button', { name: '确定', exact: true }).click();
+  };
+  await approve();
+  await expectVisible(page, '请回原客户端使用同一调用标识继续');
+  await page.locator('.el-radio-group').getByText('全部', { exact: true }).click();
+  await expectVisible(page, '等待原客户端使用同一调用标识继续');
+  used = true;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '批准已使用');
+  assert.equal(await page.getByText('已批准·已执行', { exact: true }).count(), 0);
+  approvalUnavailable = true;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '旧快照');
+  approvalUnavailable = false; used = false; manual = false; decision = 'pending';
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await approve();
+  await expectVisible(page, '中枢任务已重新入队');
+  decision = 'pending'; continuationPending = true;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await approve();
+  await expectVisible(page, '决策已保存，续办处理中');
+
+  let execution = { kind: 'agent_tool', rerun: { available: false, reason: 'original_client' } };
+  let detailUnavailable = false;
+  const serveDetail = route => {
+    const trace = tracePayload(); trace.job.console_execution = execution;
+    return route.fulfill(detailUnavailable ? { status: 503, json: { error: 'test: detail unavailable' } } : { json: trace });
+  };
+  await context.route('**/admin/api/runs/*/trace', serveDetail);
+  await context.route('**/admin/api/runs/trace?**', serveDetail);
+  const openJob = () => page.goto(`${base}/console/runs?job=${fixtures.runs[0].job_id}`);
+  await openJob();
+  await expectVisible(page, '请回原客户端查看原调用');
+  assert.equal(await page.getByRole('button', { name: '重新执行任务', exact: true }).count(), 0);
+  execution = { kind: 'agent_tool', rerun: { available: false, reason: 'outcome_unknown' } };
+  await openJob();
+  await expectVisible(page, '原调用结果不明');
+  assert.equal(await page.getByRole('button', { name: '重新执行任务', exact: true }).count(), 0);
+  execution = undefined;
+  await openJob();
+  await expectVisible(page, '当前快照未提供重跑边界');
+  assert.equal(await page.getByRole('button', { name: '重新执行任务', exact: true }).count(), 0);
+  execution = { kind: 'hub_task', rerun: { available: true, reason: null } };
+  await openJob();
+  const rerun = page.getByRole('button', { name: '重新执行任务', exact: true });
+  await rerun.waitFor();
+  await rerun.click();
+  await expectVisible(page, '可能再次调用模型、产生费用或业务写入');
+  await page.locator('.el-popconfirm').getByRole('button', { name: '取消', exact: true }).click();
+  detailUnavailable = true;
+  await page.getByRole('button', { name: '刷新快照', exact: true }).click();
+  await expectVisible(page, '旧快照');
+  assert.equal(await rerun.isEnabled(), false);
+  // A read-only operator should not get decision or rerun actions.
+  detailUnavailable = false; decision = 'pending';
+  await context.route('**/admin/api/me', route => route.fulfill({ json: { username: 'reader', role: 'viewer', perms: ['runs:read'] } }));
+  await page.goto(`${base}/console/approvals`);
+  await expectVisible(page, '演示审批');
+  assert.equal(await page.getByRole('button', { name: '兜底批准', exact: true }).count(), 0);
+  await openJob();
+  await expectVisible(page, '任务详情');
+  assert.equal(await page.getByRole('button', { name: '重新执行任务', exact: true }).count(), 0);
+  console.log('✓ runtime actions: manual/queued/pending/used approvals and guarded rerun passed');
+}
+
+// Regression checks exercise the built Vue pages with controlled failures;
+// no live configuration, credentials, approvals or model calls are used.
+async function verifyStatusFeedback(page, context, base) {
+  let unavailable = true;
+  const ok = { ok: true, errors: 0, warnings: 0, diagnostics: [] };
+  await context.route('**/admin/api/config-diagnostics', route => route.fulfill(unavailable
+    ? { status: 503, json: { error: 'test: diagnostics unavailable' } } : { json: ok }));
+  await context.route('**/admin/api/config-audit?**', route => route.fulfill(unavailable
+    ? { status: 503, json: { error: 'test: audit unavailable' } } : { json: [] }));
+  await page.goto(`${base}/console/diagnostics`);
+  await expectVisible(page, '体检读取失败');
+  assert.equal(await page.getByText('未发现匹配的问题', { exact: true }).count(), 0);
+  assert.equal(await page.locator('.summary').getByText('存在问题', { exact: true }).count(), 0);
+  assert.equal(await page.locator('.summary').getByText('0', { exact: true }).count(), 0);
+  unavailable = false;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '体检完成，未发现问题');
+  let actionUnavailable = false;
+  await context.route('**/admin/api/smoke', route => route.fulfill(actionUnavailable
+    ? { status: 503, json: { error: 'test: smoke unavailable' } }
+    : { json: { hub: 'test', pass: 1, fail: 0, skip: 0, checks: [{ name: 'test', status: 'pass', detail: 'ok' }] } }));
+  await context.route('**/admin/api/routes/auto-preview', route => route.fulfill(actionUnavailable
+    ? { status: 503, json: { error: 'test: preview unavailable' } }
+    : { json: { ok: true, selected_route: 'demo_support', rows: [] } }));
+  await page.getByRole('button', { name: '运行 smoke', exact: true }).click();
+  await expectVisible(page, 'Smoke 结果');
+  actionUnavailable = true;
+  await page.getByRole('button', { name: '运行 smoke', exact: true }).click();
+  await expectVisible(page, 'test: smoke unavailable');
+  assert.equal(await page.locator('.smokePanel').count(), 0);
+  await page.getByRole('tab', { name: 'route=auto 预演', exact: true }).click();
+  await page.getByPlaceholder('输入业务侧将传给 /run 的 input').fill('演示查询');
+  actionUnavailable = false;
+  await page.getByRole('button', { name: '开始预演', exact: true }).click();
+  await expectVisible(page, '可命中');
+  actionUnavailable = true;
+  await page.getByRole('button', { name: '开始预演', exact: true }).click();
+  await expectVisible(page, 'test: preview unavailable');
+  assert.equal(await page.locator('.previewResult').count(), 0);
+  await page.getByRole('tab', { name: '配置体检', exact: true }).click();
+  unavailable = true;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '旧快照');
+  assert.equal(await page.getByText('体检完成，未发现问题', { exact: true }).count(), 0);
+  await page.goto(`${base}/console/audit`);
+  await expectVisible(page, '审计记录读取失败');
+  assert.equal(await page.getByText('暂无配置变更记录', { exact: true }).count(), 0);
+  unavailable = false;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '暂无配置变更记录');
+  unavailable = true;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '旧快照');
+  assert.equal(await page.getByText('暂无配置变更记录', { exact: true }).count(), 0);
+
+  let readinessUnavailable = false;
+  let ready = false;
+  let versionUnavailable = false;
+  await context.route('**/admin/api/readiness', route => route.fulfill(readinessUnavailable
+    ? { status: 503, json: { error: 'test: readiness unavailable' } }
+    : { json: { ready, checked_at: '2026-01-01T01:02:03.000Z', checks: {
+      database: 'ok', migrations: { status: ready ? 'ok' : 'failed', pending: 0 },
+    } } }));
+  await context.route('**/admin/api/version', route => route.fulfill(versionUnavailable
+    ? { status: 503, json: { error: 'test: ledger unavailable' } }
+    : { json: { app: { name: 'test', version: 'test' }, runtime: { node: 'test' }, contracts: {},
+      migrations: { applied: 5, total: 5, latest: 'test.sql', latest_applied: 'test.sql', pending: [] } } }));
+  unavailable = false;
+  await page.goto(`${base}/console/system`);
+  await expectVisible(page, '运行检查未通过');
+  await expectVisible(page, '服务在线');
+  assert.equal(await page.getByText('中枢正常', { exact: true }).count(), 0);
+  assert.equal(await page.getByText('数据库结构已匹配当前代码。', { exact: true }).count(), 0);
+  assert.equal(await page.getByText('运行检查通过', { exact: true }).count(), 0);
+  ready = true;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '运行检查通过');
+  readinessUnavailable = true;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '运行检查读取失败');
+  await expectVisible(page, '不能代表当前状态');
+  assert.equal(await page.getByText('运行检查通过', { exact: true }).count(), 0);
+  // Failed version/ledger lookup must not prevent displaying the runtime result.
+  readinessUnavailable = false; ready = false; versionUnavailable = true;
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await expectVisible(page, '运行检查未通过');
+  await expectVisible(page, '版本与配置库账本读取失败');
+  // An HTTP failure cannot be treated as healthy even when its body says ok.
+  await context.route('**/health', route => route.fulfill({ status: 503, json: { status: 'ok' } }));
+  await context.route('**/admin/api/status', route => route.fulfill({ status: 503, json: { error: 'test: status unavailable' } }));
+  await page.reload();
+  await expectVisible(page, '服务连接异常');
+  await expectVisible(page, '执行器状态读取失败');
+  console.log('✓ status feedback: failed/empty/stale and independent readiness passed');
+}
+
 const server = createServer(serveStatic);
 const port = await listen(server);
 const browserChannel = String(process.env.PLAYWRIGHT_CHANNEL || '').trim();
@@ -496,6 +708,11 @@ try {
   await expectVisible(page, '上下文已就绪');
   await expectVisible(page, '已批准，等待本地智能体续执行');
   await expectVisible(page, '不代表全量');
+
+  await verifyCallSnippets(page, `http://127.0.0.1:${port}`);
+  await verifyStatusFeedback(page, context, `http://127.0.0.1:${port}`);
+
+  await verifyRuntimeActions(page, context, `http://127.0.0.1:${port}`);
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
   console.log('✓ console e2e passed');

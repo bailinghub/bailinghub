@@ -693,9 +693,13 @@ route、target、tool provider、delivery、channel、storage bucket 等配置�
 
 `config-diagnostics` 是运行期巡检：启动时检查配置结构、跨表引用、凭证用途、禁用资源引用、工具检索坐标系、知识库与渠道依赖，并写入 `config_diagnostics` 审计。后台只读 API `GET /admin/api/config-diagnostics` 可随时触发同款巡检。
 
+系统状态页使用受 `audit:read` 保护的 `GET /admin/api/readiness`：复用 `/readyz` 的实际状态库、配置库连接及迁移校验检查，并附带 `checked_at`。接口成功取得报告时返回 HTTP 200，是否就绪以 `ready` 为准；这与公开 `/readyz` 的 HTTP 就绪信号不同。`/admin/api/version` 的迁移数量仅表示配置库账本，不独立证明实例就绪，也不代表物理 DDL 或外部业务链路已经验证。页面分别处理读取失败、空结果和旧快照，刷新失败不会沿用“当前通过”结论。
+
 后续控制台新增配置页时，应优先消费这些 schema 生成字段、默认校验和错误提示，再补充跨表引用、密钥掩码这类运行期规则。
 
 ### 7.3 Trace 已成为单 Job 追溯入口
+
+后台任务详情及 `trace.job` 的 `console_execution` 只描述交互边界：Agent 直调回原客户端继续，结果不明先核对原调用，在途任务等待结果。`rerun.available` 不授予权限，实际重跑仍受后台权限和服务端规则校验。审批列表的 `continuation_mode`、`continuation_pending`、`job_status` 分别描述续办方式、恢复状态与原任务状态；`used_at` 仅代表批准已使用，不能单独证明业务成功。旧接口未提供这些字段时，控制台保守提示核对，不推定自动执行。
 
 开源产品最需要的是一个 `job_id` 查全链。当前 `/admin/api/runs/:job/trace` 已聚合 job、trace events、审批意图和会话总账，控制台「任务 → 追溯」可以直接输入 job_id 查看：
 

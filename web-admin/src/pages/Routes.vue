@@ -291,22 +291,21 @@
         <el-input v-model="form.target_config" type="textarea" :rows="2" class="mono" placeholder="{}" />
       </el-form-item>
       <el-form-item>
-        <template #label>{{ routeFieldTitle('permission', '权限') }} <HelpTip :title="routeFieldTitle('permission', '权限')">
-          <p>{{ routeFieldDesc('permission', '发送给执行器或大脑的权限边界提示。') }}</p>
-          <p>三档固定值，<b>中枢内置、人人都一样</b>，不依赖任何执行器上报：</p>
-          <p>· <b>只读</b>——只查询/读取/分析，不许改任何东西、不跑有副作用的操作（给公开聊天入口这种不可信来源的安全档）；<br />· <b>可写</b>——允许常规读写，删除/外发等不可逆动作要谨慎；<br />· <b>全开</b>——不加限制（只给你完全信任的内部入口）。</p>
-          <p><b>实现方式 = 提示词指导，不是硬沙箱。</b>中枢把这条要求作为一段【权限】说明前置进任务发给执行器；执行器是否照做由它自己决定，<b>中枢不保证强制</b>。需要强制隔离时，应由具备沙箱能力的执行器配合实现。</p>
+        <template #label>执行行为提示 <HelpTip title="执行行为提示">
+          <p>中枢把所选要求写入模型或执行器的提示词：只读要求只查询与分析；常规读写允许处理业务变更；不附加限制则不增加这层行为要求。</p>
+          <p>这里不授予任何工具权限，也不能保证模型或执行器遵守要求。强制限制仍由工具范围、业务侧授权、审批规则和执行器沙箱分别执行。</p>
         </HelpTip></template>
         <el-select v-model="form.permission" style="width: 100%">
-          <el-option value="readonly" label="只读 · 只查不改" />
-          <el-option value="readwrite" label="可写 · 允许常规读写" />
-          <el-option value="full" label="全开 · 不加限制" />
+          <el-option value="readonly" label="只读（提示词约束）" />
+          <el-option value="readwrite" label="常规读写（提示词约束）" />
+          <el-option value="full" label="不附加行为限制" />
         </el-select>
+        <div class="field-hint">此项是提示词约束，不是强制授权或沙箱。实际可调用工具、写操作与审批要求请查看「工具治理」，并由业务系统校验权限。</div>
       </el-form-item>
       <el-form-item v-if="form.target !== 'llm'">
         <template #label>{{ routeFieldTitle('profile', '角色档') }} <HelpTip :title="routeFieldTitle('profile', '角色档')">
           <p>{{ routeFieldDesc('profile', '执行器可选的角色档或任务模板。') }}</p>
-          <p>执行器侧可选的角色档（profile），比如结构化输出、某类专业任务模板。它管“以什么角色、按什么 schema 干活”，<b>跟上面的「权限」是两回事</b>。</p>
+          <p>执行器侧可选的角色档（profile），比如结构化输出、某类专业任务模板。它管“以什么角色、按什么 schema 干活”，<b>跟上面的「执行行为提示」是两回事</b>。</p>
           <p><b>非必填，留空即可。</b>下拉里是服务当前 target 的在线执行器自报的档，也可手填。执行器是否支持 profile，由该执行器自己的适配器决定。</p>
         </HelpTip></template>
         <el-select v-model="form.profile" filterable allow-create clearable default-first-option style="width: 100%" placeholder="留空即可（实验性，后续并入云端 skill）">
@@ -731,7 +730,7 @@
           <el-option v-for="c in eligibleClients" :key="c.app_id" :value="c.app_id" :label="c.name + '（' + c.app_id + '）'" />
         </el-select>
       </div>
-      <div class="code-context-note">下方示例使用所选接入方的 token；送达 webhook 验签也应使用同一把 token。</div>
+      <div class="code-context-note">示例从运行环境读取 <code>BAILING_CLIENT_TOKEN</code>，不包含密钥。送达 webhook 验签也应使用同一接入方的完整 Token。</div>
     </div>
 
     <div v-if="codeRoute" class="code-route-summary">
@@ -773,6 +772,11 @@
       </div>
     </div>
     <div class="code-notices compact">
+      <div class="code-notice warning">
+        <b>运行前配置完整 Token</b>
+        <span>到「接入方」找到 {{ codeClientId }}，点击「复制完整」，再将完整值配置为运行代码的终端或服务端环境变量 <code>BAILING_CLIENT_TOKEN</code>。不要使用列表中的掩码，也不要放进浏览器前端或代码仓库；取值需要接入方管理权限。</span>
+        <el-button link type="primary" @click="router.push('/clients')">前往接入方</el-button>
+      </div>
       <div class="code-notice info">
         <b>完整 SDK</b>
         <span>本弹窗保留 HTTP / Node.js / Python / PHP 的高频示例；Java、Go、.NET 与任意语言接入见官网 SDK 文档。</span>
@@ -840,7 +844,7 @@
           </div>
           <pre class="snippet-code">{{ skillCode }}</pre>
           <div class="snippet-notes">
-            <span>内容包含接入密钥，只能放在受信环境，不要提交进代码仓库。</span>
+            <span>说明不包含密钥。由用户在受信运行环境设置完整 Token；不要让 Agent 索取、回显或记录密钥。</span>
           </div>
         </section>
       </el-tab-pane>
@@ -880,6 +884,7 @@ import { LLM_PROVIDERS, detectProvider } from '../llm-catalog';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
 import { kernelOrigin } from '../runtime-path';
 import { EXACT_OPERATION_ID_RE, includesAllCurrentOperationIds, mergeExactOperationIds } from '../agent-direct-selection';
+import { buildRouteCallSnippets, canCallRoute } from '../route-call-snippets';
 
 const s = useMe();
 const router = useRouter();
@@ -1212,11 +1217,11 @@ const curTargetNeedsProject = computed(() => targetOptions.value.find((t) => t.n
 
 // 执行器池（用于「可执行性」覆盖度判定）：route → target → 服务该 target 的在线执行器，且其自报 profiles 是否覆盖本路由的 profile。
 const execs = ref<Array<{ executor_id: string; online: boolean; targets: string[]; capabilities: { profiles?: string[]; runtime?: string } | null }>>([]);
-// 权限档 → 表格徽标（与表单三档一致）
+// 执行行为提示 → 表格徽标（枚举保持不变，不表示工具授权）
 function permTag(p?: string): { label: string; type: 'info' | 'success' | 'warning' | 'danger' } {
-  if (p === 'readonly') return { label: '只读', type: 'success' };
-  if (p === 'readwrite') return { label: '可写', type: 'warning' };
-  return { label: '全开', type: 'info' }; // full / 空
+  if (p === 'readonly') return { label: '行为提示：只读', type: 'info' };
+  if (p === 'readwrite') return { label: '行为提示：常规读写', type: 'info' };
+  return { label: '行为提示：不附加限制', type: 'info' }; // full / 空
 }
 type RouteFeatureTag = { label: string; type: 'primary' | 'success' | 'warning' | 'danger' | 'info' };
 function sessionLabel(row: any): string {
@@ -1605,172 +1610,27 @@ const codeOpen = ref(false);
 const codeTab = ref('curl');
 const codeRoute = ref<any | null>(null);
 const codeClientId = ref('');
-const eligibleClients = computed(() => clients.value.filter((c) => (c.allowed_routes || []).includes('*') || (c.allowed_routes || []).includes(codeRoute.value?.route_key)));
-const codeClient = computed(() => clients.value.find((c) => c.app_id === codeClientId.value));
+const eligibleClients = computed(() => clients.value.filter((c) => canCallRoute(c, codeRoute.value?.route_key)));
+const codeClient = computed(() => eligibleClients.value.find((c) => c.app_id === codeClientId.value));
 const codeCoverage = computed(() => codeRoute.value ? coverage(codeRoute.value) : null);
 // 目标是执行器类时，多给一页「执行器接入」
 const codeTargetIsExecutor = computed(() => targetOptions.value.find((t) => t.name === codeRoute.value?.target)?.kind === 'executor');
 function openCode(row: any): void {
   codeRoute.value = row;
   codeTab.value = 'curl';
-  const eligible = clients.value.filter((c) => (c.allowed_routes || []).includes('*') || (c.allowed_routes || []).includes(row.route_key));
-  if (!eligible.length) { ElMessage.warning(`还没有可调用该路由的接入方——先在「接入方」建一个，可调路由含 ${row.route_key} 或 *`); return; }
+  const eligible = eligibleClients.value;
+  if (!eligible.length) { ElMessage.warning(`没有已启用且可调用本路由的接入方。请到「接入方」创建或启用应用，并将 ${row.route_key} 加入可调路由。`); return; }
   codeClientId.value = eligible[0]!.app_id;
   codeOpen.value = true;
 }
-// 示例 metadata：把会话键（per_key）与「渠道直推」的收件人字段都带进去，免得开发者漏传收件人。
-function demoMetaJson(r: any, sessionVal: string): string {
-  const m: Record<string, string> = {};
-  if (r.session_policy === 'per_key' && r.session_key_field) m[r.session_key_field] = sessionVal;
-  if (r.delivery?.type === 'channel' && r.delivery?.to_field) m[r.delivery.to_field] = '<收件人id>';
-  return Object.keys(m).length ? JSON.stringify(m) : '{}';
-}
-const phpCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const fn = 'bailing_' + r.route_key.replace(/[^a-z0-9]+/gi, '_');
-  const keyField = r.session_policy === 'per_key' && r.session_key_field ? r.session_key_field : '';
-  const rcpt = r.delivery?.type === 'channel' ? String(r.delivery.to_field || '').trim() : '';
-  const metaPairs = [keyField ? `'${keyField}' => $bizId` : '', rcpt ? `'${rcpt}' => $userId` : ''].filter(Boolean);
-  const metaExample = metaPairs.length ? `, [${metaPairs.join(', ')}]` : '';
-  return `/**
- * 百灵中枢 · ${r.name}（route: ${r.route_key}）
- * 在业务事件点调用，如：${fn}('唯一事件号', $content${metaExample});
- * request_id 是幂等键：同一事件重复触发不会重复跑，建议用业务唯一号。${rcpt ? `\n * ⚠ 本路由配了「渠道直推」：metadata 必须带 '${rcpt}'（收件人在「${r.delivery.channel}」渠道里的原生 id）——任务跑完自动推给 ta，无需再调 /send。` : ''}
- */
-function ${fn}(string $requestId, string $input, array $metadata = []): void
-{
-    try {
-        $ch = curl_init('${base}/run');
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode([
-                'request_id' => '${c.app_id}_' . $requestId,
-                'route'      => '${r.route_key}',
-                'input'      => $input,
-                'metadata'   => $metadata,
-            ], JSON_UNESCAPED_UNICODE),
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ${c.token}'],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 1,
-            CURLOPT_TIMEOUT        => 2, // 解耦保护：中枢不可用时最多拖慢业务 2 秒
-        ]);
-        curl_exec($ch);
-        curl_close($ch);
-    } catch (\\Throwable $e) {
-        // 只记日志，绝不影响业务主流程
-    }
-}`;
-});
-const curlCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const metaJson = demoMetaJson(r, 'demo-1');
-  return `# 触发
-curl -m 2 -X POST '${base}/run' \\
-  -H 'Content-Type: application/json' \\
-  -H 'Authorization: Bearer ${c.token}' \\
-  -d '{"request_id":"${c.app_id}_demo-1","route":"${r.route_key}","input":"联调测试内容","metadata":${metaJson}}'
-
-# 查询结果（用上一步返回的 job_id）
-curl -H 'Authorization: Bearer ${c.token}' '${base}/jobs/<job_id>'`;
-});
-const nodeCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const metaJson = demoMetaJson(r, 'demo-1');
-  return `// 百灵中枢 · ${r.name}（route: ${r.route_key}）
-// request_id 是幂等键：同一业务事件重复触发不会重复执行。
-// 需要回流结果时配置路由 callback；需要主动查询时，用返回的 job_id 调 GET /jobs/{job_id}。
-
-const controller = new AbortController();
-const timeout = setTimeout(() => controller.abort(), 2000);
-
-try {
-  const response = await fetch('${base}/run', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ${c.token}',
-    },
-    body: JSON.stringify({
-      request_id: '${c.app_id}_demo-1',
-      route: '${r.route_key}',
-      input: '联调测试内容',
-      metadata: ${metaJson},
-    }),
-    signal: controller.signal,
-  });
-
-  const data = await response.json();
-  console.log(data.job_id, data.status);
-} catch (err) {
-  // 只记录，不影响业务主流程
-  console.error('bailing trigger failed', err);
-} finally {
-  clearTimeout(timeout);
-}`;
-});
-const pythonCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const metaJson = demoMetaJson(r, 'demo-1');
-  return `# 百灵中枢 · ${r.name}（route: ${r.route_key}）
-# request_id 是幂等键：同一业务事件重复触发不会重复执行。
-# pip install requests
-
-import requests
-
-payload = {
-    "request_id": "${c.app_id}_demo-1",
-    "route": "${r.route_key}",
-    "input": "联调测试内容",
-    "metadata": ${metaJson},
-}
-
-try:
-    response = requests.post(
-        "${base}/run",
-        json=payload,
-        headers={"Authorization": "Bearer ${c.token}"},
-        timeout=2,
-    )
-    print(response.json())
-except requests.RequestException as exc:
-    # 只记录，不影响业务主流程
-    print("bailing trigger failed", exc)`;
-});
-// 触发方向：给任意 agent 一段可保存的提示词/技能说明
-const skillCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const metaJson = demoMetaJson(r, '<业务编号>');
-  return `# Agent Skill: bailing-${r.route_key}
-
-当用户要求「${r.name}」或当前工作产生适合交给该场景处理的任务时，调用百灵中枢路由 \`${r.route_key}\`。
-
-派单（fire-and-forget，返回 202 + job_id）：
-
-\`\`\`bash
-curl -m 5 -X POST '${base}/run' \\
-  -H 'Content-Type: application/json' \\
-  -H 'Authorization: Bearer ${c.token}' \\
-  -d '{"request_id":"${c.app_id}_<本次事件唯一号>","route":"${r.route_key}","input":"<任务内容>","metadata":${metaJson}}'
-\`\`\`
-
-- request_id 是幂等键：用本次事件的唯一编号，重复触发不会重复执行
-- 需要结果时轮询（通常异步任务无需等待）：
-
-\`\`\`bash
-curl -H 'Authorization: Bearer ${c.token}' '${base}/jobs/<job_id>'
-\`\`\`
-`;
-});
+const callSnippets = computed(() => codeRoute.value && codeClient.value
+  ? buildRouteCallSnippets(codeRoute.value, codeClient.value, kernelOrigin())
+  : { curl: '', node: '', python: '', php: '', skill: '' });
+const phpCode = computed(() => callSnippets.value.php);
+const curlCode = computed(() => callSnippets.value.curl);
+const nodeCode = computed(() => callSnippets.value.node);
+const pythonCode = computed(() => callSnippets.value.python);
+const skillCode = computed(() => callSnippets.value.skill);
 // 承接方向：后台只交付本次连接参数；稳定流程由公开、可版本化的 Skill 承载。
 const execCode = computed(() => {
   const r = codeRoute.value;
