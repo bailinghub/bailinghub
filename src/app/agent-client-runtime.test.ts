@@ -4,6 +4,9 @@ import type { AppConfig } from '../core/config/config';
 import type { AgentSession, Client, Route, ToolProvider } from '../core/contracts/types';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { AgentClientRunRecord } from '../infrastructure/config/config-agent-client-runtime-repository';
+import { AgentClientRuntimeConflictError } from '../infrastructure/config/config-agent-client-runtime-repository';
+import { readAgentKnowledgeFor } from './agent-knowledge';
+import { agentKnowledgeDocumentRevision, type KbService } from '../services/kb';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ToolProxyDeps } from './tool-proxy';
 import { AgentToolApiError, listAgentToolsFor } from './agent-tool-invocations';
@@ -64,7 +67,7 @@ function fixture() {
         } as AgentClientRunRecord;
         return { run, created: true };
       }
-      if (run.request_hash !== input.request_hash) throw new Error('unexpected conflict');
+      if (run.request_hash !== input.request_hash) throw new AgentClientRuntimeConflictError('immutable input');
       return { run, created: false };
     },
     finalizeTurn: async (input: any) => {
@@ -137,6 +140,66 @@ test('Agent Runtime turn 先装配旧记忆、主动工具封顶且幂等写一�
   const context = first['context'] as Record<string, any>;
   assert.equal(context.memory.recent.length, 1);
   assert.equal(context.governance.authorization, 'server_revalidated');
+});
+
+test('Agent knowledge opt-in is immutable per turn and keeps rules/memory with no direct business tools', async () => {
+  const fx = fixture();
+  fx.setRoute({ ...route(), tools: {}, knowledge: { kb_ids: ['kb-one'], inject: 'doc' } });
+  fx.deps.toolProxyDeps.cfg = { server: { token: 'synthetic-knowledge-signing-key' } } as AppConfig;
+  const content = '这是一份参考资料。'.repeat(900);
+  const doc = { kb_id: 'kb-one', doc_id: 17, title: '退款窗口', content,
+    revision: agentKnowledgeDocumentRevision('退款窗口', content) };
+  let searches = 0;
+  fx.deps.kbService = {
+    searchForAgent: async () => { searches++; return { status: 'ok', documents: [{ ...doc, summary: '退款窗口为0时请核对适用范围。', score: 0.8 }], truncated: false }; },
+    getAgentDocumentSnapshot: async () => doc,
+    searchDocsMulti: async () => { throw new Error('on-demand must not request legacy full documents'); },
+  } as unknown as KbService;
+  const input = { client_conversation_id: 'knowledge-c', client_turn_id: 'knowledge-t', user_message_id: 'knowledge-m',
+    user_input: '退款窗口设为0会怎样？', knowledge_delivery: 'on_demand' as const };
+  const bootstrap = await getAgentWorkspaceBootstrapFor(fx.deps, auth(), 'tenant-agent');
+  assert.equal((bootstrap['capabilities'] as Record<string, unknown>)['authorized_total'], 0);
+  const first = await prepareAgentTurnFor(fx.deps, auth(), 'tenant-agent', input);
+  const replay = await prepareAgentTurnFor(fx.deps, auth(), 'tenant-agent', input);
+  assert.deepEqual(replay, first);
+  assert.equal(searches, 1);
+  assert.deepEqual(first['active_tools'], []);
+  const context = first['context'] as Record<string, any>;
+  assert.deepEqual(context.knowledge, []);
+  assert.deepEqual(context.knowledge_refs, []);
+  assert.equal(context.knowledge_delivery.mode, 'on_demand');
+  assert.equal(context.knowledge_delivery.status, 'ok');
+  assert.equal(context.knowledge_delivery.hints.length, 1);
+  assert.equal(context.knowledge_delivery.hints[0].content, undefined);
+  assert.match(context.instructions, /只按业务规则回答/);
+  assert.match(context.instructions, /先确认再执行/);
+  assert.equal(context.governance.authorization, 'server_revalidated');
+  assert.equal(context.memory.recent.length, 1);
+  assert.doesNotMatch(JSON.stringify(first), /这是一份参考资料/);
+  const read = await readAgentKnowledgeFor(fx.deps, auth(), 'tenant-agent', {
+    ref: context.knowledge_delivery.hints[0].ref, run_id: RUN_ID, max_bytes: 32768,
+  });
+  assert.equal(read['content'], content);
+  assert.equal(read['trust'], 'reference_only');
+  const { knowledge_delivery: _delivery, ...legacyRequest } = input;
+  await assert.rejects(prepareAgentTurnFor(fx.deps, auth(), 'tenant-agent', legacyRequest),
+    (error: unknown) => error instanceof AgentToolApiError && error.code === 'turn_conflict');
+  assert.equal(fx.counts().userWrites, 1);
+});
+
+test('Agent legacy turn still injects existing full knowledge and rejects unknown delivery modes', async () => {
+  const fx = fixture();
+  fx.setRoute({ ...route(), knowledge: { kb_ids: ['kb-one'], inject: 'doc' } });
+  fx.deps.kbService = { searchDocsMulti: async () => [{ doc_id: 1, title: '原有知识', content: 'LEGACY_BODY', score: 0.8 }],
+    searchForAgent: async () => { throw new Error('legacy must not invoke the new protocol'); },
+  } as unknown as KbService;
+  const input = { client_conversation_id: 'c1', client_turn_id: 't1', user_message_id: 'm1', user_input: '问题' };
+  await assert.rejects(prepareAgentTurnFor(fx.deps, auth(), 'tenant-agent', { ...input, knowledge_delivery: 'hint' as never }),
+    (error: unknown) => error instanceof AgentToolApiError && error.code === 'invalid_request');
+  assert.equal(fx.counts().userWrites, 0);
+  const context = (await prepareAgentTurnFor(fx.deps, auth(), 'tenant-agent', input))['context'] as Record<string, any>;
+  assert.equal(context.knowledge[0].content, 'LEGACY_BODY');
+  assert.equal(context.knowledge_delivery, undefined);
 });
 
 test('Agent Runtime memory keeps new execution facts bounded and source-labelled without business text', async () => {

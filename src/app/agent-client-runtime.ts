@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { AgentToolApiError, listAgentToolsFor, searchAgentToolsFor, type AgentToolAuthContext, type AgentToolCatalog } from './agent-tool-invocations';
+import { AGENT_TOOL_CATALOG_SCHEMA, AgentToolApiError, listAgentToolsFor, resolveAgentRouteFor, searchAgentToolsFor, type AgentToolAuthContext, type AgentToolCatalog } from './agent-tool-invocations';
+import { prepareAgentKnowledgeFor } from './agent-knowledge';
 import type { ToolProxyDeps } from './tool-proxy';
 import { routeAgentClientConfig, routeKnowledgeConfig } from '../core/config/route-config';
 import { resolveMemoryConfig } from '../core/runtime/memory';
 import { projectAgentExecutionMemory } from '../core/runtime/agent-execution-memory';
-import { maxToolCalls } from '../core/config/tools-config';
+import { agentDirectToolsConfig, maxToolCalls } from '../core/config/tools-config';
 import type { Route } from '../core/contracts/types';
 import type { KbService } from '../services/kb';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
@@ -31,6 +32,8 @@ export interface AgentTurnInput {
   page_context?: Record<string, unknown>;
   renderers?: string[];
   task_binding?: unknown;
+  /** Explicit client protocol opt-in; absent keeps the legacy inline context. */
+  knowledge_delivery?: 'on_demand';
 }
 
 export interface AgentRunCompleteInput {
@@ -124,12 +127,18 @@ async function authorizedRuntime(
   auth: AgentToolAuthContext,
   routeKey: string,
 ): Promise<{ route: Route; catalog: AgentToolCatalog; activeLimit: number }> {
-  const route = await deps.toolProxyDeps.configStore?.routes.get(routeKey);
-  if (!route) throw new AgentToolApiError(404, 'route_unavailable', 'The configured route is unavailable.');
+  const route = await resolveAgentRouteFor(deps.toolProxyDeps, auth, routeKey);
   const client = routeAgentClientConfig(route);
   if (!client) throw new AgentToolApiError(403, 'agent_client_disabled', 'Agent Client Runtime is not enabled for this route.');
-  const catalog = await listAgentToolsFor(deps.toolProxyDeps, auth, routeKey);
+  const catalog = await runtimeCatalog(deps, auth, route);
   return { route, catalog, activeLimit: client.active_tool_limit };
+}
+
+async function runtimeCatalog(deps: AgentClientRuntimeDeps, auth: AgentToolAuthContext, route: Route): Promise<AgentToolCatalog> {
+  // A knowledge-only Agent workspace does not need business tool dispatch enabled.
+  if (agentDirectToolsConfig(route.tools)) return listAgentToolsFor(deps.toolProxyDeps, auth, route.route_key);
+  return { schema_version: AGENT_TOOL_CATALOG_SCHEMA, route: route.route_key,
+    capability_revision: hash({ schema: AGENT_TOOL_CATALOG_SCHEMA, route: route.route_key, direct_tools: false }), tools: [] };
 }
 
 function profileFor(route: Route, catalog: AgentToolCatalog, activeLimit: number): Record<string, unknown> {
@@ -175,7 +184,8 @@ export async function listAgentWorkspacesFor(deps: AgentClientRuntimeDeps, auth:
     const client = routeAgentClientConfig(route);
     if (!client) continue;
     try {
-      const catalog = await listAgentToolsFor(deps.toolProxyDeps, auth, route.route_key);
+      await resolveAgentRouteFor(deps.toolProxyDeps, auth, route.route_key);
+      const catalog = await runtimeCatalog(deps, auth, route);
       const profile = profileFor(route, catalog, client.active_tool_limit);
       workspaces.push({
         route: route.route_key,
@@ -259,6 +269,9 @@ export async function prepareAgentTurnFor(
   routeKey: string,
   raw: AgentTurnInput,
 ): Promise<Record<string, unknown>> {
+  if (raw.knowledge_delivery !== undefined && raw.knowledge_delivery !== 'on_demand') {
+    throw new AgentToolApiError(400, 'invalid_request', 'knowledge_delivery must be on_demand when provided.');
+  }
   const renderers = strictRenderers(raw.renderers);
   const input: AgentTurnInput = {
     client_conversation_id: safeId(raw.client_conversation_id, 'client_conversation_id'),
@@ -268,6 +281,7 @@ export async function prepareAgentTurnFor(
     ...(raw.page_context ? { page_context: raw.page_context } : {}),
     ...(renderers !== undefined ? { renderers } : {}),
     ...(raw.task_binding !== undefined ? { task_binding: parseAgentTaskBinding(raw.task_binding) } : {}),
+    ...(raw.knowledge_delivery !== undefined ? { knowledge_delivery: raw.knowledge_delivery } : {}),
   };
   if (Buffer.byteLength(JSON.stringify(input.page_context ?? {}), 'utf8') > 16 * 1024) {
     throw new AgentToolApiError(413, 'page_context_too_large', 'page_context exceeds 16 KiB.');
@@ -305,9 +319,14 @@ export async function prepareAgentTurnFor(
   const recentRaw = await deps.toolProxyDeps.configStore!.conversations.recentMessagesAfter(threadId, threadMemory.summary_upto_id, memoryCfg.recent_messages);
   const recent = trimRecent(recentRaw, memoryCfg);
   const query = queryWithPage(input);
-  const [knowledge, selected] = await Promise.all([
-    knowledgeFor(deps, route, query),
-    searchAgentToolsFor(deps.toolProxyDeps, auth, route.route_key, query, activeLimit),
+  const [knowledge, selected, disclosure] = await Promise.all([
+    input.knowledge_delivery === 'on_demand' ? Promise.resolve({ items: [], refs: [] }) : knowledgeFor(deps, route, query),
+    agentDirectToolsConfig(route.tools)
+      ? searchAgentToolsFor(deps.toolProxyDeps, auth, route.route_key, query, activeLimit)
+      : Promise.resolve({ capability_revision: catalog.capability_revision, tools: [] }),
+    input.knowledge_delivery === 'on_demand'
+      ? prepareAgentKnowledgeFor(deps, auth, route.route_key, { query: query.slice(0, 2000), run_id: reserved.run.run_id })
+      : Promise.resolve(null),
   ]);
   const profile = profileFor(route, catalog, activeLimit);
   const profileBody = profile['profile'] as Record<string, unknown>;
@@ -325,6 +344,10 @@ export async function prepareAgentTurnFor(
       memory_refs: [{ thread_id: threadId, summary_upto_id: threadMemory.summary_upto_id, prior_messages: recent.length }],
       knowledge: knowledge.items,
       knowledge_refs: knowledge.refs,
+      ...(disclosure ? { knowledge_delivery: { schema_version: 'bailing.agent-knowledge-delivery.v1',
+        mode: 'on_demand', protocol: 'bailing.agent-knowledge.v1',
+        knowledge_scope_revision: disclosure['knowledge_scope_revision'], status: disclosure['status'], hints: disclosure['hints'],
+      } } : {}),
       governance: profileBody['governance'],
     },
     active_tools: selected.tools,

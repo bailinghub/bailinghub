@@ -12,7 +12,9 @@ does not replace `/run`, chat entries, or the executor protocol. See the
 
 Every endpoint requires `Authorization: Bearer <Agent access token>` and returns
 `Cache-Control: no-store`. The workspace is the intersection of the Client `allowed_routes`, Agent
-Session `allowed_routes`, enabled and audience-compatible routes, and `tools.agent_direct`.
+Session `allowed_routes`, enabled and audience-compatible routes, with `agent_client.enabled`.
+Business tool discovery and execution additionally require `tools.agent_direct`. A knowledge-only
+workspace can bootstrap and prepare a turn with an empty business tool catalog.
 `agent_client.enabled=false` disables this Runtime only; it does not disable the older
 `/agent-api/v1/tools` surface.
 
@@ -22,12 +24,22 @@ Session `allowed_routes`, enabled and audience-compatible routes, and `tools.age
 - `GET /agent-api/v1/workspaces/:route/bootstrap`
 - `POST /agent-api/v1/workspaces/:route/turns`
 - `POST /agent-api/v1/workspaces/:route/capabilities/search`
+- `GET /agent-api/v1/workspaces/:route/knowledge/capabilities`
+- `POST /agent-api/v1/workspaces/:route/knowledge/search`
+- `POST /agent-api/v1/workspaces/:route/knowledge/read`
 - `POST /agent-api/v1/runs/:run_id/complete`
 - Tool execution continues to use `POST /agent-api/v1/tool-invocations` and the existing resume
   endpoint.
 
 Raw JSON for `turns` and `complete` is limited to 512 KiB. Parsed values still have strict field
 limits; the service rejects invalid input instead of truncating it silently.
+
+Hosts supporting the [Agent knowledge protocol](AGENT_KNOWLEDGE_API.en.md) may explicitly request
+`knowledge_delivery: "on_demand"` in a turn. This option is part of the immutable turn request hash.
+The server echoes the negotiated mode in `context.knowledge_delivery`, retaining instructions,
+governance and memory while replacing supplementary knowledge bodies with bounded hints.
+Absent this option, legacy inline knowledge remains unchanged. Native chat/embed/widget do not
+use this option. Hosts must not silently remove unnegotiated bodies.
 
 Tool invocation `arguments` must remain an object. The limit is **1048576 bytes (1 MiB)**,
 measured as UTF-8 bytes of `JSON.stringify(arguments)`, including JSON escaping. The full HTTP
