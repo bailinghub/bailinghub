@@ -8,11 +8,12 @@
         <el-button v-if="s.can('tools:write')" type="primary" @click="openCreate">注册工具源</el-button></div>
     </template>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
     <el-empty v-if="!listLoading && !listError && !list.length" description="还没有工具源：业务系统在自己的 OpenAPI 上声明 x-agent-capability 后，把 spec 注册进来">
       <el-button @click="openDocs('tools')">查看开发文档</el-button>
       <el-button v-if="s.can('tools:write')" type="primary" @click="openCreate">注册第一个</el-button>
     </el-empty>
-    <el-table v-else v-loading="listLoading" :data="list">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="工具源" min-width="270" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="tool-main">
@@ -151,6 +152,7 @@
           <p><b>签名保护（推荐）</b>：未签名或错误签名的请求必须被业务侧拒绝；中枢刷新时会用正确签名读取，再以未签名和错误签名请求确认它们均被拒绝。</p>
           <p><b>允许公开</b>：中枢以未签名请求读取；任何能访问该 URL 的人都可以下载接口路径、参数、scope 与风险声明。只应在你明确接受公开时选择。</p>
           <p>该策略只约束接口清单的读取方式；工具调用仍必须验签并按操作主体授权。</p>
+          <p>公开的是能力清单，不是签名密钥；但接口路径、参数和风险声明会对 URL 访问者可见。保存时还会再次确认。</p>
         </HelpTip></template>
         <div class="spec-access-policy">
           <el-radio-group v-model="form.spec_access_policy">
@@ -158,7 +160,7 @@
               签名保护（推荐）
               <el-tag v-if="historicalProtectedEvidence" size="small" type="success" effect="plain">与当前实测一致</el-tag>
             </el-radio>
-            <el-radio value="public_allowed">允许公开</el-radio>
+            <el-radio value="public_allowed">允许公开（任何 URL 访问者可读清单）</el-radio>
           </el-radio-group>
           <el-alert
             v-if="historicalAccessPending"
@@ -175,13 +177,6 @@
             size="small"
             @click="adoptProtectedSpecAccess"
           >采用实测结果：签名保护</el-button>
-          <el-alert
-            v-if="form.spec_access_policy === 'public_allowed'"
-            title="公开的是能力清单，不是签名密钥；但接口路径、参数和风险声明会对 URL 访问者可见。保存时还会再次确认。"
-            type="warning"
-            :closable="false"
-            show-icon
-          />
         </div>
       </el-form-item>
       <el-form-item v-if="form.spec_source === 'url'">
@@ -213,16 +208,18 @@
         <el-input-number v-model="form.timeout_ms" :min="1000" :max="60000" :step="1000" />
       </el-form-item>
       <el-form-item>
-        <template #label>工具源总限额（次/分钟，0=关闭）</template>
+        <template #label>工具源总限额（次/分钟，0=关闭） <HelpTip title="工具源总限额"><p>该工具源下所有工具、用户、授权和会话共用。设为 0 只关闭总闸，下方单工具策略独立生效。</p></HelpTip></template>
         <el-input-number v-model="form.rate_limit_per_min" :min="0" :max="1000000" :precision="0" :step="100" />
-        <div class="muted hint">该工具源下所有工具、用户、授权和会话共用。设为 0 只关闭总闸，下方单工具策略独立生效。</div>
       </el-form-item>
-      <el-form-item label="单工具默认策略">
+      <el-form-item>
+        <template #label>单工具默认策略 <HelpTip title="单工具默认策略">
+          <p>每个工具分别计数，同一工具的用户与会话共用；120 次/小时按一小时滑动窗口计数，允许在额度内连续调用。</p>
+          <p>自定义或关闭只调整中枢限额；接入方限额、业务系统自身限额、权限与审批仍独立生效。保存后对后续调度生效，当前窗口已有计数不会清零。</p>
+        </HelpTip></template>
         <ToolRateLimitEditor v-model="toolRateDefault" />
-        <div class="muted hint">每个工具分别计数，同一工具的用户与会话共用；120 次/小时按一小时滑动窗口计数，允许在额度内连续调用。</div>
-        <div class="muted hint">自定义或关闭只调整中枢限额；接入方限额、业务系统自身限额、权限与审批仍独立生效。保存后对后续调度生效，当前窗口已有计数不会清零。</div>
       </el-form-item>
-      <el-form-item label="指定工具覆盖">
+      <el-form-item>
+        <template #label>指定工具覆盖 <HelpTip title="指定工具覆盖"><p>覆盖优先于默认策略；“继承业务声明”使用该工具的原声明。刷新能力清单会保留这里的设置。</p></HelpTip></template>
         <div style="width: 100%">
           <div v-for="(entry, index) in toolRateOverrides" :key="index" style="margin-bottom: 12px">
             <div style="display: flex; gap: 8px; margin-bottom: 6px">
@@ -234,7 +231,6 @@
             <ToolRateLimitEditor v-model="entry.policy" />
           </div>
           <el-button @click="toolRateOverrides.push({ name: '', policy: { mode: 'inherit' } })">添加工具覆盖</el-button>
-          <div class="muted hint">覆盖优先于默认策略；“继承业务声明”使用该工具的原声明。刷新能力清单会保留这里的设置。</div>
         </div>
       </el-form-item>
         </el-tab-pane>
@@ -430,6 +426,8 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import ToolRateLimitEditor from '../components/ToolRateLimitEditor.vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
@@ -447,6 +445,7 @@ const s = useMe();
 const route = useRoute();
 const toolSchema = useConfigSchema('tool-provider');
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.description || ""}` });
 const listLoading = ref(false), listError = ref('');
 let listGeneration = 0;
 const open = ref(false);

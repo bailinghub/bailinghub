@@ -649,7 +649,8 @@
             @click="loadAccounts(true)"
             >加载更多账户</el-button
           ></el-form-item
-        ><el-form-item label="套餐"
+        ><el-form-item
+          ><template #label>套餐 <UsageHelp title="开通套餐"><p>从开通时刻发放一份新额度，不收款，也不改变业务授权。</p></UsageHelp></template
           ><el-select v-model="grantPlanId" placeholder="选择套餐"
             ><el-option
               v-for="plan in plans.filter((p) => p.state === 'active')"
@@ -685,9 +686,6 @@
           type="warning"
           :closable="false"
         />
-        <p class="muted">
-          本次操作从开通时刻发放一份新额度，不收款，也不改变业务授权。
-        </p>
       </el-form>
       <template #footer
         ><div class="drawer-actions">
@@ -808,8 +806,8 @@
           <div class="reference-match"><span>价格匹配：{{ effectiveReferenceModel || '请先选择调用模型' }}</span><el-button link type="primary" :loading="endpointsLoading" :disabled="!effectiveReferenceModel" @click="loadPriceEndpoints(true)">同步参考价格</el-button></div>
           <el-alert v-if="pricingError || selectedPriceIssue" :title="pricingError || selectedPriceIssue" type="warning" :closable="false"/>
           <details class="service-advanced" :open="!!effectiveReferenceModel && !serviceForm.referenceEndpoint"><summary>参考端点与价格{{ selectedPriceEndpoint ? ` · ${selectedPriceEndpoint.label}` : '' }}</summary>
-            <el-form-item label="参考端点"><el-select v-model="serviceForm.referenceEndpoint" filterable :loading="endpointsLoading" :disabled="!effectiveReferenceModel" placeholder="多个报价时，请选择参考端点"><el-option v-for="e in priceEndpoints" :key="e.id" :value="e.id" :label="e.label + (e.unavailable ? ' · 计量规则暂不支持' : !e.pricing?.lines?.length ? ' · 未取得价格' : '')" :disabled="!!endpointPriceIssue(e)"/><el-option v-if="serviceForm.referenceEndpoint && !priceEndpoints.some(e => e.id === serviceForm.referenceEndpoint)" :value="serviceForm.referenceEndpoint" :label="serviceForm.referenceEndpoint + ' · 原绑定，待核对'" disabled/></el-select></el-form-item>
-            <p>OpenRouter 参考价，不代表实际供应商账单。仅一个可用端点时自动选中，多个端点需选择；保存后生效。</p><p>最近同步：{{ priceFetchedAt ? time(priceFetchedAt) : '尚未取得' }}{{ pricingStale ? ' · 缓存报价，后台更新中' : '' }}</p><div v-if="selectedPriceEndpoint?.pricing"><div v-for="(line,i) in selectedPriceEndpoint.pricing.lines" :key="i">{{ line.billable }} · {{ line.variant || line.unit }} · ${{ line.costUsd }} / {{ line.unit }}</div></div>
+            <el-form-item><template #label>参考端点 <UsageHelp title="参考端点与价格"><p>OpenRouter 参考价不代表实际供应商账单。仅一个可用端点时自动选中，多个端点需选择；保存后生效。</p></UsageHelp></template><el-select v-model="serviceForm.referenceEndpoint" filterable :loading="endpointsLoading" :disabled="!effectiveReferenceModel" placeholder="多个报价时，请选择参考端点"><el-option v-for="e in priceEndpoints" :key="e.id" :value="e.id" :label="e.label + (e.unavailable ? ' · 计量规则暂不支持' : !e.pricing?.lines?.length ? ' · 未取得价格' : '')" :disabled="!!endpointPriceIssue(e)"/><el-option v-if="serviceForm.referenceEndpoint && !priceEndpoints.some(e => e.id === serviceForm.referenceEndpoint)" :value="serviceForm.referenceEndpoint" :label="serviceForm.referenceEndpoint + ' · 原绑定，待核对'" disabled/></el-select></el-form-item>
+            <p>最近同步：{{ priceFetchedAt ? time(priceFetchedAt) : '尚未取得' }}{{ pricingStale ? ' · 缓存报价，后台更新中' : '' }}</p><div v-if="selectedPriceEndpoint?.pricing"><div v-for="(line,i) in selectedPriceEndpoint.pricing.lines" :key="i">{{ line.billable }} · {{ line.variant || line.unit }} · ${{ line.costUsd }} / {{ line.unit }}</div></div>
           </details>
         </div>
         <template v-if="serviceForm.purpose === 'tool'">
@@ -832,7 +830,8 @@
                 v-model="serviceForm.maxOutputTokens"
                 :min="1"
                 :max="131072" /></el-form-item
-            ><el-form-item label="上下文窗口（0 = 未登记）"
+            ><el-form-item
+              ><template #label>上下文窗口 <UsageHelp title="上下文窗口"><p>填写模型支持的上下文 Token 数，0 表示未登记。</p></UsageHelp></template
               ><el-input-number
                 v-model="serviceForm.contextWindowTokens"
                 :min="0"
@@ -854,10 +853,11 @@
                 v-model="serviceForm.maxInputBytes"
                 :min="1"
                 :max="16777216" /></el-form-item
-            ><el-form-item label="供应商账户引用"
+            ><el-form-item
+              ><template #label>供应商账户引用 <UsageHelp title="供应商账户引用"><p>同一上游账户使用固定引用。</p></UsageHelp></template
               ><el-input
                 v-model="serviceForm.providerScope"
-                placeholder="同一上游账户使用固定引用"
+                placeholder="输入账户引用"
             /></el-form-item>
           </div>
         </details>

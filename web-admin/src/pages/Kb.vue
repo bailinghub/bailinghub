@@ -1,15 +1,17 @@
 <template>
-  <div class="kb-layout">
+  <ListLocationBar v-model="listQuery" :count="locatedBases.length" :total="bases.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
+  <el-alert v-if="basesError" :title="basesError" type="error" :closable="false" show-icon style="margin-bottom: 12px"><el-button link @click="loadBases()">重试</el-button></el-alert>
+  <div class="kb-layout" v-loading="basesLoading && !bases.length">
     <!-- 左：知识库列表 -->
     <div class="kb-list">
       <div class="kb-list-head">
         <span class="muted">知识库</span>
         <el-button v-if="s.can('kb:write')" type="primary" link @click="openCreateKb">+ 建知识库</el-button>
       </div>
-      <el-empty v-if="!bases.length" description="还没有知识库" :image-size="60">
-        <el-button v-if="s.can('kb:write')" type="primary" @click="openCreateKb">建第一个</el-button>
+      <el-empty v-if="!basesLoading && !basesError && !locatedBases.length" :description="listQuery || listFocus ? '没有匹配的知识库' : '还没有知识库'" :image-size="60">
+        <el-button v-if="!listQuery && !listFocus && s.can('kb:write')" type="primary" @click="openCreateKb">建第一个</el-button>
       </el-empty>
-      <div v-for="b in bases" :key="b.kb_id" class="kb-item" :class="{ active: cur?.kb_id === b.kb_id }" @click="selectKb(b)">
+      <div v-for="b in locatedBases" :key="b.kb_id" class="kb-item" :class="{ active: cur?.kb_id === b.kb_id }" @click="selectKb(b)">
         <div class="kb-name">{{ b.name }}</div>
         <div class="kb-meta"><code>{{ b.kb_id }}</code> · {{ b.doc_count }} 文档 / {{ b.chunk_count }} 块</div>
       </div>
@@ -17,9 +19,9 @@
 
     <!-- 右：工作台 -->
     <div class="kb-main">
-      <el-empty v-if="!cur" description="选择左侧的知识库开始维护" />
-      <template v-else>
-        <el-card shadow="never" class="block">
+      <el-empty v-if="!cur && !basesLoading" :description="basesError ? '知识库列表读取失败，请重试' : requestedKb ? `未找到知识库「${requestedKb}」，它可能已删除、当前不可见或不符合筛选条件` : '选择左侧的知识库开始维护'" />
+      <template v-else-if="cur">
+        <el-card shadow="never" class="block" v-loading="docsLoading">
           <template #header>
             <div class="card-head">
               <span><b>{{ cur.name }}</b><span class="muted" style="margin-left:10px">{{ cur.credential }} · {{ cur.model }}（{{ cur.dim }}维）</span></span>
@@ -34,10 +36,11 @@
             </div>
           </template>
 
-          <el-empty v-if="!docs.length" description="还没有文档">
+          <el-alert v-if="docsError" :title="docsError" type="error" :closable="false" show-icon><el-button link @click="loadDocs">重试</el-button></el-alert>
+          <el-empty v-else-if="!docsLoading && !docs.length" description="还没有文档">
             <el-button v-if="s.can('kb:write')" type="primary" @click="docOpen = true">添加第一篇</el-button>
           </el-empty>
-          <el-table v-else :data="docs">
+          <el-table v-else-if="docs.length" :data="docs">
             <el-table-column label="文档" min-width="260" show-overflow-tooltip>
               <template #default="{ row }">
                 <div class="doc-main">
@@ -80,15 +83,16 @@
           </el-table>
         </el-card>
 
-        <el-card shadow="never" class="block">
+        <el-card shadow="never" class="block" v-loading="dsLoading">
           <template #header>
             <div class="card-head">
               <span><b>数据源</b> <HelpTip title="数据源是什么"><p>中枢<b>定时拉业务库</b>，自动同步成文档。</p></HelpTip></span>
               <el-button v-if="s.can('kb:write')" type="primary" plain @click="openDsForm()">+ 添加数据源</el-button>
             </div>
           </template>
-          <el-empty v-if="!dsList.length" description="暂无数据源——业务库内容也可由业务系统主动推送（见开发文档）" :image-size="50" />
-          <el-table v-else :data="dsList">
+          <el-alert v-if="dsError" :title="dsError" type="error" :closable="false" show-icon><el-button link @click="loadDs">重试</el-button></el-alert>
+          <el-empty v-else-if="!dsLoading && !dsList.length" description="暂无数据源——业务库内容也可由业务系统主动推送（见开发文档）" :image-size="50" />
+          <el-table v-else-if="dsList.length" :data="dsList">
             <el-table-column label="数据源" min-width="260" show-overflow-tooltip>
               <template #default="{ row }">
                 <div class="doc-main">
@@ -175,7 +179,6 @@
       <el-form-item>
         <template #label>向量模型凭证 <span class="field-required">*</span> <HelpTip title="向量模型凭证">
           <p>用于把文档切块转换成向量。建库时会锁定模型坐标系，后续换模型需要重建库。</p>
-          <p>建库时锁定 embedding 模型与坐标系，后续更换模型需要重建知识库。</p>
         </HelpTip></template>
         <el-select v-model="createForm.credential" filterable allow-create default-first-option placeholder="如 embedding-main" style="width: 100%">
           <el-option v-for="c in credOptions" :key="c" :label="c" :value="c" />
@@ -210,14 +213,14 @@
       <el-form-item label="标题"><el-input v-model="docForm.title" placeholder="如 账号权限说明" /></el-form-item>
       <el-form-item>
         <template #label>内容 <HelpTip title="支持哪些来源">
-          <p><b>粘贴文本 / .txt / .md</b>：直接读入，支持 markdown。</p>
+          <p><b>粘贴文本 / .txt / .md</b>：直接读入，支持 markdown。一篇文档保持一个主题，检索效果更好。</p>
           <p><b>.docx（Word）</b>：选择后在浏览器本地转成 markdown 再入库——标题/列表/表格保留；Word 内嵌图片不入库（替换为占位符），需要图片请改用图片链接。</p>
           <p><b>图片</b>：markdown 图片链接（<code>![说明](https://…)</code>）原样保留——检索命中后 AI 可在回答里带出截图，聊天组件会渲染成图。</p>
           <p><b>业务数据库内容</b>（产品文档、操作流程等）不要手工搬：用入库 API 让业务系统自动推送并保持同步，见官网「开发文档」。</p>
         </HelpTip></template>
         <input type="file" accept=".txt,.md,.markdown,.docx" class="file" @change="readFile" />
         <div v-if="converting" class="muted hint">Word 文档转换中…</div>
-        <el-input v-model="docForm.content" type="textarea" :rows="14" placeholder="一篇文档一个主题，检索效果最好；支持 markdown" />
+        <el-input v-model="docForm.content" type="textarea" :rows="14" placeholder="输入或粘贴文档内容" />
       </el-form-item>
     </el-form>
     <template #footer>
@@ -229,8 +232,9 @@
   <!-- 库设置（名称/说明/可写接入方；kb_id 与模型建库锁定） -->
   <el-drawer v-model="settingsOpen" title="库设置" size="460px">
     <el-form label-position="top">
-      <el-form-item label="建库锁定项">
-        <div class="muted">kb_id <code>{{ cur?.kb_id }}</code> · {{ cur?.credential }} / {{ cur?.model }}（{{ cur?.dim }}维）<br />embedding 模型决定向量坐标系，换模型需重建库</div>
+      <el-form-item>
+        <template #label>建库锁定项 <HelpTip title="建库锁定项"><p>知识库 ID 与模型坐标系在建库时锁定。embedding 模型决定向量坐标系，更换模型需要重建知识库。</p></HelpTip></template>
+        <div class="muted">kb_id <code>{{ cur?.kb_id }}</code> · {{ cur?.credential }} / {{ cur?.model }}（{{ cur?.dim }}维）</div>
       </el-form-item>
       <el-form-item label="名称"><el-input v-model="settingsForm.name" /></el-form-item>
       <el-form-item label="说明"><el-input v-model="settingsForm.description" /></el-form-item>
@@ -329,13 +333,17 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { useMe } from '../store';
 import { api } from '../request';
 import { openDoc } from '../docs';
 import { fmtTime } from '../util';
 import HelpTip from '../components/HelpTip.vue';
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
+import { patchTaskQuery, queryText } from '../task-page-location';
 
 interface KbBase { kb_id: string; name: string; credential: string; model: string; dim: number; enabled: boolean; description?: string; writers?: string[]; doc_count: number; chunk_count: number }
 interface KbDoc { doc_id: number; source_key?: string; title: string; status: string; error?: string; chunk_count: number; created_at: string }
@@ -343,6 +351,13 @@ interface Hit { score: number; content: string; title: string; seq: number }
 
 const s = useMe();
 const bases = ref<KbBase[]>([]);
+const route = useRoute(), router = useRouter();
+const { keyword: listQuery, focus: listFocus, rows: locatedBases, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(bases, { id: b => b.kb_id, text: b => `${b.kb_id} ${b.name}` });
+const requestedKb = computed(() => listFocus.value || queryText(route.query.kb));
+const basesLoading = ref(true), basesError = ref('');
+const docsLoading = ref(false), docsError = ref('');
+const dsLoading = ref(false), dsError = ref('');
+let basesGeneration = 0, docsGeneration = 0, dsGeneration = 0, hitGeneration = 0;
 const cur = ref<KbBase | null>(null);
 const docs = ref<KbDoc[]>([]);
 const credOptions = ref<string[]>([]);
@@ -428,22 +443,62 @@ function openCreateKb(): void {
 }
 
 async function loadBases(keepCur = true): Promise<void> {
-  bases.value = await api<KbBase[]>('/admin/api/kb');
-  if (keepCur && cur.value) cur.value = bases.value.find((b) => b.kb_id === cur.value!.kb_id) ?? null;
-  if (!cur.value && bases.value.length) await selectKb(bases.value[0]!);
+  const generation = ++basesGeneration;
+  basesLoading.value = true; basesError.value = '';
+  try {
+    const result = await api<KbBase[]>('/admin/api/kb');
+    if (generation !== basesGeneration) return;
+    if (!Array.isArray(result)) throw new Error('知识库列表返回格式异常');
+    bases.value = result;
+    await applyKbLocation(keepCur);
+  } catch (e) {
+    if (generation === basesGeneration) basesError.value = (e as Error).message || '知识库列表读取失败';
+  } finally {
+    if (generation === basesGeneration) basesLoading.value = false;
+  }
+}
+
+async function applyKbLocation(keepCur = true): Promise<void> {
+  if (route.path !== '/kb') return;
+  const next = requestedKb.value
+    ? locatedBases.value.find(b => b.kb_id === requestedKb.value) ?? null
+    : (keepCur ? locatedBases.value.find(b => b.kb_id === cur.value?.kb_id) : undefined) ?? locatedBases.value[0] ?? null;
+  if (cur.value?.kb_id === next?.kb_id) { cur.value = next; return; }
+  cur.value = next;
+  ++docsGeneration; ++dsGeneration; ++hitGeneration;
+  if (pollTimer) clearTimeout(pollTimer);
+  if (dsPollTimer) clearTimeout(dsPollTimer);
+  docs.value = []; dsList.value = []; hits.value = null; hitQuery.value = '';
+  docsError.value = ''; dsError.value = '';
+  docsLoading.value = false; dsLoading.value = false; hitLoading.value = false;
+  if (next) await Promise.all([loadDocs(), loadDs()]);
 }
 
 async function selectKb(b: KbBase): Promise<void> {
-  cur.value = b; hits.value = null; hitQuery.value = '';
-  await Promise.all([loadDocs(), loadDs()]);
+  await router.push({ query: patchTaskQuery(route.query, { kb: b.kb_id }), hash: route.hash });
+  await applyKbLocation();
 }
 
 async function loadDocs(): Promise<void> {
-  if (!cur.value) return;
-  docs.value = await api<KbDoc[]>(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/docs`);
+  const kbId = cur.value?.kb_id;
+  if (!kbId) return;
+  const generation = ++docsGeneration;
   if (pollTimer) clearTimeout(pollTimer);
-  // 向量化是后台任务：有进行中的就轮询到就绪
-  if (docs.value.some((d) => d.status === 'embedding')) pollTimer = setTimeout(() => void loadDocs(), 2000);
+  docsLoading.value = true; docsError.value = '';
+  try {
+    const result = await api<KbDoc[]>(`/admin/api/kb/${encodeURIComponent(kbId)}/docs`);
+    if (generation !== docsGeneration || cur.value?.kb_id !== kbId) return;
+    if (!Array.isArray(result)) throw new Error('文档列表返回格式异常');
+    docs.value = result;
+    // 只为当前库的最新请求安排轮询，旧库结果不能覆盖新库。
+    if (result.some(d => d.status === 'embedding')) pollTimer = setTimeout(() => {
+      if (generation === docsGeneration && cur.value?.kb_id === kbId) void loadDocs();
+    }, 2000);
+  } catch (e) {
+    if (generation === docsGeneration && cur.value?.kb_id === kbId) docsError.value = (e as Error).message || '文档读取失败';
+  } finally {
+    if (generation === docsGeneration && cur.value?.kb_id === kbId) docsLoading.value = false;
+  }
 }
 
 async function createKb(): Promise<void> {
@@ -543,12 +598,24 @@ async function delDoc(docId: number): Promise<void> {
 }
 
 async function loadDs(): Promise<void> {
-  if (!cur.value) return;
-  try { dsList.value = await api<KbDs[]>(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/datasources`); } catch { dsList.value = []; }
+  const kbId = cur.value?.kb_id;
+  if (!kbId) return;
+  const generation = ++dsGeneration;
   if (dsPollTimer) clearTimeout(dsPollTimer);
-  // 有同步在跑就轮询到结束，顺带刷新文档列表（同步会增删文档）
-  if (dsList.value.some((d) => d.last_status === 'running')) {
-    dsPollTimer = setTimeout(() => { void loadDs(); void loadDocs(); void loadBases(); }, 3000);
+  dsLoading.value = true; dsError.value = '';
+  try {
+    const result = await api<KbDs[]>(`/admin/api/kb/${encodeURIComponent(kbId)}/datasources`);
+    if (generation !== dsGeneration || cur.value?.kb_id !== kbId) return;
+    if (!Array.isArray(result)) throw new Error('数据源列表返回格式异常');
+    dsList.value = result;
+    // 同步结束后刷新当前库；切库会取消旧轮询并使旧响应失效。
+    if (result.some(d => d.last_status === 'running')) dsPollTimer = setTimeout(() => {
+      if (generation === dsGeneration && cur.value?.kb_id === kbId) { void loadDs(); void loadDocs(); void loadBases(); }
+    }, 3000);
+  } catch (e) {
+    if (generation === dsGeneration && cur.value?.kb_id === kbId) dsError.value = (e as Error).message || '数据源读取失败';
+  } finally {
+    if (generation === dsGeneration && cur.value?.kb_id === kbId) dsLoading.value = false;
   }
 }
 
@@ -596,13 +663,18 @@ async function dsSave(): Promise<void> {
 }
 
 async function dsSyncNow(row: KbDs): Promise<void> {
-  if (!cur.value) return;
+  const kbId = cur.value?.kb_id;
+  if (!kbId) return;
   try {
-    await api(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/datasources/${row.ds_id}/sync`, { method: 'POST', body: '{}' });
+    await api(`/admin/api/kb/${encodeURIComponent(kbId)}/datasources/${row.ds_id}/sync`, { method: 'POST', body: '{}' });
     ElMessage.success('同步已启动，首轮全量会逐篇向量化');
+    if (cur.value?.kb_id !== kbId) return;
     row.last_status = 'running';
     if (dsPollTimer) clearTimeout(dsPollTimer);
-    dsPollTimer = setTimeout(() => { void loadDs(); void loadDocs(); void loadBases(); }, 3000);
+    const generation = dsGeneration;
+    dsPollTimer = setTimeout(() => {
+      if (generation === dsGeneration && cur.value?.kb_id === kbId) { void loadDs(); void loadDocs(); void loadBases(); }
+    }, 3000);
   } catch (e) { ElMessage.error((e as Error).message); }
 }
 
@@ -616,16 +688,23 @@ async function dsDel(row: KbDs): Promise<void> {
 }
 
 async function hitTest(): Promise<void> {
-  if (!cur.value || !hitQuery.value.trim()) return;
+  const kbId = cur.value?.kb_id;
+  if (!kbId || !hitQuery.value.trim()) return;
+  const generation = ++hitGeneration;
   hitLoading.value = true;
   try {
-    const r = await api<{ hits: Hit[] }>(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/hittest`, {
+    const r = await api<{ hits: Hit[] }>(`/admin/api/kb/${encodeURIComponent(kbId)}/hittest`, {
       method: 'POST', body: JSON.stringify({ query: hitQuery.value }),
     });
-    hits.value = r.hits;
-  } catch (e) { ElMessage.error((e as Error).message); }
-  finally { hitLoading.value = false; }
+    if (generation === hitGeneration && cur.value?.kb_id === kbId) hits.value = r.hits;
+  } catch (e) {
+    if (generation === hitGeneration && cur.value?.kb_id === kbId) ElMessage.error((e as Error).message);
+  } finally {
+    if (generation === hitGeneration && cur.value?.kb_id === kbId) hitLoading.value = false;
+  }
 }
+
+watch([() => route.query.kb, listFocus, listQuery], () => { void applyKbLocation(); });
 
 onMounted(async () => {
   await loadBases();
@@ -639,7 +718,7 @@ onMounted(async () => {
     try { clientOptions.value = await api<Array<{ app_id: string; name: string }>>('/admin/api/clients'); } catch { /* 可选 */ }
   }
 });
-onUnmounted(() => { if (pollTimer) clearTimeout(pollTimer); if (dsPollTimer) clearTimeout(dsPollTimer); });
+onUnmounted(() => { ++basesGeneration; ++docsGeneration; ++dsGeneration; ++hitGeneration; if (pollTimer) clearTimeout(pollTimer); if (dsPollTimer) clearTimeout(dsPollTimer); });
 </script>
 
 <style scoped>

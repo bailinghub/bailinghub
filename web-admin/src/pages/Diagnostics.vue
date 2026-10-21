@@ -41,7 +41,7 @@
             <b>Smoke 结果</b>
             <span class="muted mono">{{ smoke.hub }}</span>
             <el-tag size="small" effect="plain" :type="smoke.fail ? 'danger' : 'success'">通过 {{ smoke.pass }} / 跳过 {{ smoke.skip }} / 失败 {{ smoke.fail }}</el-tag>
-            <el-button v-if="smoke.run?.job_id" link type="primary" size="small" @click="router.push({ path: '/runs', query: { job: smoke.run.job_id } })">查看 smoke 任务</el-button>
+            <el-button v-if="smoke.run?.job_id" link type="primary" size="small" @click="router.push(smokeDestination(smoke.run.job_id))">查看 smoke 任务</el-button>
           </div>
           <el-table :data="smoke.checks" size="small">
             <el-table-column label="状态" width="80" align="center">
@@ -72,7 +72,7 @@
               </el-table-column>
               <el-table-column prop="message" label="问题" min-width="360" show-overflow-tooltip />
               <el-table-column label="定位" width="90" align="right">
-                <template #default="{ row }"><el-button link type="primary" @click="goto(row)">打开</el-button></template>
+                <template #default="{ row }"><el-button v-if="destination(row)" link type="primary" @click="goto(row)">打开</el-button><span v-else class="muted">—</span></template>
               </el-table-column>
             </el-table>
           </section>
@@ -168,12 +168,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import { fmtTime } from '../util';
 import HelpTip from '../components/HelpTip.vue';
+import { diagnosticDestination } from '../console-location';
+import { patchTaskQuery, queryText } from '../task-page-location';
 
 interface ConfigDiagnostic { severity: 'error' | 'warning'; area: string; id: string; message: string }
 interface ConfigDiagnosticsReport { ok: boolean; errors: number; warnings: number; diagnostics: ConfigDiagnostic[] }
@@ -190,7 +192,10 @@ interface SmokeReport {
 }
 
 const router = useRouter();
-const tab = ref<'diagnostics' | 'auto'>('diagnostics');
+const route = useRoute();
+function readTab(value: unknown): 'diagnostics' | 'auto' { return value === 'auto' ? 'auto' : 'diagnostics'; }
+function readSeverity(value: unknown): 'all' | 'error' | 'warning' { return value === 'error' || value === 'warning' ? value : 'all'; }
+const tab = ref(readTab(route.query.tab));
 const loading = ref(false);
 const diag = ref<ConfigDiagnosticsReport | null>(null);
 const loadedAt = ref('');
@@ -200,8 +205,27 @@ const clients = ref<ClientRow[]>([]);
 const smoke = ref<SmokeReport | null>(null);
 const smokeLoading = ref(false);
 const smokeError = ref('');
-const severity = ref<'all' | 'error' | 'warning'>('all');
-const keyword = ref('');
+const severity = ref(readSeverity(route.query.severity));
+const keyword = ref(queryText(route.query.q));
+let applyingLocation = false;
+watch(() => route.query, (query) => {
+  if (route.path !== '/diagnostics') return;
+  applyingLocation = true;
+  tab.value = readTab(query.tab);
+  severity.value = readSeverity(query.severity);
+  keyword.value = queryText(query.q);
+  applyingLocation = false;
+}, { flush: 'sync' });
+watch([tab, severity, keyword], () => {
+  if (applyingLocation || route.path !== '/diagnostics') return;
+  const query = patchTaskQuery(route.query, {
+    tab: tab.value === 'diagnostics' ? undefined : tab.value,
+    severity: severity.value === 'all' ? undefined : severity.value,
+    q: keyword.value || undefined,
+  });
+  const location = { path: route.path, query, hash: route.hash };
+  if (router.resolve(location).fullPath !== route.fullPath) void router.replace(location);
+}, { flush: 'sync', immediate: true });
 const severityOptions = [
   { label: '全部', value: 'all' },
   { label: '错误', value: 'error' },
@@ -241,7 +265,7 @@ const grouped = computed(() => {
 const checkCards = computed(() => {
   const diags = diag.value?.diagnostics ?? [];
   const runtimeIssues = diags.filter((d) => d.area.startsWith('runtime_'));
-  const configErrors = diags.filter((d) => d.severity === 'error' && !d.area.startsWith('runtime_')).length;
+  const configErrors = diags.filter((d) => d.severity === 'error' && !d.area.startsWith('runtime_'));
   const autoIssues = diags.filter((d) => d.area === 'route_auto');
   const dlqIssues = diags.filter((d) => d.area === 'runtime_delivery');
   const smokeRun = smoke.value?.checks.find((c) => c.name.includes('/run + trace') || c.name.includes('/run 建单'));
@@ -250,46 +274,46 @@ const checkCards = computed(() => {
     {
       key: 'config',
       title: '配置结构',
-      status: !diag.value ? 'idle' : configErrors ? 'fail' : 'pass',
-      detail: !diag.value ? '等待体检数据' : configErrors ? `${configErrors} 个配置错误需要先修复` : '路由、目标、接入方、工具源等结构可用',
-      to: configErrors ? '/routes' : '',
+      status: !diag.value ? 'idle' : configErrors.length ? 'fail' : 'pass',
+      detail: !diag.value ? '等待体检数据' : configErrors.length ? `${configErrors.length} 个配置错误需要先修复` : '路由、目标、接入方、工具源等结构可用',
+      to: firstDestination(configErrors),
     },
     {
       key: 'runtime',
       title: '运行期调度',
       status: runtimeIssues.some((d) => d.severity === 'error') ? 'fail' : runtimeIssues.length ? 'warn' : diag.value ? 'pass' : 'idle',
       detail: !diag.value ? '等待体检数据' : runtimeIssues.length ? `${runtimeIssues.length} 个队列、执行器或送达运行期风险` : '队列、租约、执行器覆盖和送达队列未发现异常',
-      to: runtimeIssues.length ? '/executors' : '',
+      to: firstDestination(runtimeIssues),
     },
     {
       key: 'auto',
       title: 'route=auto',
       status: autoIssues.some((d) => d.severity === 'error') ? 'fail' : autoIssues.length ? 'warn' : diag.value ? 'pass' : 'idle',
       detail: !diag.value ? '等待体检数据' : autoIssues.length ? `${autoIssues.length} 个自动分诊规则需要确认` : '自动分诊规则未发现冲突或过宽风险',
-      to: autoIssues.length ? '/routes' : '',
+      to: firstDestination(autoIssues),
     },
     {
       key: 'delivery',
       title: '送达死信',
       status: dlqIssues.some((d) => d.severity === 'error') ? 'fail' : dlqIssues.length ? 'warn' : diag.value ? 'pass' : 'idle',
       detail: !diag.value ? '等待体检数据' : dlqIssues.length ? '存在未处理送达死信或送达风险' : '未发现未处理送达死信',
-      to: dlqIssues.length ? '/runs' : '',
+      to: firstDestination(dlqIssues),
     },
     {
       key: 'smoke',
       title: 'E2E Smoke',
       status: smokeLoading.value ? 'running' : smokeError.value ? 'error' : !smoke.value ? 'idle' : smokeFailures ? 'fail' : 'pass',
       detail: smokeLoading.value ? '正在运行本次 smoke' : smokeError.value ? '未取得本次 Smoke 结果，请查看上方错误' : !smoke.value ? '点击运行 smoke，检查公网入口、后台 API、schema 和 demo 闭环' : `通过 ${smoke.value.pass}，跳过 ${smoke.value.skip}，失败 ${smoke.value.fail}`,
-      to: smoke.value?.run?.job_id ? `/runs?job=${smoke.value.run.job_id}` : '',
+      to: smoke.value?.run?.job_id ? smokeDestination(smoke.value.run.job_id) : undefined,
     },
     {
       key: 'demo',
       title: 'Demo 闭环',
       status: smokeLoading.value ? 'running' : smokeError.value ? 'error' : !smoke.value || !smokeRun ? 'idle' : smokeRun.status === 'pass' ? 'pass' : smokeRun.status === 'skip' ? 'skip' : 'fail',
       detail: smokeLoading.value ? '等待本次 Smoke 检查结果' : smokeError.value ? '未取得本次 Demo 闭环结果' : !smoke.value ? '未运行 smoke' : smoke.value.run?.job_id ? `已创建任务 ${smoke.value.run.job_id}` : '当前环境未检测到 demo route 或 demo token',
-      to: smoke.value?.run?.job_id ? `/runs?job=${smoke.value.run.job_id}` : '',
+      to: smoke.value?.run?.job_id ? smokeDestination(smoke.value.run.job_id) : undefined,
     },
-  ] as Array<{ key: string; title: string; status: CheckStatus; detail: string; to: string }>;
+  ] as Array<{ key: string; title: string; status: CheckStatus; detail: string; to?: RouteLocationRaw }>;
 });
 
 function areaLabel(area: string): string {
@@ -300,6 +324,7 @@ function areaLabel(area: string): string {
     target: '调度目标',
     project: '项目目录',
     client: '接入方',
+    credential: '模型凭证',
     channel: '入站渠道',
     alert_rule: '告警规则',
     tool_provider: '工具源',
@@ -315,23 +340,19 @@ function areaLabel(area: string): string {
   };
   return labels[area] ?? area;
 }
-function pageFor(area: string): string {
-  if (area === 'route' || area === 'route_audience' || area === 'route_auto') return '/routes';
-  if (area === 'client') return '/clients';
-  if (area === 'channel') return '/channels';
-  if (area === 'tool_provider') return '/tools';
-  if (area === 'storage_bucket') return '/storage';
-  if (area === 'chat_entry') return '/chat';
-  if (area === 'executor_token') return '/executors';
-  if (area === 'target') return '/targets';
-  if (area === 'project') return '/projects';
-  if (area === 'kb_base') return '/kb';
-  if (area === 'runtime_dispatch' || area === 'runtime_executor' || area === 'runtime_jobs') return '/executors';
-  if (area === 'runtime_delivery') return '/runs';
-  return '/system';
+function destination(row: ConfigDiagnostic): RouteLocationRaw | undefined {
+  return diagnosticDestination(row, route.fullPath);
+}
+function firstDestination(rows: ConfigDiagnostic[]): RouteLocationRaw | undefined {
+  const first = rows.find((row) => row.severity === 'error') ?? rows[0];
+  return first ? destination(first) : undefined;
+}
+function smokeDestination(jobId: string): RouteLocationRaw {
+  return { path: '/runs', query: { tab: 'trace', job: jobId, return_to: route.fullPath } };
 }
 function goto(row: ConfigDiagnostic): void {
-  void router.push({ path: pageFor(row.area), query: { q: row.id } });
+  const to = destination(row);
+  if (to) void router.push(to);
 }
 function parseMetadata(): Record<string, unknown> {
   const raw = preview.metadataText.trim();

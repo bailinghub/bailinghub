@@ -10,10 +10,11 @@
       <template #title>“匿名预览”不会继承中枢后台登录状态，也不会自动携带业务身份票据。</template>
       <p>所有标记为“需主体（subject.required）”的工具，包括只读查询和写操作，都不会向 Agent 暴露。业务身份应由已登录的业务系统后端签发；内置演示链路请在“上手向导”手动运行 Smoke。</p>
     </el-alert>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
     <el-empty v-if="!list.length" description="还没有聊天入口：绑一条触发路由即可生成可嵌入的网页聊天组件">
       <el-button type="primary" @click="openCreate">新建第一个</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="入口" min-width="230" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="entry-main">
@@ -138,8 +139,14 @@
       <el-form-item label="按 IP 限速"><el-input-number v-model="form.rate_limit_per_min" :min="1" :max="600" /><span class="muted" style="margin-left: 8px">次/分钟</span></el-form-item>
         </el-tab-pane>
         <el-tab-pane label="外观" name="appearance">
-      <el-form-item label="组件标题"><el-input v-model="form.title" placeholder="留空用名称" /></el-form-item>
-      <el-form-item label="开场白（组件首条气泡）"><el-input v-model="form.greeting" placeholder="你好，有什么可以帮你？" /></el-form-item>
+      <el-form-item>
+        <template #label>组件标题 <HelpTip title="组件标题"><p>显示在聊天窗口顶部，留空时使用聊天入口名称。</p></HelpTip></template>
+        <el-input v-model="form.title" placeholder="可选" />
+      </el-form-item>
+      <el-form-item>
+        <template #label>开场白 <HelpTip title="开场白"><p>聊天组件显示的首条气泡，例如「你好，有什么可以帮你？」。</p></HelpTip></template>
+        <el-input v-model="form.greeting" placeholder="输入开场白" />
+      </el-form-item>
       <el-form-item label="主色">
         <el-color-picker v-model="form.color" :predefine="['#3fb950', '#3a6ea5', '#3a7a55', '#8a4f7d']" />
       </el-form-item>
@@ -150,11 +157,13 @@
           <el-radio-button value="left">居左</el-radio-button>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="展开窗口尺寸（px）">
+      <el-form-item>
+        <template #label>展开窗口尺寸（px） <HelpTip title="展开窗口尺寸">
+          <p>设置桌面端聊天窗口的宽度和高度。手机端自动接近全屏，不受此值限制。</p>
+        </HelpTip></template>
         <div class="row">
           <span class="muted">宽</span><el-input-number v-model="form.width" :min="280" :max="720" :step="10" controls-position="right" style="width: 128px" />
           <span class="muted">高</span><el-input-number v-model="form.height" :min="360" :max="900" :step="10" controls-position="right" style="width: 128px" />
-          <span class="muted">手机端自动接近全屏，不受此值限制</span>
         </div>
       </el-form-item>
       <el-form-item>
@@ -354,11 +363,11 @@
 
   <!-- 页面登记：URL 模式 → 页面说明，中枢匹配后注入 AI 并落任务详情 -->
   <el-drawer v-model="pageCtxOpen" :title="'页面登记 · ' + pageCtxRow?.name" size="640px">
-    <el-alert type="info" :closable="false" style="margin-bottom: 14px"
-      title="组件每条消息自动上报当前页 URL（path+hash，去 query）。这里声明「URL 模式 → 页面说明」，中枢匹配后把页面背景注入 AI、并落到任务详情，便于精准定位用户从哪个页面发起。只需声明你在意的页面，未命中的自动按原始路径兜底；几百上千路由也无需逐个写代码。" />
     <el-form label-position="top">
       <el-form-item>
-        <template #label>URL 模式 <HelpTip title="URL 模式">
+        <template #label>URL 模式 <HelpTip title="页面登记与 URL 模式">
+          <p>组件每条消息自动上报当前页 URL（<code>path+hash</code>，去掉 query）。声明「URL 模式 → 页面说明」后，中枢会把匹配的页面背景注入 AI，并记录到任务详情。</p>
+          <p>只需登记需要补充背景的页面，未命中时按原始路径兜底；不需要为每条前端路由逐个编写代码。</p>
           <p><code>*</code> 为通配，匹配组件抓到的 <code>path+hash</code>（子串命中即可）。如 <code>*/users/list*</code>、<code>/admin/settings</code>、<code>#/records/*/detail</code>。</p>
           <p>多条命中时取优先级高者；同级取模式更长（更具体）者。</p>
         </HelpTip></template>
@@ -372,11 +381,15 @@
           <el-input v-model="pageForm.page_name" placeholder="如 用户列表" />
         </el-form-item>
       </div>
-      <el-form-item label="页面说明（注入给 AI：这页承载什么功能）">
-        <el-input v-model="pageForm.description" type="textarea" :rows="3" placeholder="如：承载用户检索、标记、导出；权限配置在「设置」页维护" />
+      <el-form-item>
+        <template #label>页面说明 <HelpTip title="页面说明"><p>向 AI 说明当前页面承载的功能，例如：用户检索、标记、导出；权限配置在「设置」页维护。</p></HelpTip></template>
+        <el-input v-model="pageForm.description" type="textarea" :rows="3" placeholder="描述当前页面的功能" />
       </el-form-item>
       <div class="row2">
-        <el-form-item label="优先级（高者先匹配）"><el-input-number v-model="pageForm.priority" :min="0" :max="100" /></el-form-item>
+        <el-form-item>
+          <template #label>优先级 <HelpTip title="页面匹配优先级"><p>多条规则命中时取数值高者；同级取 URL 模式更长、更具体者。</p></HelpTip></template>
+          <el-input-number v-model="pageForm.priority" :min="0" :max="100" />
+        </el-form-item>
         <el-form-item label="启用"><el-switch v-model="pageForm.enabled" /></el-form-item>
       </div>
       <el-button type="primary" :loading="pageSaving" @click="savePageRule">{{ pageForm.id ? '更新规则' : '新增规则' }}</el-button>
@@ -402,6 +415,8 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
@@ -411,6 +426,7 @@ import { kernelOrigin } from '../runtime-path';
 import HelpTip from '../components/HelpTip.vue';
 
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.entry_key), text: r => `${r.entry_key} ${r.name || ""} ${r.route_key || ""}` });
 const routes = ref<any[]>([]);
 const clients = ref<any[]>([]);
 const buckets = ref<any[]>([]);

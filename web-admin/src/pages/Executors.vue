@@ -1,6 +1,6 @@
 <template>
   <!-- 接入令牌：谁有资格挂执行器（claim/result 专用鉴权）-->
-  <el-card shadow="never" class="panel-card">
+  <el-card id="executor-tokens" shadow="never" class="panel-card">
     <template #header>
       <div class="head">
         <b>执行器接入令牌</b> <HelpTip title="执行器接入令牌是什么">
@@ -10,7 +10,8 @@
         <el-button type="primary" style="margin-left: auto" @click="openCreate">签发令牌</el-button>
       </div>
     </template>
-    <el-table :data="tokens" v-loading="tkLoading">
+    <ListLocationBar v-model="tokenQuery" :count="locatedTokens.length" :total="tokens.length" :focus="tokenFocus" :return-to="listReturnTo" placeholder="搜索令牌名称 / 授权目标" @clear="clearTokenLocation" />
+    <el-table :data="locatedTokens" v-loading="tkLoading">
       <el-table-column label="令牌" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="exec-main">
@@ -47,12 +48,12 @@
           </el-popconfirm>
         </template>
       </el-table-column>
-      <template #empty><div class="muted" style="padding: 14px">还没有执行器令牌。点「签发令牌」建一个；把完整令牌交给受信智能体，或填入 <code>executor.mjs</code> 的 <code>--token</code>。</div></template>
+      <template #empty><div v-if="tokenQuery || tokenFocus" class="muted" style="padding: 14px">没有匹配的令牌，请调整或清除筛选。</div><div v-else class="muted" style="padding: 14px">还没有执行器令牌。点「签发令牌」建一个；把完整令牌交给受信智能体，或填入 <code>executor.mjs</code> 的 <code>--token</code>。</div></template>
     </el-table>
   </el-card>
 
   <!-- 调度租约：DB claim/lease 的运行时事实 -->
-  <el-card shadow="never" class="panel-card">
+  <el-card id="dispatch" shadow="never" class="panel-card" style="scroll-margin-top: 20px">
     <template #header>
       <div class="head">
         <b>调度租约</b> <HelpTip title="调度租约是什么">
@@ -117,7 +118,7 @@
   </el-card>
 
   <!-- 在线执行器：当前连上来的 worker 实例 -->
-  <el-card shadow="never" class="panel-card last">
+  <el-card id="executor-instances" shadow="never" class="panel-card last" style="scroll-margin-top: 20px">
     <template #header>
       <div class="head">
         <b>在线执行器</b> <HelpTip title="在线执行器 / 池模型">
@@ -128,7 +129,14 @@
         <el-button style="margin-left: auto" :loading="loading" @click="load">刷新</el-button>
       </div>
     </template>
-    <el-table :data="list" v-loading="loading">
+    <ListLocationBar v-model="instanceQuery" :count="filteredInstances.length" :total="list.length" :focus="instanceFocus" :return-to="listReturnTo" placeholder="搜索执行器 / 目标" @clear="clearInstanceLocation" />
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <el-select v-model="executorState" clearable placeholder="全部在线状态" aria-label="执行器在线状态" style="width:180px"><el-option value="online" label="在线" /><el-option value="offline" label="离线" /></el-select>
+      <el-select v-model="targetFilter" clearable filterable placeholder="全部调度目标" aria-label="执行器调度目标" style="width:220px"><el-option v-for="target in targetOptions" :key="target" :value="target" :label="target" /></el-select>
+      <el-button v-if="executorState || targetFilter" link @click="clearExecutorFilters">清除全部筛选</el-button>
+    </div>
+    <el-alert v-if="loadError" type="error" title="执行器读取失败" :description="loadError" :closable="false" show-icon style="margin-bottom: 14px" />
+    <el-table :data="filteredInstances" empty-text="没有匹配的执行器" v-loading="loading">
       <el-table-column label="执行器" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="exec-main">
@@ -182,7 +190,10 @@
         </template>
       </el-table-column>
       <template #empty>
-        <div class="muted" style="padding: 16px">还没有执行器在线。请先注册 executor 类型调度目标并让路由选择它，再在上方签发对应令牌；最后到「触发路由 → 调用代码 → 执行器接入」复制完整说明发给智能体。</div>
+        <div v-if="loading" class="muted" style="padding: 16px">正在读取执行器…</div>
+        <div v-else-if="loadError" class="muted" style="padding: 16px">执行器列表读取失败，请点击「刷新」重试。</div>
+        <div v-else-if="instanceQuery || instanceFocus || executorState || targetFilter" class="muted" style="padding: 16px">没有匹配的执行器，请调整或清除筛选。</div>
+        <div v-else class="muted" style="padding: 16px">还没有执行器在线。请先注册 executor 类型调度目标并让路由选择它，再在上方签发对应令牌；最后到「触发路由 → 调用代码 → 执行器接入」复制完整说明发给智能体。</div>
       </template>
     </el-table>
   </el-card>
@@ -222,8 +233,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
+import { queryText, patchTaskQuery } from '../task-page-location';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import { copyText, fmtTime } from '../util';
@@ -243,6 +257,7 @@ interface DispatchStatus {
 }
 
 const router = useRouter();
+const route = useRoute();
 const tokenSchema = useConfigSchema('executor-token');
 const dispatch = ref<DispatchStatus | null>(null);
 const dispatchLoading = ref(false);
@@ -269,7 +284,7 @@ function lastSeenLabel(v?: string): string {
   return v ? `最近接入 ${fmtTime(v, true)}` : '从未接入';
 }
 function gotoJob(jobId: string): void {
-  void router.push({ path: '/runs', query: { job: jobId } });
+  void router.push({ path: '/runs', query: { tab: 'trace', job: jobId, return_to: route.fullPath } });
 }
 function tokenFieldTitle(field: string, fallback: string): string {
   return schemaTitle(tokenSchema.schema.value, field, fallback);
@@ -283,12 +298,27 @@ function tokenFieldRequired(field: string): boolean {
 
 // ---- 在线执行器 ----
 const list = ref<ExecutorRow[]>([]);
-const loading = ref(false);
+const executorState = computed({ get: () => ['online', 'offline'].includes(queryText(route.query.state)) ? queryText(route.query.state) : '', set: (state: string) => { void router.replace({ query: patchTaskQuery(route.query, { state }), hash: route.hash }); } });
+const targetFilter = computed({ get: () => queryText(route.query.target), set: (target: string) => { void router.replace({ query: patchTaskQuery(route.query, { target }), hash: route.hash }); } });
+const targetOptions = computed(() => [...new Set([...list.value.flatMap(r => r.targets || []), ...(targetFilter.value ? [targetFilter.value] : [])])]);
+const { keyword: instanceQuery, focus: instanceFocus, rows: locatedInstances, returnTo: listReturnTo, clear: clearInstanceLocation, scrollToSection } = useListLocation(list, { prefix: 'instance_', id: r => r.executor_id, text: r => `${r.executor_id} ${(r.targets || []).join(' ')}` });
+const filteredInstances = computed(() => locatedInstances.value.filter(r => (!executorState.value || r.online === (executorState.value === 'online')) && (!targetFilter.value || r.targets?.includes(targetFilter.value))));
+function clearExecutorFilters() { void router.replace({ query: patchTaskQuery(route.query, { instance_q: undefined, instance_focus: undefined, state: undefined, target: undefined }), hash: route.hash }); }
+const loading = ref(true);
+const loadError = ref('');
+let listRequest = 0;
 async function load(): Promise<void> {
+  const request = ++listRequest;
   loading.value = true;
-  try { list.value = await api('/admin/api/executors'); }
-  catch (e) { ElMessage.error((e as Error).message); }
-  finally { loading.value = false; }
+  loadError.value = '';
+  try {
+    const rows = await api<ExecutorRow[]>('/admin/api/executors');
+    if (request === listRequest) list.value = rows;
+  } catch (e) {
+    if (request === listRequest) loadError.value = (e as Error).message || '请稍后重试';
+  } finally {
+    if (request === listRequest) loading.value = false;
+  }
 }
 async function delExec(id: string): Promise<void> {
   try { await api('/admin/api/executors/' + encodeURIComponent(id), { method: 'DELETE' }); await load(); }
@@ -297,6 +327,7 @@ async function delExec(id: string): Promise<void> {
 
 // ---- 接入令牌 ----
 const tokens = ref<any[]>([]);
+const { keyword: tokenQuery, focus: tokenFocus, rows: locatedTokens, clear: clearTokenLocation } = useListLocation(tokens, { prefix: 'token_', id: r => String(r.name), text: r => `${r.name} ${r.description || ''} ${(r.allowed_targets || []).join(' ')}` });
 const tkLoading = ref(false);
 const execTargets = ref<string[]>([]);
 const open = ref(false);
@@ -345,7 +376,10 @@ async function delToken(name: string): Promise<void> {
   catch (e) { ElMessage.error((e as Error).message); }
 }
 
-onMounted(() => { void tokenSchema.load().catch(() => undefined); void load(); void loadTokens(); void loadDispatch(); });
+onMounted(async () => {
+  await Promise.all([tokenSchema.load().catch(() => undefined), load(), loadTokens(), loadDispatch()]);
+  scrollToSection();
+});
 </script>
 
 <style scoped>

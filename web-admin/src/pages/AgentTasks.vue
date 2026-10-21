@@ -2,7 +2,7 @@
   <div class="task-control-page">
     <header class="task-heading">
       <div><div class="eyebrow">本地智能体 / 运行边界</div><h1>任务控制</h1><p>为一项连续业务任务固定授权范围、累计写预算和同时执行数量。</p></div>
-      <div class="actions"><el-button @click="router.push('/agent-clients')">智能体客户端</el-button><el-button :loading="listLoading" @click="loadTasks()">刷新</el-button><el-button v-if="canWrite" type="primary" @click="openCreate">{{ createAttempt ? '继续原创建' : '创建受控任务' }}</el-button></div>
+      <div class="actions"><el-button v-if="returnPath" @click="router.push(returnPath)">返回来源页面</el-button><el-button @click="router.push('/agent-clients')">智能体客户端</el-button><el-button :loading="listLoading || detailLoading" @click="refresh">刷新</el-button><el-button v-if="canWrite" type="primary" @click="openCreate">{{ createAttempt ? '继续原创建' : '创建受控任务' }}</el-button></div>
     </header>
     <el-card shadow="never" class="explanation">
       <div class="explanation-grid"><div><b>例如：更新项目资料，再核对执行结果</b><p>明确选定业务系统的原授权、工作空间、本地会话及工具。保留各系统原有权限与审批。</p></div><div><b>累计写预算 ≠ 每分钟限流</b><p>按业务写调用计数，包含待确认的预留；不是处理的数据条数，也不是成功次数。读取不扣写预算，仍受并发限制。</p></div><div><b>暂停只阻止新的派发</b><p>已获许可的调用仍可能完成。继续不补充预算、不执行或重放业务；取消不会撤回已产生的变化。</p></div></div>
@@ -56,8 +56,9 @@
       <template #footer><el-button :disabled="creating" @click="createOpen = false">{{ createAttempt ? '稍后继续' : '取消' }}</el-button><el-button type="primary" :loading="creating" :disabled="!createAttempt && !stickyAck" @click="saveCreate">{{ createAttempt ? '重试原创建请求' : '确认范围并创建' }}</el-button></template>
     </el-dialog>
 
-    <el-drawer v-model="detailOpen" title="受控任务详情" size="min(1040px, 96vw)" @closed="closeDetail">
+    <el-drawer :model-value="detailOpen" title="受控任务详情" size="min(1040px, 96vw)" @update:model-value="setDetailOpen">
       <el-alert v-if="detailError" type="error" :closable="false" :title="detailError" show-icon />
+      <el-button v-if="!detail && selectedTask && !detailLoading" @click="loadDetail(selectedTask)">重新读取任务</el-button>
       <div v-loading="detailLoading" class="detail-body">
         <template v-if="detail">
           <div class="section-heading"><div><el-tag :type="stateType(detail)" effect="plain">{{ stateText(detail) }}</el-tag><code class="task-id">{{ detail.task_id }}</code></div><el-button :loading="detailLoading" @click="loadDetail(detail.task_id)">刷新快照</el-button></div>
@@ -70,12 +71,15 @@
           <article v-for="(member, index) in detail.members" :key="`${member.session_id}:${member.workspace}:${member.client_conversation_id}`" class="member-snapshot"><div class="section-heading"><b>成员 {{ index + 1 }} · {{ member.client_app_id }} / {{ member.workspace }}</b></div><dl><dt>原授权 Session</dt><dd><code>{{ member.session_id }}</code></dd><dt>本地会话</dt><dd><code>{{ member.client_conversation_id }}</code></dd><dt>精确工具</dt><dd><el-tag v-for="tool in member.allowed_tools" :key="tool" type="info" effect="plain">{{ tool }}</el-tag></dd></dl></article>
           <div class="binding-note"><b>交给客户端宿主的任务标识</b><p>宿主读取任务并核对全部已选原授权后绑定。任务 ID 不替代业务授权，也不交给模型自行选择。</p><el-button size="small" @click="copyTaskId">复制任务 ID</el-button></div>
           <h2>原调用记录</h2><p class="muted">这里只读取关联和执行状态，不查询业务正文，也不会继续或重新派发调用。已派发不代表业务成功。</p>
-          <el-table :data="invocations" size="small" row-key="invocation_id">
+          <el-alert v-if="invocations.some(row => row.outcome === 'unknown' || row.permit_state === 'unknown')" type="warning" :closable="false" title="存在结果未知的原调用：先查看原 Job 或复制标识核对业务结果；继续任务不会重试这些调用。" />
+          <el-alert v-if="selectedInvocation && !invocations.some(row => row.invocation_id === selectedInvocation)" type="info" :closable="false" title="所选原调用尚未出现在当前快照中，可继续加载原调用记录核对。" />
+          <el-table :data="invocations" size="small" row-key="invocation_id" :expand-row-keys="selectedInvocation ? [selectedInvocation] : []" @expand-change="selectInvocation">
             <el-table-column type="expand"><template #default="{ row }"><dl class="invocation-ids"><dt>原调用</dt><dd><code>{{ row.invocation_id }}</code></dd><dt>原授权</dt><dd><code>{{ row.session_id }}</code></dd><dt>原运行</dt><dd><code>{{ row.run_id }}</code></dd><dt>原 Job</dt><dd><code>{{ row.job_id }}</code></dd></dl></template></el-table-column>
             <el-table-column label="工具" min-width="170"><template #default="{ row }"><code>{{ row.tool }}</code><div class="muted">{{ row.readonly ? '读取' : '写入' }} · 第 {{ row.attempt }} 次许可</div></template></el-table-column>
             <el-table-column label="写预算" width="100"><template #default="{ row }">{{ budgetText(row.budget_state) }}</template></el-table-column>
             <el-table-column label="执行许可" width="100"><template #default="{ row }">{{ permitText(row.permit_state) }}</template></el-table-column>
             <el-table-column label="派发结果" min-width="150"><template #default="{ row }">{{ outcomeText(row.outcome) }}<div class="muted">{{ row.terminal ? '原操作已结束' : '原操作未结束' }}</div></template></el-table-column>
+            <el-table-column label="核对原调用" width="150"><template #default="{ row }"><el-button v-if="row.job_id && me.can('runs:read') && me.hasModule('runs')" link type="primary" @click="viewInvocationJob(row)">查看原 Job</el-button><el-button link @click="copyInvocation(row)">复制原调用标识</el-button></template></el-table-column>
             <template #empty>尚无关联调用。创建任务本身不会执行业务。</template>
           </el-table>
           <div v-if="nextInvocationCursor" class="load-more"><el-button :loading="detailLoading" @click="loadDetail(detail.task_id, true)">加载更多原调用</el-button></div>
@@ -86,12 +90,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { api } from '../request';
 import { kernelMountPath } from '../runtime-path';
 import { useMe } from '../store';
+import { patchTaskQuery, queryText, safeTaskReturnPath } from '../task-page-location';
 
 interface Member { session_id: string; client_app_id: string; workspace: string; client_conversation_id: string; allowed_tools: string[] }
 interface Task { task_id: string; state: 'active' | 'paused' | 'blocked' | 'cancelled'; revision: number; ledger_sequence: number; scope_hash: string; members: Member[]; policy: { max_write_calls: number | null; max_concurrent: number; expires_at: string | null }; counters: { write_reserved: number; write_consumed: number; active_permits: number }; created_at: string; updated_at: string }
@@ -103,6 +108,9 @@ interface CreateBody { request_id: string; members: Member[]; policy: Task['poli
 
 const router = useRouter(), route = useRoute(), me = useMe();
 const canWrite = computed(() => me.can('clients:write'));
+const returnPath = computed(() => safeTaskReturnPath(route.query.return_to));
+const selectedTask = computed(() => queryText(route.query.task));
+const selectedInvocation = computed(() => queryText(route.query.invocation));
 const tasks = ref<Task[]>([]), listLoading = ref(false), listError = ref(''), nextTaskCursor = ref<string | null>(null);
 const detail = ref<Task | null>(null), detailOpen = ref(false), detailLoading = ref(false), detailError = ref('');
 const detailVerified = ref(false);
@@ -141,19 +149,50 @@ async function loadTasks(more = false) {
   finally { listLoading.value = false; }
 }
 async function openDetail(taskId: string) {
-  if (detail.value?.task_id !== taskId) { detail.value = null; detailVerified.value = false; invocations.value = []; nextInvocationCursor.value = null; }
-  detailOpen.value = true; void router.replace({ query: { task: taskId } }); await loadDetail(taskId);
+  if (selectedTask.value === taskId && detailOpen.value) { await loadDetail(taskId); return; }
+  await router.push({ query: patchTaskQuery(route.query, { task: taskId, invocation: undefined }) });
 }
-function closeDetail() { detailEpoch++; void router.replace({ query: {} }); }
+function showDetail(taskId: string) {
+  if (detail.value?.task_id !== taskId) { detail.value = null; detailVerified.value = false; invocations.value = []; nextInvocationCursor.value = null; }
+  detailOpen.value = true; void loadDetail(taskId);
+}
+function setDetailOpen(value: boolean) {
+  detailOpen.value = value;
+  if (!value) { detailEpoch++; detailLoading.value = false; detailVerified.value = false; void router.replace({ query: patchTaskQuery(route.query, { task: undefined, invocation: undefined }) }); }
+}
+function selectInvocation(row: Invocation, expanded: Invocation[]) {
+  const id = expanded.some(item => item.invocation_id === row.invocation_id) ? row.invocation_id : undefined;
+  if ((id || '') !== selectedInvocation.value) void router.replace({ query: patchTaskQuery(route.query, { invocation: id }) });
+}
+async function viewInvocationJob(row: Invocation) {
+  if (!row.job_id || !me.can('runs:read') || !me.hasModule('runs')) return;
+  await router.replace({ query: patchTaskQuery(route.query, { invocation: row.invocation_id }) });
+  await router.push({ path: '/runs', query: { job: row.job_id, return_to: route.fullPath } });
+}
+async function copyInvocation(row: Invocation) {
+  try { await navigator.clipboard.writeText(JSON.stringify({ task_id: detail.value?.task_id, invocation_id: row.invocation_id, job_id: row.job_id, run_id: row.run_id }, null, 2)); ElMessage.success('已复制原调用标识；没有派发或重试业务'); }
+  catch { ElMessage.warning('复制失败，可展开原调用记录后手工复制标识。'); }
+}
+function refresh() { void loadTasks(); if (detailOpen.value && selectedTask.value) void loadDetail(selectedTask.value); }
+function applyTaskLocation() {
+  if (route.path !== '/agent-tasks') return;
+  if (uuid.test(selectedTask.value)) {
+    if (!detailOpen.value || detail.value?.task_id !== selectedTask.value) showDetail(selectedTask.value);
+  } else if (detailOpen.value) { detailEpoch++; detailOpen.value = false; detailLoading.value = false; detailVerified.value = false; }
+}
+function isSelectedTask(taskId: string): boolean {
+  return route.path === '/agent-tasks' && detailOpen.value && selectedTask.value === taskId;
+}
 async function loadDetail(taskId: string, more = false) {
+  if (!isSelectedTask(taskId)) return;
   const epoch = ++detailEpoch; detailLoading.value = true; detailVerified.value = false; detailError.value = '';
   try {
     const query = new URLSearchParams({ limit: '30' });
     if (more && nextInvocationCursor.value) query.set('before', nextInvocationCursor.value);
     const result = await api<{ task: Task; invocations: Invocation[]; next_cursor: string | null }>(`/admin/api/agent-tasks/${encodeURIComponent(taskId)}?${query}`);
-    if (epoch !== detailEpoch) return;
+    if (epoch !== detailEpoch || !isSelectedTask(taskId)) return;
     detail.value = result.task; detailVerified.value = true; invocations.value = more ? [...invocations.value, ...result.invocations] : result.invocations; nextInvocationCursor.value = result.next_cursor;
-  } catch (error) { if (epoch === detailEpoch) detailError.value = errorText(error); }
+  } catch (error) { if (epoch === detailEpoch && isSelectedTask(taskId)) detailError.value = errorText(error); }
   finally { if (epoch === detailEpoch) detailLoading.value = false; }
 }
 async function loadSessions(more = false) {
@@ -227,23 +266,29 @@ async function control(action: 'pause' | 'resume' | 'cancel') {
   const task = detail.value;
   const messages = { pause: '停止新的派发许可。已获得许可的在途调用仍可能完成，现有预算和原调用保留。', resume: '重新核验整组授权并允许后续派发。不会增加预算，也不会执行或重放待处理业务。', cancel: '取消后此任务不能继续，也不会回滚业务。原授权在所有会话中仍须绑定任务。' };
   try { await ElMessageBox.confirm(messages[action], { pause: '暂停任务', resume: '继续任务', cancel: '取消任务' }[action], { type: action === 'cancel' ? 'warning' : 'info', confirmButtonText: '确认', cancelButtonText: '返回' }); } catch { return; }
+  if (!isSelectedTask(task.task_id) || !detailVerified.value || detail.value?.revision !== task.revision || controlBusy.value) return;
   controlBusy.value = true;
   if (!controlAttempt.value || controlAttempt.value.taskId !== task.task_id || controlAttempt.value.action !== action) controlAttempt.value = { taskId: task.task_id, request_id: crypto.randomUUID(), expected_revision: task.revision, action };
   const { taskId, ...body } = controlAttempt.value;
   try {
     await api<Task>(`/admin/api/agent-tasks/${encodeURIComponent(taskId)}/control`, { method: 'POST', body: JSON.stringify(body) });
-    controlAttempt.value = null; ElMessage.success('任务控制状态已更新；没有派发业务操作。'); await loadDetail(taskId); await loadTasks();
+    controlAttempt.value = null; ElMessage.success(`任务 ${shortId(taskId)} 控制状态已更新；没有派发业务操作。`);
+    await Promise.all([isSelectedTask(taskId) ? loadDetail(taskId) : Promise.resolve(), loadTasks()]);
   } catch (error) {
     const message = errorText(error);
-    if (error instanceof Error && error.message === 'TASK_REVISION_CONFLICT') { controlAttempt.value = null; await loadDetail(taskId); }
-    detailError.value = detailVerified.value ? message : `${message} 请成功刷新快照后再操作。`;
+    if (error instanceof Error && error.message === 'TASK_REVISION_CONFLICT') {
+      controlAttempt.value = null;
+      if (isSelectedTask(taskId)) await loadDetail(taskId);
+    }
+    if (isSelectedTask(taskId)) detailError.value = detailVerified.value ? message : `${message} 请成功刷新快照后再操作。`;
   } finally { controlBusy.value = false; }
 }
 async function copyTaskId() { try { await navigator.clipboard.writeText(detail.value!.task_id); ElMessage.success('已复制任务 ID'); } catch { ElMessage.warning('复制失败，可选中上方任务 ID 手工复制。'); } }
 onMounted(() => {
   try { const saved = JSON.parse(sessionStorage.getItem(storageKey()) || 'null'); if (saved && uuid.test(saved.request_id) && Array.isArray(saved.members) && saved.members.length && saved.policy) createAttempt.value = saved; } catch { /* Failed local drafts never trigger remote writes. */ }
-  void loadTasks(); if (typeof route.query.task === 'string' && uuid.test(route.query.task)) void openDetail(route.query.task);
+  void loadTasks(); applyTaskLocation();
 });
+watch(() => route.query.task, applyTaskLocation);
 </script>
 
 <style scoped>

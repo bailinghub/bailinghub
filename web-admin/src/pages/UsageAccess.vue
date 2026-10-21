@@ -266,15 +266,14 @@
                 :disabled="
                   service.state !== 'active'
                 " /></el-select></el-form-item
-          ><el-form-item label="服务端权限"
+          ><el-form-item
+            ><template #label>服务端权限 <UsageHelp title="服务端权限"><p v-for="permission in permissions" :key="permission.value"><b>{{ permission.label }}</b>：{{ permission.description }}</p></UsageHelp></template
             ><el-checkbox-group v-model="form.permissions" class="permissions"
               ><el-checkbox
                 v-for="permission in permissions"
                 :key="permission.value"
                 :value="permission.value"
-                ><span
-                  >{{ permission.label
-                  }}<small>{{ permission.description }}</small></span
+                ><span>{{ permission.label }}</span
                 ></el-checkbox
               ></el-checkbox-group
             ></el-form-item

@@ -11,10 +11,16 @@
         </HelpTip>
         <el-button type="primary" style="margin-left: auto" @click="openCreate">新建渠道</el-button></div>
     </template>
-    <el-empty v-if="!list.length" description="还没有渠道：把外部消息平台接进来从这里开始">
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
+    <div v-if="channelsLoading" class="muted" role="status" style="padding: 24px">正在读取渠道…</div>
+    <el-alert v-else-if="channelsError" type="error" title="渠道读取失败" :closable="false" show-icon>
+      <p>{{ channelsError }}</p>
+      <el-button @click="load">重试读取渠道</el-button>
+    </el-alert>
+    <el-empty v-else-if="!list.length" description="还没有渠道：把外部消息平台接进来从这里开始">
       <el-button type="primary" @click="openCreate">添加第一个</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else :data="locatedRows" empty-text="没有匹配的渠道">
       <el-table-column label="渠道" min-width="230" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="channel-main">
@@ -64,20 +70,26 @@
     </el-table>
   </el-card>
 
-  <el-card shadow="never" style="margin-top: 14px">
+  <el-card id="alert-rules" shadow="never" style="margin-top: 14px; scroll-margin-top: 20px">
     <template #header>
       <div class="head"><b>告警通知</b> <HelpTip title="告警通知是什么">
           <p>中枢<b>自身的运行告警</b>（执行器离线 / 任务失败 / 积压 / 工具源变更等）经上面的渠道推给收件人。</p>
           <p>可按<b>事件类型分流</b>——不同的事通知不同的人 / 渠道。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" :disabled="!list.length" @click="openRuleCreate">新建规则</el-button></div>
+        <el-button type="primary" style="margin-left: auto" :disabled="channelsLoading || !!channelsError || !list.length" @click="openRuleCreate">新建规则</el-button></div>
     </template>
-    <el-alert v-if="!list.length" type="warning" :closable="false" show-icon
+    <ListLocationBar v-model="ruleQuery" :count="locatedRules.length" :total="rules.length" :focus="ruleFocus" :return-to="listReturnTo" placeholder="搜索告警规则 / 渠道" @clear="clearRuleLocation" />
+    <el-alert v-if="!channelsLoading && !channelsError && !list.length" type="warning" :closable="false" show-icon style="margin-bottom: 14px"
       title="先在上方建一个可主动推的渠道（企业微信需填 AgentId + Secret，并把中枢出口 IP 加进该应用「企业可信 IP」），告警才有处可发。" />
+    <div v-if="rulesLoading" class="muted" role="status" style="padding: 24px">正在读取告警规则…</div>
+    <el-alert v-else-if="rulesError" type="error" title="告警规则读取失败" :closable="false" show-icon>
+      <p>{{ rulesError }}</p>
+      <el-button @click="loadRules">重试读取告警规则</el-button>
+    </el-alert>
     <el-empty v-else-if="!rules.length" description="还没有告警规则：建一条把运行告警推给自己">
-      <el-button type="primary" @click="openRuleCreate">添加第一条</el-button>
+      <el-button type="primary" :disabled="channelsLoading || !!channelsError || !list.length" @click="openRuleCreate">添加第一条</el-button>
     </el-empty>
-    <el-table v-else :data="rules">
+    <el-table v-else :data="locatedRules" empty-text="没有匹配的告警规则">
       <el-table-column label="规则" min-width="220">
         <template #default="{ row }">
           <div class="channel-main">
@@ -168,7 +180,7 @@
             <p>{{ fieldDesc('config.corpid', '企业微信企业 ID；主动推、告警通知和慢回答推送需要填写。') }}</p>
             <p>被动回复能从消息里识别 corpid；主动推、告警通知和慢回答推送场景必须填写。</p>
           </HelpTip></template>
-          <el-input v-model="form.corpid" placeholder="ww… / wx…（要主动推或当告警渠道则必填）" class="mono" />
+          <el-input v-model="form.corpid" placeholder="ww… / wx…" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.agentid', 'AgentId') }} <HelpTip :title="fieldTitle('config.agentid', 'AgentId')">
@@ -196,7 +208,7 @@
             <p>保存后的图片可用于视觉模型识别和会话回看；未选择外部存储时，中枢会使用服务器本地存储。</p>
           </HelpTip></template>
           <el-select v-model="form.bucket" filterable allow-create clearable style="width: 100%"
-            placeholder="选一个媒体存储（与「媒体存储」里登记的一致），留空 = 本地存储">
+            placeholder="使用服务器本地存储（默认）">
             <el-option v-for="b in buckets" :key="b.name" :value="b.name" :label="b.name + (b.enabled === false ? '（已停用）' : '')" />
           </el-select>
         </el-form-item>
@@ -376,6 +388,8 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
@@ -390,6 +404,10 @@ const KIND: Record<string, string> = { wecom: '企业微信', feishu: '飞书' }
 const s = useMe();
 const channelSchema = useConfigSchema('channel');
 const list = ref<any[]>([]);
+const channelsLoading = ref(true);
+const channelsError = ref('');
+let channelsRequest = 0;
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation, scrollToSection } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.description || ''} ${r.route_key || ''}` });
 // 调用代码弹窗（业务后端经本渠道主动推消息 /send）
 const clients = ref<any[]>([]);
 const codeOpen = ref(false);
@@ -437,7 +455,19 @@ function recipientsText(recipients: unknown): string {
   return `${arr.slice(0, 3).join('、')} 等 ${arr.length} 人`;
 }
 
-async function load(): Promise<void> { list.value = await api('/admin/api/channels'); }
+async function load(): Promise<void> {
+  const request = ++channelsRequest;
+  channelsLoading.value = true;
+  channelsError.value = '';
+  try {
+    const rows = await api<any[]>('/admin/api/channels');
+    if (request === channelsRequest) list.value = rows;
+  } catch (e) {
+    if (request === channelsRequest) channelsError.value = (e as Error).message || '请稍后重试';
+  } finally {
+    if (request === channelsRequest) channelsLoading.value = false;
+  }
+}
 function openCreate(): void { editing.value = false; channelFormTab.value = 'basic'; Object.assign(form, blank); open.value = true; }
 function openEdit(row: any): void {
   editing.value = true;
@@ -476,12 +506,28 @@ const EVENT_LABEL: Record<string, string> = {
   spec_change: '工具源 spec 变更', spec_refresh_fail: '工具源 spec 刷新失败', authz_probe: '工具源鉴权探针告警',
 };
 const rules = ref<any[]>([]);
+const rulesLoading = ref(true);
+const rulesError = ref('');
+let rulesRequest = 0;
+const { keyword: ruleQuery, focus: ruleFocus, rows: locatedRules, clear: clearRuleLocation } = useListLocation(rules, { prefix: 'alert_', id: r => String(r.id), text: r => `${r.id} ${r.description || ''} ${r.event_prefix || ''} ${r.channel || ''}` });
 const ruleOpen = ref(false);
 const ruleEditing = ref(false);
 const ruleSaving = ref(false);
 const ruleBlank = { id: 0, event_prefix: '', channel: '', recipients: [] as string[], cooldown_min: 60, description: '', enabled: true };
 const ruleForm = reactive({ ...ruleBlank });
-async function loadRules(): Promise<void> { try { rules.value = await api('/admin/api/alert-rules'); } catch { /* 可选 */ } }
+async function loadRules(): Promise<void> {
+  const request = ++rulesRequest;
+  rulesLoading.value = true;
+  rulesError.value = '';
+  try {
+    const rows = await api<any[]>('/admin/api/alert-rules');
+    if (request === rulesRequest) rules.value = rows;
+  } catch (e) {
+    if (request === rulesRequest) rulesError.value = (e as Error).message || '请稍后重试';
+  } finally {
+    if (request === rulesRequest) rulesLoading.value = false;
+  }
+}
 function openRuleCreate(): void { ruleEditing.value = false; Object.assign(ruleForm, ruleBlank, { recipients: [] }); ruleOpen.value = true; }
 function openRuleEdit(row: any): void {
   ruleEditing.value = true;
@@ -658,6 +704,7 @@ onMounted(async () => {
   if (s.can('routes:read')) { try { routes.value = await api('/admin/api/routes'); } catch { /* 可选 */ } }
   if (s.can('storage:read')) { try { buckets.value = await api('/admin/api/storage-buckets'); } catch { /* 桶列表可选，仍可手填 */ } }
   if (s.can('clients:read')) { try { clients.value = await api('/admin/api/clients'); } catch { /* 「调用代码」要选接入方，可选 */ } }
+  scrollToSection();
 });
 </script>
 

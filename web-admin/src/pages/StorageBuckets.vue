@@ -8,10 +8,11 @@
         </HelpTip>
         <el-button type="primary" style="margin-left: auto" @click="openCreate">新建存储</el-button></div>
     </template>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
     <el-empty v-if="!list.length" description="未登记外部存储时，聊天入口会默认使用服务器本地存储">
       <el-button type="primary" @click="openCreate">添加外部存储</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="存储桶" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="bucket-main">
@@ -60,7 +61,10 @@
         <el-input v-model="form.name" :disabled="editing" placeholder="如 shared-media / local-media" class="mono" />
       </el-form-item>
       <el-form-item>
-        <template #label>类型 <span class="field-required">必填</span></template>
+        <template #label>类型 <span class="field-required">必填</span> <HelpTip title="存储类型">
+          <p>本地存储写入服务器 <code>data/uploads</code>，并通过 <code>/uploads/*</code> 公开读取，不需要 AccessKey 或 SecretKey。</p>
+          <p>生产环境若需要 CDN、生命周期管理或多副本共享，可选择对象存储。</p>
+        </HelpTip></template>
         <el-select v-model="form.kind" style="width: 100%">
           <el-option value="local" label="服务器本地（开箱可用）" />
           <el-option value="cos" label="腾讯云 COS" />
@@ -68,7 +72,6 @@
           <el-option value="s3" label="AWS S3 / 兼容（预留，未实现）" disabled />
         </el-select>
       </el-form-item>
-      <el-alert v-if="form.kind === 'local'" title="本地存储会写入服务器 data/uploads，并通过 /uploads/* 公开读取。生产环境如果需要 CDN、生命周期管理或多副本共享，建议改用对象存储。" type="info" :closable="false" />
       <el-form-item v-if="form.kind !== 'local'">
         <template #label>桶名 <span class="field-required">必填</span></template>
         <el-input v-model="form.bucket" placeholder="COS 带 appid 后缀，如 example-1250000000" class="mono" />
@@ -79,8 +82,7 @@
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="访问凭证" name="secret">
-      <el-alert v-if="form.kind === 'local'" title="本地存储不需要 AccessKey 或 SecretKey。用于生成图片交付时，请填写指向 /uploads 的公开访问地址。" type="info" :closable="false" />
-      <template v-else>
+      <template v-if="form.kind !== 'local'">
       <el-form-item>
         <template #label>AccessKeyId <span class="field-required">必填</span> <HelpTip title="AccessKeyId">
           <p>对象存储访问身份。编辑时留空表示保留原值。</p>
@@ -97,8 +99,10 @@
       <el-form-item>
         <template #label>公开访问域名 <span class="field-required">必填</span> <HelpTip title="公开访问域名">
           <p>上传成功后返回给聊天、视觉模型和业务工具的 URL 前缀。可填 COS 原生域名或业务 CDN 域名，不带尾斜杠。</p>
+          <p v-if="form.kind === 'local'">本地存储不需要访问密钥；用于生成图片交付时，请填写指向 <code>/uploads</code> 的公开访问地址。</p>
+          <p v-else>例如 <code>https://demo-bucket-1234567890.cos.ap-shanghai.myqcloud.com</code>，或自定义 CDN 域名。</p>
         </HelpTip></template>
-        <el-input v-model="form.public_base_url" placeholder="https://demo-bucket-1234567890.cos.ap-shanghai.myqcloud.com 或自定义 CDN 域（无尾斜杠）" class="mono" />
+        <el-input v-model="form.public_base_url" placeholder="https://…" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>写入前缀 <HelpTip title="写入前缀">
@@ -106,7 +110,12 @@
         </HelpTip></template>
         <el-input v-model="form.path_prefix" placeholder="bailing/chat" class="mono" />
       </el-form-item>
-      <el-form-item v-if="form.kind !== 'local'" label="自定义 endpoint"><el-input v-model="form.endpoint" placeholder="一般留空，留空按类型 + 地域拼接" class="mono" /></el-form-item>
+      <el-form-item v-if="form.kind !== 'local'">
+        <template #label>自定义 endpoint <HelpTip title="自定义 endpoint">
+          <p>一般留空，系统会按存储类型和地域生成地址。</p>
+        </HelpTip></template>
+        <el-input v-model="form.endpoint" placeholder="可选" class="mono" />
+      </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="发布" name="publish">
       <el-form-item label="说明（可选）"><el-input v-model="form.description" /></el-form-item>
@@ -122,12 +131,15 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import HelpTip from '../components/HelpTip.vue';
 
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.provider || ""} ${r.bucket || ""}` });
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);

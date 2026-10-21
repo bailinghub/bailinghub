@@ -7,10 +7,11 @@
         </HelpTip>
         <el-button type="primary" style="margin-left: auto" @click="openCreate">新建项目</el-button></div>
     </template>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
     <el-empty v-if="!list.length" description="还没有项目：需要工作目录的 executor 路由会从这里选择目录">
       <el-button type="primary" @click="openCreate">登记第一个</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="项目" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="project-main">
@@ -59,12 +60,15 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import HelpTip from '../components/HelpTip.vue';
 
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.description || ""}` });
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);

@@ -9,10 +9,11 @@
         <el-button v-if="s.can('clients:write')" type="primary" style="margin-left: auto" @click="openCreate">新建接入方</el-button></div>
     </template>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
     <el-empty v-if="!listLoading && !listError && !list.length" description="还没有接入方：业务系统接入前先在这里发一把钥匙">
       <el-button v-if="s.can('clients:write')" type="primary" @click="openCreate">发第一把</el-button>
     </el-empty>
-    <el-table v-else v-loading="listLoading" :data="list">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="接入方" min-width="250" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="client-main">
@@ -161,12 +162,12 @@
             <el-radio-button value="month">每月</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="硬限">
+        <el-form-item>
+          <template #label>硬限 <HelpTip title="预算硬限"><p>两个都为空等于不设硬限；任一达到上限即拒绝新任务。</p></HelpTip></template>
           <div class="inline-row">
             <span class="muted">成本 USD</span><el-input-number v-model="budget.hard_cost_usd" :min="0" :step="0.1" :precision="4" />
             <span class="muted">Token</span><el-input-number v-model="budget.hard_tokens" :min="0" :step="1000" />
           </div>
-          <div class="muted hint">两个都为空等于不设硬限；任一达到上限即拒绝新任务。</div>
         </el-form-item>
       </template>
       <el-form-item>
@@ -192,6 +193,8 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
@@ -209,6 +212,7 @@ const router = useRouter();
 const route = useRoute();
 const clientSchema = useConfigSchema('client');
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.app_id), text: r => `${r.app_id} ${r.name || ""}` });
 const listLoading = ref(false), listError = ref('');
 let listGeneration = 0;
 const routeKeys = ref<string[]>([]);

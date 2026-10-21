@@ -19,45 +19,53 @@
         <span>处理失败 <b>{{ data.snapshot.counts.failed }}</b></span>
         <span>需核对 <b>{{ data.snapshot.counts.uncertain }}</b></span>
       </div>
-      <el-table :data="data.items" size="small" empty-text="暂无此类通知" row-key="event_id">
+      <el-alert v-if="selectedEvent && !data.items.some(item => item.event_id === selectedEvent)" type="info" :closable="false" title="目标通知不在当前页；它可能已更新状态，请核对筛选或翻页。" />
+      <el-table :data="data.items" size="small" empty-text="暂无此类通知" row-key="event_id" :expand-row-keys="selectedEvent ? [selectedEvent] : []" @expand-change="selectEvent">
+        <el-table-column type="expand"><template #default="{ row }"><div class="notification-reference"><div>原通知：<code>{{ row.event_id }}</code></div><div>原 Job：<code>{{ row.job_id }}</code></div><el-button link @click="copyReference(row.event_id, '通知编号')">复制通知编号</el-button><el-button v-if="row.job_id" link @click="copyReference(row.job_id, '原 Job ID')">复制原 Job ID</el-button><el-button v-if="row.job_id" link type="primary" @click="emit('open-job', row.job_id)">查看原任务</el-button><p v-if="row.status === 'uncertain'">送达结果未知。先核对原任务和收件方，重新发送可能产生重复消息。</p></div></template></el-table-column>
         <el-table-column label="状态" width="120">
           <template #default="{ row }"><el-tag :type="row.status === 'uncertain' ? 'warning' : row.status === 'failed' ? 'danger' : row.status === 'completed' ? 'success' : 'info'">{{ statusLabels[row.status] }}</el-tag></template>
         </el-table-column>
-        <el-table-column prop="job_id" label="关联任务" min-width="200" show-overflow-tooltip />
+        <el-table-column label="关联任务" min-width="200" show-overflow-tooltip><template #default="{ row }"><el-button v-if="row.job_id" link type="primary" @click="emit('open-job', row.job_id)">{{ row.job_id }}</el-button><span v-else>—</span></template></el-table-column>
         <el-table-column prop="event_id" label="通知编号" min-width="220" show-overflow-tooltip />
         <el-table-column prop="attempts" label="处理次数" width="90" />
         <el-table-column label="最近更新" width="160"><template #default="{ row }">{{ fmtTime(row.updated_at) }}</template></el-table-column>
         <el-table-column prop="last_error" label="处理说明代码" min-width="180" show-overflow-tooltip />
         <el-table-column v-if="me.can('runs:write')" label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === 'failed' || row.status === 'uncertain'" link type="primary" :loading="retrying === row.event_id" @click="retry(row)">
+            <el-button v-if="row.status === 'failed' || row.status === 'uncertain'" link type="primary" :disabled="Boolean(retrying)" :loading="retrying === row.event_id" @click="retry(row)">
               {{ row.status === 'uncertain' ? '核对后重新发送' : '重新处理通知' }}
             </el-button>
             <span v-else>—</span>
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" :page-size="20" :total="data.total" layout="total, prev, pager, next" @current-change="load" />
+      <el-pagination v-model:current-page="page" :page-size="20" :total="data.total" layout="total, prev, pager, next" @current-change="persistFilters" />
       <p class="field-hint">“通知已处理”包括交给通知执行器继续发送，不代表收件人已阅读。结果不明时，请先核对收件方；重新发送可能造成重复消息。</p>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
 import { useMe } from '../store';
 import { fmtTime } from '../util';
+import { patchTaskQuery, queryText, readOutboxLocation } from '../task-page-location';
 
 interface Row { event_id: string; kind: string; job_id: string; status: string; attempts: number; updated_at: string; last_error: string | null }
 interface Result { items: Row[]; total: number; snapshot: { counts: Record<string, number> } }
 const me = useMe();
+const route = useRoute(), router = useRouter();
+const emit = defineEmits<{ 'open-job': [jobId: string] }>();
+const initial = readOutboxLocation(route.query);
 const kinds = [ { value: 'callback', label: '任务回调' }, { value: 'delivery', label: '结果送达' },
   { value: 'approval-notification', label: '审批提示' }, { value: 'delivery-dlq', label: '通知失败留存' } ];
 const statusLabels: Record<string, string> = { pending: '等待补发', processing: '正在处理', completed: '通知已处理', skipped: '无需发送', failed: '处理失败', uncertain: '需核对' };
-const kind = ref('callback'), status = ref(''), page = ref(1), loading = ref(false), retrying = ref(''), error = ref('');
+const kind = ref(initial.kind), status = ref(initial.status), page = ref(initial.page), loading = ref(false), retrying = ref(''), error = ref('');
+const selectedEvent = computed(() => queryText(route.query.outbox_event));
 const data = ref<Result | null>(null);
 let generation = 0;
 async function load(): Promise<void> {
@@ -76,8 +84,22 @@ async function load(): Promise<void> {
       : '暂时无法读取通知状态，请稍后重试。';
   } finally { if (current === generation) loading.value = false; }
 }
-function reset(): void { page.value = 1; void load(); }
+function persistFilters(): void {
+  void router.replace({ query: patchTaskQuery(route.query, { tab: 'outbox', outbox_kind: kind.value, outbox_status: status.value || undefined,
+    outbox_page: page.value > 1 ? String(page.value) : undefined, outbox_event: undefined }) });
+}
+function reset(): void { page.value = 1; persistFilters(); }
+function selectEvent(row: Row, expanded: Row[]): void {
+  const id = expanded.some(item => item.event_id === row.event_id) ? row.event_id : undefined;
+  if ((id || '') === selectedEvent.value) return;
+  void router.replace({ query: patchTaskQuery(route.query, { outbox_event: id }) });
+}
+async function copyReference(value: string, label: string): Promise<void> {
+  try { await navigator.clipboard.writeText(value); ElMessage.success(`已复制${label}`); }
+  catch { ElMessage.warning(`复制失败，请选中${label}手工复制。`); }
+}
 async function retry(row: Row): Promise<void> {
+  if (!me.can('runs:write') || retrying.value || !['failed', 'uncertain'].includes(row.status)) return;
   try {
     await ElMessageBox.confirm(row.status === 'uncertain'
       ? '这条通知可能已部分或全部送达。请先核对收件方，确认仍需重新发送；继续可能产生重复消息。'
@@ -96,6 +118,11 @@ async function retry(row: Row): Promise<void> {
 }
 defineExpose({ refresh: load });
 onMounted(load);
+watch(() => route.query, (query, previous) => {
+  const next = readOutboxLocation(query), before = readOutboxLocation(previous);
+  kind.value = next.kind; status.value = next.status; page.value = next.page;
+  if (next.kind !== before.kind || next.status !== before.status || next.page !== before.page) void load();
+});
 </script>
 
 <style scoped>
@@ -103,4 +130,5 @@ onMounted(load);
 .totals { color: var(--el-text-color-secondary); font-size: 13px; }
 .totals b { margin-left: 5px; color: var(--el-text-color-primary); }
 .el-pagination { margin-top: 16px; }
+.notification-reference { padding: 12px 20px; line-height: 1.8; overflow-wrap: anywhere; }
 </style>

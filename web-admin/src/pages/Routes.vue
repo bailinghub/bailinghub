@@ -10,10 +10,11 @@
     </template>
     <el-alert v-if="returnToClient" title="接入方草稿已临时保留，创建路由后可返回继续授权。刷新浏览器会丢失这份草稿。" type="info" :closable="false" show-icon style="margin-bottom:12px"><el-button link type="primary" @click="returnToClientDraft">返回接入方草稿</el-button></el-alert>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :related-focus="relatedFocus" :return-to="listReturnTo" @clear="clearListLocation" />
     <el-empty v-if="!listLoading && !listError && !list.length" description="还没有路由：业务系统的每个触发场景对应一条路由">
       <el-button v-if="s.can('routes:write')" type="primary" @click="openCreate">建第一条</el-button>
     </el-empty>
-    <el-table v-else v-loading="listLoading" :data="list">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="场景" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="route-main">
@@ -72,12 +73,12 @@
   <!-- 新建/编辑路由 -->
   <el-drawer v-model="open" :title="editing ? '编辑路由' : '新建路由'" size="640px" :before-close="formGuard.beforeClose">
     <el-alert v-if="dependencyErrors.length" :title="`关联配置读取失败：${dependencyErrors.join('、')}。已有输入保持不变，不能据此判断这些配置不存在。`" type="warning" :closable="false" show-icon style="margin-bottom:12px"><el-button link :loading="dependenciesLoading" @click="loadDependencies">重试读取关联配置</el-button></el-alert>
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px" title="配置本地智能体时，可使用“本地智能体 → 接入配置”，集中设置授权入口、系统说明、工具与审批。本页保留业务路由及高级治理设置。" />
     <el-form label-position="top" :disabled="saving || !s.can('routes:write')">
       <el-tabs v-model="routeFormTab" class="console-tabs route-form-tabs">
         <el-tab-pane label="基础与大脑" name="basic">
       <el-form-item>
         <template #label>{{ routeFieldTitle('route_key', '场景标识') }} <span v-if="routeFieldRequired('route_key')" class="field-required">*</span> <HelpTip :title="routeFieldTitle('route_key', '场景标识')">
+          <p>配置本地智能体时，可使用“本地智能体 → 接入配置”，集中设置授权入口、系统说明、工具与审批。本页保留业务路由及高级治理设置。</p>
           <p>{{ routeFieldDesc('route_key', '本场景的唯一标识，触发方凭它调用。') }}</p>
           <p><b>建好后不可改</b>（触发方代码里写死了它）；小写字母 / 数字 / 中划线。场景配置随时改，key 不变触发方就无感知。</p>
         </HelpTip></template>
@@ -184,9 +185,9 @@
               <el-radio-button value="inline">直送大脑</el-radio-button>
             </el-radio-group>
           </el-form-item>
-          <el-form-item v-if="vis.mode === 'tool'" label="单任务看图次数上限">
+          <el-form-item v-if="vis.mode === 'tool'">
+            <template #label>单任务看图次数上限 <HelpTip title="看图次数上限"><p>see_image 调用上限（不占业务工具的 max_calls）</p></HelpTip></template>
             <el-input-number v-model="vis.max_calls" :min="1" :max="30" />
-            <span class="muted" style="margin-left: 8px">see_image 调用上限（不占业务工具的 max_calls）</span>
           </el-form-item>
         </template>
         <el-form-item>
@@ -234,9 +235,9 @@
               <div v-if="voiceCredProviderFree" class="field-hint">该平台模型多/需准确 ID，列表仅常用建议，可手填——记得带 <code>org/</code> 前缀</div>
             </el-form-item>
           </template>
-          <el-form-item label="单段大小上限">
+          <el-form-item>
+            <template #label>单段大小上限（MB） <HelpTip title="语音大小上限"><p>默认 12MB。</p></HelpTip></template>
             <el-input-number v-model="voice.max_bytes_mb" :min="1" :max="50" />
-            <span class="muted" style="margin-left: 8px">MB；默认 12MB</span>
           </el-form-item>
         </template>
         <el-form-item>
@@ -276,13 +277,13 @@
               <div v-if="fileCredProviderFree" class="field-hint">该平台模型多/需准确 ID，列表仅常用建议，可手填——记得带 <code>org/</code> 前缀</div>
             </el-form-item>
           </template>
-          <el-form-item label="单文件大小上限">
+          <el-form-item>
+            <template #label>单文件大小上限（MB） <HelpTip title="文件大小上限"><p>默认 20MB。</p></HelpTip></template>
             <el-input-number v-model="fileInput.max_bytes_mb" :min="1" :max="100" />
-            <span class="muted" style="margin-left: 8px">MB；默认 20MB</span>
           </el-form-item>
-          <el-form-item v-if="fileInput.mode !== 'inline'" label="注入字符上限">
+          <el-form-item v-if="fileInput.mode !== 'inline'">
+            <template #label>注入字符上限 <HelpTip title="文件注入字符上限"><p>默认 24000 字符，按文件数自动分配。</p></HelpTip></template>
             <el-input-number v-model="fileInput.max_chars" :min="1000" :max="200000" :step="1000" />
-            <span class="muted" style="margin-left: 8px">默认 24000 字符，按文件数自动分配</span>
           </el-form-item>
         </template>
       </template>
@@ -297,13 +298,14 @@
         <template #label>执行行为提示 <HelpTip title="执行行为提示">
           <p>中枢把所选要求写入模型或执行器的提示词：只读要求只查询与分析；常规读写允许处理业务变更；不附加限制则不增加这层行为要求。</p>
           <p>这里不授予任何工具权限，也不能保证模型或执行器遵守要求。强制限制仍由工具范围、业务侧授权、审批规则和执行器沙箱分别执行。</p>
+          <p>此项是提示词约束，不是强制授权或沙箱。实际可调用工具、写操作与审批要求请查看「工具治理」，并由业务系统校验权限。</p>
         </HelpTip></template>
         <el-select v-model="form.permission" style="width: 100%">
           <el-option value="readonly" label="只读（提示词约束）" />
           <el-option value="readwrite" label="常规读写（提示词约束）" />
           <el-option value="full" label="不附加行为限制" />
         </el-select>
-        <div class="field-hint">此项是提示词约束，不是强制授权或沙箱。实际可调用工具、写操作与审批要求请查看「工具治理」，并由业务系统校验权限。</div>
+        <div class="field-hint">仅提示词约束；工具授权与审批在「工具治理」配置。</div>
       </el-form-item>
       <el-form-item v-if="form.target !== 'llm'">
         <template #label>{{ routeFieldTitle('profile', '角色档') }} <HelpTip :title="routeFieldTitle('profile', '角色档')">
@@ -381,9 +383,9 @@
         <el-input v-model="mem.summary_model" placeholder="留空=用本路由凭证默认模型" class="mono" />
       </el-form-item>
       <el-collapse><el-collapse-item title="本地智能体运行设置（高级）" name="agent-runtime">
-      <p class="muted hint">日常接入请使用“本地智能体 → 接入配置”。以下是同一工作空间的底层设置。</p>
       <el-form-item>
         <template #label>本地 Agent Runtime <HelpTip title="本地 Agent Runtime">
+          <p>日常接入请使用“本地智能体 → 接入配置”。以下是同一工作空间的底层设置。</p>
           <p>开启后，已通过业务网页授权的本地 Agent 可以读取本路由的安全运行档、会话记忆和按需工具定义，并在本地完成编排。</p>
           <p>它仍复用 <code>tools.agent_direct</code> 的工具授权与审批治理；这里只配置本地编排补充指令和每轮主动披露数量，不会返回模型凭证或工具源密钥。</p>
         </HelpTip></template>
@@ -394,9 +396,9 @@
           <el-input v-model="agentClient.instructions" type="textarea" :rows="4" maxlength="20000" show-word-limit
             placeholder="可选：仅给本地 Agent 的补充规则；路由系统提示词会安全抽取并一并下发" @input="agentClient.configured = true" />
         </el-form-item>
-        <el-form-item label="每轮主动工具数">
+        <el-form-item>
+          <template #label>每轮主动工具数 <HelpTip title="每轮主动工具数"><p>每轮只返回最相关的完整 typed tools；其余授权能力可通过搜索按需发现，避免全量 schema 撑大上下文。</p></HelpTip></template>
           <el-input-number v-model="agentClient.active_tool_limit" :min="1" :max="12" @change="agentClient.configured = true" />
-          <div class="muted hint">每轮只返回最相关的完整 typed tools；其余授权能力可通过搜索按需发现，避免全量 schema 撑大上下文。</div>
         </el-form-item>
       </template>
       </el-collapse-item></el-collapse>
@@ -415,12 +417,12 @@
             <el-radio-button value="month">每月</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="硬限">
+        <el-form-item>
+          <template #label>硬限 <HelpTip title="预算硬限"><p>两个都为空等于不设硬限；任一达到上限即拒绝新任务。</p></HelpTip></template>
           <div class="inline-row">
             <span class="muted">成本 USD</span><el-input-number v-model="budget.hard_cost_usd" :min="0" :step="0.1" :precision="4" />
             <span class="muted">Token</span><el-input-number v-model="budget.hard_tokens" :min="0" :step="1000" />
           </div>
-          <div class="muted hint">两个都为空等于不设硬限；任一达到上限即拒绝新任务。</div>
         </el-form-item>
       </template>
         </el-tab-pane>
@@ -536,9 +538,9 @@
               :label="c.name + '（' + (c.kind === 'wecom' ? '企业微信' : c.kind) + '）'" :disabled="c.enabled === false" />
           </el-select>
         </el-form-item>
-        <el-form-item label="收件人字段">
+        <el-form-item>
+          <template #label>收件人字段 <HelpTip title="收件人字段"><p>值支持单个 id、数组或 <code>"A|B|C"</code> 推给多人；中枢按它定位收件人，不写死在路由上。</p></HelpTip></template>
           <el-input v-model="dv.to_field" placeholder="如 channel_user_id" class="mono" />
-          <div class="muted hint">值支持单个 id、数组或 <code>"A|B|C"</code> 推给多人；中枢按它定位收件人，不写死在路由上。</div>
         </el-form-item>
         <el-form-item label="后备收件人">
           <el-input v-model="dv.to" placeholder="渠道原生 id；多人用 A|B|C" class="mono" />
@@ -610,6 +612,7 @@
         <HelpTip title="本地 Agent 直连工具">
           <p>仅用于已通过业务身份授权的本地 Agent Runtime。本地 Agent 负责编排，中枢仍在每次调用时执行路由、主体、ACC 风险与审批治理。</p>
           <p>开启后只读工具按上方 scope 白名单自动可见；写工具还必须在下方按精确 <code>operationId</code> 再授权，不接受 <code>*</code>。</p>
+          <p>这里只放行本地 Agent 工具面，不会把工具源密钥或模型凭证下发到本地。</p>
         </HelpTip>
       </div>
       <el-form-item label="允许本地 Agent 直调">
@@ -618,8 +621,6 @@
       <el-alert v-if="agentClient.enabled && !agentDirect.enabled" class="agent-direct-alert" type="warning" :closable="false" show-icon
         title="本地 Agent Runtime 已开启，但直连工具面未开启；本地 Agent 不会获得这条路由的业务工具。" />
       <template v-if="agentDirect.enabled">
-        <el-alert class="agent-direct-alert" type="info" :closable="false" show-icon
-          title="这里只放行本地 Agent 工具面，不会把工具源密钥或模型凭证下发到本地。" />
         <el-alert v-if="form.permission === 'readonly'" class="agent-direct-alert" type="warning" :closable="false" show-icon
           title="当前路由权限档为只读；即使列出写 operationId，运行时也不会暴露写工具。" />
         <div v-if="agentDirectToolOptions.length" class="agent-direct-catalog-summary">
@@ -629,6 +630,7 @@
           <template #label>允许的写操作 <HelpTip title="本地 Agent 写操作白名单">
             <p>只有精确列入的写工具才会暴露给本地 Agent。候选项来自已选工具源的 <code>/tools</code> 编译结果，并且必须已被上方 scope 放行。</p>
             <p>可手动填写尚未拉取到的 operationId，但不允许 <code>*</code> 或其他通配符。</p>
+            <p>“全选当前”保存的是此刻工具目录的精确 operationId 快照，不会自动授权未来新增写操作；只读工具仍按工具源 scope 与业务主体权限自动暴露。</p>
           </HelpTip></template>
           <div class="agent-direct-write-actions">
             <span>当前目录已选 {{ agentDirectSelectedCatalogWriteCount }} / {{ agentDirectWriteOptions.length }}</span>
@@ -648,7 +650,6 @@
               </div>
             </el-option>
           </el-select>
-          <div class="field-hint">“全选当前”保存的是此刻工具目录的精确 operationId 快照，不会自动授权未来新增写操作；只读工具仍按工具源 scope 与业务主体权限自动暴露。</div>
         </el-form-item>
         <el-form-item>
           <template #label>额外强制审批 <HelpTip title="额外强制审批">
@@ -684,9 +685,9 @@
             <el-option value="business_webhook" label="业务侧 webhook（推荐生产）" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="ap.type === 'business_webhook'" label="审批意图接收地址">
+        <el-form-item v-if="ap.type === 'business_webhook'">
+          <template #label>审批意图接收地址 <span class="field-required">*</span> <HelpTip title="审批意图接收地址"><p>中枢会签名 POST <code>tool_approval_request</code>；业务审批完成后回调 <code>/approvals/&lt;id&gt;/decision</code>。</p></HelpTip></template>
           <el-input v-model="ap.url" placeholder="https://your-system.example.com/ai/approvals" class="mono" />
-          <div class="muted hint">中枢会签名 POST <code>tool_approval_request</code>；业务审批完成后回调 <code>/approvals/&lt;id&gt;/decision</code>。</div>
         </el-form-item>
       </template>
       <el-form-item>
@@ -876,6 +877,8 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
@@ -901,6 +904,7 @@ const returnToClient = computed(() => route.query.return_to === 'clients' && has
 async function returnToClientDraft(): Promise<void> { await router.push({ path: '/clients', query: { resume: 'route-create' } }); }
 const routeSchema = useConfigSchema('route');
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, relatedFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.route_key), text: r => `${r.route_key} ${r.name || ""} ${r.target || ""}` });
 const listLoading = ref(false), listError = ref('');
 let listGeneration = 0;
 const dependencyErrors = ref<string[]>([]), dependenciesLoading = ref(false);

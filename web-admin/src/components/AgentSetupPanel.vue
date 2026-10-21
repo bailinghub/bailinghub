@@ -2,7 +2,7 @@
   <el-drawer :model-value="modelValue" size="min(1080px, 96vw)" :with-header="false" :before-close="beforeClose" @closed="clear">
     <div class="setup-panel" v-loading="loading">
       <header class="setup-header">
-        <div><span class="eyebrow">本地智能体接入</span><h2>{{ client?.name || '配置接入' }}</h2><p>在这里完成授权入口、系统介绍与工具范围配置。</p></div>
+        <div><span class="eyebrow">本地智能体接入 <HelpTip title="本地智能体接入"><p>在这里完成授权入口、系统介绍与工具范围配置。</p></HelpTip></span><h2>{{ client?.name || '配置接入' }}</h2></div>
         <el-button @click="beforeClose(() => emit('update:modelValue', false))">关闭</el-button>
       </header>
       <el-alert v-if="loadError" type="error" :title="loadError" :closable="false" show-icon />
@@ -11,23 +11,22 @@
           <button v-for="(item, index) in steps" :key="item" :class="{ active: step === index }" :disabled="savingClient || savingRoute" @click="step = index"><span>{{ index + 1 }}</span>{{ item }}</button>
         </nav>
         <section v-show="step === 0" class="setup-section">
-          <h3>让用户通过业务系统确认身份</h3>
-          <p class="description">复用当前接入方。账号、租户和业务权限仍由业务授权页确认。</p>
+          <h3>让用户通过业务系统确认身份 <HelpTip title="业务身份授权"><p>复用当前接入方。账号、租户和业务权限仍由业务授权页确认。</p></HelpTip></h3>
           <el-alert v-if="!me.can('clients:write')" type="info" :closable="false" title="当前账号可查看授权入口，保存需要接入方管理权限。" />
           <el-alert v-if="clientSaveError" :title="clientSaveError" type="error" :closable="false" show-icon />
           <el-form label-position="top" :disabled="savingClient || !me.can('clients:write')">
             <el-form-item label="接入方标识"><el-input :model-value="client.app_id" readonly /></el-form-item>
             <el-form-item label="允许此接入方连接中枢"><el-switch v-model="client.enabled" /><span class="inline-note">停用会影响此接入方的其他入口。</span></el-form-item>
-            <el-form-item label="业务授权入口">
+            <el-form-item>
+              <template #label>业务授权入口 <HelpTip title="业务授权入口"><p>填写业务系统提供的固定 HTTPS 地址。用户将在该页面登录并确认本次授权。</p></HelpTip></template>
               <el-input v-model="client.agent_authorize_url" placeholder="https://business.example.com/agent/authorize" maxlength="2048" />
-              <div class="field-note">填写业务系统提供的固定 HTTPS 地址。用户将在该页面登录并确认本次授权。</div>
             </el-form-item>
-            <el-form-item label="允许连接的工作空间（业务路由）">
+            <el-form-item>
+              <template #label>允许连接的工作空间（业务路由） <HelpTip title="工作空间接入范围"><p>工作空间对应中枢现有业务路由。这里限定接入范围，不授予业务账号额外权限。</p></HelpTip></template>
               <el-select v-model="client.allowed_routes" multiple filterable allow-create default-first-option style="width:100%" placeholder="选择已存在的工作空间">
                 <el-option v-for="item in workspaces" :key="item.route" :label="`${item.name} · ${item.route}`" :value="item.route" />
                 <el-option value="*" label="所有工作空间（包含以后新增的空间）" />
               </el-select>
-              <div class="field-note">工作空间对应中枢现有业务路由。这里限定接入范围，不授予业务账号额外权限。</div>
             </el-form-item>
           </el-form>
           <div class="section-footer"><span>{{ clientDirty ? '授权入口有未保存修改' : '授权入口配置已同步' }}</span><el-button type="primary" :loading="savingClient" :disabled="!clientDirty || !me.can('clients:write')" @click="saveClient">保存授权入口</el-button></div>
@@ -35,7 +34,7 @@
 
         <template v-if="step === 1 || step === 2">
           <div class="workspace-selector">
-            <div><b>配置哪个工作空间</b><p>以下设置保存在原业务路由中，使用同一路由的接入方会共享这些设置。</p></div>
+            <div><b>配置哪个工作空间 <HelpTip title="工作空间配置共享"><p>以下设置保存在原业务路由中，使用同一路由的接入方会共享这些设置。</p></HelpTip></b><p>同一路由的接入方共享配置。</p></div>
             <el-select :model-value="workspaceKey" :disabled="savingClient || savingRoute" filterable placeholder="选择一个工作空间" @change="selectWorkspace">
               <el-option v-for="item in selectedWorkspaces" :key="item.route" :label="`${item.name} · ${item.route}`" :value="item.route" />
             </el-select>
@@ -46,29 +45,27 @@
             <template v-if="route">
               <el-alert v-if="!route.enabled" title="这个工作空间已停用。完成配置后，还需在业务路由中恢复空间运行。" type="warning" :closable="false" show-icon />
               <section v-show="step === 1" class="setup-section">
-                <h3>让智能体先知道这个系统负责什么</h3>
-                <p class="description">说明会在首次搜索工具前提供给已选中的授权。它描述系统定位，具体可执行动作仍以授权后的工具查询为准。</p>
+                <h3>让智能体先知道这个系统负责什么 <HelpTip title="系统说明的作用"><p>说明会在首次搜索工具前提供给已选中的授权。它描述系统定位，具体可执行动作仍以授权后的工具查询为准。</p></HelpTip></h3>
                 <el-form label-position="top" :disabled="savingRoute || !me.can('routes:write')">
-                  <el-form-item label="启用本地智能体"><el-switch v-model="runtime.enabled" /><span class="inline-note">开启本地会话编排；工具调用在下一步单独设置。</span></el-form-item>
+                  <el-form-item><template #label>启用本地智能体 <HelpTip title="本地智能体运行"><p>开启本地会话编排；工具调用在下一步单独设置。</p></HelpTip></template><el-switch v-model="runtime.enabled" active-text="本地会话编排" /></el-form-item>
                   <el-form-item label="业务系统名称"><el-input v-model="info.name" placeholder="例如：客户服务系统" maxlength="120" show-word-limit /></el-form-item>
                   <el-form-item label="一句话介绍"><el-input v-model="info.summary" placeholder="例如：处理客户咨询、服务工单和售后跟进。" maxlength="400" show-word-limit /></el-form-item>
                   <el-form-item label="典型业务方向"><el-select v-model="info.domains" multiple filterable allow-create default-first-option :multiple-limit="6" style="width:100%" placeholder="输入一个方向后按回车，最多6项"><el-option v-for="item in info.domains" :key="item" :label="item" :value="item" /></el-select></el-form-item>
                   <el-form-item label="系统边界"><el-select v-model="info.boundaries" multiple filterable allow-create default-first-option :multiple-limit="6" style="width:100%" placeholder="例如：财务结算由其他系统负责；最多6项"><el-option v-for="item in info.boundaries" :key="item" :label="item" :value="item" /></el-select></el-form-item>
                 </el-form>
-                <div class="model-preview"><span>智能体看到的系统定位</span><b>{{ info.name || '系统定位未提供' }}</b><p>{{ info.summary || '尚未配置说明，客户端仍可按原流程查询已授权的业务工具。' }}</p><small>说明仅供目标选择参考 · 工具可能尚未加载 · 不代表已获得写入权限</small></div>
+                <div class="model-preview"><span>智能体看到的系统定位 <HelpTip title="系统定位预览"><p>说明仅供目标选择参考 · 工具可能尚未加载 · 不代表已获得写入权限</p></HelpTip></span><b>{{ info.name || '系统定位未提供' }}</b><p>{{ info.summary || '尚未配置说明，客户端仍可按原流程查询已授权的业务工具。' }}</p></div>
               </section>
               <section v-show="step === 2" class="setup-section">
-                <h3>限定智能体可以使用的业务动作</h3>
-                <p class="description">工作空间的工具源与范围继续复用原配置。开启后仍会逐次校验业务身份、权限和审批。</p>
+                <h3>限定智能体可以使用的业务动作 <HelpTip title="工具与审批边界"><p>工作空间的工具源与范围继续复用原配置。开启后仍会逐次校验业务身份、权限和审批。</p></HelpTip></h3>
                 <el-alert v-if="route.permission === 'readonly'" title="这个工作空间的权限档为只读。即使填写写操作清单，也不会开放写入；如需调整，请在业务路由的权限与治理中核对。" type="warning" :closable="false" show-icon />
                 <el-form label-position="top" :disabled="savingRoute || !me.can('routes:write')">
-                  <el-form-item label="允许本地智能体调用工具"><el-switch v-model="direct.enabled" /></el-form-item>
+                  <el-form-item label="允许本地智能体调用工具"><el-switch v-model="direct.enabled" active-text="仍按业务权限与审批执行" /></el-form-item>
                   <el-alert v-if="runtime.enabled && !direct.enabled" title="本地会话已启用，但业务工具调用未开启。用户可以完成授权，暂时无法通过此空间发现或操作业务工具。" type="warning" :closable="false" show-icon />
                   <el-divider content-position="left">生成图片上传</el-divider>
-                  <el-form-item label="允许上传生成图片"><el-switch v-model="artifacts.enabled" /><div class="field-note">将智能体生成的图片保存到所选媒体存储，返回 URL 供商品等业务使用。上传不等于已修改业务数据。</div></el-form-item>
+                  <el-form-item><template #label>允许上传生成图片 <HelpTip title="生成图片上传"><p>将智能体生成的图片保存到所选媒体存储，返回 URL 供商品等业务使用。上传不等于已修改业务数据。</p></HelpTip></template><el-switch v-model="artifacts.enabled" active-text="仅上传文件" /></el-form-item>
                   <template v-if="artifacts.enabled">
-                    <el-form-item label="保存到哪个媒体存储"><el-select v-model="artifacts.bucket" filterable allow-create placeholder="选择已登记的存储" style="width:100%"><el-option v-for="b in storageOptions" :key="b.name" :value="b.name" :label="`${b.name} · ${b.kind}${b.enabled ? '' : '（已停用）'}`" :disabled="!b.enabled" /></el-select><div class="field-note"><router-link to="/storage">前往媒体存储配置 COS／OSS 或本地存储</router-link>。此处不填写密钥。文件由部署方管理，不随会话结束清理。</div></el-form-item>
-                    <el-form-item label="单张图片大小上限（字节）"><el-input-number v-model="artifacts.max_bytes" :min="1" :max="6291456" /><span class="inline-note">默认 6 MiB</span></el-form-item>
+                    <el-form-item><template #label>保存到哪个媒体存储 <HelpTip title="生成图片的存储"><p>此处不填写密钥。文件由部署方管理，不随会话结束清理。</p></HelpTip></template><el-select v-model="artifacts.bucket" filterable allow-create placeholder="选择已登记的存储" style="width:100%"><el-option v-for="b in storageOptions" :key="b.name" :value="b.name" :label="`${b.name} · ${b.kind}${b.enabled ? '' : '（已停用）'}`" :disabled="!b.enabled" /></el-select><div class="field-note"><router-link to="/storage">前往媒体存储配置 COS／OSS 或本地存储</router-link></div></el-form-item>
+                    <el-form-item><template #label>单张图片大小上限（字节） <HelpTip title="图片大小上限"><p>默认 6 MiB</p></HelpTip></template><el-input-number v-model="artifacts.max_bytes" :min="1" :max="6291456" /></el-form-item>
                     <el-form-item label="允许的图片类型"><el-select v-model="artifacts.allowed_mimes" multiple><el-option v-for="m in ['image/png','image/jpeg','image/webp']" :key="m" :label="m" :value="m" /></el-select></el-form-item>
                   </template>
                   <el-divider content-position="left">业务工具</el-divider>
@@ -78,7 +75,7 @@
                   <div class="source-card" v-for="(source, index) in sources" :key="source._key">
                     <div class="source-top"><b>工具源 {{ index + 1 }}</b><el-button link type="danger" :disabled="savingRoute || !me.can('routes:write')" @click="sources.splice(index, 1)">移除</el-button></div>
                     <el-form-item label="已登记的工具源"><el-select v-model="source.config.provider" filterable allow-create style="width:100%" @change="clearCatalog(source)"><el-option v-for="p in providers" :key="p.name" :value="p.name" :label="p.description ? `${p.name} · ${p.description}` : p.name" /></el-select></el-form-item>
-                    <el-form-item label="允许的工具范围（scope）"><el-select v-model="source.config.allow" multiple filterable allow-create default-first-option style="width:100%" placeholder="选择范围或输入精确scope"><el-option v-for="scope in sourceScopes(source)" :key="scope" :value="scope" :label="scope" /><el-option value="*" label="全部scope（包含该工具源以后新增的scope）" /></el-select><div class="field-note">只读工具按范围开放；写操作还需要下方的精确清单。</div></el-form-item>
+                    <el-form-item><template #label>允许的工具范围（scope） <HelpTip title="工具范围与写操作"><p>只读工具按范围开放；写操作还需要下方的精确清单。</p></HelpTip></template><el-select v-model="source.config.allow" multiple filterable allow-create default-first-option style="width:100%" placeholder="选择范围或输入精确scope"><el-option v-for="scope in sourceScopes(source)" :key="scope" :value="scope" :label="scope" /><el-option value="*" label="全部scope（包含该工具源以后新增的scope）" /></el-select></el-form-item>
                     <div class="catalog-action"><el-button size="small" :disabled="!source.config.provider" :loading="source._loading" @click="loadCatalog(source)">读取工具目录</el-button><span>{{ source._loaded ? `${source._tools.length} 个已声明工具` : '尚未读取目录，可手工填写已知scope和操作标识' }}</span></div>
                     <p class="inline-error" v-if="source._error">{{ source._error }}</p>
                     <el-table v-if="source._tools.length" :data="source._tools" size="small" max-height="240" style="margin-top:14px">
@@ -87,10 +84,10 @@
                       <el-table-column label="当前配置" min-width="150"><template #default="{ row }">{{ toolConfiguration(source, row) }}</template></el-table-column>
                     </el-table>
                   </div>
-                  <el-form-item label="允许的写操作" class="write-field"><el-select v-model="direct.write_tools" multiple filterable allow-create default-first-option style="width:100%" placeholder="留空时不开放写操作；只接受精确operationId"><el-option v-for="tool in writeOptions" :key="tool.name" :value="tool.name" :label="`${tool.name} · ${tool.scope}${tool.confirm_required || tool.risk === 'high' ? ' · 原规则需审批' : ''}`" /></el-select><div class="field-note">不能填写 *。选中的操作仍须通过原 scope、主体、风险与审批规则。</div></el-form-item>
-                  <el-form-item label="额外要求审批的写操作"><el-select v-model="direct.force_approval_tools" multiple filterable style="width:100%" placeholder="可进一步收紧审批要求"><el-option v-for="name in direct.write_tools" :key="name" :value="name" :label="name" /></el-select><div class="field-note">这里只增加审批要求，不会取消工具本身要求的审批。</div></el-form-item>
+                  <el-form-item class="write-field"><template #label>允许的写操作 <HelpTip title="写操作授权"><p>不能填写 *。选中的操作仍须通过原 scope、主体、风险与审批规则。</p></HelpTip></template><el-select v-model="direct.write_tools" multiple filterable allow-create default-first-option style="width:100%" placeholder="留空时不开放写操作；只接受精确operationId"><el-option v-for="tool in writeOptions" :key="tool.name" :value="tool.name" :label="`${tool.name} · ${tool.scope}${tool.confirm_required || tool.risk === 'high' ? ' · 原规则需审批' : ''}`" /></el-select></el-form-item>
+                  <el-form-item><template #label>额外要求审批的写操作 <HelpTip title="额外审批要求"><p>这里只增加审批要求，不会取消工具本身要求的审批。</p></HelpTip></template><el-select v-model="direct.force_approval_tools" multiple filterable style="width:100%" placeholder="仅增加审批要求"><el-option v-for="name in direct.write_tools" :key="name" :value="name" :label="name" /></el-select></el-form-item>
                 </el-form>
-                <el-collapse><el-collapse-item title="高级运行设置" name="advanced"><el-form label-position="top" :disabled="savingRoute || !me.can('routes:write')"><el-form-item label="每轮主动加载的工具上限"><el-input-number v-model="runtime.active_tool_limit" :min="1" :max="12" /></el-form-item><el-form-item label="本地编排补充规则"><el-input v-model="runtime.instructions" type="textarea" :rows="3" maxlength="20000" /><div class="field-note">延续已有运行规则；系统介绍应填写在上一步。</div></el-form-item></el-form></el-collapse-item></el-collapse>
+                <el-collapse><el-collapse-item title="高级运行设置" name="advanced"><el-form label-position="top" :disabled="savingRoute || !me.can('routes:write')"><el-form-item label="每轮主动加载的工具上限"><el-input-number v-model="runtime.active_tool_limit" :min="1" :max="12" /></el-form-item><el-form-item><template #label>本地编排补充规则 <HelpTip title="本地编排补充规则"><p>延续已有运行规则；系统介绍应填写在上一步。</p></HelpTip></template><el-input v-model="runtime.instructions" type="textarea" :rows="3" maxlength="20000" /></el-form-item></el-form></el-collapse-item></el-collapse>
               </section>
               <el-alert v-if="routeSaveError" :title="routeSaveError" type="error" :closable="false" show-icon />
               <div class="section-footer"><span>{{ !me.can('routes:write') ? '当前账号没有工作空间修改权限' : routeDirty ? '工作空间有未保存修改' : '工作空间配置已同步' }}</span><el-button type="primary" :loading="savingRoute" :disabled="!routeDirty || !me.can('routes:write')" @click="saveRoute">保存工作空间</el-button></div>
@@ -99,14 +96,13 @@
         </template>
 
         <section v-show="step === 3" class="setup-section">
-          <h3>检查已保存的接入配置</h3><p class="description">连接配置只包含中枢地址、接入方和工作空间。用户登录后，实际可用工具会按原业务授权确定。</p>
+          <h3>检查已保存的接入配置 <HelpTip title="连接配置与验证"><p>连接配置只包含中枢地址、接入方和工作空间。用户登录后，实际可用工具会按原业务授权确定。</p><p>系统说明缺失不会阻断已有连接；工具范围与服务可用性将在授权后进一步校验。</p></HelpTip></h3>
           <el-alert v-if="clientDirty || routeDirty" title="还有未保存的修改。下方状态和连接配置仅反映已保存内容。" type="warning" :closable="false" show-icon />
           <el-alert v-if="overviewError || overviewLoading" :title="overviewError ? '最新连接状态读取失败，请重试后生成配置。' : '正在核对最新连接状态…'" :type="overviewError ? 'error' : 'info'" :closable="false"><template #default><el-button v-if="overviewError" link @click="emit('retry-overview')">重新读取</el-button></template></el-alert>
           <div class="check-item"><span>接入方</span><b>{{ persistedClient?.enabled ? '已启用' : '已停用' }}</b></div>
           <div class="check-item"><span>业务授权入口</span><b>{{ persistedClient?.agent_authorize_url ? '已配置' : '尚未配置' }}</b></div>
           <div v-for="item in savedWorkspaces" :key="item.route" class="workspace-result"><div><b>{{ item.name }}</b><code>{{ item.route }}</code></div><p>{{ overviewError || overviewLoading ? '等待核对当前连接状态' : workspaceStatus(item) }}</p><el-button type="primary" plain size="small" :disabled="overviewLoading || Boolean(overviewError) || savingClient || savingRoute || !persistedClient?.enabled || !persistedClient?.agent_authorize_url || !item.enabled || !item.runtime_enabled" @click="emit('connect', { app_id: client.app_id, workspace: item.route })">生成连接配置</el-button></div>
           <el-empty v-if="!savedWorkspaces.length" description="尚无可连接的工作空间。请先保存授权入口配置。" :image-size="70" />
-          <p class="field-note">系统说明缺失不会阻断已有连接；工具范围与服务可用性将在授权后进一步校验。</p>
         </section>
       </template>
     </div>
@@ -120,6 +116,7 @@ import { createFormExitGuard, needsUnloadWarning } from '../form-guard';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { kernelFetch } from '../runtime-path';
 import { useMe } from '../store';
+import HelpTip from './HelpTip.vue';
 
 interface Workspace { route: string; name: string; enabled: boolean; runtime_enabled: boolean; direct_enabled: boolean; system_info_configured?: boolean; source_count?: number }
 interface ClientSetup { app_id: string; name: string; enabled: boolean; agent_authorize_url: string | null; allowed_routes: string[]; revision: string }
@@ -281,7 +278,7 @@ watch(() => [props.modelValue, props.appId], () => { if (props.modelValue && pro
 .setup-panel{max-width:920px;margin:auto;color:var(--el-text-color-primary)}
 .setup-header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start;padding:8px 0 24px}.eyebrow{font-size:12px;color:var(--el-color-primary);font-weight:600}.setup-header h2{font-size:24px;margin:7px 0 9px}.setup-header p,.description{color:var(--el-text-color-secondary);font-size:14px;line-height:1.7;margin:0}
 .setup-steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:6px;background:var(--el-fill-color-light);border-radius:12px;margin-bottom:24px}.setup-steps button{border:0;background:transparent;text-align:left;padding:12px 10px;color:var(--el-text-color-secondary);cursor:pointer;border-radius:8px;font:inherit;font-size:13px}.setup-steps button span{display:inline-flex;width:24px;height:24px;align-items:center;justify-content:center;border-radius:50%;margin-right:7px;background:var(--el-fill-color-darker)}.setup-steps button.active{background:var(--el-bg-color);color:var(--el-color-primary);box-shadow:0 2px 8px #00000008}.setup-steps button.active span{background:var(--el-color-primary-light-9);color:var(--el-color-primary)}
-.setup-section{padding:4px 4px 16px}.setup-section h3{font-size:18px;margin:8px 0 9px}.description{margin-bottom:22px}.field-note,.inline-note{font-size:12px;line-height:1.7;color:var(--el-text-color-secondary)}.field-note{margin-top:7px;width:100%}.inline-note{margin-left:12px}.section-footer{display:flex;justify-content:space-between;align-items:center;padding:18px 0;border-top:1px solid var(--el-border-color-lighter);gap:14px}.section-footer span{font-size:12px;color:var(--el-text-color-secondary)}.workspace-selector{padding:18px;background:var(--el-fill-color-light);border-radius:10px;margin-bottom:22px;display:grid;grid-template-columns:1fr 290px;gap:20px;align-items:center}.workspace-selector p{font-size:12px;line-height:1.7;color:var(--el-text-color-secondary);margin:7px 0 0}.model-preview{padding:20px;background:var(--el-color-primary-light-9);border:1px solid var(--el-color-primary-light-7);border-radius:10px}.model-preview span,.model-preview b{display:block}.model-preview span{font-size:12px;color:var(--el-color-primary);margin-bottom:10px}.model-preview p{font-size:14px;line-height:1.7}.model-preview small{font-size:12px;color:var(--el-text-color-secondary)}
+.setup-section{padding:4px 4px 16px}.setup-section h3{font-size:18px;margin:8px 0 9px}.description{margin-bottom:22px}.field-note,.inline-note{font-size:12px;line-height:1.7;color:var(--el-text-color-secondary)}.field-note{margin-top:7px;width:100%}.inline-note{margin-left:12px}.section-footer{display:flex;justify-content:space-between;align-items:center;padding:18px 0;border-top:1px solid var(--el-border-color-lighter);gap:14px}.section-footer span{font-size:12px;color:var(--el-text-color-secondary)}.workspace-selector{padding:18px;background:var(--el-fill-color-light);border-radius:10px;margin-bottom:22px;display:grid;grid-template-columns:1fr 290px;gap:20px;align-items:center}.workspace-selector p{font-size:12px;line-height:1.7;color:var(--el-text-color-secondary);margin:7px 0 0}.model-preview{padding:20px;background:var(--el-color-primary-light-9);border:1px solid var(--el-color-primary-light-7);border-radius:10px}.model-preview>span,.model-preview>b{display:block}.model-preview>span{font-size:12px;color:var(--el-color-primary);margin-bottom:10px}.model-preview p{font-size:14px;line-height:1.7}.model-preview small{font-size:12px;color:var(--el-text-color-secondary)}
 .source-heading,.source-top,.catalog-action{display:flex;justify-content:space-between;align-items:center;gap:12px}.source-heading{margin:24px 0 12px}.source-card{border:1px solid var(--el-border-color-light);border-radius:10px;padding:16px;margin-bottom:12px}.source-top{margin-bottom:18px}.catalog-action{justify-content:flex-start}.catalog-action span{font-size:12px;color:var(--el-text-color-secondary)}.write-field{margin-top:24px}.inline-error{color:var(--el-color-danger);font-size:12px;line-height:1.6}.check-item{display:flex;justify-content:space-between;padding:17px 2px;border-bottom:1px solid var(--el-border-color-lighter);font-size:14px}.workspace-result{display:grid;grid-template-columns:1fr auto;gap:12px;padding:20px;border:1px solid var(--el-border-color-light);border-radius:10px;margin:16px 0}.workspace-result code{display:block;color:var(--el-text-color-secondary);font-size:12px;margin-top:6px}.workspace-result p{grid-row:2;grid-column:1/-1;font-size:13px;margin:0;color:var(--el-text-color-secondary)}
 @media(max-width:760px){.setup-steps{grid-template-columns:1fr 1fr}.workspace-selector{grid-template-columns:1fr}.setup-header h2{font-size:20px}.catalog-action{align-items:flex-start;flex-direction:column}.inline-note{display:block;margin-left:0}.workspace-result{grid-template-columns:1fr}.workspace-result p{grid-row:auto}}
 </style>

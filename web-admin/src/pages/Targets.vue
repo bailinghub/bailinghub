@@ -8,7 +8,8 @@
         </HelpTip>
         <el-button type="primary" style="margin-left: auto" @click="openCreate">注册目标</el-button></div>
     </template>
-    <el-table :data="list">
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
+    <el-table :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="目标" min-width="230" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="target-main">
@@ -95,9 +96,11 @@
         </HelpTip></template>
         <el-switch v-model="form.needs_project" />
       </el-form-item>
-      <el-form-item label="执行超时">
+      <el-form-item>
+        <template #label>执行超时（ms） <HelpTip title="执行超时">
+          <p>填 0 时使用默认值 120000 ms（2 分钟）。</p>
+        </HelpTip></template>
         <el-input-number v-model="form.timeout_ms" :min="0" :max="600000" :step="10000" />
-        <span class="muted" style="margin-left: 8px">ms，0 = 默认 120000</span>
       </el-form-item>
       <el-form-item label="说明（可选）"><el-input v-model="form.description" /></el-form-item>
       <el-form-item v-if="editing" label="启用"><el-switch v-model="form.enabled" /></el-form-item>
@@ -110,12 +113,15 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import HelpTip from '../components/HelpTip.vue';
 
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.description || ""} ${r.kind || ""}` });
 const execs = ref<any[]>([]);
 const open = ref(false);
 const editing = ref(false);

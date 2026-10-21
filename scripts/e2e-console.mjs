@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { verifyTroubleshootingExtra } from './e2e-console-troubleshooting-extra.mjs';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
@@ -371,6 +372,8 @@ async function verifyCallSnippets(page, base) {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '编辑', exact: true }).first().click();
     await expectVisible(page, '执行行为提示');
+    await expectVisible(page, '仅提示词约束；工具授权与审批');
+    await page.getByRole('button', { name: '点击查看：执行行为提示', exact: true }).click();
     await expectVisible(page, '此项是提示词约束，不是强制授权或沙箱');
     await page.getByRole('button', { name: '取消', exact: true }).click();
     console.log('✓ snippets: environment token, enabled clients and visible permission boundary passed');
@@ -726,6 +729,82 @@ async function verifyOnboardingAndForms(browser, base) {
   } finally { if (releaseRouteSave) releaseRouteSave(); await ctx.close(); }
 }
 
+
+async function verifyTroubleshooting(browser, base) {
+  const context = await browser.newContext();
+  await mockApi(context);
+  const p = await context.newPage();
+  p.setDefaultTimeout(8000);
+  const errors = [];
+  p.on('pageerror', error => errors.push(error.message));
+  const ds = [
+    { area: 'client', id: 'demo-app', severity: 'error', message: '演示接入方配置需检查' },
+    { area: 'tool_provider', id: 'demo-business', severity: 'warning', message: '演示工具源需检查' },
+    { area: 'runtime_delivery', id: 'delivery_dlq', severity: 'warning', message: '演示送达结果需核对' },
+    { area: 'runtime_jobs', id: 'error_burst', severity: 'warning', message: '演示任务失败需检查' },
+  ];
+  await context.route('**/admin/api/config-diagnostics', r => r.fulfill({ json: { ok: false, errors: 1, warnings: 3, diagnostics: ds } }));
+  await context.route('**/admin/api/clients', r => r.fulfill({ json: [...fixtures.clients, { ...fixtures.clients[0], app_id: 'demo-app-extra', name: 'Similar client' }] }));
+  await context.route('**/admin/api/runs?*', r => r.fulfill({ json: [{ ...fixtures.runs[0], route_key: 'demo_support', status: 'error' }, { ...fixtures.runs[0], job_id: 'older-job', route_key: 'other_route', status: 'done', created_at: '2020-01-01T00:00:00Z' }] }));
+  await context.route('**/admin/api/notification-outbox?*', r => r.fulfill({ json: { items: [{ event_id: 'delivery-unknown', kind: 'delivery-dlq', status: 'uncertain', job_id: fixtures.runs[0].job_id, attempts: 1, updated_at: new Date().toISOString() }], total: 1, snapshot: { counts: { pending: 0, processing: 0, failed: 0, uncertain: 1 } } } }));
+  try {
+    await p.goto(`${base}/console/diagnostics?severity=error&q=demo`);
+    await p.locator('.groups .el-table__row').first().getByRole('button', { name: '打开', exact: true }).click();
+    await p.waitForURL(u => u.pathname.endsWith('/clients') && u.searchParams.get('focus') === 'demo-app');
+    await expectVisible(p, 'Demo 业务系统');
+    assert.equal(await p.locator('.el-table__body .el-table__row').count(), 1, '精确定位不得混入近似名称');
+    await p.reload();
+    await expectVisible(p, '定位：demo-app');
+    await p.getByRole('button', { name: '返回体检', exact: true }).click();
+    await p.waitForURL(u => u.pathname.endsWith('/diagnostics') && u.searchParams.get('severity') === 'error' && u.searchParams.get('q') === 'demo');
+    await p.locator('.groups .el-table__row').first().waitFor({ state: 'visible' });
+    assert.equal(await p.locator('.groups .el-table__row').count(), 1);
+    await p.getByRole('tab', { name: 'route=auto 预演' }).click();
+    await p.waitForURL(u => u.searchParams.get('tab') === 'auto');
+    await p.reload();
+    assert.equal(await p.getByRole('tab', { name: 'route=auto 预演' }).getAttribute('aria-selected'), 'true');
+    await p.goto(`${base}/console/clients?q=deleted&focus=deleted`);
+    await expectVisible(p, '未找到对象「deleted」');
+    assert.equal(await p.locator('.el-table__body .el-table__row').count(), 0);
+    await p.getByRole('button', { name: '清除筛选', exact: true }).click();
+    await p.waitForURL(u => !u.searchParams.has('focus'));
+    await expectVisible(p, 'Similar client');
+    assert.equal(await p.locator('.el-table__body .el-table__row').count(), 2);
+    await p.getByRole('textbox', { name: '搜索名称 / 标识', exact: true }).fill('Similar');
+    await p.waitForURL(u => u.searchParams.get('q') === 'Similar');
+    await p.reload();
+    await expectVisible(p, 'Similar client');
+    assert.equal(await p.locator('.el-table__body .el-table__row').count(), 1);
+    await p.goto(`${base}/console/diagnostics?q=delivery_dlq`);
+    await p.locator('.groups .el-table__row').first().getByRole('button', { name: '打开', exact: true }).click();
+    await p.waitForURL(u => u.searchParams.get('tab') === 'outbox' && u.searchParams.get('outbox_kind') === 'delivery-dlq');
+    await expectVisible(p, 'delivery-unknown');
+    await p.locator('.notification-panel .filters .el-select__wrapper').nth(1).click();
+    await p.getByRole('option', { name: '需核对', exact: true }).click();
+    await p.waitForURL(u => u.searchParams.get('outbox_status') === 'uncertain');
+    await p.reload();
+    await expectVisible(p, 'delivery-unknown');
+    await p.locator('.notification-panel .el-table__expand-icon').first().click();
+    await p.getByRole('button', { name: '查看原任务', exact: true }).click();
+    await p.waitForURL(u => !!u.searchParams.get('detail'));
+    await p.locator('.el-drawer__close-btn').click();
+    await p.waitForURL(u => !u.searchParams.has('detail') && u.searchParams.get('outbox_status') === 'uncertain');
+    await p.getByRole('button', { name: '返回来源页面', exact: true }).click();
+    await p.waitForURL(u => u.pathname.endsWith('/diagnostics') && u.searchParams.get('q') === 'delivery_dlq');
+    await p.goto(`${base}/console/diagnostics?q=error_burst`);
+    await p.locator('.groups .el-table__row').first().getByRole('button', { name: '打开', exact: true }).click();
+    await p.waitForURL(u => u.pathname.endsWith('/runs') && u.searchParams.get('tab') === 'jobs');
+    await expectVisible(p, '当前匹配 1 条');
+    await p.locator('.run-filters .el-select__wrapper').nth(2).click();
+    await p.getByRole('option', { name: '最近 24 小时', exact: true }).click();
+    await p.waitForURL(u => u.searchParams.get('run_period') === '24h' && u.searchParams.get('run_status') === 'error');
+    await p.reload();
+    await expectVisible(p, '当前匹配 1 条');
+    assert.deepEqual(errors, []);
+    console.log('✓ troubleshooting: exact diagnostic focus, missing objects, filters, tabs, reload and return context passed');
+  } finally { await context.close(); }
+}
+
 const server = createServer(serveStatic);
 const port = await listen(server);
 const browserChannel = String(process.env.PLAYWRIGHT_CHANNEL || '').trim();
@@ -787,7 +866,12 @@ try {
   await page.getByRole('button', { name: '编辑' }).first().click();
   await page.getByRole('tab', { name: '治理', exact: true }).click();
   await expectVisible(page, '工具源总限额');
+  const totalLimitHelp = page.getByRole('button', { name: '点击查看：工具源总限额', exact: true });
+  await totalLimitHelp.focus();
+  await totalLimitHelp.press('Enter');
   await expectVisible(page, '用户、授权和会话共用');
+  await totalLimitHelp.press('Escape');
+  await page.getByText('工具源总限额（次/分钟，0=关闭）', { exact: true }).click();
   const defaultPolicy = page.locator('.limit-editor').first();
   await defaultPolicy.locator('.el-select__wrapper').first().click();
   await page.getByRole('option', { name: '自定义中枢限额', exact: true }).click();
@@ -876,6 +960,8 @@ try {
 
   await verifyRuntimeActions(page, context, `http://127.0.0.1:${port}`);
   await verifyOnboardingAndForms(browser, `http://127.0.0.1:${port}`);
+  await verifyTroubleshooting(browser, `http://127.0.0.1:${port}`);
+  await verifyTroubleshootingExtra(browser, `http://127.0.0.1:${port}`, mockApi, fixtures);
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
   console.log('✓ console e2e passed');

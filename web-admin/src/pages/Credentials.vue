@@ -7,10 +7,11 @@
         </HelpTip>
         <el-button type="primary" style="margin-left: auto" @click="openCreate">新建凭证</el-button></div>
     </template>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
     <el-empty v-if="!list.length" description="还没有凭证：llm 路由与知识库都需要先配一把">
       <el-button type="primary" @click="openCreate">添加第一把</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="凭证" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="cred-main">
@@ -59,14 +60,15 @@
         <el-input v-model="form.name" :disabled="editing" placeholder="如 dashscope-main / openrouter-prod" class="mono" />
       </el-form-item>
       <el-form-item>
-        <template #label>平台 <span class="field-required">*</span></template>
-        <el-select v-model="form.platform" filterable style="width: 100%" placeholder="选平台自动带出 Base URL 与常用模型" @change="onPlatform">
+        <template #label>平台 <span class="field-required">*</span> <HelpTip title="模型平台">
+          <p>选择平台后自动填入 Base URL，并提供常用模型建议；自定义平台可手动填写。</p>
+          <p v-if="curProvider?.note">{{ curProvider.note }}</p>
+          <p v-if="curProvider?.keyUrl">获取 API Key：{{ curProvider.keyUrl }}</p>
+        </HelpTip></template>
+        <el-select v-model="form.platform" filterable style="width: 100%" placeholder="选择平台" @change="onPlatform">
           <el-option v-for="p in providers" :key="p.id" :value="p.id" :label="p.label" />
           <el-option :value="CUSTOM" label="自定义（手填 Base URL 与模型）" />
         </el-select>
-        <div v-if="curProvider && (curProvider.note || curProvider.keyUrl)" class="muted hint">
-          <span v-if="curProvider.note">{{ curProvider.note }}</span><span v-if="curProvider.keyUrl">　取 Key：{{ curProvider.keyUrl }}</span>
-        </div>
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('kind', '用途') }} <HelpTip title="用途怎么选">
@@ -75,12 +77,12 @@
           <p>• <b>生成/理解类</b>：文本对话、图片理解、语音转写/音频理解、文件/长文档理解，属于让模型“理解输入并生成结果”的通道；</p>
           <p>• <b>向量化</b>：知识库与工具语义检索使用的 embedding，走 <code>/embeddings</code>，是另一条通道。</p>
           <p>如果同一个 API Key 两边都要用，建两条凭证即可，例如 <code>dashscope-main</code> 和 <code>dashscope-embedding</code>，Base URL 与 API Key 可以相同，但默认模型和引用位置分开。</p>
+          <p v-if="capHint">{{ capHint }}</p>
         </HelpTip></template>
         <el-radio-group v-model="credKind" class="kind-radios">
-          <el-radio value="chat">生成/理解类 <span class="muted">文本 / 图片 / 语音 / 文件</span></el-radio>
-          <el-radio value="embedding">向量化 <span class="muted">知识库 / 工具检索</span></el-radio>
+          <el-radio value="chat">生成/理解类</el-radio>
+          <el-radio value="embedding">向量化</el-radio>
         </el-radio-group>
-        <div v-if="capHint" class="muted hint">{{ capHint }}</div>
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="连接与模型" name="connection">
@@ -103,6 +105,7 @@
           <p>{{ fieldDesc('default_model', '路由或知识库未显式指定模型时使用的默认模型。') }}</p>
           <p>生成/理解凭证建议填一个常用文本模型，向量化凭证必须填 embedding 模型。</p>
           <p>视觉、语音、文件等专项模型可在「触发路由」里按场景单独覆盖；这里的默认模型只是兜底。</p>
+          <p v-if="curProvider?.freeModel">该平台模型较多，部分模型可能需要接入点 ID；列表只提供常用建议，也可直接手填。</p>
         </HelpTip></template>
         <el-select v-model="form.default_model" filterable allow-create default-first-option clearable style="width: 100%"
           :placeholder="modelGroups.length ? '选一个，或手填模型名' : '手填模型名'">
@@ -110,7 +113,6 @@
             <el-option v-for="mname in g.models" :key="mname" :value="mname" :label="g.tag ? mname + '  · ' + g.tag : mname" />
           </el-option-group>
         </el-select>
-        <div v-if="curProvider?.freeModel" class="muted hint">该平台模型很多/可能需接入点 ID，列表只是常用建议，可直接手填</div>
         <el-alert v-if="modelIdHasWhitespace(form.default_model)" type="warning" :closable="false" show-icon class="model-id-alert"
           title="模型 ID 含空白字符，可能填入了展示名称；请优先从平台文档或 /models 复制精确 ID。" />
       </el-form-item>
@@ -174,6 +176,8 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
@@ -188,6 +192,7 @@ const CUSTOM = CUSTOM_PROVIDER;
 const providers = LLM_PROVIDERS;
 const credentialSchema = useConfigSchema('credential');
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.kind || ""}` });
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
