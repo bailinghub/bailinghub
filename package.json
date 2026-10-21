@@ -91,7 +91,7 @@
     "release:consistency:test": "node --test scripts/check-release-consistency.test.mjs",
     "release:audit": "npm run release:consistency && npm run release:consistency:test && npm run images:policy:test && npm run public-content:denylist:test && npm run security:scan && npm run oss:guard && node scripts/release-audit.mjs && npm run package:artifact:check",
     "github:verify": "node scripts/verify-github-repo.mjs",
-    "release:check": "npm run notices:check && npm run assets:check && npm run audit:deps && npm run audit:deps:test && npm run docx:vendor:verify-upstream && npm run docx:test && npm run client-api:contract && npm run client-api:ecosystem:clone && npm run typecheck && npm run installer:secrets:test && npm run doctor:deployment:typecheck && npm run doctor:deployment:test && npm test && npm run widget:renderer:test && npm run web-admin:check && npm run docx:browser:test && npm run notification:console:test && npm run docs:check && npm run examples:check && npm run sdk:test && npm run sdk:test7 && npm run sdk:test-node && npm run sdk:test-python && npm run sdk:test-runtime && npm run sdk:test-p1 && npm run release:audit && npm run oss:verify && npm run github:verify",
+    "release:check": "npm run notices:check && npm run assets:check && npm run audit:deps && npm run audit:deps:test && npm run docx:vendor:verify-upstream && npm run docx:test && npm run client-api:contract && npm run client-api:ecosystem:clone && npm run typecheck && npm run installer:secrets:test && npm run doctor:deployment:typecheck && npm run doctor:deployment:test && npm run doctor:upgrade-plan:typecheck && npm run doctor:upgrade-plan:test && npm test && npm run widget:renderer:test && npm run web-admin:check && npm run docx:browser:test && npm run notification:console:test && npm run docs:check && npm run examples:check && npm run sdk:test && npm run sdk:test7 && npm run sdk:test-node && npm run sdk:test-python && npm run sdk:test-runtime && npm run sdk:test-p1 && npm run release:audit && npm run oss:verify && npm run github:verify",
     "images:build": "sh scripts/publish-images.sh",
     "images:publish": "BAILING_PUSH_IMAGES=1 sh scripts/publish-images.sh",
     "images:publish-mysql": "BAILING_PUSH_IMAGES=1 sh scripts/publish-mysql-image.sh",
@@ -114,7 +114,10 @@
     "docx:vendor:verify-upstream": "node scripts/vendor-mammoth.mjs --verify-upstream",
     "docx:test": "node --import tsx --test scripts/docx-compatibility.test.mjs",
     "docx:browser:test": "node scripts/docx-browser-test.mjs",
-    "notification:console:test": "node scripts/notification-console-test.mjs"
+    "notification:console:test": "node scripts/notification-console-test.mjs",
+    "doctor:upgrade-plan": "tsx scripts/doctor.ts --upgrade-plan",
+    "doctor:upgrade-plan:test": "node --import tsx --test scripts/doctor-upgrade-plan.test.ts",
+    "doctor:upgrade-plan:typecheck": "tsc --noEmit --strict --noUncheckedIndexedAccess --noUnusedLocals --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022 --types node scripts/doctor-upgrade-plan.ts scripts/doctor-upgrade-plan.test.ts"
   },
   "dependencies": {
     "mammoth": "file:vendor/bailinghub-mammoth-library-1.12.0-bailinghub.1.tgz",

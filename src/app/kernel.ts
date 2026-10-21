@@ -17,9 +17,10 @@ import { createRuntimeContextHelpers } from './runtime-context';
 import {
   createManagedRuntimeMaintenanceFor,
   initializeRuntimeLifecycleFor,
-  scheduleBootRecoveryFor,
+  startBootRecoveryFor,
   startRuntimeSchedulersFor,
   type ManagedRuntimeMaintenance,
+  type RuntimeBootRecovery,
   type RuntimeLifecycleDeps,
   type RuntimeSchedulers,
 } from './runtime-lifecycle';
@@ -409,7 +410,7 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
   let initialized = false;
   let initializePromise: Promise<void> | null = null;
   let schedulers: RuntimeSchedulers | null = null;
-  let bootRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  let bootRecovery: RuntimeBootRecovery | null = null;
   let managedMaintenance: ManagedRuntimeMaintenance | null = null;
   let closing = false;
   let closed = false;
@@ -490,12 +491,15 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
         if (!initializedWithinBudget) throw new Error(`Kernel ${instanceKey} initialization drain timed out`);
       }
       schedulers?.stop();
+      bootRecovery?.stop();
       if (schedulers?.drain && !await schedulers.drain(remainingDrainMs())) {
         throw new Error(`Kernel ${instanceKey} persisted evidence maintenance drain timed out`);
       }
       schedulers = null;
-      if (bootRecoveryTimer) clearTimeout(bootRecoveryTimer);
-      bootRecoveryTimer = null;
+      if (bootRecovery && !await bootRecovery.drain(remainingDrainMs())) {
+        throw new Error(`Kernel ${instanceKey} boot recovery drain timed out`);
+      }
+      bootRecovery = null;
       if (managedMaintenance) {
         const maintenanceDrained = await managedMaintenance.stop(remainingDrainMs());
         if (!maintenanceDrained) throw new Error(`Kernel ${instanceKey} managed maintenance drain timed out`);
@@ -561,8 +565,8 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
         return schedulers;
       },
       scheduleBootRecovery: () => {
-        bootRecoveryTimer ??= scheduleBootRecoveryFor(lifecycleDeps);
-        return bootRecoveryTimer;
+        bootRecovery ??= startBootRecoveryFor(lifecycleDeps);
+        return bootRecovery.timer;
       },
       closeRuntime: () => close(),
       logger,

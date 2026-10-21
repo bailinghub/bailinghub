@@ -4,6 +4,8 @@ This task answers one narrow question: **can a developer who is new to BailingHu
 
 It is not certification, a benchmark, or evidence of production adoption. Passing means that the public installation path and demo governance loop were independently reproducible. It does not mean that the validator connected BailingHub to a real business system.
 
+After the demo, use the [business integration walkthrough (Chinese)](INTEGRATION_WALKTHROUGH.md) for a non-production API you control: one read, one approved write, permission changes, changed approval parameters, unknown outcomes and restart. Record time, blockers and maintainer assistance separately from independent success.
+
 ## Scope
 
 - Target: the open-source BailingHub Docker demo;

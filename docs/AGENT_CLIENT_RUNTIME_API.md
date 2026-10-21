@@ -1,6 +1,6 @@
 # Agent Client Runtime v1
 
-未发布配套增量：[任务控制](AGENT_TASK_CONTROL.md)为 turn 增加宿主 `task_binding` 和原样回显；已加入任务的 Session 不能省略，业务搜索须使用原 `run_id`。原调用只读核对与显式继续分别处理。
+Core 0.8.0 起提供的可选[任务控制](AGENT_TASK_CONTROL.md)为 turn 增加宿主 `task_binding` 和原样回显；已加入任务的 Session 不能省略，业务搜索须使用原 `run_id`。原调用只读核对与显式继续分别处理。
 
 本版本化接口让已完成 Agent Auth 网页授权的本地智能体在本地承担规划，同时继续复用 BailingHub 的身份重验、工具治理、审批、审计与对话总账。它不替代现有 `/run`、聊天入口或执行器协议。配套的部署、业务授权页和宿主接入步骤见 [Agent Client v1 接入指南](AGENT_CLIENT_QUICKSTART.md)，身份授权契约见 [Agent Auth v1](AGENT_AUTH_API.md)。
 

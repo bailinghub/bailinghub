@@ -34,7 +34,7 @@
 - **继续**：恢复原任务可派发状态，不增加额度、不变更成员，也不会自动执行任何业务调用。审批已通过的操作仍需显式继续原 `invocation_id`。
 - **取消**：终止后续派发，不能重新开启，也不会回滚已经发生的业务变化。
 - **原成员失效**：任一成员撤销、身份变化或绑定变化，整组阻断；不缩成剩余子集，不换默认授权。
-- **结果不明**：只核对原调用。不能换 ID、换授权、重建任务或改用另一个工具重新发出同一写操作。当前候选不会自动向业务系统查询补证，也不自动释放未知许可。
+- **结果不明**：只核对原调用。不能换 ID、换授权、重建任务或改用另一个工具重新发出同一写操作。当前实现不会自动向业务系统查询补证，也不自动释放未知许可。
 
 审批单消费、原调用派发标记、任务许可和执行 journal 在同一 MySQL 事务提交；之后才发出 HTTP。可信响应与额度结算也同事务保存。审计降级或传输不确定会保留明确的不确定状态，不能当成业务成功。
 
@@ -66,7 +66,7 @@
 
 SDK 增量方法为 `getTaskControlCapabilities`、`getTask` 和 `startTurn(..., { taskBinding })`。DSH 提供宿主 `setSessionTaskBinding/getSessionTaskState/restoreSessionTaskBinding` 及 CAS 存储接缝；精确签名以配套 DSH 的 `docs/TASK_CONTROL.md` 为准。模型不获得管理员 Token、创建任务、改额度或解除暂停的工具。沿用已选授权、跨轮工具缓存和原调用持久 journal；新操作使用本轮真实 run，恢复操作使用原 run / invocation。
 
-本候选限同一 Hub 和同一审计域。不同 Hub 的预算、正文转发和权限不能自动合并。
+当前实现限同一 Hub 和同一审计域。不同 Hub 的预算、正文转发和权限不能自动合并。
 
 ## 管理接口
 
@@ -79,7 +79,7 @@ SDK 增量方法为 `getTaskControlCapabilities`、`getTask` 和 `startTurn(...,
 | `GET /admin/api/agent-tasks/{task_id}?limit=30&before=...` | `{task,invocations,next_cursor}`；原调用按稳定 job ID 分页。 |
 | `POST /admin/api/agent-tasks/{task_id}/control` | `{request_id,expected_revision,action}`，`action=pause/resume/cancel`，返回快照。 |
 
-`members` 每项为 `{session_id,client_app_id,workspace,client_conversation_id,allowed_tools}`；工具只允许精确名称。`policy` 为 `{max_write_calls,max_concurrent,expires_at}`，截止时间可为 `null`。成员与策略创建后冻结，本候选不支持直接编辑。
+`members` 每项为 `{session_id,client_app_id,workspace,client_conversation_id,allowed_tools}`；工具只允许精确名称。`policy` 为 `{max_write_calls,max_concurrent,expires_at}`，截止时间可为 `null`。成员与策略创建后冻结，当前实现不支持直接编辑。
 
 创建与控制必须保留同一逻辑请求的 `request_id`，丢失确认时重试原请求。控制使用 CAS；修订冲突先刷新并请操作者重新判断，不能自动换修订号重放操作。后台只展示原关联、状态和计数，任务接口不返回工具参数或业务正文。
 
@@ -89,6 +89,6 @@ SDK 增量方法为 `getTaskControlCapabilities`、`getTask` 和 `startTurn(...,
 
 `TASK_DISPATCH_UNCERTAIN` 以及 invoke/resume 的 `TASK_UNAVAILABLE` 由配套 SDK 保守标成原调用结果未知，指导 `inspect_original`，不建议新写。旧 Core 404/405/501 能力协商为明确不支持；网络问题不能冒充“不支持”。旧 SDK/DSH 可继续使用**未加入任务**的授权，但不能执行已强制任务的 Session。
 
-数据库需要既有 `062_agent_task_control.sql` 的六张表，本次接线不增加后续迁移。全未迁移时任务能力不支持；部分表缺失或数据库故障必须阻断，不降级绕过。正式部署需先备份并核对当前数据库、成套候选和宿主兼容性；本地测试通过不代表已经部署。启用任务后不要回退到不认识强制标记的旧 Core，也不要删除标记或任务表作为回滚手段。
+数据库需要既有 `062_agent_task_control.sql` 的六张表，本次接线不增加后续迁移。全未迁移时任务能力不支持；部分表缺失或数据库故障必须阻断，不降级绕过。正式部署需先备份并核对当前数据库、配套制品和宿主兼容性；本地测试通过不代表已经部署。启用任务后不要回退到不认识强制标记的旧 Core，也不要删除标记或任务表作为回滚手段。
 
 Core 的可复现检查：`npm run typecheck`、`npm test`。真实事务/HTTP 验收通过显式 `BAILING_TASK_TEST_MYSQL_CONFIG` 指向专用 loopback 临时数据库，再运行 `src/routes/agent-task-control-http-mysql.test.ts` 与任务仓储的 MySQL 测试。禁止将该测试指向业务数据库。

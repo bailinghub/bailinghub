@@ -1,5 +1,9 @@
 # Compatibility And Upgrade Policy
 
+## Current 0.9.x upgrade path
+
+Core 0.9.2, 0.9.3 and 0.9.4 add migrations 065/066, 067 and 068 respectively. **A patch does not imply no schema migration or a restart-only upgrade.** Read the [0.9.2](UPGRADE_v0.9.2.en.md), [0.9.3](UPGRADE_v0.9.3.en.md) and [0.9.4](UPGRADE_v0.9.4.en.md) guides for the selected path. Preserve original jobs, approvals, notifications and migration records. Historical pairing notes below do not replace the target-version guide.
+
 ## Core 0.9.1 patch upgrade
 
 Relative to 0.9.0, this patch fixes asynchronous usage shutdown and updates public documentation/general security governance. There are no new APIs, SQL, plan rules, or client features. SDK 0.7.0 / DSH 0.7.0 remain unchanged. Old-version close returning does not establish that usage work has finished. Reconcile original requests before replacing artifacts; retry a new-version usage-drain timeout on the original instance. See the [0.9.1 upgrade guide](UPGRADE_v0.9.1.en.md).
@@ -13,6 +17,8 @@ Pair Core 0.9.0 with SDK 0.7.0 / DSH 0.7.0 for the optional model billing gatewa
 BailingHub follows SemVer for public releases.
 
 Before `1.0.0`, the project may still adjust public contracts, but breaking changes must be documented clearly in release notes and changelog entries.
+
+Version numbers express compatibility intent, not deployment effort. Compatible bug fixes may require additive migrations. New optional features may require explicit capability negotiation or paired clients. Before 1.0, incompatible adjustments still require an explicit migration path; 1.0 must define its stable API and support/deprecation policy before those commitments take effect. After 1.0, incompatible public API changes require a major version.
 
 ## Stable Public Surfaces
 
@@ -33,6 +39,11 @@ The following surfaces should be treated as public:
 - New non-null columns must have defaults.
 - Avoid destructive operations such as drop, rename, or type changes in minor versions.
 - Use transition windows for major schema changes.
+- Keep necessary data backfills in separate numbered migrations; additive DDL can still lock tables or need capacity planning.
+- Unknown ledger entries and checksum conflicts fail closed. Do not remove ledger rows to bypass validation.
+- `npm run db:init` migrates only `state.mysql`. A separate MySQL configuration store requires the official `migrateBailingHubCoreSchema` entry point as well. Migrate a shared database only once, never concurrently. JSONL state needs no SQL migration, but a MySQL configuration store still does. Startup does not run migrations.
+
+See [SQL rules](../sql/README.md) and [Kernel Host API](KERNEL_HOST_API.en.md). An additive schema does not establish that an older artifact accepts the new ledger or durable state.
 
 ## File-Level Customization
 
@@ -48,9 +59,20 @@ When public contracts change, update together:
 - changelog;
 - smoke or contract tests.
 
+Use distinct names for incompatible semantics and, where safe, a transition window spanning at least one complete minor release. State deprecation/removal versions and the actual diagnostic entry point. This is a change policy, not evidence that every existing deprecated field already emits a warning. Security fixes that cannot safely accept both forms must document an alternative migration procedure.
+
 ## Upgrade Goal
 
 Operators should be able to upgrade the open-source core without losing local secrets, runtime state, or deployment-specific customization.
+
+1. Pin current and target commits/artifact digests and read every applicable upgrade guide; do not update a running checkout from a floating branch.
+2. Identify state/configuration databases, JSONL, attachments and local configuration. Keep consistent backups and old artifacts, and test the intended restoration set in isolation.
+3. Stop admission and coordinate all writers sharing those stores. Drain accepted work and reconcile original calls, approvals and notification receipts. A timeout or unknown result must not become a replacement business write.
+4. Validate the target manifest and each complete database ledger, then explicitly run the official migrator for each distinct MySQL store.
+5. Check artifact identity, readiness, permissions, approvals, notification recovery, clients and receiver deduplication before restoring admission. No `BREAKING` heading does not mean no migration work.
+6. Test rollback compatibility first. Never delete migration rows, task-enforcement markers or notification records to make old code start. Restoring a database cannot undo external business effects.
+
+The [read-only upgrade planner](UPGRADE_PLAN.en.md) compares explicitly supplied artifacts and sanitized ledger snapshots. Offline comparison is not a live database check, proof of restorable backups or rollout approval.
 
 ## Instance Branding And Platform-Managed Upgrades
 
@@ -133,6 +155,6 @@ Resolve existing URL providers one at a time:
 4. `signed_required` is `protected` only when the signed primary request returns 2xx and unsigned plus invalid-signature probes each return 401/403/404. A negative 2xx is `public`; redirects, 429, 5xx, and network errors are `inconclusive`. A 404 on the signed primary request is a failure, not protection evidence.
 5. Confirm `Cache-Control: private, no-store` and verify that reverse proxies or CDNs cannot cache or rewrite a protected catalog.
 
-Refresh failures preserve the previous cache. Each request is bounded to 10 seconds and the successful primary response is limited to 5 MiB. The safest application rollback is to restore the old code while keeping the additive columns and migration ledger; the old version ignores them. Use the full pre-upgrade database snapshot only for a coordinated rollback with the old application. Do not delete the ledger entry or drop the columns independently.
+Refresh failures preserve the previous cache. Each request is bounded to 10 seconds and the successful primary response is limited to 5 MiB. Preserve the 053 columns, historical configuration and ledger during rollback, but first test whether the specific old artifact accepts that ledger and data. Nullable columns alone do not establish compatibility. Restore a pre-upgrade snapshot only as a consistent set with the old application, and reconcile subsequent external effects. Do not delete the ledger entry or drop the columns independently.
 
 This policy governs catalog discovery only. It does not change ACC, tool-call signatures, route allowlists, approvals, idempotency, or final business authorization.

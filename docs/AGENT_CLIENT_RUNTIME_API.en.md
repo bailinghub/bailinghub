@@ -1,6 +1,6 @@
 # Agent Client Runtime v1
 
-Unreleased paired addition: [task control](AGENT_TASK_CONTROL.en.md) adds trusted `task_binding` to turns and echoes it. Enrolled Sessions cannot omit it; runtime searches must use the original `run_id`. Read-only inspection and explicit original-operation continuation remain separate.
+Available as an optional capability since Core 0.8.0, [task control](AGENT_TASK_CONTROL.en.md) adds trusted `task_binding` to turns and echoes it. Enrolled Sessions cannot omit it; runtime searches must use the original `run_id`. Read-only inspection and explicit original-operation continuation remain separate.
 
 English | [简体中文](AGENT_CLIENT_RUNTIME_API.md)
 

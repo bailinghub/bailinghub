@@ -478,12 +478,43 @@ export function startRuntimeSchedulersFor(deps: RuntimeLifecycleDeps): RuntimeSc
   };
 }
 
-export function scheduleBootRecoveryFor(deps: RuntimeLifecycleDeps): ReturnType<typeof setTimeout> {
+export interface RuntimeBootRecovery {
+  readonly timer: ReturnType<typeof setTimeout>;
+  stop(): void;
+  /** A fired timer still owns its recovery query, audits and requeues until settled. */
+  drain(drainMs?: number): Promise<boolean>;
+}
+
+export function startBootRecoveryFor(deps: RuntimeLifecycleDeps): RuntimeBootRecovery {
   const actions = runtimeMaintenanceActionsFor(deps);
+  let stopped = false;
+  let work: Promise<void> | null = null;
   // 崩溃恢复：boot 时把上一进程遗留的 inhub running 任务放回 DB 队列；queued 任务由 inhub 调度器继续认领。
   // 延后到 listen 之后再跑（不阻塞开始收流量，也避开冷启动抢资源）。
   const timer = setTimeout(() => {
-    void actions.recoverBoot();
+    if (stopped) return;
+    // Own the entire action, including engine target refresh before recoverJobs.
+    // Clearing a fired timer alone cannot prevent its later database writes.
+    work = Promise.resolve().then(actions.recoverBoot);
   }, 2000).unref();
-  return timer;
+  return {
+    timer,
+    stop() { stopped = true; clearTimeout(timer); },
+    async drain(drainMs = 30_000) {
+      if (!work) return true;
+      const bounded = Number.isFinite(drainMs) ? Math.max(0, Math.floor(drainMs)) : 0;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          work.then(() => true),
+          new Promise<boolean>(resolve => { timeout = setTimeout(() => resolve(false), bounded); }),
+        ]);
+      } finally { if (timeout) clearTimeout(timeout); }
+    },
+  };
+}
+
+/** Preserve the timer-only extension helper; Kernel owns the drainable handle. */
+export function scheduleBootRecoveryFor(deps: RuntimeLifecycleDeps): ReturnType<typeof setTimeout> {
+  return startBootRecoveryFor(deps).timer;
 }

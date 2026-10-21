@@ -1,6 +1,6 @@
 # HTTP Contract
 
-Unreleased additive candidate: [task control](AGENT_TASK_CONTROL.en.md) defines separate task schemas, trusted turn binding and administrator controls. It requires paired capability negotiation and does not change the stable business authorization or approval semantics below.
+Available as an optional capability since Core 0.8.0, [task control](AGENT_TASK_CONTROL.en.md) defines separate task schemas, trusted turn binding and administrator controls. It requires paired capability negotiation and does not change the stable business authorization or approval semantics below.
 
 > Current contract: `bailing.contract.v2.14`. This is the only network boundary between a business system and BailingHub.
 
