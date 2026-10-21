@@ -429,8 +429,13 @@ test('Agent direct: 路由精确列出的写工具额外强制审批并可续执
   assert.equal(fx.approvals.length, 1);
 
   fx.approvals[0]!.status = 'approved';
-  // 其他工具的描述变更会改变整份 catalog revision，但 staff_edit 的执行指纹未变。
-  fx.setSpec(spec().replace('查询员工', '查询门店员工'));
+  // 当前工具的发现文案/按需指导变化会改变 catalog revision，但不改变已冻结的执行契约。
+  const changedSpec = JSON.parse(spec());
+  changedSpec.paths['/staff/edit'].post.description = '先核对原员工修订；冲突时重新读取，不要自动重放。';
+  fx.setSpec(JSON.stringify(changedSpec));
+  const refreshedCatalog = await listAgentToolsFor(fx.deps, auth(), 'tenant-agent');
+  assert.notEqual(refreshedCatalog.capability_revision, catalog.capability_revision);
+  assert.equal(refreshedCatalog.tools.find((item) => item.name === 'staff_edit')?.usage_guidance_available, true);
   const completed = await resumeAgentToolFor(fx.deps, auth(), {
     invocation_id: invocationId('8'),
   });

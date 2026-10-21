@@ -3,6 +3,7 @@ import { AgentToolApiError, listAgentToolsFor, searchAgentToolsFor, type AgentTo
 import type { ToolProxyDeps } from './tool-proxy';
 import { routeAgentClientConfig, routeKnowledgeConfig } from '../core/config/route-config';
 import { resolveMemoryConfig } from '../core/runtime/memory';
+import { projectAgentExecutionMemory } from '../core/runtime/agent-execution-memory';
 import { maxToolCalls } from '../core/config/tools-config';
 import type { Route } from '../core/contracts/types';
 import type { KbService } from '../services/kb';
@@ -211,9 +212,14 @@ function trimRecent(
   let budget = 0;
   for (let i = rows.length - 1; i >= 0; i--) {
     const row = rows[i]!;
-    const content = safeText(row.content, cfg.per_message_chars);
+    const execution = row.direction === 'out'
+      ? projectAgentExecutionMemory(row.content, Math.min(cfg.per_message_chars, cfg.recent_budget_chars - budget))
+      : undefined;
+    const content = execution?.content ?? safeText(row.content, cfg.per_message_chars);
     if (budget + content.length > cfg.recent_budget_chars) break;
-    result.unshift({ role: row.direction === 'in' ? 'user' : 'assistant', content, created_at: row.created_at });
+    result.unshift({ role: row.direction === 'in' ? 'user' : 'assistant', content, created_at: row.created_at,
+      ...(execution ? { kind: execution.kind, source: execution.source, trust: execution.trust, truncated: execution.truncated } : {}),
+    });
     budget += content.length;
   }
   return result;

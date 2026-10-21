@@ -1,3 +1,5 @@
+import { TOOL_USAGE_GUIDANCE_MAX_BYTES, TOOL_USAGE_GUIDANCE_MAX_CHARS, type ToolUsageGuidance } from './tool-guidance';
+
 export type ToolSourceKind = 'openapi' | 'overlay' | 'sdk' | 'mcp' | 'manual';
 export type ToolRisk = 'low' | 'medium' | 'high';
 export type ToolParamLocation = 'query' | 'body' | 'path' | 'header';
@@ -41,6 +43,10 @@ export interface ToolDefinition {
   method: string;
   path: string;
   description: string;
+  /** Only the short discovery description was shortened; separate guidance is not implied truncation. */
+  descriptionTruncated?: boolean;
+  /** Explicitly retrievable, bounded authored guidance; never passed to models as an inline description. */
+  usageGuidance?: ToolUsageGuidance;
   scope: string;
   risk: ToolRisk;
   confirmRequired: boolean;
@@ -146,6 +152,26 @@ export function validateToolDefinition(tool: unknown, opts: { path?: string } = 
   if (typeof tool['method'] !== 'string' || !METHODS.has(tool['method'])) fail('invalid_method', 'method 必须是大写 HTTP 方法');
   if (typeof tool['path'] !== 'string' || !tool['path'].startsWith('/')) fail('invalid_path', 'path 必须以 / 开头');
   if (typeof tool['description'] !== 'string' || !tool['description'].trim()) fail('invalid_description', 'description 必须是非空字符串', '补充面向 AI 的一句话用途说明');
+  if (tool['descriptionTruncated'] !== undefined && typeof tool['descriptionTruncated'] !== 'boolean') fail('invalid_description_truncated', 'descriptionTruncated 必须是 boolean');
+  if (tool['usageGuidance'] !== undefined) {
+    const guidance = tool['usageGuidance'];
+    if (!isRecord(guidance) || typeof guidance['text'] !== 'string' || !guidance['text'].trim()
+      || typeof guidance['truncated'] !== 'boolean' || !Number.isSafeInteger(guidance['sourceChars']) || Number(guidance['sourceChars']) < 0
+      || !Number.isSafeInteger(guidance['sourceBytes']) || Number(guidance['sourceBytes']) < 0) {
+      fail('invalid_usage_guidance', 'usageGuidance 必须包含 text / truncated / sourceChars / sourceBytes');
+    } else {
+      const retainedChars = Array.from(guidance['text']).length;
+      const retainedBytes = Buffer.byteLength(guidance['text'], 'utf8');
+      const sourceChars = Number(guidance['sourceChars']);
+      const sourceBytes = Number(guidance['sourceBytes']);
+      if (retainedChars > TOOL_USAGE_GUIDANCE_MAX_CHARS || retainedBytes > TOOL_USAGE_GUIDANCE_MAX_BYTES
+        || sourceChars < retainedChars || sourceBytes < retainedBytes
+        || (!guidance['truncated'] && (sourceChars !== retainedChars || sourceBytes !== retainedBytes))
+        || (guidance['truncated'] && (sourceChars === retainedChars || sourceBytes === retainedBytes))) {
+        fail('invalid_usage_guidance', 'usageGuidance 超过大小限制或截断状态与原始长度不一致');
+      }
+    }
+  }
   if (typeof tool['scope'] !== 'string' || !tool['scope'].trim()) fail('invalid_scope', 'scope 必须是非空字符串', '为工具声明稳定权限标签，例如 tenant.staff.read');
   if (!RISKS.includes(tool['risk'] as ToolRisk)) fail('invalid_risk', 'risk 必须是 low / medium / high 之一');
 

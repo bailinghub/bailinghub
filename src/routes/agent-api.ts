@@ -7,6 +7,7 @@ import type { ToolProxyDeps } from '../app/tool-proxy';
 import {
   AgentToolApiError,
   agentInvocationInspectionCapabilities,
+  getAgentToolDetailFor,
   inspectAgentToolInvocationFor,
   invokeAgentToolFor,
   listAgentToolsFor,
@@ -226,6 +227,18 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
     if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
     const route = String(url.searchParams.get('route') ?? '');
     try { send(res, 200, await listAgentToolsFor(deps.toolProxyDeps, auth, route)); }
+    catch (error) { sendAgentToolError(res, error); }
+    return true;
+  }
+  const toolDetailMatch = method === 'GET' ? path.match(/^\/agent-api\/v1\/tools\/([A-Za-z_][A-Za-z0-9_]{0,63})$/) : null;
+  if (toolDetailMatch) {
+    if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
+    if ([...url.searchParams.keys()].some((key) => !['route', 'capability_revision'].includes(key))
+      || url.searchParams.getAll('route').length !== 1 || url.searchParams.getAll('capability_revision').length !== 1) {
+      send(res, 400, { error: 'invalid_request', message: 'Tool detail requires exactly one route and capability_revision.' }); return true;
+    }
+    try { send(res, 200, await getAgentToolDetailFor(deps.toolProxyDeps, auth,
+      url.searchParams.get('route')!, toolDetailMatch[1]!, url.searchParams.get('capability_revision')!)); }
     catch (error) { sendAgentToolError(res, error); }
     return true;
   }

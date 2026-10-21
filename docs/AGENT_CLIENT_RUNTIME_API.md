@@ -129,11 +129,34 @@ Bootstrap 只逐字段抽取 `target_config.system_prompt`，再拼接可选 `ag
 
 ## 工具调用与恢复
 
+### 按名读取工具使用指导
+
+发现结果中的 `description` 仍是短说明，OpenAPI 编译上限为 500 个 Unicode 字符。存在独立的完整说明时返回可选 `usage_guidance_available: true`；短说明确实超长时另返回 `description_truncated: true` 并产生 `tool_description_truncated` 编译警告。**有详细指导不等于短说明被截断**。OpenAPI 同时提供 `summary` 和 `description` 时，两者都会保留在按需指导中，原 `description` 不再因存在 `summary` 而丢失。
+
+客户端可明确读取当前工具，不需要发起任务或业务调用：
+
+```http
+GET /agent-api/v1/tools/page_save?route=pages&capability_revision=<当前能力修订>
+Authorization: Bearer <Agent access token>
+```
+
+响应为 `bailing.agent-tool-detail.v1`，包含同一 `route`、`capability_revision`、现有白名单投影 `tool`，以及 `usage_guidance: { text, truncated, source_chars, max_chars, source_bytes, max_bytes }`。`tool` 的 scope、风险、审批、只读、幂等等机器字段保持原语义；指导文字不会扩大权限或替代服务端校验。详情只合成标准 `summary`、`description`、ACC `when_to_use` / `returns` 和首个示例，不返回原 spec、扩展袋、Provider 地址或凭据。
+
+指导同时受 **32768 个 Unicode code point** 和 **65536 个 UTF-8 字节**限制，先到者生效，保持完整字符。`source_chars` / `source_bytes` 是清理控制字符后的原始指导长度；`truncated: true` 明确表示详情也不完整，并产生 `tool_usage_guidance_truncated` 编译警告。接入方应缩短、前置关键条件；schema / ACC 中的机器约束继续独立执行。响应只按需携带一项指导，目录与搜索不会自动附上全文。
+
+每次读取都重新检查当前 Client、Session、route、audience、主体与具体工具授权；旧修订返回 `409 capability_changed`，需重新发现。无当前工具授权返回 `404 tool_not_found`。该只读路径不创建 invocation/job、不消费审批或执行额度、不调用业务接口，且响应 `Cache-Control: no-store`。新增字段可被旧客户端忽略；遇到缺少字段或不支持详情端点的旧服务端时，不能宣称短说明已包含全部前置条件。
+
+能力修订同时包含编译后的公开工具投影和有界指导，因此同一份原始 spec 经新编译器产生不同短说明、标记或指导时，也会使客户端缓存失效。该发现修订与 invocation 冻结的执行指纹分开：仅文案/指导变化不阻断原审批调用的恢复，也不会允许自动重复派发。
+
 工具已经尝试发送、但网络中断或响应正文丢失时，Core 返回 `reconciliation_required` 和 `auto_retry_allowed: false`；只读和声明幂等的工具也不能被标为 `rejected_before_dispatch`。该状态表示尚无可信结果，不证明业务已经执行或尚未执行。
 
 客户端必须保留原 `invocation_id` 及授权关联，使用现有 resume 恢复原调用。Core 重新验证当前授权并回放已保存的结果，不重新派发；结果仍不确定时需要人工核实，不能新建库存调整、订单更新等操作，也不能切换授权或改用另一工具重复执行。重新发现工具与恢复业务调用是两个动作。原审批和执行日志机制保持不变。
 
 ## Complete
+
+授权级执行摘要可在既有 `content` 字符串中使用 `bailing.authorization-execution-summary.v1`：仅包含原 `invocation_id`、原工具名、`last_known_state`、未决调用的 `next_action: "inspect_original"`，以及 `total_invocations` / `omitted_invocations`。DSH 的新投影不把业务响应原文写入这份摘要；它也不是完整审计、当前结果验证或原文读取引用。
+
+Core 装配下一轮 `memory.recent` 时，仅对出站消息识别该标识，重新白名单投影并固定标注 `kind: "authorization_execution_summary"`、`source: "agent_client"`、`trust: "reference_only"`。这是客户端报告的历史事实，标识本身不证明权限或结果；普通用户消息不会因出现同标识而获得执行来源。预算不足时按完整调用条目省略并标注数量；极小预算返回明确的省略说明，均不会产出半段 JSON。旧普通 assistant 正文保持兼容，既有 completion 幂等正文不会被静默改写；不新增用户长期记忆或审计全文存储承诺。
 
 ```json
 {

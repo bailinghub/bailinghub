@@ -1,6 +1,7 @@
 import { parseDocument } from 'yaml';
 import { AGENT_CAPABILITY_KEY, deriveRisk, toolAnnotationsOf } from './tool-annotations';
 import { TOOL_DEFINITION_SCHEMA_VERSION, hasToolDefinitionErrors, validateToolDefinition, type ToolCompileResult, type ToolConfirmCondition, type ToolConfirmOp, type ToolDefinition, type ToolDiagnostic, type ToolParamLocation } from './tool-definition';
+import { boundedToolText, TOOL_DESCRIPTION_MAX_CHARS, TOOL_USAGE_GUIDANCE_MAX_BYTES, TOOL_USAGE_GUIDANCE_MAX_CHARS } from './tool-guidance';
 
 const CONFIRM_OPS = new Set<ToolConfirmOp>(['>', '>=', '<', '<=', '==', '!=', 'in', 'contains', 'exists']);
 const SUPPORTED_PARAMETER_LOCATIONS = new Set<ToolParamLocation>(['query', 'path', 'header']);
@@ -110,13 +111,21 @@ export function compileOpenApiTools(specText: string): ToolCompileResult {
         continue;
       }
 
-      let desc = String(op.summary ?? op.description ?? scope);
+      const summary = typeof op.summary === 'string' ? op.summary.trim() : '';
+      const description = typeof op.description === 'string' ? op.description.trim() : '';
+      let desc = summary || description || scope;
+      const guidanceParts = [summary || description || scope];
+      if (summary && description && summary !== description) guidanceParts.push(description);
       if (!op.summary && !op.description) diagnostics.push({ severity: 'warning', path: loc, code: 'missing_summary', message: '缺少 summary/description，已回落到 scope 作为工具描述', suggestion: '补充面向 Agent 的 summary，并用 x-agent-capability.guidance.when_to_use 说明适用场景' });
       if (!op.operationId) diagnostics.push({ severity: 'warning', path: loc, code: 'missing_operation_id', message: '缺少 operationId，工具名将由 method+path 生成；路径变化会导致工具名变化', suggestion: '为 operation 设置稳定 operationId，作为 AI 工具名' });
-      if (ann.whenToUse) desc += `。何时用：${ann.whenToUse}`;
-      if (ann.returns) desc += `。返回：${ann.returns}`;
+      if (ann.whenToUse) { desc += `。何时用：${ann.whenToUse}`; guidanceParts.push(`何时用：${ann.whenToUse}`); }
+      if (ann.returns) { desc += `。返回：${ann.returns}`; guidanceParts.push(`返回：${ann.returns}`); }
       const ex = ann.examples.length ? ann.examples[0] : null;
-      if (ex && typeof ex === 'object') desc += `。示例参数：${JSON.stringify(ex)}`;
+      if (ex && typeof ex === 'object') { desc += `。示例参数：${JSON.stringify(ex)}`; guidanceParts.push(`示例参数：${JSON.stringify(ex)}`); }
+      const shortDescription = boundedToolText(desc, TOOL_DESCRIPTION_MAX_CHARS);
+      const usageGuidance = boundedToolText(guidanceParts.join('\n\n'), TOOL_USAGE_GUIDANCE_MAX_CHARS, TOOL_USAGE_GUIDANCE_MAX_BYTES);
+      if (shortDescription.truncated) diagnostics.push({ severity: 'warning', path: loc, code: 'tool_description_truncated', message: `工具短说明超过 ${TOOL_DESCRIPTION_MAX_CHARS} 字符，已截断；使用指导可按工具名读取`, suggestion: '保持 summary 简洁，将前置条件和冲突处理写入 description；机器约束仍需声明在 schema / ACC 字段中' });
+      if (usageGuidance.truncated) diagnostics.push({ severity: 'warning', path: loc, code: 'tool_usage_guidance_truncated', message: `工具使用指导超过 ${TOOL_USAGE_GUIDANCE_MAX_CHARS} 字符或 ${TOOL_USAGE_GUIDANCE_MAX_BYTES} UTF-8 字节，详情也只保留有界前缀`, suggestion: '缩短 operation.description / guidance，将重要限制前置，并用业务知识文档承载扩展说明；不要依赖被截断的文字执行机器校验' });
       const confirmWhen = parseConfirmWhen(ann.confirmWhen, loc, diagnostics);
       if (confirmWhen === null) continue;
 
@@ -128,7 +137,9 @@ export function compileOpenApiTools(specText: string): ToolCompileResult {
         source: 'openapi',
         method: m,
         path: p,
-        description: desc.slice(0, 500),
+        description: shortDescription.text,
+        ...(shortDescription.truncated ? { descriptionTruncated: true } : {}),
+        ...((shortDescription.truncated || usageGuidance.truncated || (summary && description && summary !== description)) ? { usageGuidance } : {}),
         scope,
         risk: deriveRisk(ann.riskLevel, m, ro),
         confirmRequired: ann.confirmRequired,

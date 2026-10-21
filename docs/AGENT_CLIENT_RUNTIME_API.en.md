@@ -178,6 +178,46 @@ owns dynamic tool replacement/append behavior and the current loaded-tool set.
 
 ## Tool invocation and recovery
 
+### Read usage guidance by tool name
+
+Discovery `description` remains short: the OpenAPI compiler caps it at 500 Unicode code points.
+Optional `usage_guidance_available: true` identifies separate guidance; `description_truncated: true`
+only means the short description itself was shortened, with a `tool_description_truncated` compile
+warning. Separate detail does not imply truncation. When both OpenAPI `summary` and `description`
+are present, both remain in explicit guidance rather than silently discarding `description`.
+
+```http
+GET /agent-api/v1/tools/page_save?route=pages&capability_revision=<current-capability-revision>
+Authorization: Bearer <Agent access token>
+```
+
+The `bailing.agent-tool-detail.v1` response contains `route`, `capability_revision`, the existing
+allowlisted `tool` projection, and `usage_guidance: { text, truncated, source_chars, max_chars,
+source_bytes, max_bytes }`. Scope, risk, approval, readonly and idempotency keep their existing
+machine meanings. Guidance never grants permission or replaces server validation. Detail combines
+only standard summary/description, ACC when-to-use/returns and the first example; it does not expose
+the original spec, extension bag, Provider URL or credentials.
+
+Guidance is bounded by both **32768 Unicode code points** and **65536 UTF-8 bytes**, whichever is
+reached first, without splitting characters. Source counts describe the guidance before truncation,
+after control-character cleanup. `truncated: true` means even this detail is incomplete, with a
+`tool_usage_guidance_truncated` compile warning. Authors should shorten guidance and put critical
+conditions first; schema and ACC machine checks continue independently. Catalogs and searches do
+not inline the full guidance.
+
+Each read revalidates current Client, Session, route, audience, subject and exact tool authorization.
+A stale revision returns `409 capability_changed`; an unavailable tool returns `404 tool_not_found`.
+This read creates no invocation/job, consumes no approval or execution allowance and makes no
+business request. Responses use `Cache-Control: no-store`. Older clients can ignore optional fields;
+missing fields or an unsupported endpoint on an older server do not prove its short description
+contains all prerequisites.
+
+The capability revision includes the compiled public projection and bounded guidance. A compiler
+upgrade that changes descriptions, flags or guidance therefore invalidates discovery caches even
+when the raw spec is unchanged. This discovery revision remains separate from an invocation's
+frozen execution fingerprint: guidance-only changes do not block original approval continuation
+and do not permit automatic redispatch.
+
 Invoke only a tool projected by the current bootstrap/search result. Core revalidates the Agent
 Session, route, operation ID, ACC declaration, approval state, limits, and business authorization
 on every invocation. When the result is pending, in progress, or uncertain, resume the original
@@ -197,6 +237,21 @@ and business status. It does not receive model hidden reasoning, complete sensit
 raw business response bodies.
 
 ## Complete
+
+Authorization-level execution summaries can use `bailing.authorization-execution-summary.v1`
+inside the existing `content` string. They contain only original invocation IDs, original tool
+names, last-known states, `next_action: "inspect_original"` for unresolved calls, and total/omitted
+counts. New DSH summaries exclude business result text. They are neither a complete audit nor a
+current outcome check, and they do not invent a reference for retrieving full original output.
+
+When assembling the next turn's `memory.recent`, Core recognizes this marker only in outbound
+messages and projects allowed fact fields again. It fixes `kind: "authorization_execution_summary"`,
+`source: "agent_client"` and `trust: "reference_only"`: a client-claimed schema does not verify an
+outcome or grant authority. User messages cannot acquire execution provenance by including the
+same marker. Memory limits omit whole invocation records with explicit counts; very small limits
+return an explicit omission notice, never partial JSON. Existing assistant text and immutable
+completion bodies remain compatible. This adds neither user long-term memory nor full-audit
+storage guarantees.
 
 ```json
 {
