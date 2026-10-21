@@ -265,7 +265,7 @@
   <!-- 数据源编辑（连接 + 取数 + 映射；测试预览后再保存） -->
   <el-drawer v-model="dsOpen" :title="dsForm.ds_id ? '编辑数据源' : '添加数据源'" size="620px" :before-close="dsGuard.beforeClose">
     <el-alert v-if="dsSaveError || dsTestError" :title="dsSaveError || dsTestError" type="error" :closable="false" show-icon style="margin-bottom: 12px" />
-    <el-form label-position="top" :disabled="saving || dsTesting">
+    <el-form name="knowledge-database-settings" autocomplete="off" label-position="top" :disabled="saving || dsTesting">
       <el-tabs v-model="dsFormTab" class="console-tabs">
         <el-tab-pane label="连接" name="connection">
       <el-form-item>
@@ -279,12 +279,12 @@
           <p>密码入库后不回显；编辑时留空 = 保留原密码。</p>
         </HelpTip></template>
         <div class="ds-conn">
-          <el-input v-model="dsForm.db_host" placeholder="主机" style="flex: 3" class="mono" />
+          <el-input v-model="dsForm.db_host" name="knowledge-database-host" autocomplete="off" placeholder="主机" style="flex: 3" class="mono" />
           <el-input v-model="dsForm.db_port" placeholder="3306" style="flex: 1" class="mono" />
         </div>
         <div class="ds-conn" style="margin-top: 8px">
-          <el-input v-model="dsForm.db_user" placeholder="账号（建议只读）" style="flex: 1" class="mono" />
-          <el-input v-model="dsForm.db_password" type="password" :placeholder="dsForm.ds_id ? '留空 = 保留原密码' : '密码'" style="flex: 1" show-password />
+          <el-input v-model="dsForm.db_user" name="knowledge-database-user" autocomplete="off" placeholder="账号（建议只读）" style="flex: 1" class="mono" />
+          <el-input v-model="dsForm.db_password" name="knowledge-database-password" autocomplete="new-password" type="password" :placeholder="dsForm.ds_id ? '留空 = 保留原密码' : '密码'" style="flex: 1" show-password />
           <el-input v-model="dsForm.db_database" placeholder="库名" style="flex: 1" class="mono" />
         </div>
       </el-form-item>

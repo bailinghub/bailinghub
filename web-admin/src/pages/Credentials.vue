@@ -52,14 +52,14 @@
 
   <el-drawer v-model="open" :title="editing ? '编辑凭证' : '新建凭证'" size="480px" :before-close="formGuard.beforeClose">
     <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon />
-    <el-form label-position="top" :disabled="saving || !canWrite">
+    <el-form name="model-credential-settings" autocomplete="off" label-position="top" :disabled="saving || !canWrite">
       <el-tabs v-model="credFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
         <template #label>{{ fieldTitle('name', '名称') }} <span v-if="fieldRequired('name')" class="field-required">*</span> <HelpTip :title="fieldTitle('name', '名称')">
           <p>{{ fieldDesc('name', '凭证稳定标识，路由和知识库按该名称引用。') }}</p>
         </HelpTip></template>
-        <el-input v-model="form.name" :disabled="editing" placeholder="如 dashscope-main / openrouter-prod" class="mono" />
+        <el-input v-model="form.name" name="model-credential-name" autocomplete="off" :disabled="editing" placeholder="如 dashscope-main / openrouter-prod" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>平台 <span class="field-required">*</span> <HelpTip title="模型平台">
@@ -93,14 +93,14 @@
           <p>{{ fieldDesc('base_url', '模型服务的 OpenAI 兼容接口前缀。') }}</p>
           <p>选平台会自动填入默认值；多地域或代理网关可按需修改。</p>
         </HelpTip></template>
-        <el-input v-model="form.base_url" placeholder="https://…/v1" class="mono" />
+        <el-input v-model="form.base_url" name="model-service-base-url" type="url" autocomplete="off" placeholder="https://…/v1" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('api_key', 'API Key') }} <span v-if="fieldRequired('api_key')" class="field-required">*</span> <HelpTip :title="fieldTitle('api_key', 'API Key')">
           <p>{{ fieldDesc('api_key', '中枢出站调用模型服务时使用的密钥。') }}</p>
           <p>编辑时留空表示保留原值；保存后列表只显示掩码。</p>
         </HelpTip></template>
-        <el-input v-model="form.api_key" type="password" show-password autocomplete="off" />
+        <el-input v-model="form.api_key" name="model-service-api-key" type="password" show-password autocomplete="new-password" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('default_model', '默认模型') }} <HelpTip :title="fieldTitle('default_model', '默认模型')">

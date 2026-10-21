@@ -46,10 +46,10 @@
 
   <el-drawer v-model="open" :title="editing ? '编辑账号' : '新建账号'" size="420px" :before-close="unsaved.beforeClose">
     <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon style="margin-bottom: 12px" />
-    <el-form label-position="top" :disabled="saving" @submit.prevent>
+    <el-form name="managed-account-settings" autocomplete="off" label-position="top" :disabled="saving" @submit.prevent>
       <el-form-item>
         <template #label>用户名 <span class="field-required">必填</span></template>
-        <el-input v-model="form.username" :disabled="editing" placeholder="如 ops-admin" class="mono" />
+        <el-input v-model="form.username" name="managed-account-username" autocomplete="off" :disabled="editing" placeholder="如 ops-admin" class="mono" />
       </el-form-item>
       <el-form-item label="显示名（可选）"><el-input v-model="form.display_name" /></el-form-item>
       <el-form-item>
@@ -64,7 +64,7 @@
         <template #label>密码 <HelpTip title="密码">
           <p>新建时留空会自动生成，并只显示一次。编辑时留空表示不修改；填写后该账号其他登录会话会立即下线。</p>
         </HelpTip></template>
-        <el-input v-model="form.password" type="password" show-password autocomplete="new-password" placeholder="至少 8 位" />
+        <el-input v-model="form.password" name="managed-account-new-password" type="password" show-password autocomplete="new-password" placeholder="至少 8 位" />
       </el-form-item>
       <el-form-item v-if="editing">
         <template #label>启用 <HelpTip title="启用状态">

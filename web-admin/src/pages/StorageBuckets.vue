@@ -53,7 +53,7 @@
 
   <el-drawer v-model="open" :title="editing ? '编辑媒体存储' : '新建媒体存储'" size="500px" :before-close="formGuard.beforeClose">
     <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon />
-    <el-form label-position="top" :disabled="saving || !canWrite">
+    <el-form name="media-storage-settings" autocomplete="off" label-position="top" :disabled="saving || !canWrite">
       <el-tabs v-model="bucketFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
@@ -89,13 +89,13 @@
         <template #label>AccessKeyId <span class="field-required">必填</span> <HelpTip title="AccessKeyId">
           <p>对象存储访问身份。编辑时留空表示保留原值。</p>
         </HelpTip></template>
-        <el-input v-model="form.access_key" autocomplete="off" class="mono" :placeholder="editing ? '留空 = 保留原值' : ''" />
+        <el-input v-model="form.access_key" name="storage-access-key-id" autocomplete="off" class="mono" :placeholder="editing ? '留空 = 保留原值' : ''" />
       </el-form-item>
       <el-form-item>
         <template #label>SecretKey <span class="field-required">必填</span> <HelpTip title="SecretKey">
           <p>对象存储访问密钥。建议使用只允许写入指定前缀的子账号或临时凭证；编辑时留空表示保留原值。</p>
         </HelpTip></template>
-        <el-input v-model="form.secret_key" type="password" show-password autocomplete="off" />
+        <el-input v-model="form.secret_key" name="storage-secret-key" type="password" show-password autocomplete="new-password" />
       </el-form-item>
       </template>
       <el-form-item>
@@ -104,7 +104,7 @@
           <p v-if="form.kind === 'local'">本地存储不需要访问密钥；用于生成图片交付时，请填写指向 <code>/uploads</code> 的公开访问地址。</p>
           <p v-else>例如 <code>https://demo-bucket-1234567890.cos.ap-shanghai.myqcloud.com</code>，或自定义 CDN 域名。</p>
         </HelpTip></template>
-        <el-input v-model="form.public_base_url" placeholder="https://…" class="mono" />
+        <el-input v-model="form.public_base_url" name="storage-public-base-url" type="url" autocomplete="off" placeholder="https://…" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>写入前缀 <HelpTip title="写入前缀">

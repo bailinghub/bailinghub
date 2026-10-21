@@ -130,7 +130,7 @@
 
   <el-drawer v-model="open" :title="editing ? '编辑渠道' : '新建渠道'" size="500px" :before-close="formGuard.beforeClose">
     <el-alert v-if="saveError" type="error" :title="saveError" :closable="false" show-icon style="margin-bottom: 14px" />
-    <el-form label-position="top" :disabled="saving">
+    <el-form name="channel-platform-settings" autocomplete="off" label-position="top" :disabled="saving">
       <el-tabs v-model="channelFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
@@ -168,32 +168,32 @@
           <template #label>{{ fieldTitle('config.token', 'Token') }} <span class="field-required">*</span> <HelpTip :title="fieldTitle('config.token', 'Token')">
             <p>{{ fieldDesc('config.token', '企业微信接收消息配置中的 Token；编辑时留空表示保留原值。') }}</p>
           </HelpTip></template>
-          <el-input v-model="form.token" :type="editing ? 'password' : 'text'" show-password autocomplete="off" class="mono" placeholder="企微「接收消息」里的 Token" />
+          <el-input v-model="form.token" name="channel-verification-token" :type="editing ? 'password' : 'text'" show-password autocomplete="new-password" class="mono" placeholder="企微「接收消息」里的 Token" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.aes_key', 'EncodingAESKey') }} <span class="field-required">*</span> <HelpTip :title="fieldTitle('config.aes_key', 'EncodingAESKey')">
             <p>{{ fieldDesc('config.aes_key', '企业微信接收消息配置中的 EncodingAESKey；编辑时留空表示保留原值。') }}</p>
           </HelpTip></template>
-          <el-input v-model="form.aes_key" type="password" show-password autocomplete="off" class="mono" />
+          <el-input v-model="form.aes_key" name="channel-encoding-aes-key" type="password" show-password autocomplete="new-password" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.corpid', '企业 ID') }} <HelpTip :title="fieldTitle('config.corpid', '企业 ID')">
             <p>{{ fieldDesc('config.corpid', '企业微信企业 ID；主动推、告警通知和慢回答推送需要填写。') }}</p>
             <p>被动回复能从消息里识别 corpid；主动推、告警通知和慢回答推送场景必须填写。</p>
           </HelpTip></template>
-          <el-input v-model="form.corpid" placeholder="ww… / wx…" class="mono" />
+          <el-input v-model="form.corpid" name="channel-corporation-id" autocomplete="off" placeholder="ww… / wx…" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.agentid', 'AgentId') }} <HelpTip :title="fieldTitle('config.agentid', 'AgentId')">
             <p>{{ fieldDesc('config.agentid', '平台应用 ID。需要慢回答主动推、告警通知或业务主动推送时填写。') }}</p>
           </HelpTip></template>
-          <el-input v-model="form.agentid" placeholder="如 1000013" class="mono" />
+          <el-input v-model="form.agentid" name="channel-platform-app-id" autocomplete="off" placeholder="如 1000013" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.secret', 'Secret') }} <HelpTip :title="fieldTitle('config.secret', 'Secret')">
             <p>{{ fieldDesc('config.secret', '平台应用 Secret。需要主动推送时填写；编辑时留空表示保留原值。') }}</p>
           </HelpTip></template>
-          <el-input v-model="form.secret" type="password" show-password autocomplete="off" class="mono" />
+          <el-input v-model="form.secret" name="channel-platform-app-secret" type="password" show-password autocomplete="new-password" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.reply_wait_ms', '被动回复等待窗口') }} <HelpTip :title="fieldTitle('config.reply_wait_ms', '被动回复等待窗口')">

@@ -392,10 +392,11 @@
       /><el-input
         class="credential"
         :model-value="credential"
+        name="usage-issuer-generated-credential"
         type="password"
         readonly
         show-password
-        autocomplete="off"
+        autocomplete="new-password"
       /><template #footer
         ><div class="drawer-actions">
           <el-button @click="copyCredential">复制凭证</el-button

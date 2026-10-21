@@ -102,14 +102,14 @@
 
   <!-- 注册/编辑 -->
   <el-drawer v-model="open" :title="editing ? '编辑工具源' : '注册工具源'" size="560px" :before-close="formGuard.beforeClose" @closed="clearSecret">
-    <el-form label-position="top" :disabled="saving || !s.can('tools:write')">
+    <el-form name="tool-source-settings" autocomplete="off" label-position="top" :disabled="saving || !s.can('tools:write')">
       <el-tabs v-model="toolFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
         <template #label>{{ fieldTitle('name', '名称') }} <span v-if="fieldRequired('name')" class="field-required">*</span>
           <HelpTip :title="fieldTitle('name', '名称')"><p>{{ fieldDesc('name') }}</p></HelpTip>
         </template>
-        <el-input v-model="form.name" :disabled="editing || saving" placeholder="如 demo-business / business-api" class="mono" />
+        <el-input v-model="form.name" name="tool-source-name" autocomplete="off" :disabled="editing || saving" placeholder="如 demo-business / business-api" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('base_url', 'Base URL') }} <span v-if="fieldRequired('base_url')" class="field-required">*</span> <HelpTip :title="fieldTitle('base_url', 'Base URL')">
@@ -117,7 +117,7 @@
           <p>AI 调工具时，请求发到 <code>base_url + 接口 path</code>。</p>
           <p><b>必须指向源站直连地址</b>——中枢"签所发即所发"，URI 会被重写 / 重编码的 CDN 或网关后面验签必挂。</p>
         </HelpTip></template>
-        <el-input v-model="form.base_url" placeholder="https://server.example.com" class="mono" />
+        <el-input v-model="form.base_url" name="tool-source-base-url" type="url" autocomplete="off" placeholder="https://server.example.com" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('secret', '签名密钥') }} <span v-if="fieldRequired('secret')" class="field-required">*</span> <HelpTip :title="fieldTitle('secret', '签名密钥')">
@@ -126,7 +126,7 @@
           <p>这是中枢与业务的<b>共享密钥</b>——业务侧验签要用同一串。建好后列表里只显示掩码，点该行「<b>复制</b>」按钮可随时取回完整值交给业务方（与模型凭证的 api_key 不同，那是中枢出站凭证、永不外泄）。</p>
           <p>与接入方 token、中枢管理 token 完全解耦，可单独轮换；泄露只影响"伪装中枢调业务"，不波及其他面。</p>
         </HelpTip></template>
-        <el-input v-model="form.secret" type="password" show-password autocomplete="off" :placeholder="editing ? '留空 = 保留原密钥' : ''">
+        <el-input v-model="form.secret" name="tool-source-signing-secret" type="password" show-password autocomplete="new-password" :placeholder="editing ? '留空 = 保留原密钥' : ''">
           <template #append><el-button @click="genSecret">生成</el-button></template>
         </el-input>
       </el-form-item>
@@ -145,7 +145,7 @@
           <p>推荐约定路径 <code>/.well-known/bailing/tools.json</code>，但<b>不强制</b>——宝塔等面板对点开头路径有特殊处理（详见官网开发文档），换任意路径（如 <code>/api/bailing/tools</code>）即可绕开。</p>
           <p>建议 spec 根声明 <code>x-bailing-authz-probe</code>，并在业务系统单独挂一个授权探针端点；中枢刷新后会用不存在的主体验证业务侧是否 fail-closed。</p>
         </HelpTip></template>
-        <el-input v-model="form.spec_url" placeholder="https://server.example.com/.well-known/bailing/tools.json" class="mono" />
+        <el-input v-model="form.spec_url" name="tool-source-spec-url" type="url" autocomplete="off" placeholder="https://server.example.com/.well-known/bailing/tools.json" class="mono" />
       </el-form-item>
       <el-form-item v-if="form.spec_source === 'url'">
         <template #label>接口清单访问策略 <HelpTip title="接口清单访问策略">
