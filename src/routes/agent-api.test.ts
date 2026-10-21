@@ -11,6 +11,7 @@ import type { RuntimeStateStore } from '../core/state/state-contracts';
 import { tokenHash } from './agent-auth';
 import { handleAgentApiHttpFor } from './agent-api';
 import type { ToolProxyDeps } from '../app/tool-proxy';
+import { TOOL_ARGUMENTS_MAX_BYTES, TOOL_INVOCATION_BODY_MAX_BYTES } from '../core/contracts/tool-input-limits';
 
 class FakeResponse {
   statusCode = 0;
@@ -141,9 +142,27 @@ test('Agent Tool API: envelope 严格拒绝非对象 arguments 与字段漂移',
   assert.equal(extra.statusCode, 400);
 
   const oversized = new FakeResponse();
-  await handleAgentApiHttpFor(deps, request('POST', headers, { ...base, future: 'x'.repeat(20_000) }), oversized as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/tool-invocations'));
+  const oversizedBody = { ...base, future: 'x'.repeat(TOOL_INVOCATION_BODY_MAX_BYTES) };
+  await handleAgentApiHttpFor(deps, request('POST', headers, oversizedBody), oversized as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/tool-invocations'));
   assert.equal(oversized.statusCode, 413);
   assert.equal(oversized.json()['error'], 'arguments_too_large');
+  assert.equal(oversized.json()['origin'], 'core');
+  assert.equal(oversized.json()['dispatch'], 'not_dispatched');
+  assert.equal(oversized.json()['limit_scope'], 'request_body');
+  assert.equal(oversized.json()['max_bytes'], 2 * 1024 * 1024);
+  assert.equal(oversized.json()['observed_bytes'], Buffer.byteLength(JSON.stringify(oversizedBody), 'utf8'));
+
+  const argumentsOverflow = new FakeResponse();
+  const oversizedArgs = { source: { html: 'private-design-marker'.repeat(Math.ceil(TOOL_ARGUMENTS_MAX_BYTES / 21)) } };
+  const actualBytes = Buffer.byteLength(JSON.stringify(oversizedArgs), 'utf8');
+  assert.ok(actualBytes > TOOL_ARGUMENTS_MAX_BYTES && actualBytes < TOOL_INVOCATION_BODY_MAX_BYTES);
+  await handleAgentApiHttpFor(deps, request('POST', headers, { ...base, arguments: oversizedArgs }), argumentsOverflow as unknown as ServerResponse, new URL('https://hub.example.com/agent-api/v1/tool-invocations'));
+  assert.equal(argumentsOverflow.statusCode, 413);
+  assert.equal(argumentsOverflow.json()['limit_scope'], 'arguments');
+  assert.equal(argumentsOverflow.json()['actual_bytes'], actualBytes);
+  assert.equal(argumentsOverflow.json()['max_bytes'], 1024 * 1024);
+  assert.equal(argumentsOverflow.json()['dispatch'], 'not_dispatched');
+  assert.equal(argumentsOverflow.body.includes(Buffer.from('private-design-marker')), false);
 
   for (const invalidBody of [[], null, 'x', 7]) {
     const res = new FakeResponse();

@@ -1,6 +1,7 @@
 import { openInvocationArguments, sealInvocationArguments } from './agent-invocation-snapshot';
 import { bindingForTask, resolveAgentTaskRunFor } from './agent-task-control';
 import { taskAssert } from '../core/runtime/agent-task-control';
+import { TOOL_ARGUMENTS_MAX_BYTES, type ToolInputLimitDetails } from '../core/contracts/tool-input-limits';
 import type { ToolRateLimitFeedback } from '../core/contracts/tools';
 import { createHash, randomUUID } from 'node:crypto';
 import { agentDirectToolsConfig } from '../core/config/tools-config';
@@ -25,7 +26,6 @@ const ROUTE_RE = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 const INVOCATION_RE = /^[a-f0-9]{64}$/;
 const AGENT_RUN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REVISION_RE = /^[a-f0-9]{64}$/;
-const ARGUMENTS_MAX_BYTES = 4096;
 const INVOCATION_LOCK_TTL_MS = 15 * 60_000;
 
 export const AGENT_TOOL_CATALOG_SCHEMA = 'bailing.agent-tool-catalog.v1';
@@ -136,6 +136,7 @@ export class AgentToolApiError extends Error {
     readonly statusCode: number,
     readonly code: string,
     message: string,
+    readonly details?: ToolInputLimitDetails,
   ) {
     super(message);
     this.name = 'AgentToolApiError';
@@ -574,8 +575,12 @@ function assertInvocationInput(input: InvokeAgentToolInput): void {
     throw new AgentToolApiError(400, 'invalid_request', 'The Agent tool invocation request is invalid.');
   }
   const encoded = JSON.stringify(input.arguments);
-  if (Buffer.byteLength(encoded, 'utf8') > ARGUMENTS_MAX_BYTES) {
-    throw new AgentToolApiError(413, 'arguments_too_large', `Tool arguments exceed ${ARGUMENTS_MAX_BYTES} bytes.`);
+  const actualBytes = Buffer.byteLength(encoded, 'utf8');
+  if (actualBytes > TOOL_ARGUMENTS_MAX_BYTES) {
+    throw new AgentToolApiError(413, 'arguments_too_large', `Tool arguments exceed ${TOOL_ARGUMENTS_MAX_BYTES} bytes.`, {
+      origin: 'core', dispatch: 'not_dispatched', limit_scope: 'arguments',
+      actual_bytes: actualBytes, max_bytes: TOOL_ARGUMENTS_MAX_BYTES,
+    });
   }
 }
 

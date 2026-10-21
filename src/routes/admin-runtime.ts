@@ -10,13 +10,14 @@ import { buildAgentClientTrace } from '../core/runtime/agent-client-trace';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { AgentClientRunRecord } from '../infrastructure/config/config-agent-client-runtime-repository';
-import type { Principal } from '../app/auth';
+import { can, type Principal } from '../app/auth';
 import type { ChannelMessage, ChannelSendResult } from '../app/channels';
 import { isAgentToolInvocationJob } from '../app/agent-tool-job';
 import { continueApprovalDecisionFor, supportsApprovalContinuations } from '../app/approval-continuations';
 import { classifyDeliveryDlq, replayExecutorDeliveryDlq, DeliveryReplayError } from '../app/delivery-dlq-replay';
 import { handleAdminNotificationsFor } from './admin-notifications';
 import { approvalContinuationView, consoleExecution } from './admin-runtime-ux';
+import { approvalDetailView, approvalListView } from './admin-approval-view';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
 
@@ -496,6 +497,7 @@ export async function handleAdminRuntimeApiFor(
 
   // ---- 工具审批（批准范围锁定调用快照；中枢任务续办，Agent 直调由原客户端继续）----
   if (path === '/admin/api/tool-approvals' && method === 'GET') {
+    if (!can(principal, 'runs:read')) { send(res, 403, { error: '当前角色无此权限' }); return true; }
     const status = new URL(req.url ?? '/', 'http://x').searchParams.get('status') ?? 'pending';
     const approvals = await configStore.approvals.list(status === 'all' ? undefined : status);
     const rows = [];
@@ -506,10 +508,20 @@ export async function handleAdminRuntimeApiFor(
           stateStore.getJob(approval.job_id).catch(() => null),
           configStore.approvals.getContinuation?.(approval.id).catch(() => undefined),
         ]);
-        return { ...approval, ...approvalContinuationView(job, intent) };
+        return { ...approvalListView(approval), ...approvalContinuationView(job, intent) };
       })));
     }
     send(res, 200, rows);
+    return true;
+  }
+  const mApprovalDetail = path.match(/^\/admin\/api\/tool-approvals\/(\d+)\/details$/);
+  if (mApprovalDetail && method === 'GET') {
+    if (!can(principal, 'runs:read')) { send(res, 403, { error: '当前角色无此权限' }); return true; }
+    const id = Number(mApprovalDetail[1]);
+    if (!Number.isSafeInteger(id) || id < 1) { send(res, 400, { error: '审批单标识无效' }); return true; }
+    const approval = await configStore.approvals.get(id);
+    if (!approval) { send(res, 404, { error: '审批单不存在' }); return true; }
+    send(res, 200, approvalDetailView(approval));
     return true;
   }
   const mApproval = path.match(/^\/admin\/api\/tool-approvals\/(\d+)\/(approve|deny)$/);

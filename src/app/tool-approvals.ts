@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { outboundRuntimeDepsFor, postSignedWithDeps, postSignedNotificationWithDeps, secretForJobWithDeps, type NotificationSendOutcome } from './outbound';
 import type { ApprovalDeps, ApprovalIntentSnap } from '../core/contracts/tools';
+import { approvalNotificationSnapshot } from '../core/contracts/tools';
 import { approvalConfig, type RouteToolsConfig, type ToolSourceConfig, type ToolApprovalConfig } from '../core/config/tools-config';
 import type { Job, ToolProvider } from '../core/contracts/types';
 import { defaultTargetRegistry, type TargetRegistry } from '../core/targets/registry';
@@ -13,6 +14,13 @@ import { notificationBackgroundWorkFor } from '../core/runtime/notification-back
 import { wakeNotificationOutboxFor } from '../core/runtime/notification-outbox-work';
 import type { ApprovalNotificationPayload } from '../core/contracts/notification-outbox';
 import { createNotificationChildOnce } from './delivery';
+
+/** Private encrypted recovery material is not approval intent or notification metadata. */
+function approvalVisibleJob(job: Job): Job {
+  const metadata = { ...job.metadata };
+  delete metadata.agent_frozen_arguments;
+  return { ...job, metadata };
+}
 
 function notificationDestination(tools: RouteToolsConfig, config: AppConfig): ToolApprovalConfig | undefined {
   const value = approvalConfig(tools) ?? config.alerts;
@@ -78,8 +86,8 @@ export function approvalDepsForStores(
       };
       if (cs.approvals.createWithNotification) {
         const id = await cs.approvals.createWithNotification(approval, {
-          job, provider_name: provider.name, subject: onBehalfOf, subject_field: sourceCfg.subject_field,
-          snap, brand_name: appConfig.brand.name,
+          job: approvalVisibleJob(job), provider_name: provider.name, subject: onBehalfOf, subject_field: sourceCfg.subject_field,
+          snap: approvalNotificationSnapshot(snap), brand_name: appConfig.brand.name,
           destination: notificationDestination(toolsCfg, appConfig),
         });
         wakeNotificationOutboxFor(state);
@@ -92,7 +100,7 @@ export function approvalDepsForStores(
       // Compatibility for external ledgers without the durable creation port.
       await notificationBackgroundWorkFor(state).track('approval-notification', async () => {
         await notifyApprovalPayloadFor(config, state, { approval_id: id, job, provider_name: provider.name,
-          subject: subjectOf(job, sourceCfg), subject_field: sourceCfg.subject_field, snap, brand_name: appConfig.brand.name,
+          subject: subjectOf(job, sourceCfg), subject_field: sourceCfg.subject_field, snap: approvalNotificationSnapshot(snap), brand_name: appConfig.brand.name,
           destination: notificationDestination(toolsCfg, appConfig),
         }, appConfig, nowFn, sleepFn, targetRegistry);
       });
@@ -123,9 +131,11 @@ function approvalIntentFor(job: Job, provider: ToolProvider, sourceCfg: ToolSour
     path: snap.path,
     args,
     args_hash: snap.args_hash,
+    ...(snap.args_bytes !== undefined ? { args_bytes: snap.args_bytes } : {}),
+    ...(snap.args_truncated ? { args_truncated: true } : {}),
     summary: snap.summary,
     confirm_when: snap.confirm_when,
-    metadata: job.metadata ?? {},
+    metadata: approvalVisibleJob(job).metadata,
   };
 }
 
@@ -139,7 +149,10 @@ export async function notifyApprovalPayloadFor(
   targetRegistry: TargetRegistry,
   eventId?: string,
 ): Promise<NotificationSendOutcome> {
-  const { job, snap, approval_id: approvalId } = payload;
+  const { approval_id: approvalId } = payload;
+  // Also bound historical durable drafts before sending; new producers already store this view.
+  const job = approvalVisibleJob(payload.job);
+  const snap = approvalNotificationSnapshot(payload.snap);
   const provider = { name: payload.provider_name } as ToolProvider;
   const sourceCfg = { provider: payload.provider_name, allow: [], subject_field: payload.subject_field };
   const subject = payload.subject;
@@ -165,7 +178,7 @@ export async function notifyApprovalPayloadFor(
     `触发原因：${snap.reason}`,
     `任务：${job.dispatch?.route_name || job.request_id}（job ${job.job_id}）`,
     `工具：${snap.tool}（scope ${snap.scope}，风险 ${snap.risk}）`,
-    `参数：${snap.args_json}`,
+    `${snap.args_truncated ? '参数预览（已截断，完整参数请到授权控制台查看）' : '参数'}：${snap.args_json}`,
     isAgentToolInvocationJob(job)
       ? '请到控制台「工具审批」页处理；批准后由原本地 Agent 用 invocation_id 续执行，中枢不启动模型重跑。'
       : '请到控制台「工具审批」页处理；批准后任务将自动重跑完成该操作。',
@@ -204,6 +217,8 @@ export async function notifyApprovalPayloadFor(
       path: snap.path,
       args,
       args_hash: snap.args_hash,
+      ...(snap.args_bytes !== undefined ? { args_bytes: snap.args_bytes } : {}),
+      ...(snap.args_truncated ? { args_truncated: true } : {}),
       summary: snap.summary,
       intent: { approval_id: approvalId, ...intent },
       decision_path: `/approvals/${approvalId}/decision`,
@@ -238,7 +253,10 @@ export async function notifyApprovalPayloadFor(
   if (type === 'webhook' && ap['url']) {
     return post(String(ap['url']), {
       kind: 'tool_approval', approval_id: approvalId, job_id: job.job_id, request_id: job.request_id,
-      tool: snap.tool, scope: snap.scope, risk: snap.risk, policy: snap.policy, reason: snap.reason, args: snap.args_json, intent: { approval_id: approvalId, ...intent }, message: content,
+      tool: snap.tool, scope: snap.scope, risk: snap.risk, policy: snap.policy, reason: snap.reason, args: snap.args_json,
+      ...(snap.args_bytes !== undefined ? { args_bytes: snap.args_bytes } : {}),
+      ...(snap.args_truncated ? { args_truncated: true } : {}),
+      intent: { approval_id: approvalId, ...intent }, message: content,
     }, 'approval_notify');
   }
   const targetName = `${type}-notify`;

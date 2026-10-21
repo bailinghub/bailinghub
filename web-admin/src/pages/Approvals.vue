@@ -18,15 +18,24 @@
     <el-alert v-if="decisionNotice" :title="decisionNotice" :type="decisionNoticeType" :closable="true" show-icon @close="decisionNotice = ''" />
     <el-empty v-if="!list.length && !loading && !error" :description="status === 'pending' ? '没有待审批的调用' : '还没有审批记录'" />
     <div v-else class="approval-list">
-    <el-table :data="list" row-key="id" v-loading="loading" :empty-text="error ? '审批列表读取失败' : '正在读取审批列表'">
+    <el-table :data="list" row-key="id" :expand-row-keys="expandedId === null ? [] : [expandedId]" @expand-change="expandApproval" v-loading="loading" :empty-text="error ? '审批列表读取失败' : '正在读取审批列表'">
       <el-table-column type="expand">
         <template #default="{ row }">
           <div class="intent">
-            <div class="td-sec">参数快照</div>
-            <pre class="block">{{ pretty(row.args_json || '{}') }}</pre>
-            <template v-if="row.intent">
+            <template v-if="row.details_available && !completeDetail(row)">
+              <div class="snapshot-heading"><span>参数预览 · {{ row.args_bytes }} 字节</span><HelpTip title="完整审批快照"><p>列表只保留有界预览。展开时按需读取原参数和审批意图；完整快照读取成功前不能批准。列表自动刷新不会再次下载全文。</p></HelpTip></div>
+              <el-alert v-if="detailState?.error" :title="detailState.error" type="error" :closable="false" show-icon />
+              <pre class="block preview">{{ row.args_preview || '无参数预览' }}</pre>
+              <el-button size="small" :loading="detailState?.loading" @click="loadDetail(row)">{{ detailState?.error ? '重试读取完整快照' : '读取完整快照' }}</el-button>
+            </template>
+            <template v-else>
+            <div class="td-sec">完整参数快照<span v-if="row.args_bytes"> · {{ row.args_bytes }} 字节</span></div>
+            <pre v-if="typeof (completeDetail(row) || row).args_json === 'string'" class="block">{{ pretty((completeDetail(row) || row).args_json) }}</pre>
+            <p v-else class="muted">该历史记录未保存独立参数快照，请核对下方审批意图。</p>
+            <template v-if="(completeDetail(row) || row).intent">
               <div class="td-sec">审批意图完整快照</div>
-              <pre class="block">{{ JSON.stringify(row.intent, null, 2) }}</pre>
+              <pre class="block">{{ JSON.stringify((completeDetail(row) || row).intent, null, 2) }}</pre>
+            </template>
             </template>
           </div>
         </template>
@@ -71,8 +80,9 @@
       <el-table-column v-if="me.can('runs:write')" width="140" align="right">
         <template #default="{ row }">
           <template v-if="row.status === 'pending'">
+            <span v-if="row.details_available && !completeDetail(row)" class="muted">展开读取完整快照后批准</span>
             <el-popconfirm :title="row.continuation_mode === 'manual' ? '批准冻结的调用快照？批准后须由原客户端使用同一调用标识继续，中枢不会自动重跑。' : '批准冻结的调用快照？决策保存后按原任务续办方式处理，批准不代表业务执行成功。'" width="320" @confirm="decide(row.id, 'approve')">
-              <template #reference><el-button link type="success" :disabled="Boolean(error) || loading || deciding !== null" :loading="deciding === row.id">兜底批准</el-button></template>
+              <template #reference><el-button link type="success" :disabled="Boolean(error) || loading || deciding !== null || Boolean(row.details_available && !completeDetail(row))" :loading="deciding === row.id">兜底批准</el-button></template>
             </el-popconfirm>
             <el-popconfirm title="拒绝该意图？任务保持原结论，不会重跑。" width="260" @confirm="decide(row.id, 'deny')">
               <template #reference><el-button link type="danger" :disabled="Boolean(error) || loading || deciding !== null">兜底拒绝</el-button></template>
@@ -104,21 +114,61 @@ const deciding = ref<number | null>(null), decisionNotice = ref('');
 const decisionNoticeType = ref<'success' | 'warning'>('success');
 let generation = 0, loadedStatus = '';
 let timer = 0;
+const expandedId = ref<number | null>(null);
+const detailState = ref<{ key: string; loading: boolean; error: string; data?: any } | null>(null);
+let detailGeneration = 0;
+
+function detailKey(row: any): string { return `${row.id}:${row.args_hash ?? ''}:${row.created_at ?? ''}`; }
+function completeDetail(row: any): any | null {
+  return detailState.value?.key === detailKey(row) ? detailState.value.data ?? null : null;
+}
+function clearDetail(): void { detailGeneration++; detailState.value = null; }
+function expandApproval(row: any, expandedRows: any[]): void {
+  const opened = expandedRows.some(item => item.id === row.id);
+  if (!opened) {
+    if (expandedId.value === row.id) { expandedId.value = null; clearDetail(); }
+    return;
+  }
+  if (expandedId.value === row.id) return;
+  expandedId.value = row.id; clearDetail();
+  if (row.details_available) void loadDetail(row);
+}
+async function loadDetail(row: any): Promise<void> {
+  if (!me.can('runs:read') || expandedId.value !== row.id || detailState.value?.loading) return;
+  const current = ++detailGeneration, key = detailKey(row);
+  detailState.value = { key, loading: true, error: '' };
+  const owns = () => current === detailGeneration && expandedId.value === row.id
+    && list.value.some(item => detailKey(item) === key);
+  try {
+    const data = await api(`/admin/api/tool-approvals/${row.id}/details`);
+    if (!owns()) return;
+    if (detailKey(data) !== key || data.details_available || data.args_truncated
+      || (row.args_bytes > 0 && typeof data.args_json !== 'string')) throw new Error('snapshot_mismatch');
+    detailState.value = { key, loading: false, error: '', data };
+  } catch {
+    if (owns()) detailState.value = { key, loading: false, error: '完整快照读取失败，当前仅显示预览；请重试。' };
+  }
+}
 
 async function load(): Promise<void> {
   const current = ++generation, requestedStatus = status.value;
-  if (loadedStatus !== requestedStatus) list.value = [];
+  if (loadedStatus !== requestedStatus) { list.value = []; expandedId.value = null; clearDetail(); }
   loading.value = true; error.value = '';
   try {
     const rows = await api('/admin/api/tool-approvals?status=' + requestedStatus);
     if (current !== generation) return;
     list.value = rows; loadedStatus = requestedStatus; loadedAt.value = new Date().toISOString();
+    const expanded = rows.find((item: any) => item.id === expandedId.value);
+    if (!expanded) { expandedId.value = null; clearDetail(); }
+    else if (detailState.value && detailState.value.key !== detailKey(expanded)) clearDetail();
   } catch {
     if (current === generation) error.value = '暂时无法读取审批列表，请刷新重试。';
   } finally { if (current === generation) loading.value = false; }
 }
 async function decide(id: number, action: 'approve' | 'deny'): Promise<void> {
   if (!me.can('runs:write') || error.value || loading.value || deciding.value !== null) return;
+  const row = list.value.find(item => item.id === id);
+  if (!row || (action === 'approve' && row.details_available && !completeDetail(row))) return;
   deciding.value = id; decisionNotice.value = '';
   try {
     const r = await api<{ rerun: boolean; continuation_mode?: string; continuation_pending?: boolean }>(`/admin/api/tool-approvals/${id}/${action}`, { method: 'POST' });
@@ -163,7 +213,7 @@ onMounted(() => {
   void load();
   timer = window.setInterval(() => void load(), 30_000); // 审批是时效操作，轻刷新
 });
-onUnmounted(() => window.clearInterval(timer));
+onUnmounted(() => { window.clearInterval(timer); generation++; clearDetail(); });
 </script>
 
 <style scoped>
@@ -204,5 +254,6 @@ onUnmounted(() => window.clearInterval(timer));
 }
 .intent { padding: 4px 18px 10px 46px; }
 .td-sec { margin: 8px 0 4px; color: var(--el-text-color-secondary); font-size: 12px; }
+.snapshot-heading { display: flex; align-items: center; gap: 6px; margin: 8px 0 4px; color: var(--el-text-color-secondary); font-size: 12px; }
 .block { background: var(--el-fill-color-lighter); border: 1px solid var(--el-border-color-lighter); border-radius: 0; padding: 8px; overflow: auto; max-height: 260px; font-family: var(--bz-mono); font-size: 12px; }
 </style>

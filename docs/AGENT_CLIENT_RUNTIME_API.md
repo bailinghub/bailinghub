@@ -20,6 +20,12 @@ Core 0.8.0 起提供的可选[任务控制](AGENT_TASK_CONTROL.md)为 turn 增�
 
 `turns` 与 `complete` 的原始 JSON 请求上限为 512 KiB。该上限可覆盖 64000 字符 Unicode 文本的 JSON 编码、Turn 的 16 KiB `page_context` 以及合理 envelope；解析后仍按各字段的字符上限严格校验。
 
+工具调用的 `arguments` 必须是对象，按 `JSON.stringify(arguments)` 后的 UTF-8 字节数计量，最多 **1048576 字节（1 MiB）**。完整调用 HTTP JSON 信封最多 **2097152 字节（2 MiB）**；执行器的 `/jobs/:job_id/tools/invoke` 使用同一预算。它们是独立于 `BAILING_JSON_BODY_MAX_BYTES` 的工具调用固定安全预算，不改变其他接口或业务能力的字段上限。HTML/CSS 等复合字段继续传对象，由能力 schema 和业务服务独立校验，不能将其改成 JSON 字符串绕过校验。
+
+超限在派发前返回 HTTP 413：`error=arguments_too_large`、`origin=core`、`dispatch=not_dispatched`、`limit_scope=arguments|request_body` 和 `max_bytes`。参数超限返回精确的 `actual_bytes`；HTTP 信封的流式读取超限返回 `observed_bytes`，仅代表停止读取前已观察到的字节数，完整请求可能更大。回执不包含正文或凭据。较旧 MCP/SDK 有独立的小上限，需要使用配套修复候选；只升级 Core 不会改变已安装客户端的校验。
+
+完整审批参数快照与幂等哈希保持一致，通知只携带有界摘要；大快照在后台按需查看。放宽传输容量不会跳过主体、授权、审批、原调用幂等或审计约束。
+
 ## 工具审批语义
 
 `tools.agent_direct.write_tools` 只负责按精确 operationId 开放本地 Agent 可调用的写工具；工具是否需要审批默认继续以业务侧 ACC 的 `risk`、`approval.required` 和 `approval.when` 声明为准。路由只有把工具精确列入 `tools.agent_direct.force_approval_tools` 时，才会在 ACC 之外额外强制审批。高风险、ACC 明示审批和条件审批不会被路由覆盖掉。

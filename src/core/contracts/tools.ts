@@ -8,6 +8,7 @@ import { readResponseBody, truncateUtf8 } from '../platform/http-body';
 import type { ToolProvider } from './types';
 import { schemaAtPath, schemaTypes, valueMatchesSchemaType, type ToolConfirmCondition, type ToolDefinition } from './tool-definition';
 import { toolSummary } from './tool-definition';
+import { TOOL_ARGUMENTS_MAX_BYTES } from './tool-input-limits';
 
 /** 路由 allow 白名单匹配：精确 scope 或前缀通配（"tenant.staff.*"）。 */
 export function scopeAllowed(scope: string, allow: string[]): boolean {
@@ -97,15 +98,17 @@ function isJsonOmitted(v: unknown): boolean {
   return v === undefined || typeof v === 'function' || typeof v === 'symbol';
 }
 
-function normalizeToolArgs(args: Record<string, unknown>): { ok: true; args: Record<string, unknown> } | { ok: false; error: string } {
+function normalizeToolArgs(args: Record<string, unknown>): { ok: true; args: Record<string, unknown>; encoded: string; bytes: number } | { ok: false; error: string; bytes?: number } {
   try {
     // 以实际 HTTP JSON 语义为准：对象中的 undefined 被省略、数组中的 undefined 变为 null。
     // 审批快照、幂等哈希和外发请求必须消费同一份规范化参数。
     const encoded = JSON.stringify(args);
     if (!encoded) return { ok: false, error: 'tool_args_not_json_object' };
+    const bytes = Buffer.byteLength(encoded, 'utf8');
+    if (bytes > TOOL_ARGUMENTS_MAX_BYTES) return { ok: false, error: 'arguments_too_large', bytes };
     const decoded: unknown = JSON.parse(encoded);
     if (!isRecord(decoded)) return { ok: false, error: 'tool_args_not_json_object' };
-    return { ok: true, args: decoded };
+    return { ok: true, args: decoded, encoded, bytes };
   } catch {
     return { ok: false, error: 'tool_args_not_json_serializable' };
   }
@@ -331,6 +334,12 @@ export interface ToolInvokeResult {
   retry_after_ms?: number;
   rate_limit?: ToolRateLimitFeedback;
   approval_id?: number;
+  error?: 'arguments_too_large';
+  origin?: 'core';
+  dispatch?: 'not_dispatched';
+  actual_bytes?: number;
+  max_bytes?: number;
+  limit_scope?: 'arguments';
 }
 
 /**
@@ -416,8 +425,34 @@ export interface ApprovalIntentSnap {
   path: string;
   args_json: string;
   args_hash: string;
+  /** Notification previews only; persisted execution arguments remain complete. */
+  args_bytes?: number;
+  args_truncated?: boolean;
   summary?: string;
   confirm_when?: ConfirmHit;
+}
+
+const APPROVAL_NOTIFICATION_ARGUMENTS_MAX_BYTES = 1000;
+
+/** Bounded, explicitly labelled notification view; never an execution snapshot. */
+export function approvalNotificationSnapshot(snap: ApprovalIntentSnap): ApprovalIntentSnap {
+  const encodedBytes = Buffer.byteLength(snap.args_json, 'utf8');
+  const bytes = snap.args_truncated && Number.isSafeInteger(snap.args_bytes) && Number(snap.args_bytes) >= encodedBytes
+    ? Number(snap.args_bytes) : encodedBytes;
+  const base = { ...snap, ...(snap.summary ? { summary: truncateUtf8(snap.summary, 512) } : {}) };
+  if (encodedBytes <= APPROVAL_NOTIFICATION_ARGUMENTS_MAX_BYTES) return { ...base, args_bytes: bytes };
+  return {
+    ...base,
+    args_json: JSON.stringify({
+      preview: truncateUtf8(snap.args_json, 384),
+      truncated: true,
+      args_bytes: bytes,
+      args_hash: snap.args_hash,
+      note: 'Full arguments are available in the authorized approval console.',
+    }),
+    args_bytes: bytes,
+    args_truncated: true,
+  };
 }
 
 export interface ToolRuntimeDeps {
@@ -512,7 +547,15 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       if (!t) return { ok: false, text: `工具 ${name} 不在本路由白名单内，调用被拒。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
       const normalized = normalizeToolArgs(args);
       if (!normalized.ok) {
-        await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: normalized.error }).catch(() => undefined);
+        const details = normalized.error === 'arguments_too_large'
+          ? { actual_bytes: normalized.bytes!, max_bytes: TOOL_ARGUMENTS_MAX_BYTES, limit_scope: 'arguments' as const }
+          : {};
+        await d.audit('tool_blocked', { tool: name, scope: t.scope, reason: normalized.error, ...details }).catch(() => undefined);
+        if (normalized.error === 'arguments_too_large') return {
+          ok: false, status: 413, text: `Tool arguments contain ${normalized.bytes} bytes; the limit is ${TOOL_ARGUMENTS_MAX_BYTES} bytes. The invocation was not dispatched.`,
+          error: 'arguments_too_large', origin: 'core', dispatch: 'not_dispatched',
+          governance_state: 'rejected_before_dispatch', auto_retry_allowed: false, ...details,
+        };
         return { ok: false, text: `工具 ${name} 参数不是合法 JSON 对象，调用已拒绝。请按工具参数 schema 重新传参。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
       }
       const callArgs = normalized.args;
@@ -644,18 +687,18 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
             await d.audit('tool_args_drift', { tool: name, approval_id: drifted.id, got_args: JSON.stringify(callArgs).slice(0, 500) }).catch(() => undefined);
             return { ok: false, text: `该工具已有人工批准的调用（审批单 ${drifted.id}），但你本次的参数与批准的不一致。请使用原审批快照续执行，不要更改参数。`, status: 0, governance_state: 'rejected_before_dispatch', auto_retry_allowed: false };
           }
-          const argsJson = JSON.stringify(callArgs);
+          const argsJson = normalized.encoded;
           const reason = approvalReason(t, confirmHit);
-          const summary = t.confirmPrompt ? t.confirmPrompt.replace(/\{(\w+)\}/g, (_, k) => String(callArgs[k] ?? `{${k}}`)) : undefined;
+          const summary = t.confirmPrompt ? truncateUtf8(t.confirmPrompt.replace(/\{(\w+)\}/g, (_, k) => String(callArgs[k] ?? `{${k}}`)), 512) : undefined;
           const snap: ApprovalIntentSnap = {
             tool: name, scope: t.scope, risk: t.risk, policy: approvalPolicy(t, confirmHit), reason,
-            method: t.method, path: t.path, args_json: argsJson.slice(0, 4096), args_hash: hash,
+            method: t.method, path: t.path, args_json: argsJson, args_hash: hash,
             ...(summary ? { summary } : {}),
             ...(confirmHit ? { confirm_when: confirmHit } : {}),
           };
           const id = await d.approvals.create(snap);
           await d.audit('tool_approval_pending', { approval_id: id, tool: name, scope: t.scope, risk: t.risk, confirm_required: t.confirmRequired, ...(confirmHit ? { confirm_when: confirmHit } : {}) }).catch(() => undefined);
-          await d.approvals.notify(id, { ...snap, args_json: argsJson.slice(0, 1000) }).catch(() => undefined);
+          await d.approvals.notify(id, approvalNotificationSnapshot(snap)).catch(() => undefined);
           const continuation = d.approvals.continuationMode === 'resume'
             ? '批准后请用本 invocation_id 续执行；中枢不会启动模型重跑。'
             : '批准后系统会自动重跑原任务。';
@@ -687,8 +730,8 @@ export function buildToolRuntime(d: ToolRuntimeDeps): ToolRuntime {
       // 闸4：审计 fail-closed——账记不下来就不放行。ACC audit.sensitive 工具强制只记键名（优先级高于工具源 log_payload）。
       // logFull 时入参全量入审计（封顶 AUDIT_MAX_BYTES，超出记 args_truncated；真实字节数 args_bytes 始终记）。
       const logFull = d.provider.log_payload && !t.sensitive;
-      const argsStr = JSON.stringify(callArgs);
-      const argsBytes = Buffer.byteLength(argsStr, 'utf8');
+      const argsStr = normalized.encoded;
+      const argsBytes = normalized.bytes;
       const argsLog = logFull
         ? { args: truncateUtf8(argsStr, AUDIT_MAX_BYTES), args_bytes: argsBytes, ...(argsBytes > AUDIT_MAX_BYTES ? { args_truncated: true } : {}) }
         : { args: JSON.stringify(Object.keys(callArgs)) };

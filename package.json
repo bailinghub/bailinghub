@@ -66,7 +66,7 @@
     "build:info": "node scripts/write-build-info.mjs",
     "demo:e2e": "tsx scripts/demo-e2e.ts",
     "bootstrap-admin:restart-test": "tsx scripts/verify-bootstrap-admin-restart.ts",
-    "e2e:console": "node scripts/e2e-console.mjs && node scripts/e2e-console-runtime-audit.mjs && node scripts/e2e-console-settings-audit.mjs && node scripts/e2e-console-operations-audit.mjs && node scripts/e2e-console-kb-audit.mjs",
+    "e2e:console": "node scripts/e2e-console.mjs && node scripts/e2e-console-approval-details.mjs && node scripts/e2e-console-runtime-audit.mjs && node scripts/e2e-console-settings-audit.mjs && node scripts/e2e-console-operations-audit.mjs && node scripts/e2e-console-kb-audit.mjs",
     "widget:renderer:test": "node scripts/widget-renderer-test.mjs",
     "package:build": "npm --prefix web-admin ci --include=dev && npm --prefix web-admin run build",
     "package:artifact:check": "node scripts/check-package-artifact.mjs",

@@ -29,6 +29,24 @@ Session `allowed_routes`, enabled and audience-compatible routes, and `tools.age
 Raw JSON for `turns` and `complete` is limited to 512 KiB. Parsed values still have strict field
 limits; the service rejects invalid input instead of truncating it silently.
 
+Tool invocation `arguments` must remain an object. The limit is **1048576 bytes (1 MiB)**,
+measured as UTF-8 bytes of `JSON.stringify(arguments)`, including JSON escaping. The full HTTP
+JSON envelope is limited to **2097152 bytes (2 MiB)**. Executor `/jobs/:job_id/tools/invoke`
+uses the same budgets. These explicit tool budgets are independent of `BAILING_JSON_BODY_MAX_BYTES`;
+other endpoints and business capability field limits remain separate. Composite HTML/CSS fields
+remain objects, subject to the capability schema and business validation.
+
+Oversize requests are rejected before dispatch with HTTP 413, `error=arguments_too_large`,
+`origin=core`, `dispatch=not_dispatched`, `limit_scope=arguments|request_body`, and `max_bytes`.
+Argument rejection includes exact `actual_bytes`. Streaming envelope rejection includes
+`observed_bytes`, the bytes observed when reading stopped, which may be less than the full request.
+No body or credential is echoed. Older MCP/SDK clients enforce their own smaller limits and need
+the matching client fix; updating Core alone cannot change installed clients.
+
+Complete approval argument snapshots retain the exact idempotency hash. Notifications use bounded
+summaries, and large snapshots are read on demand in the console. Larger transport budgets do not
+bypass identity, authorization, approval, idempotency, or audit checks.
+
 ## Write and approval semantics
 
 `tools.agent_direct.write_tools` exposes exact write operation IDs to the local Agent. Approval

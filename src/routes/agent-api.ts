@@ -1,6 +1,7 @@
 import { handleAgentArtifacts } from './agent-artifacts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PayloadTooLargeError, readBody, send } from '../app/http';
+import { TOOL_INVOCATION_BODY_MAX_BYTES } from '../core/contracts/tool-input-limits';
 import type { Principal } from '../app/auth';
 import type { ToolProxyDeps } from '../app/tool-proxy';
 import {
@@ -67,7 +68,7 @@ function sendAgentToolError(res: ServerResponse, error: unknown): void {
     return;
   }
   if (error instanceof AgentToolApiError) {
-    send(res, error.statusCode, { error: error.code, message: error.message });
+    send(res, error.statusCode, { error: error.code, message: error.message, ...error.details });
     return;
   }
   send(res, 500, { error: 'agent_tool_internal_error', message: 'The governed Agent tool operation failed.' });
@@ -87,7 +88,11 @@ async function readAgentToolBody(
     return body;
   } catch (error) {
     if (error instanceof PayloadTooLargeError) {
-      send(res, 413, { error: 'arguments_too_large', message: `The Agent tool request exceeds ${maxBytes} bytes.` });
+      send(res, 413, {
+        error: 'arguments_too_large', message: `The Agent tool request exceeds ${maxBytes} bytes.`,
+        origin: 'core', dispatch: 'not_dispatched', limit_scope: 'request_body', max_bytes: maxBytes,
+        ...(error.observedBytes !== undefined ? { observed_bytes: error.observedBytes } : {}),
+      });
     } else {
       send(res, 400, { error: 'invalid_request', message: 'The request body must be valid JSON.' });
     }
@@ -241,7 +246,7 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
   if (method === 'POST' && path === '/agent-api/v1/tool-invocations') {
     if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
     if (deps.isPaused()) { send(res, 503, { error: 'hub_paused', status: 'paused' }); return true; }
-    const body = await readAgentToolBody(req, res, 16 * 1024);
+    const body = await readAgentToolBody(req, res, TOOL_INVOCATION_BODY_MAX_BYTES);
     if (!body) return true;
     if (!body
         || !exactFields(body, ['invocation_id', 'route', 'capability_revision', 'agent_run_id', 'tool', 'arguments'])
