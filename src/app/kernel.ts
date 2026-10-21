@@ -392,7 +392,7 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     queue: composition.queue,
     isPaused,
     metrics,
-    readiness: () => checkReadinessFor(cfg, composition.cfgStore),
+    readiness: () => checkReadinessFor(cfg, composition.cfgStore, composition.store),
     operationalStatus: () => {
       const audit = edition.auditFailures.snapshot();
       return { audit_write_failures: audit.total, last_audit_failure_at: audit.lastFailureAt };
@@ -580,7 +580,7 @@ export function createBailingHubKernel(input: CreateBailingHubKernelInputV1): Ba
     initialize,
     handle,
     tick,
-    readiness: () => checkReadinessFor(cfg, composition.cfgStore),
+    readiness: () => checkReadinessFor(cfg, composition.cfgStore, composition.store),
     close,
     createStandaloneServer,
     isClosing: () => closing || closed,

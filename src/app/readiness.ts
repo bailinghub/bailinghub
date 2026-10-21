@@ -1,6 +1,8 @@
 import type { AppConfig } from '../core/config/config';
-import { sqlMigrationFiles } from '../core/platform/version';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
+import type { RuntimeStateStore } from '../core/state/state-contracts';
+import type { SchemaReadinessDatabase } from '../core/contracts/schema-readiness';
+import { inspectCoreSchemaReadiness } from '../infrastructure/schema/schema-readiness';
 
 export interface ReadinessReport {
   ready: boolean;
@@ -11,29 +13,31 @@ export interface ReadinessReport {
   };
 }
 
-/**
- * 只检查实例接流量所需的共享依赖。模型、工具源和渠道属于业务依赖，波动时不应把整个实例从负载均衡摘除。
- */
-export async function checkReadinessFor(cfg: AppConfig, configStore: ConfigStoreContract | null): Promise<ReadinessReport> {
-  if (cfg.state.backend !== 'mysql') {
-    return { ready: true, checks: { state_backend: 'ok', database: 'skipped', migrations: { status: 'skipped', pending: 0 } } };
-  }
-  if (!configStore) {
-    return { ready: false, checks: { state_backend: 'ok', database: 'failed', migrations: { status: 'failed', pending: 0 } } };
-  }
+/** Shared storage only: external model, tool and channel failures belong to business diagnostics. */
+export async function checkReadinessFor(
+  cfg: AppConfig, configStore: ConfigStoreContract | null, stateStore?: Pick<RuntimeStateStore, 'schemaReadinessDb'>,
+): Promise<ReadinessReport> {
   try {
-    await configStore.db.query('SELECT 1');
+    // A custom MySQL state store must expose its actual resource. Guessing from
+    // config or checking only the configuration DB can admit a broken instance.
+    if (cfg.state.backend === 'mysql' && (!configStore || !stateStore?.schemaReadinessDb)) {
+      return { ready: false, checks: { state_backend: 'ok', database: 'failed', migrations: { status: 'failed', pending: 0 } } };
+    }
+    const resources = new Set<SchemaReadinessDatabase>();
+    if (stateStore?.schemaReadinessDb) resources.add(stateStore.schemaReadinessDb);
+    if (configStore) resources.add(configStore.db);
+    if (!resources.size) {
+      return { ready: true, checks: { state_backend: 'ok', database: 'skipped', migrations: { status: 'skipped', pending: 0 } } };
+    }
+    const checks = await Promise.all([...resources].map(inspectCoreSchemaReadiness));
+    const database = checks.some(check => check.database === 'failed') ? 'failed' : 'ok';
+    // Count distinct missing migration files, even when separate pool objects
+    // refer to one schema. Never merge resources by guessed connection settings.
+    const pending = new Set(checks.flatMap(check => check.pendingFilenames)).size;
+    const status = checks.some(check => check.migrations.status === 'failed') ? 'failed' : pending ? 'pending' : 'ok';
+    return { ready: database === 'ok' && status === 'ok', checks: { state_backend: 'ok', database, migrations: { status, pending } } };
   } catch {
+    // Getter/adapter errors must not disclose connection strings or SQL details.
     return { ready: false, checks: { state_backend: 'ok', database: 'failed', migrations: { status: 'failed', pending: 0 } } };
-  }
-  try {
-    const applied = new Set(await configStore.observability.listSchemaMigrations());
-    const pending = sqlMigrationFiles(cfg.root).filter((file) => !applied.has(file));
-    return {
-      ready: pending.length === 0,
-      checks: { state_backend: 'ok', database: 'ok', migrations: { status: pending.length ? 'pending' : 'ok', pending: pending.length } },
-    };
-  } catch {
-    return { ready: false, checks: { state_backend: 'ok', database: 'ok', migrations: { status: 'failed', pending: 0 } } };
   }
 }

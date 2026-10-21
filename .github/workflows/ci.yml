@@ -68,7 +68,7 @@ jobs:
           ref: 6412a35334237736cdfdef4d0bf9668fc1ad6cdc # Core v0.9.3, through migration 067
           path: .notification-baseline
           persist-credentials: false
-      - run: node --import tsx --test --test-concurrency=4 "src/modules/usage/*.test.ts" src/app/kernel-usage-lifecycle.mysql.test.ts src/app/kernel-boot-recovery.mysql.test.ts src/app/approval-continuations.mysql.test.ts src/app/delivery-dlq-replay.mysql.test.ts src/infrastructure/state/notification-outbox-storage.test.ts
+      - run: node --import tsx --test --test-concurrency=4 "src/modules/usage/*.test.ts" src/app/kernel-usage-lifecycle.mysql.test.ts src/app/kernel-boot-recovery.mysql.test.ts src/app/readiness.mysql.test.ts src/app/approval-continuations.mysql.test.ts src/app/delivery-dlq-replay.mysql.test.ts src/infrastructure/state/notification-outbox-storage.test.ts
 
   model-process-recovery:
     name: model process recovery + MySQL

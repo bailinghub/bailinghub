@@ -56,6 +56,12 @@
 | `GET /health` | liveness，确认进程仍在响应 | 进程应重启 |
 | `GET /health/ready` | readiness，确认 MySQL 可达且迁移齐全 | 暂时不要把新流量发给该实例 |
 
+readiness 的 false / HTTP 503 是供 Host 或负载均衡摘流量的信号，不自动代表所有 `/run` 请求都被拦截；部署方需要据此实施流量准入。它检查制品清单与迁移账本，不逐表比对物理 DDL，无法发现“保留完整账本但手工删除业务表”等漂移。
+
+readiness 使用实际 state/configuration 连接池检查各自账本；分库时两个库都必须齐全，共用同一池时只查一次。JSONL state 如果同时接入 MySQL configuration，仍检查后者。检查以安装制品的 active/retired 迁移清单和 SHA-256 为准：缺少 active 记录返回 pending；未知记录、摘要冲突、缺失/空摘要或账本不可读均返回 not-ready。retired 记录可以不存在，存在时必须匹配，永不作为待执行 SQL。探针只读，不建表、不补摘要、不迁移；旧账本必须先在受控升级步骤执行官方 migrator 完成校核/补录。
+
+自定义 MySQL state store 的 `RuntimeStateStore.schemaReadinessDb` 是可选类型扩展，应返回正在使用的池/查询资源供固定只读探针使用。未提供时 readiness 明确失败，不会另开连接或误用 configuration 库代验；这收紧了旧扩展的就绪判定。纯 JSONL 且无 SQL configuration 的实例仍跳过数据库检查。接口保留既有状态字段，不返回连接地址或原始 SQL 异常。`migrations.pending` 是各资源缺少的迁移文件名去重计数，不代表数据库数量；不同池即使指向同库也分别检查，不按配置地址猜测合并。
+
 readiness 不检查模型、工具源、渠道等外部业务依赖。某个模型服务波动不应导致整个中枢实例被负载均衡摘除；这些依赖由控制台“系统体检”和告警规则持续检查。
 
 `/health` 的 `observability.audit_write_failures` 是当前进程累计的审计写入失败数，`last_audit_failure_at` 是最后失败时间。数值大于 0 时应立即检索运行日志中的结构化事件 `audit_write_failed` 并检查数据库；该计数随进程重启归零，不替代外部监控。安全关键审计仍然 fail-closed，允许 best-effort 的运行事件即使被调用方降级，也会先经过该统一观测层。
