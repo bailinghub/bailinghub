@@ -138,6 +138,7 @@ const info = reactive({ name: '', summary: '', domains: [] as string[], boundari
 const direct = reactive({ enabled: false, write_tools: [] as string[], force_approval_tools: [] as string[] });
 const sources = ref<Source[]>([]); const providers = ref<Array<{ name: string; description?: string }>>([]); const providerError = ref('');
 let requestId = 0; let sourceKey = 0;
+const catalogRequests = new WeakMap<Source, number>();
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 const clientValue = () => client.value ? { enabled: client.value.enabled, agent_authorize_url: client.value.agent_authorize_url?.trim() || null, allowed_routes: client.value.allowed_routes } : null;
 const clientDirty = computed(() => Boolean(client.value) && JSON.stringify(clientValue()) !== clientBaseline.value);
@@ -230,7 +231,7 @@ async function loadProviders(id: number): Promise<void> {
 }
 function makeSource(raw: any = {}): Source { return { config: { ...clone(raw), provider: raw.provider || '', allow: [...(raw.allow || [])] }, _key: ++sourceKey, _tools: [], _loaded: false, _loading: false, _error: '' }; }
 function addSource(): void { sources.value.push(makeSource()); }
-function clearCatalog(source: Source): void { source._tools = []; source._loaded = false; source._error = ''; }
+function clearCatalog(source: Source): void { catalogRequests.set(source, (catalogRequests.get(source) ?? 0) + 1); source._loading = false; source._tools = []; source._loaded = false; source._error = ''; }
 function sourceScopes(source: Source): string[] { return [...new Set(source._tools.map((tool) => tool.scope))]; }
 function toolConfiguration(source: Source, tool: Tool): string {
   if (!source.config.allow.includes('*') && !source.config.allow.includes(tool.scope)) return '范围未包含';
@@ -238,16 +239,19 @@ function toolConfiguration(source: Source, tool: Tool): string {
   return direct.write_tools.includes(tool.name) ? '已列入写操作清单' : '未开放写入';
 }
 async function loadCatalog(source: Source): Promise<void> {
-  const provider = source.config.provider; const id = requestId; source._loading = true; source._error = '';
+  const provider = source.config.provider; const id = requestId;
+  const request = (catalogRequests.get(source) ?? 0) + 1; catalogRequests.set(source, request);
+  const current = () => id === requestId && catalogRequests.get(source) === request && source.config.provider === provider && sources.value.includes(source);
+  source._loading = true; source._error = '';
   try {
     const value = await api(`/admin/api/tool-providers/${encodeURIComponent(provider)}/tools`);
-    if (id !== requestId || source.config.provider !== provider || !sources.value.includes(source)) return;
+    if (!current()) return;
     source._tools = value.tools || [];
     const skipped = Array.isArray(value.skipped) ? value.skipped.length : Number(value.skipped || 0);
     const notices = [value.note, skipped ? `${skipped} 个声明未通过编译` : '', Array.isArray(value.warnings) && value.warnings.length ? `${value.warnings.length} 项目录提醒` : ''].filter(Boolean);
     source._loaded = !value.note; source._error = notices.join('；');
-  } catch (e) { if (id === requestId && source.config.provider === provider) source._error = `${message(e)}；这不代表该工具源没有能力。`; }
-  finally { source._loading = false; }
+  } catch (e) { if (current()) source._error = `${message(e)}；这不代表该工具源没有能力。`; }
+  finally { if (current()) source._loading = false; }
 }
 async function saveRoute(): Promise<void> {
   if (!route.value || savingClient.value || savingRoute.value || !me.can('routes:write')) return;

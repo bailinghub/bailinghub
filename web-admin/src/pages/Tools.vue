@@ -266,6 +266,11 @@
   <!-- 工具清单预览 -->
   <!-- 800 = 内表格最小宽 670 + 展开列 48 + 抽屉内边距 40 + 余量；改列宽时同步核算，别让抽屉底部出横向滚动 -->
   <el-drawer v-model="previewOpen" :title="'工具清单 · ' + previewName" size="800px">
+    <el-alert v-if="previewLoading" title="正在读取工具清单…" type="info" :closable="false" />
+    <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" show-icon>
+      <template #default><el-button link @click="retryPreview">重新读取</el-button></template>
+    </el-alert>
+    <el-empty v-if="!previewLoading && !previewError && !previewNote && !previewTools.length && !previewSkipped.length" description="该工具源当前没有可用工具" />
     <el-alert v-if="previewNote" :title="previewNote" type="warning" :closable="false" style="margin-bottom: 12px" />
     <template v-if="previewWarnings.length">
       <div class="muted" style="margin: 0 0 6px">接入体检提醒：</div>
@@ -503,6 +508,8 @@ const historicalAccessDescription = computed(() => historicalProtectedEvidence.v
   : '这只是升级前配置缺少管理员意图，不代表清单已公开。当前继续按历史兼容方式运行；可先停用或维护说明、治理、检索等非清单字段。');
 
 const previewOpen = ref(false);
+const previewLoading = ref(false), previewError = ref('');
+let previewGeneration = 0, retrieveGeneration = 0, debugGeneration = 0;
 const previewName = ref('');
 const previewTools = ref<any[]>([]);
 const previewSkipped = ref<any[]>([]);
@@ -745,43 +752,51 @@ const debugDiagnosis = computed(() => {
 // 语义召回预演：跑派发同款向量检索，返回工具+分数，让开发者看精度、调优工具措辞
 async function runRetrieveTest(): Promise<void> {
   const q = retrieveQ.value.trim();
-  if (!q) return;
+  if (!q || retrieving.value) return;
+  const generation = ++retrieveGeneration, preview = previewGeneration, name = previewName.value;
+  const current = () => generation === retrieveGeneration && preview === previewGeneration && previewOpen.value;
   retrieving.value = true;
   try {
     const r = await api<{ enabled: boolean; min_score_default: number; hits: Array<{ name: string; scope: string; score: number }> }>(
-      '/admin/api/tool-providers/' + encodeURIComponent(previewName.value) + '/retrieve-test', { method: 'POST', body: JSON.stringify({ query: q }) });
+      '/admin/api/tool-providers/' + encodeURIComponent(name) + '/retrieve-test', { method: 'POST', body: JSON.stringify({ query: q }) });
+    if (!current()) return;
     retrieveMinScore.value = r.min_score_default ?? 0.3;
     retrieveHits.value = r.hits || [];
     lastRetrieveQ.value = q;
     if (!retrieveHits.value.length) ElMessage.info('没有召回（索引为空？先「重建索引」）');
-  } catch (e) { ElMessage.error((e as Error).message); }
-  finally { retrieving.value = false; }
+  } catch (e) { if (current()) ElMessage.error((e as Error).message); }
+  finally { if (current()) retrieving.value = false; }
 }
 
 async function runDebugInvoke(): Promise<void> {
-  if (!s.can('tools:write')) return;
+  if (!s.can('tools:write') || debugLoading.value) return;
   if (!debugTool.value) { ElMessage.error('请选择工具'); return; }
   let args: Record<string, unknown> = {};
   try {
     args = debugMode.value === 'form' ? buildDebugArgsFromForm() : parseDebugJson();
   } catch (e) { ElMessage.error((e as Error).message); return; }
+  const generation = ++debugGeneration, preview = previewGeneration, name = previewName.value, tool = debugTool.value;
+  const subject = debugSubject.value.trim();
+  const current = () => generation === debugGeneration && preview === previewGeneration && previewOpen.value && debugTool.value === tool;
   debugLoading.value = true;
   try {
-    debugResult.value = await api('/admin/api/tool-providers/' + encodeURIComponent(previewName.value) + '/debug-invoke', {
+    const result = await api<any>('/admin/api/tool-providers/' + encodeURIComponent(name) + '/debug-invoke', {
       method: 'POST',
       body: JSON.stringify({
-        tool: debugTool.value,
+        tool,
         args,
-        on_behalf_of: debugSubject.value.trim(),
+        on_behalf_of: subject,
         allow_risky: debugAllowRisky.value,
       }),
     });
-    saveDebugSample(args);
+    if (!current()) return;
+    debugResult.value = result;
+    saveDebugSample(args, subject);
     if (debugResult.value.blocked) ElMessage.warning('调用已被调试台阻断');
     else if (debugResult.value.ok) ElMessage.success('工具调用成功');
     else ElMessage.warning('工具调用返回失败状态');
-  } catch (e) { ElMessage.error((e as Error).message); }
-  finally { debugLoading.value = false; }
+  } catch (e) { if (current()) ElMessage.error((e as Error).message); }
+  finally { if (current()) debugLoading.value = false; }
 }
 
 function parseDebugJson(): Record<string, unknown> {
@@ -840,12 +855,13 @@ function loadDebugSamples(): void {
   }
 }
 
-function saveDebugSample(args: Record<string, unknown>): void {
-  const sample = { id: `${Date.now()}`, at: new Date().toISOString(), subject: debugSubject.value.trim(), args };
+function saveDebugSample(args: Record<string, unknown>, subject: string): void {
+  const sample = { id: `${Date.now()}`, at: new Date().toISOString(), subject, args };
   const same = (x: any) => x.subject === sample.subject && JSON.stringify(x.args) === JSON.stringify(args);
   const next = [sample, ...debugSamples.value.filter((x) => !same(x))].slice(0, 5);
   debugSamples.value = next;
-  localStorage.setItem(debugStorageKey(), JSON.stringify(next));
+  try { localStorage.setItem(debugStorageKey(), JSON.stringify(next)); }
+  catch { /* Sample persistence is optional and must not turn a completed business call into a failure. */ }
 }
 
 function applyDebugSampleById(id: string): void {
@@ -867,6 +883,7 @@ function applyDebugArgsToForm(args: Record<string, unknown>): void {
 }
 
 function resetDebugForTool(): void {
+  debugGeneration++; debugLoading.value = false;
   debugResult.value = null;
   debugAllowRisky.value = false;
   loadDebugSamples();
@@ -1046,21 +1063,29 @@ async function refresh(name: string): Promise<void> {
   finally { refreshing.value = ''; }
 }
 async function preview(row: any): Promise<void> {
+  const generation = ++previewGeneration;
+  retrieveGeneration++; debugGeneration++; retrieving.value = false; debugLoading.value = false;
   previewName.value = row.name;
+  previewLoading.value = true; previewError.value = ''; previewNote.value = ''; previewOpen.value = true;
   previewEmbed.value = !!row.embed_credential;
   previewFilter.value = ''; retrieveQ.value = ''; lastRetrieveQ.value = ''; retrieveHits.value = [];
   debugTool.value = ''; debugSubject.value = ''; debugArgs.value = '{}'; debugAllowRisky.value = false; debugResult.value = null; debugSamples.value = []; debugSampleId.value = '';
   previewWarnings.value = []; previewSkipped.value = []; previewTools.value = [];
   try {
     const r = await api<any>('/admin/api/tool-providers/' + encodeURIComponent(row.name) + '/tools');
+    if (generation !== previewGeneration || !previewOpen.value) return;
     previewTools.value = r.tools || [];
     previewSkipped.value = r.skipped || [];
     previewWarnings.value = r.warnings || [];
     previewNote.value = r.note || '';
-    previewOpen.value = true;
     debugTool.value = previewTools.value[0]?.name || '';
     resetDebugForTool();
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) { if (generation === previewGeneration && previewOpen.value) previewError.value = `工具清单读取失败：${(e as Error).message}`; }
+  finally { if (generation === previewGeneration) previewLoading.value = false; }
+}
+function retryPreview(): void {
+  const row = list.value.find(item => item.name === previewName.value);
+  if (row) void preview(row);
 }
 async function del(name: string): Promise<void> {
   if (!s.can('tools:write')) return;
@@ -1073,6 +1098,11 @@ onMounted(async () => {
 });
 watch(() => route.query.create, (create) => { if (create === '1') openCreate(); });
 watch(debugTool, () => resetDebugForTool());
+watch(previewOpen, (value) => {
+  if (value) return;
+  previewGeneration++; retrieveGeneration++; debugGeneration++;
+  previewLoading.value = false; retrieving.value = false; debugLoading.value = false;
+}, { flush: 'sync' });
 </script>
 
 <style scoped>

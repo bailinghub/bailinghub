@@ -7,10 +7,12 @@
           <p>外部执行器接入中枢的专用凭证，只能用于 claim/result/heartbeat，不具备后台账号能力。</p>
           <p>令牌按 target 白名单授权，可轮换、可停用、可审计。执行器实例只会认领它被授权的调度目标。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" @click="openCreate">签发令牌</el-button>
+        <el-button style="margin-left: auto" :loading="tkLoading" @click="loadTokens">刷新令牌</el-button>
+        <el-button v-if="canWrite" type="primary" @click="openCreate">签发令牌</el-button>
       </div>
     </template>
     <ListLocationBar v-model="tokenQuery" :count="locatedTokens.length" :total="tokens.length" :focus="tokenFocus" :return-to="listReturnTo" placeholder="搜索令牌名称 / 授权目标" @clear="clearTokenLocation" />
+    <el-alert v-if="tokenError" type="error" title="令牌读取失败" :description="tokenError + (tokens.length ? '；以下为上次读取的旧快照' : '')" :closable="false" show-icon style="margin-bottom: 14px" />
     <el-table :data="locatedTokens" v-loading="tkLoading">
       <el-table-column label="令牌" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
@@ -39,16 +41,16 @@
       <el-table-column label="掩码令牌" width="150">
         <template #default="{ row }"><code class="muted">{{ row.token }}</code></template>
       </el-table-column>
-      <el-table-column width="190" align="right">
+      <el-table-column v-if="canWrite" width="190" align="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="reveal(row.name)">复制完整令牌</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button link type="primary" :disabled="Boolean(tokenError)" @click="openEdit(row)">编辑</el-button>
           <el-popconfirm :title="`删除令牌 ${row.name}？用它挂着的执行器会立即无法再认领（已在跑的当前任务不受影响）。`" width="280" @confirm="delToken(row.name)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
       </el-table-column>
-      <template #empty><div v-if="tokenQuery || tokenFocus" class="muted" style="padding: 14px">没有匹配的令牌，请调整或清除筛选。</div><div v-else class="muted" style="padding: 14px">还没有执行器令牌。点「签发令牌」建一个；把完整令牌交给受信智能体，或填入 <code>executor.mjs</code> 的 <code>--token</code>。</div></template>
+      <template #empty><div v-if="tkLoading" class="muted" style="padding: 14px">正在读取令牌…</div><div v-else-if="tokenError" class="muted" style="padding: 14px">未取得令牌列表，请点击「刷新令牌」重试。</div><div v-else-if="tokenQuery || tokenFocus" class="muted" style="padding: 14px">没有匹配的令牌，请调整或清除筛选。</div><div v-else class="muted" style="padding: 14px">还没有执行器令牌。<template v-if="canWrite">点「签发令牌」建一个；把完整令牌交给受信智能体，或填入 <code>executor.mjs</code> 的 <code>--token</code>。</template><template v-else>请由有执行器管理权限的账号签发。</template></div></template>
     </el-table>
   </el-card>
 
@@ -64,6 +66,9 @@
       </div>
     </template>
     <div v-loading="dispatchLoading">
+      <el-alert v-if="dispatchError" type="error" title="调度租约读取失败" :description="dispatchError + (dispatch ? '；以下为上次读取的旧快照' : '')" :closable="false" show-icon style="margin-bottom: 14px" />
+      <div v-if="!dispatch" class="muted" style="padding: 14px">{{ dispatchLoading ? '正在读取调度租约…' : '未取得调度租约，请点击「刷新」重试。' }}</div>
+      <template v-else>
       <div class="dispatchStats">
         <div><span class="muted">可运行排队</span><b>{{ dispatch?.summary.queued ?? 0 }}</b></div>
         <div><span class="muted">中枢内执行</span><b>{{ dispatch?.summary.running ?? 0 }}</b></div>
@@ -114,6 +119,7 @@
         <el-table-column label="认领时间" width="130"><template #default="{ row }">{{ row.claimed_at ? fmtTime(row.claimed_at, true) : '—' }}</template></el-table-column>
         <el-table-column width="76" align="right"><template #default="{ row }"><el-button link type="primary" size="small" @click="gotoJob(row.job_id)">追溯</el-button></template></el-table-column>
       </el-table>
+      </template>
     </div>
   </el-card>
 
@@ -182,7 +188,7 @@
           <span v-if="!row.capabilities?.labels?.length" class="muted">—</span>
         </template>
       </el-table-column>
-      <el-table-column width="70" align="right">
+      <el-table-column v-if="canWrite" width="70" align="right">
         <template #default="{ row }">
           <el-popconfirm :title="`注销执行器 ${row.executor_id} 的心跳记录？仅删登记（清退役/测试残留），它下次 claim 会自动重新登记。`" width="280" @confirm="delExec(row.executor_id)">
             <template #reference><el-button link type="danger">注销</el-button></template>
@@ -193,13 +199,15 @@
         <div v-if="loading" class="muted" style="padding: 16px">正在读取执行器…</div>
         <div v-else-if="loadError" class="muted" style="padding: 16px">执行器列表读取失败，请点击「刷新」重试。</div>
         <div v-else-if="instanceQuery || instanceFocus || executorState || targetFilter" class="muted" style="padding: 16px">没有匹配的执行器，请调整或清除筛选。</div>
-        <div v-else class="muted" style="padding: 16px">还没有执行器在线。请先注册 executor 类型调度目标并让路由选择它，再在上方签发对应令牌；最后到「触发路由 → 调用代码 → 执行器接入」复制完整说明发给智能体。</div>
+        <div v-else class="muted" style="padding: 16px">还没有执行器在线。请先注册 executor 类型调度目标并让路由选择它，再由有管理权限的账号签发对应令牌；最后到「触发路由 → 调用代码 → 执行器接入」复制完整说明发给智能体。</div>
       </template>
     </el-table>
   </el-card>
 
-  <el-drawer v-model="open" :title="editing ? '编辑令牌' : '签发执行器令牌'" size="440px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑令牌' : '签发执行器令牌'" size="440px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="saveError" type="error" :title="saveError" :closable="false" show-icon style="margin-bottom: 14px" />
+    <el-alert v-if="targetsError" type="warning" title="授权目标目录暂不可用，可刷新令牌后重试，或填写已核对的目标标识。" :closable="false" show-icon style="margin-bottom: 14px" />
+    <el-form label-position="top" :disabled="saving">
       <el-form-item>
         <template #label>{{ tokenFieldTitle('name', '标识') }} <span v-if="tokenFieldRequired('name')" class="field-required">必填</span> <HelpTip :title="tokenFieldTitle('name', '标识')">
           <p>{{ tokenFieldDesc('name') }}</p>
@@ -220,7 +228,8 @@
       <el-form-item v-if="editing"><el-checkbox v-model="form.rotate_token">轮换令牌（旧令牌立即失效，需把新值重新发给执行器）</el-checkbox></el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right: 12px">有未保存修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
       <el-button type="primary" :loading="saving" @click="save">保存</el-button>
     </template>
   </el-drawer>
@@ -240,6 +249,8 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
+import { useMe } from '../store';
+import { useUnsavedForm } from '../use-unsaved-form';
 import { copyText, fmtTime } from '../util';
 import HelpTip from '../components/HelpTip.vue';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
@@ -256,17 +267,20 @@ interface DispatchStatus {
   blocked_threads: Array<{ thread_id: number; queued: number; oldest_queued_at: string; inflight: string; inflight_jobs: string[] }>;
 }
 
+const me = useMe();
+const canWrite = computed(() => me.can('runs:write'));
 const router = useRouter();
 const route = useRoute();
 const tokenSchema = useConfigSchema('executor-token');
 const dispatch = ref<DispatchStatus | null>(null);
-const dispatchLoading = ref(false);
-
+const dispatchLoading = ref(false), dispatchError = ref('');
+let dispatchRequest = 0;
 async function loadDispatch(): Promise<void> {
-  dispatchLoading.value = true;
-  try { dispatch.value = await api('/admin/api/dispatch-status'); }
-  catch (e) { ElMessage.error((e as Error).message); }
-  finally { dispatchLoading.value = false; }
+  const request = ++dispatchRequest;
+  dispatchLoading.value = true; dispatchError.value = '';
+  try { const result = await api<DispatchStatus>('/admin/api/dispatch-status'); if (request === dispatchRequest) dispatch.value = result; }
+  catch (e) { if (request === dispatchRequest) dispatchError.value = (e as Error).message || '请稍后重试'; }
+  finally { if (request === dispatchRequest) dispatchLoading.value = false; }
 }
 
 function ttlLabel(v: number | undefined): string {
@@ -321,6 +335,7 @@ async function load(): Promise<void> {
   }
 }
 async function delExec(id: string): Promise<void> {
+  if (!canWrite.value) return;
   try { await api('/admin/api/executors/' + encodeURIComponent(id), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
@@ -328,7 +343,8 @@ async function delExec(id: string): Promise<void> {
 // ---- 接入令牌 ----
 const tokens = ref<any[]>([]);
 const { keyword: tokenQuery, focus: tokenFocus, rows: locatedTokens, clear: clearTokenLocation } = useListLocation(tokens, { prefix: 'token_', id: r => String(r.name), text: r => `${r.name} ${r.description || ''} ${(r.allowed_targets || []).join(' ')}` });
-const tkLoading = ref(false);
+const tkLoading = ref(false), tokenError = ref(''), targetsError = ref(''), saveError = ref('');
+let tokenRequest = 0;
 const execTargets = ref<string[]>([]);
 const open = ref(false);
 const editing = ref(false);
@@ -336,42 +352,55 @@ const saving = ref(false);
 const form = reactive({ name: '', allowed_targets: [] as string[], description: '', enabled: true, rotate_token: false });
 const tokenShow = ref(false);
 const newToken = ref('');
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, snapshot: () => form, name: '执行器令牌' });
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
 
 async function loadTokens(): Promise<void> {
-  tkLoading.value = true;
+  const request = ++tokenRequest;
+  tkLoading.value = true; tokenError.value = ''; targetsError.value = '';
   try {
-    tokens.value = await api('/admin/api/executor-tokens');
-    const ts = await api<any[]>('/admin/api/targets').catch(() => []);
-    execTargets.value = ts.filter((t) => t.kind === 'executor').map((t) => t.name);
-  } catch (e) { ElMessage.error((e as Error).message); }
-  finally { tkLoading.value = false; }
+    const [tokenResult, targetResult] = await Promise.allSettled([
+      api<any[]>('/admin/api/executor-tokens'),
+      me.can('targets:read') ? api<any[]>('/admin/api/targets') : Promise.resolve([]),
+    ]);
+    if (request !== tokenRequest) return;
+    if (tokenResult.status === 'fulfilled') tokens.value = tokenResult.value;
+    else tokenError.value = tokenResult.reason instanceof Error ? tokenResult.reason.message : '请稍后重试';
+    if (targetResult.status === 'fulfilled') execTargets.value = targetResult.value.filter(t => t.kind === 'executor').map(t => t.name);
+    else targetsError.value = '授权目标目录读取失败';
+  } finally { if (request === tokenRequest) tkLoading.value = false; }
 }
 function openCreate(): void {
+  if (!canWrite.value || open.value || saving.value) return;
   editing.value = false;
   Object.assign(form, { name: '', allowed_targets: [], description: '', enabled: true, rotate_token: false });
-  open.value = true;
+  saveError.value = ''; formGuard.begin(); open.value = true;
 }
 function openEdit(row: any): void {
+  if (!canWrite.value || open.value || saving.value || tokenError.value) return;
   editing.value = true;
   Object.assign(form, { name: row.name, allowed_targets: (row.allowed_targets || []).slice(), description: row.description || '', enabled: !!row.enabled, rotate_token: false });
-  open.value = true;
+  saveError.value = ''; formGuard.begin(); open.value = true;
 }
 async function save(): Promise<void> {
-  saving.value = true;
+  if (!canWrite.value || saving.value) return;
+  saving.value = true; saveError.value = '';
   try {
     const r = await api<{ token: string }>('/admin/api/executor-tokens', { method: 'POST', body: JSON.stringify(form) });
-    open.value = false;
+    formGuard.markSaved(); open.value = false;
     if (!editing.value || form.rotate_token) { newToken.value = r.token; tokenShow.value = true; }
     else ElMessage.success('已保存');
     await loadTokens();
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) { saveError.value = (e as Error).message || '保存失败，请保留当前填写并重试'; }
   finally { saving.value = false; }
 }
 async function reveal(name: string): Promise<void> {
+  if (!canWrite.value) return;
   try { const r = await api<{ token: string }>('/admin/api/executor-tokens/' + encodeURIComponent(name) + '/token'); await copyText(r.token, '完整令牌已复制'); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
 async function delToken(name: string): Promise<void> {
+  if (!canWrite.value) return;
   try { await api('/admin/api/executor-tokens/' + encodeURIComponent(name), { method: 'DELETE' }); await loadTokens(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }

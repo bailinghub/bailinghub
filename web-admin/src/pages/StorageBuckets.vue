@@ -6,13 +6,14 @@
           <p><b>默认不需要对象存储：</b>未配置时走服务器本地 <code>data/uploads</code>；生产环境可切到业务自己的 COS，得到的 URL 就是业务 CDN 地址。</p>
           <p><b>凭证铁律：</b>业务桶强烈建议给「限定 <code>path_prefix</code> 前缀的子账号 / RAM 策略或 STS 临时凭证」，别把整桶 AK/SK 交出来。落桶对象设为公读（多模态模型与前台都要取）。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" @click="openCreate">新建存储</el-button></div>
+        <el-button v-if="canWrite" type="primary" style="margin-left: auto" @click="openCreate">新建存储</el-button></div>
     </template>
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link :disabled="listLoading" @click="load">重新读取</el-button></el-alert>
     <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
-    <el-empty v-if="!list.length" description="未登记外部存储时，聊天入口会默认使用服务器本地存储">
-      <el-button type="primary" @click="openCreate">添加外部存储</el-button>
+    <el-empty v-if="!listLoading && !listError && !list.length" description="未登记外部存储时，聊天入口会默认使用服务器本地存储">
+      <el-button v-if="canWrite" type="primary" @click="openCreate">添加外部存储</el-button>
     </el-empty>
-    <el-table v-else :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="存储桶" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="bucket-main">
@@ -41,8 +42,8 @@
       <el-table-column label="状态" width="100" align="center"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column>
       <el-table-column width="110" align="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="删除该存储桶登记？关联它的聊天入口将无法上传图片（已落桶的图不受影响）。" width="280" @confirm="del(row.name)">
+          <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="canWrite" title="删除该存储桶登记？关联它的聊天入口将无法上传图片（已落桶的图不受影响）。" width="280" @confirm="del(row.name)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
@@ -50,8 +51,9 @@
     </el-table>
   </el-card>
 
-  <el-drawer v-model="open" :title="editing ? '编辑媒体存储' : '新建媒体存储'" size="500px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑媒体存储' : '新建媒体存储'" size="500px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon />
+    <el-form label-position="top" :disabled="saving || !canWrite">
       <el-tabs v-model="bucketFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
@@ -124,8 +126,9 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!canWrite" @click="save">保存</el-button>
     </template>
   </el-drawer>
 </template>
@@ -133,12 +136,18 @@
 <script setup lang="ts">
 import ListLocationBar from '../components/ListLocationBar.vue';
 import { useListLocation } from '../use-list-location';
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import HelpTip from '../components/HelpTip.vue';
+import { useUnsavedForm } from '../use-unsaved-form';
+import { useMe } from '../store';
 
+const me = useMe();
+const canWrite = computed(() => me.can('storage:write'));
+const saveError = ref('');
 const list = ref<any[]>([]);
+const listLoading = ref(false), listError = ref('');
 const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.provider || ""} ${r.bucket || ""}` });
 const open = ref(false);
 const editing = ref(false);
@@ -146,10 +155,22 @@ const saving = ref(false);
 const bucketFormTab = ref<'basic' | 'secret' | 'publish'>('basic');
 const blank = { name: '', kind: 'local', region: '', bucket: '', endpoint: '', access_key: '', secret_key: '', public_base_url: '', path_prefix: 'bailing/chat', description: '', enabled: true };
 const form = reactive({ ...blank });
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, snapshot: () => form, name: '媒体存储配置' });
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
 
-async function load(): Promise<void> { list.value = await api('/admin/api/storage-buckets'); }
-function openCreate(): void { editing.value = false; bucketFormTab.value = 'basic'; Object.assign(form, blank); open.value = true; }
-function openEdit(row: any): void {
+
+async function load(): Promise<void> {
+  if (listLoading.value) return;
+  listLoading.value = true;
+  try {
+    list.value = await api('/admin/api/storage-buckets');
+    listError.value = '';
+  } catch { listError.value = list.value.length ? '媒体存储列表刷新失败，当前保留旧快照。' : '媒体存储列表读取失败，请重试。'; }
+  finally { listLoading.value = false; }
+}
+
+function openCreate(): void { if (!canWrite.value || saving.value || open.value) return; editing.value = false; bucketFormTab.value = 'basic'; Object.assign(form, blank); saveError.value = ''; formGuard.begin(); open.value = true; }
+function openEdit(row: any): void { if (!canWrite.value || saving.value || open.value || listError.value) return;
   editing.value = true;
   bucketFormTab.value = 'basic';
   Object.assign(form, {
@@ -158,17 +179,20 @@ function openEdit(row: any): void {
     public_base_url: row.public_base_url || '', path_prefix: row.path_prefix || 'bailing/chat',
     description: row.description || '', enabled: !!row.enabled,
   });
-  open.value = true;
+  saveError.value = ''; formGuard.begin(); open.value = true;
 }
 async function save(): Promise<void> {
+  if (!canWrite.value || saving.value) return;
+  saveError.value = '';
   saving.value = true;
   try {
     await api('/admin/api/storage-buckets', { method: 'POST', body: JSON.stringify(form) });
-    ElMessage.success('已保存（SecretKey 不再回显完整值）'); open.value = false; await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    ElMessage.success('已保存（SecretKey 不再回显完整值）'); formGuard.markSaved(); open.value = false; await load();
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 async function del(name: string): Promise<void> {
+  if (!canWrite.value) return;
   try { await api('/admin/api/storage-buckets/' + encodeURIComponent(name), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }

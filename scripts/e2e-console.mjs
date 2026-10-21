@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { verifyConfigRaces } from './e2e-console-config-races.mjs';
 import { verifyTroubleshootingExtra } from './e2e-console-troubleshooting-extra.mjs';
 import { createServer } from 'node:http';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -962,6 +963,8 @@ try {
   await verifyOnboardingAndForms(browser, `http://127.0.0.1:${port}`);
   await verifyTroubleshooting(browser, `http://127.0.0.1:${port}`);
   await verifyTroubleshootingExtra(browser, `http://127.0.0.1:${port}`, mockApi, fixtures);
+
+  await verifyConfigRaces(browser, `http://127.0.0.1:${port}`, mockApi, fixtures);
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
   console.log('✓ console e2e passed');

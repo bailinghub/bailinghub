@@ -17,14 +17,15 @@
       <template #header>
         <div class="head">
           <div>
-            <b>实例外观</b>
-            <p>设置自托管控制台的名称、搜索摘要和登录页文案。配置保存在数据库中，升级代码不会覆盖。</p>
+            <b>实例外观</b> <HelpTip title="实例外观"><p>设置自托管控制台的名称、搜索摘要和登录页文案。配置保存在数据库中，升级代码不会覆盖。</p></HelpTip>
           </div>
-          <el-button :loading="loading" @click="load">刷新</el-button>
+          <el-button :loading="loading" :disabled="saving || imageReading" @click="load">刷新</el-button>
         </div>
       </template>
 
-      <el-form label-position="top" :disabled="!management.writable" @submit.prevent>
+      <el-alert v-if="loadError" type="error" title="实例外观读取失败" :description="loadError + (loaded ? '；当前保留上次读取的内容和未保存修改' : '；请点击刷新重试')" :closable="false" show-icon style="margin-bottom: 14px" />
+      <el-alert v-if="saveError" type="error" title="实例外观保存未完成" :description="saveError" :closable="false" show-icon style="margin-bottom: 14px" />
+      <el-form label-position="top" :disabled="editLocked" @submit.prevent>
         <div class="form-grid">
           <el-form-item label="网站名称">
             <el-input v-model="form.site_name" maxlength="64" show-word-limit placeholder="如：企业智能运营中枢" />
@@ -59,32 +60,34 @@
 
     <div class="asset-grid">
       <el-card shadow="never">
-        <template #header><b>品牌 Logo</b></template>
+        <template #header><b>品牌 Logo</b> <HelpTip title="品牌 Logo"><p>支持 PNG、JPEG、WebP，最大 512 KiB。建议上传横向完整标识。</p></HelpTip></template>
         <div class="asset-body">
           <div class="logo-preview">
             <img v-if="logoPreview" :src="logoPreview" alt="Logo 预览" />
             <span v-else>使用内置百灵中枢标识</span>
           </div>
-          <p>支持 PNG、JPEG、WebP，最大 512 KiB。建议上传横向完整标识。</p>
+          <p v-if="logoReading">正在读取图片…</p>
+          <el-alert v-if="logoError" type="error" :title="logoError" :closable="false" />
           <div class="asset-actions">
-            <el-button :disabled="!management.writable" @click="logoInput?.click()">选择图片</el-button>
-            <el-button v-if="logoPreview" :disabled="!management.writable" type="danger" plain @click="removeLogo">移除</el-button>
+            <el-button :disabled="editLocked" @click="logoInput?.click()">选择图片</el-button>
+            <el-button v-if="logoPreview || logoReading" :disabled="editLocked" type="danger" plain @click="removeLogo">移除</el-button>
           </div>
           <input ref="logoInput" class="file-input" type="file" accept="image/png,image/jpeg,image/webp" @change="selectLogo" />
         </div>
       </el-card>
 
       <el-card shadow="never">
-        <template #header><b>浏览器图标</b></template>
+        <template #header><b>浏览器图标</b> <HelpTip title="浏览器图标"><p>支持 PNG 或 ICO，最大 128 KiB。建议使用正方形图标。</p></HelpTip></template>
         <div class="asset-body">
           <div class="favicon-preview">
             <img v-if="faviconPreview" :src="faviconPreview" alt="Favicon 预览" />
             <span v-else>无自定义图标</span>
           </div>
-          <p>支持 PNG 或 ICO，最大 128 KiB。建议使用正方形图标。</p>
+          <p v-if="faviconReading">正在读取图标…</p>
+          <el-alert v-if="faviconError" type="error" :title="faviconError" :closable="false" />
           <div class="asset-actions">
-            <el-button :disabled="!management.writable" @click="faviconInput?.click()">选择图标</el-button>
-            <el-button v-if="faviconPreview" :disabled="!management.writable" type="danger" plain @click="removeFavicon">移除</el-button>
+            <el-button :disabled="editLocked" @click="faviconInput?.click()">选择图标</el-button>
+            <el-button v-if="faviconPreview || faviconReading" :disabled="editLocked" type="danger" plain @click="removeFavicon">移除</el-button>
           </div>
           <input ref="faviconInput" class="file-input" type="file" accept="image/png,image/x-icon,.ico" @change="selectFavicon" />
         </div>
@@ -92,17 +95,21 @@
     </div>
 
     <div class="save-bar">
-      <span>当前来源：{{ management.source === 'platform' ? '上级平台' : '本地实例' }}</span>
-      <el-button v-if="management.writable" type="primary" :loading="saving" @click="save">保存设置</el-button>
+      <span v-if="!loaded">{{ loading ? '正在读取实例外观…' : '尚未取得实例外观' }}</span>
+      <span v-else>当前来源：{{ management.source === 'platform' ? '上级平台' : '本地实例' }}</span>
+      <span v-if="formGuard.dirty.value" style="margin-left: 14px">有未保存修改</span>
+      <el-button v-if="management.writable" type="primary" :disabled="loading || imageReading || !loaded" :loading="saving" @click="save">保存设置</el-button>
       <el-button v-else-if="management.management_url" type="primary" @click="openManagement">前往平台管理</el-button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
+import HelpTip from '../components/HelpTip.vue';
+import { useUnsavedForm } from '../use-unsaved-form';
 import { setInstanceBranding, type InstanceBranding } from '../branding';
 import { kernelPath } from '../runtime-path';
 
@@ -118,7 +125,11 @@ interface BrandingResponse {
 }
 
 const loading = ref(false);
-const saving = ref(false);
+const saving = ref(false), loaded = ref(false), loadError = ref(''), saveError = ref('');
+const logoReading = ref(false), faviconReading = ref(false), logoError = ref(''), faviconError = ref('');
+const imageReading = computed(() => logoReading.value || faviconReading.value);
+const editLocked = computed(() => !loaded.value || !management.writable || loading.value || saving.value);
+let requestEpoch = 0, logoEpoch = 0, faviconEpoch = 0;
 const management = reactive<BrandingManagement>({ source: 'local', writable: false });
 const form = reactive({
   site_name: '',
@@ -132,8 +143,9 @@ const logoInput = ref<HTMLInputElement>();
 const faviconInput = ref<HTMLInputElement>();
 const logoPreview = ref('');
 const faviconPreview = ref('');
-let logoDataUrl: string | null | undefined;
-let faviconDataUrl: string | null | undefined;
+const logoDataUrl = ref<string | null>(), faviconDataUrl = ref<string | null>();
+const formGuard = useUnsavedForm({ active: () => loaded.value && management.writable, saving: () => saving.value,
+  snapshot: () => ({ form, logo: logoDataUrl.value, favicon: faviconDataUrl.value, logoReading: logoReading.value, faviconReading: faviconReading.value }), name: '实例外观' });
 
 function applyResponse(response: BrandingResponse): void {
   Object.assign(form, {
@@ -144,22 +156,29 @@ function applyResponse(response: BrandingResponse): void {
     login_heading: response.branding.login_heading,
     login_subheading: response.branding.login_subheading,
   });
-  Object.assign(management, response.management);
+  Object.assign(management, response.management, { management_url: response.management.management_url });
   logoPreview.value = response.branding.logo_url ? kernelPath(response.branding.logo_url) : '';
   faviconPreview.value = response.branding.favicon_url ? kernelPath(response.branding.favicon_url) : '';
-  logoDataUrl = undefined;
-  faviconDataUrl = undefined;
+  logoDataUrl.value = undefined;
+  faviconDataUrl.value = undefined;
+  loaded.value = true;
+  formGuard.markSaved();
   setInstanceBranding(response.branding);
 }
 
 async function load(): Promise<void> {
-  loading.value = true;
+  if (loading.value || saving.value || imageReading.value) return;
+  if (loaded.value && !await formGuard.confirmLeave()) return;
+  if (loading.value || saving.value || imageReading.value) return;
+  const epoch = ++requestEpoch;
+  loading.value = true; loadError.value = ''; saveError.value = '';
   try {
-    applyResponse(await api<BrandingResponse>('/admin/api/instance-branding'));
+    const response = await api<BrandingResponse>('/admin/api/instance-branding');
+    if (epoch === requestEpoch) applyResponse(response);
   } catch (error) {
-    ElMessage.error((error as Error).message);
+    if (epoch === requestEpoch) loadError.value = (error as Error).message || '请稍后重试';
   } finally {
-    loading.value = false;
+    if (epoch === requestEpoch) loading.value = false;
   }
 }
 
@@ -174,60 +193,65 @@ function readFile(file: File, maxBytes: number, label: string): Promise<string> 
 }
 
 async function selectLogo(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const input = event.target as HTMLInputElement, file = input.files?.[0];
   input.value = '';
-  if (!file) return;
+  if (!file || editLocked.value) return;
+  const epoch = ++logoEpoch;
+  logoReading.value = true; logoError.value = '';
   try {
-    logoDataUrl = await readFile(file, 512 * 1024, 'Logo');
-    logoPreview.value = logoDataUrl;
-  } catch (error) {
-    ElMessage.error((error as Error).message);
-  }
+    const data = await readFile(file, 512 * 1024, 'Logo');
+    if (epoch === logoEpoch) { logoDataUrl.value = data; logoPreview.value = data; }
+  } catch (error) { if (epoch === logoEpoch) logoError.value = (error as Error).message; }
+  finally { if (epoch === logoEpoch) logoReading.value = false; }
 }
 
 async function selectFavicon(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const input = event.target as HTMLInputElement, file = input.files?.[0];
   input.value = '';
-  if (!file) return;
+  if (!file || editLocked.value) return;
+  const epoch = ++faviconEpoch;
+  faviconReading.value = true; faviconError.value = '';
   try {
-    faviconDataUrl = await readFile(file, 128 * 1024, '浏览器图标');
-    faviconPreview.value = faviconDataUrl;
-  } catch (error) {
-    ElMessage.error((error as Error).message);
-  }
+    const data = await readFile(file, 128 * 1024, '浏览器图标');
+    if (epoch === faviconEpoch) { faviconDataUrl.value = data; faviconPreview.value = data; }
+  } catch (error) { if (epoch === faviconEpoch) faviconError.value = (error as Error).message; }
+  finally { if (epoch === faviconEpoch) faviconReading.value = false; }
 }
 
 function removeLogo(): void {
-  logoDataUrl = null;
-  logoPreview.value = '';
+  if (editLocked.value) return;
+  ++logoEpoch; logoReading.value = false; logoError.value = '';
+  logoDataUrl.value = null; logoPreview.value = '';
 }
 
 function removeFavicon(): void {
-  faviconDataUrl = null;
-  faviconPreview.value = '';
+  if (editLocked.value) return;
+  ++faviconEpoch; faviconReading.value = false; faviconError.value = '';
+  faviconDataUrl.value = null; faviconPreview.value = '';
 }
 
 async function save(): Promise<void> {
-  saving.value = true;
+  if (editLocked.value || imageReading.value) return;
+  const epoch = ++requestEpoch;
+  saving.value = true; saveError.value = '';
   try {
     const payload: Record<string, unknown> = {
       ...form,
       site_keywords: form.site_keywords.map((item) => item.trim()).filter(Boolean),
     };
-    if (logoDataUrl !== undefined) payload.logo_data_url = logoDataUrl;
-    if (faviconDataUrl !== undefined) payload.favicon_data_url = faviconDataUrl;
+    if (logoDataUrl.value !== undefined) payload.logo_data_url = logoDataUrl.value;
+    if (faviconDataUrl.value !== undefined) payload.favicon_data_url = faviconDataUrl.value;
     const response = await api<BrandingResponse>('/admin/api/instance-branding', {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
-    applyResponse(response);
+    if (epoch !== requestEpoch) return;
+    applyResponse(response); loadError.value = '';
     ElMessage.success('实例外观已保存');
   } catch (error) {
-    ElMessage.error((error as Error).message);
+    if (epoch === requestEpoch) saveError.value = (error as Error).message || '请保留当前修改并重试';
   } finally {
-    saving.value = false;
+    if (epoch === requestEpoch) saving.value = false;
   }
 }
 
@@ -236,6 +260,7 @@ function openManagement(): void {
 }
 
 onMounted(load);
+onUnmounted(() => { ++requestEpoch; ++logoEpoch; ++faviconEpoch; });
 </script>
 
 <style scoped>

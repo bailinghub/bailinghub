@@ -5,13 +5,14 @@
           <p>中枢调用外部模型服务的出站凭证。路由大脑、图片理解、语音转写、文件理解、知识库向量化都只按凭证名引用，API Key 不进入业务配置。</p>
           <p>一条凭证只定义一个主用途：生成/理解，或向量化。若同一个平台 Key 同时用于两类场景，建议建两条凭证，分别设置默认模型。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" @click="openCreate">新建凭证</el-button></div>
+        <el-button v-if="canWrite" type="primary" style="margin-left: auto" @click="openCreate">新建凭证</el-button></div>
     </template>
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link :disabled="listLoading" @click="load">重新读取</el-button></el-alert>
     <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
-    <el-empty v-if="!list.length" description="还没有凭证：llm 路由与知识库都需要先配一把">
-      <el-button type="primary" @click="openCreate">添加第一把</el-button>
+    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有凭证：llm 路由与知识库都需要先配一把">
+      <el-button v-if="canWrite" type="primary" @click="openCreate">添加第一把</el-button>
     </el-empty>
-    <el-table v-else :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="凭证" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="cred-main">
@@ -39,9 +40,9 @@
       <el-table-column label="最近使用" width="140"><template #default="{ row }"><span class="muted">{{ lastUsedLabel(row.last_used_at) }}</span></template></el-table-column>
       <el-table-column width="160" align="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openVerify(row)">验证</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="删除该凭证？引用它的路由/知识库会立即失效。" width="250" @confirm="del(row.name)">
+          <el-button link type="primary" v-if="canWrite" @click="openVerify(row)">验证</el-button>
+          <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="canWrite" title="删除该凭证？引用它的路由/知识库会立即失效。" width="250" @confirm="del(row.name)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
@@ -49,8 +50,9 @@
     </el-table>
   </el-card>
 
-  <el-drawer v-model="open" :title="editing ? '编辑凭证' : '新建凭证'" size="480px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑凭证' : '新建凭证'" size="480px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon />
+    <el-form label-position="top" :disabled="saving || !canWrite">
       <el-tabs v-model="credFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
@@ -79,7 +81,7 @@
           <p>如果同一个 API Key 两边都要用，建两条凭证即可，例如 <code>dashscope-main</code> 和 <code>dashscope-embedding</code>，Base URL 与 API Key 可以相同，但默认模型和引用位置分开。</p>
           <p v-if="capHint">{{ capHint }}</p>
         </HelpTip></template>
-        <el-radio-group v-model="credKind" class="kind-radios">
+        <el-radio-group v-model="credKind" class="kind-radios" @change="form.default_model = ''">
           <el-radio value="chat">生成/理解类</el-radio>
           <el-radio value="embedding">向量化</el-radio>
         </el-radio-group>
@@ -128,8 +130,9 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!canWrite" @click="save">保存</el-button>
     </template>
   </el-drawer>
 
@@ -178,20 +181,26 @@
 <script setup lang="ts">
 import ListLocationBar from '../components/ListLocationBar.vue';
 import { useListLocation } from '../use-list-location';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
 import { fmtTime } from '../util';
 import { LLM_PROVIDERS, CUSTOM_PROVIDER, detectProvider } from '../llm-catalog';
 import HelpTip from '../components/HelpTip.vue';
+import { useUnsavedForm } from '../use-unsaved-form';
+import { useMe } from '../store';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
 
 const KIND: Record<string, string> = { both: '复合凭证', chat: '生成/理解', embedding: '向量化' };
 const CUSTOM = CUSTOM_PROVIDER;
 const providers = LLM_PROVIDERS;
 const credentialSchema = useConfigSchema('credential');
+const me = useMe();
+const canWrite = computed(() => me.can('credentials:write'));
+const saveError = ref('');
 const list = ref<any[]>([]);
+const listLoading = ref(false), listError = ref('');
 const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.kind || ""}` });
 const open = ref(false);
 const editing = ref(false);
@@ -202,6 +211,9 @@ const verifyResult = ref<any | null>(null);
 const credFormTab = ref<'basic' | 'connection' | 'publish'>('basic');
 const blank = { name: '', platform: 'dashscope', base_url: '', api_key: '', default_model: '', description: '' };
 const form = reactive({ ...blank });
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, snapshot: () => ({ form, kind: credKind.value }), name: '模型凭证配置' });
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
+
 const verifyForm = reactive({
   name: '',
   base_url: '',
@@ -290,11 +302,19 @@ function onPlatform(): void {
   form.default_model = '';            // 平台变了模型清空，避免串台
   applyPlatformCaps();
 }
-watch(credKind, () => { form.default_model = ''; });
 
-async function load(): Promise<void> { list.value = await api('/admin/api/credentials'); }
-function openCreate(): void { editing.value = false; credFormTab.value = 'basic'; Object.assign(form, { ...blank }); onPlatform(); open.value = true; }
-function openEdit(row: any): void {
+async function load(): Promise<void> {
+  if (listLoading.value) return;
+  listLoading.value = true;
+  try {
+    list.value = await api('/admin/api/credentials');
+    listError.value = '';
+  } catch { listError.value = list.value.length ? '模型凭证列表刷新失败，当前保留旧快照。' : '模型凭证列表读取失败，请重试。'; }
+  finally { listLoading.value = false; }
+}
+
+function openCreate(): void { if (!canWrite.value || saving.value || open.value) return; editing.value = false; credFormTab.value = 'basic'; Object.assign(form, { ...blank }); onPlatform(); saveError.value = ''; formGuard.begin(); open.value = true; }
+function openEdit(row: any): void { if (!canWrite.value || saving.value || open.value || listError.value) return;
   editing.value = true;
   credFormTab.value = 'basic';
   Object.assign(form, {
@@ -302,13 +322,14 @@ function openEdit(row: any): void {
     base_url: row.base_url, api_key: '', default_model: row.default_model || '', description: row.description || '',
   });
   credKind.value = row.kind === 'embedding' || (row.kind === 'both' && looksEmbeddingModel(row.default_model || '')) ? 'embedding' : 'chat';
-  open.value = true;
+  saveError.value = ''; formGuard.begin(); open.value = true;
 }
 function defaultVerifyModel(): string {
   const firstGroup = verifyModelGroups.value[0];
   return verifyForm.default_model || firstGroup?.models?.[0] || '';
 }
 function openVerify(row: any): void {
+  if (!canWrite.value || verifying.value) return;
   Object.assign(verifyForm, {
     name: row.name,
     base_url: row.base_url || '',
@@ -327,6 +348,7 @@ function onVerifyCapabilityChange(): void {
   verifyForm.model = defaultVerifyModel();
 }
 async function runVerify(): Promise<void> {
+  if (!canWrite.value || verifying.value) return;
   if (!verifyForm.model.trim()) { ElMessage.error('请先填写要验证的模型名'); return; }
   verifying.value = true;
   verifyResult.value = null;
@@ -344,6 +366,8 @@ async function runVerify(): Promise<void> {
   }
 }
 async function save(): Promise<void> {
+  if (!canWrite.value || saving.value) return;
+  saveError.value = '';
   const kind = credKind.value;
   if (modelIdHasWhitespace(form.default_model)) {
     try {
@@ -356,16 +380,18 @@ async function save(): Promise<void> {
       return;
     }
   }
+  if (!canWrite.value || saving.value || !open.value) return;
   saving.value = true;
   try {
     // platform 仅 UI 辅助，不入库；存的还是 name/kind/base_url/api_key/default_model/description
     const body = { name: form.name, kind, base_url: form.base_url, api_key: form.api_key, default_model: form.default_model, description: form.description };
     await api('/admin/api/credentials', { method: 'POST', body: JSON.stringify(body) });
-    ElMessage.success('已保存（key 不再回显完整值）'); open.value = false; await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    ElMessage.success('已保存（key 不再回显完整值）'); formGuard.markSaved(); open.value = false; await load();
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 async function del(name: string): Promise<void> {
+  if (!canWrite.value) return;
   try { await api('/admin/api/credentials/' + encodeURIComponent(name), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }

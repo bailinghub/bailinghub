@@ -980,6 +980,7 @@ interface AgentDirectToolOption extends Omit<ProviderToolOption, 'provider'> {
   allowed: boolean;
 }
 let toolSourceSeq = 0;
+const scopeRequests = new WeakMap<ToolSourceForm, number>();
 function newToolSource(over: Partial<ToolSourceForm> = {}): ToolSourceForm {
   return { form_key: `tool-source-${++toolSourceSeq}`, provider: '', allow: [], subject_field: '', scopeOptions: [], toolOptions: [], scopesLoading: false, rest: {}, ...over };
 }
@@ -1104,9 +1105,14 @@ const notifyChannels = computed(() => notifyTargetsRaw.value.map((t) => {
 }));
 
 async function loadScopes(source: ToolSourceForm): Promise<void> {
+  const provider = source.provider;
+  const request = (scopeRequests.get(source) ?? 0) + 1;
+  scopeRequests.set(source, request);
+  const current = () => scopeRequests.get(source) === request && source.provider === provider && tl.sources.includes(source);
   source.scopesLoading = true; source.scopeOptions = []; source.toolOptions = [];
   try {
-    const d = await api<{ tools: Array<{ name: string; scope: string; readonly: boolean; risk: string; confirm_required: boolean }> }>('/admin/api/tool-providers/' + encodeURIComponent(source.provider) + '/tools');
+    const d = await api<{ tools: Array<{ name: string; scope: string; readonly: boolean; risk: string; confirm_required: boolean }> }>('/admin/api/tool-providers/' + encodeURIComponent(provider) + '/tools');
+    if (!current()) return;
     const m = new Map<string, string[]>();
     for (const t of d.tools) {
       if (!m.has(t.scope)) m.set(t.scope, []);
@@ -1119,12 +1125,14 @@ async function loadScopes(source: ToolSourceForm): Promise<void> {
       readonly: tool.readonly === true,
       risk: String(tool.risk || 'unknown'),
       confirm_required: tool.confirm_required === true,
-      provider: source.provider,
+      provider,
     }));
   } catch { /* 无权限/源异常 → 手输 scope（allow-create） */ }
-  finally { source.scopesLoading = false; }
+  finally { if (current()) source.scopesLoading = false; }
 }
 function onProviderChange(source: ToolSourceForm): void {
+  scopeRequests.set(source, (scopeRequests.get(source) ?? 0) + 1);
+  source.scopesLoading = false; source.scopeOptions = []; source.toolOptions = [];
   source.allow = [];
   if (source.provider) void loadScopes(source);
 }

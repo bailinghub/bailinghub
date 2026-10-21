@@ -28,7 +28,7 @@
               <span>
                 <el-button @click="openDocs('knowledge')">开发文档</el-button>
                 <el-button v-if="s.can('kb:write')" @click="openSettings">库设置</el-button>
-                <el-button v-if="s.can('kb:write')" type="primary" @click="docOpen = true">添加文档</el-button>
+                <el-button v-if="s.can('kb:write')" type="primary" @click="openDocForm">添加文档</el-button>
                 <el-popconfirm v-if="s.can('kb:write')" title="删除整个知识库？全部文档与向量一并删除，不可恢复。" width="260" @confirm="delKb">
                   <template #reference><el-button type="danger" plain>删库</el-button></template>
                 </el-popconfirm>
@@ -38,7 +38,7 @@
 
           <el-alert v-if="docsError" :title="docsError" type="error" :closable="false" show-icon><el-button link @click="loadDocs">重试</el-button></el-alert>
           <el-empty v-else-if="!docsLoading && !docs.length" description="还没有文档">
-            <el-button v-if="s.can('kb:write')" type="primary" @click="docOpen = true">添加第一篇</el-button>
+            <el-button v-if="s.can('kb:write')" type="primary" @click="openDocForm">添加第一篇</el-button>
           </el-empty>
           <el-table v-else-if="docs.length" :data="docs">
             <el-table-column label="文档" min-width="260" show-overflow-tooltip>
@@ -160,8 +160,9 @@
   </div>
 
   <!-- 建知识库（≥4 字段 → 抽屉，DESIGN.md §6） -->
-  <el-drawer v-model="createOpen" title="建知识库" size="420px">
-    <el-form label-width="100px" label-position="top">
+  <el-drawer v-model="createOpen" title="建知识库" size="420px" :before-close="createGuard.beforeClose">
+    <el-alert v-if="createError" :title="createError" type="error" :closable="false" show-icon style="margin-bottom: 12px" />
+    <el-form label-width="100px" label-position="top" :disabled="saving">
       <el-tabs v-model="kbFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
@@ -202,14 +203,16 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="createOpen = false">取消</el-button>
+      <span v-if="createGuard.dirty.value" class="muted" style="margin-right: 12px">有未保存的修改</span>
+      <el-button :disabled="saving" @click="closeEditor('createOpen')">取消</el-button>
       <el-button type="primary" :loading="saving" @click="createKb">建知识库</el-button>
     </template>
   </el-drawer>
 
   <!-- 添加文档 -->
-  <el-drawer v-model="docOpen" title="添加文档" size="560px">
-    <el-form label-position="top">
+  <el-drawer v-model="docOpen" title="添加文档" size="560px" :before-close="docGuard.beforeClose">
+    <el-alert v-if="docError" :title="docError" type="error" :closable="false" show-icon style="margin-bottom: 12px" />
+    <el-form label-position="top" :disabled="saving || converting">
       <el-form-item label="标题"><el-input v-model="docForm.title" placeholder="如 账号权限说明" /></el-form-item>
       <el-form-item>
         <template #label>内容 <HelpTip title="支持哪些来源">
@@ -218,23 +221,26 @@
           <p><b>图片</b>：markdown 图片链接（<code>![说明](https://…)</code>）原样保留——检索命中后 AI 可在回答里带出截图，聊天组件会渲染成图。</p>
           <p><b>业务数据库内容</b>（产品文档、操作流程等）不要手工搬：用入库 API 让业务系统自动推送并保持同步，见官网「开发文档」。</p>
         </HelpTip></template>
-        <input type="file" accept=".txt,.md,.markdown,.docx" class="file" @change="readFile" />
-        <div v-if="converting" class="muted hint">Word 文档转换中…</div>
+        <input ref="docFileInput" type="file" accept=".txt,.md,.markdown,.docx" class="file" :disabled="saving || converting" @change="readFile" />
+        <div v-if="converting" class="muted hint" role="status">文档读取 / 转换中…</div>
+        <div v-else-if="docFileSelection" class="muted hint">已选择：{{ docFileSelection.name }}</div>
         <el-input v-model="docForm.content" type="textarea" :rows="14" placeholder="输入或粘贴文档内容" />
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="docOpen = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="addDoc">添加并向量化</el-button>
+      <span v-if="docGuard.dirty.value" class="muted" style="margin-right: 12px">有未保存的修改</span>
+      <el-button :disabled="saving" @click="closeEditor('docOpen')">取消</el-button>
+      <el-button type="primary" :loading="saving" :disabled="converting" @click="addDoc">添加并向量化</el-button>
     </template>
   </el-drawer>
 
   <!-- 库设置（名称/说明/可写接入方；kb_id 与模型建库锁定） -->
-  <el-drawer v-model="settingsOpen" title="库设置" size="460px">
-    <el-form label-position="top">
+  <el-drawer v-model="settingsOpen" title="库设置" size="460px" :before-close="settingsGuard.beforeClose">
+    <el-alert v-if="settingsError" :title="settingsError" type="error" :closable="false" show-icon style="margin-bottom: 12px" />
+    <el-form label-position="top" :disabled="saving">
       <el-form-item>
         <template #label>建库锁定项 <HelpTip title="建库锁定项"><p>知识库 ID 与模型坐标系在建库时锁定。embedding 模型决定向量坐标系，更换模型需要重建知识库。</p></HelpTip></template>
-        <div class="muted">kb_id <code>{{ cur?.kb_id }}</code> · {{ cur?.credential }} / {{ cur?.model }}（{{ cur?.dim }}维）</div>
+        <div class="muted">kb_id <code>{{ settingsKb?.kb_id }}</code> · {{ settingsKb?.credential }} / {{ settingsKb?.model }}（{{ settingsKb?.dim }}维）</div>
       </el-form-item>
       <el-form-item label="名称"><el-input v-model="settingsForm.name" /></el-form-item>
       <el-form-item label="说明"><el-input v-model="settingsForm.description" /></el-form-item>
@@ -250,14 +256,16 @@
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="settingsOpen = false">取消</el-button>
+      <span v-if="settingsGuard.dirty.value" class="muted" style="margin-right: 12px">有未保存的修改</span>
+      <el-button :disabled="saving" @click="closeEditor('settingsOpen')">取消</el-button>
       <el-button type="primary" :loading="saving" @click="saveSettings">保存</el-button>
     </template>
   </el-drawer>
 
   <!-- 数据源编辑（连接 + 取数 + 映射；测试预览后再保存） -->
-  <el-drawer v-model="dsOpen" :title="dsForm.ds_id ? '编辑数据源' : '添加数据源'" size="620px">
-    <el-form label-position="top">
+  <el-drawer v-model="dsOpen" :title="dsForm.ds_id ? '编辑数据源' : '添加数据源'" size="620px" :before-close="dsGuard.beforeClose">
+    <el-alert v-if="dsSaveError || dsTestError" :title="dsSaveError || dsTestError" type="error" :closable="false" show-icon style="margin-bottom: 12px" />
+    <el-form label-position="top" :disabled="saving || dsTesting">
       <el-tabs v-model="dsFormTab" class="console-tabs">
         <el-tab-pane label="连接" name="connection">
       <el-form-item>
@@ -325,18 +333,20 @@
       <el-empty v-if="!dsPreview.length" description="SQL 查到 0 行" :image-size="40" />
     </div>
     <template #footer>
-      <el-button :loading="dsTesting" @click="dsTest">测试连接并预览</el-button>
-      <el-button @click="dsOpen = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="dsSave">保存</el-button>
+      <span v-if="dsGuard.dirty.value" class="muted" style="margin-right: 12px">有未保存的修改</span>
+      <el-button :loading="dsTesting" :disabled="saving" @click="dsTest">测试连接并预览</el-button>
+      <el-button :disabled="saving" @click="closeEditor('dsOpen')">取消</el-button>
+      <el-button type="primary" :loading="saving" :disabled="dsTesting" @click="dsSave">保存</el-button>
     </template>
   </el-drawer>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { useMe } from '../store';
+import { useUnsavedForm } from '../use-unsaved-form';
 import { api } from '../request';
 import { openDoc } from '../docs';
 import { fmtTime } from '../util';
@@ -397,6 +407,47 @@ const dsForm = reactive({ ds_id: 0, name: '', db_host: '', db_port: '3306', db_u
 let dsPollTimer: ReturnType<typeof setTimeout> | null = null;
 const createForm = reactive({ kb_id: '', name: '', credential: '', model: '', dim: 1024, description: '' });
 const docForm = reactive({ title: '', content: '' });
+const createError = ref(''), docError = ref(''), settingsError = ref(''), dsSaveError = ref(''), dsTestError = ref('');
+const docKbId = ref(''), dsKbId = ref('');
+const settingsKb = ref<KbBase | null>(null);
+const docFileInput = ref<HTMLInputElement | null>(null);
+const docFileSelection = ref<{ name: string; size: number; type: string; lastModified: number; selection: number } | null>(null);
+let fileGeneration = 0, dsTestGeneration = 0;
+const anyEditorOpen = computed(() => createOpen.value || docOpen.value || settingsOpen.value || dsOpen.value);
+const createGuard = useUnsavedForm({ active: () => createOpen.value, saving: () => saving.value, snapshot: () => createForm, name: '知识库' });
+const docGuard = useUnsavedForm({ active: () => docOpen.value, saving: () => saving.value,
+  // File has no enumerable content: keep explicit selection metadata alongside the editable body.
+  snapshot: () => ({ ...docForm, file: docFileSelection.value }), name: '文档' });
+const settingsGuard = useUnsavedForm({ active: () => settingsOpen.value, saving: () => saving.value, snapshot: () => settingsForm, name: '库设置' });
+const dsGuard = useUnsavedForm({ active: () => dsOpen.value, saving: () => saving.value, snapshot: () => dsForm, name: '数据源' });
+const editors = {
+  createOpen: { open: createOpen, guard: createGuard }, docOpen: { open: docOpen, guard: docGuard },
+  settingsOpen: { open: settingsOpen, guard: settingsGuard }, dsOpen: { open: dsOpen, guard: dsGuard },
+};
+async function closeEditor(name: keyof typeof editors): Promise<void> {
+  const editor = editors[name];
+  if (await editor.guard.confirmLeave()) editor.open.value = false;
+}
+function openDocForm(): void {
+  if (!s.can('kb:write') || !cur.value || anyEditorOpen.value || saving.value) return;
+  docKbId.value = cur.value.kb_id; docError.value = ''; docFileSelection.value = null;
+  Object.assign(docForm, { title: '', content: '' });
+  if (docFileInput.value) docFileInput.value.value = '';
+  docGuard.begin(); docOpen.value = true;
+}
+watch(docOpen, (isOpen) => {
+  if (!isOpen) { ++fileGeneration; converting.value = false; if (docFileInput.value) docFileInput.value.value = ''; }
+}, { flush: 'sync' });
+watch(dsOpen, (isOpen) => { if (!isOpen) { ++dsTestGeneration; dsTesting.value = false; } }, { flush: 'sync' });
+watch(dsForm, () => { dsPreview.value = null; dsTestError.value = ''; }, { flush: 'sync' });
+// Query-only navigation does not run onBeforeRouteLeave. Switching/filtering a
+// knowledge base must make the same draft decision before its workspace changes.
+onBeforeRouteUpdate(async (to, from) => {
+  if (['kb', 'q', 'focus', 'related'].every(key => queryText(to.query[key]) === queryText(from.query[key]))) return true;
+  for (const editor of Object.values(editors)) if (!await editor.guard.confirmLeave()) return false;
+  for (const editor of Object.values(editors)) editor.open.value = false;
+  return true;
+});
 
 const hitQuery = ref('');
 const hitLoading = ref(false);
@@ -438,8 +489,10 @@ function dsStatsLabel(stats: KbDs['last_stats']): string {
 }
 
 function openCreateKb(): void {
-  kbFormTab.value = 'basic';
-  createOpen.value = true;
+  if (!s.can('kb:write') || anyEditorOpen.value || saving.value) return;
+  kbFormTab.value = 'basic'; createError.value = '';
+  Object.assign(createForm, { kb_id: '', name: '', credential: '', model: '', dim: 1024, description: '' });
+  createGuard.begin(); createOpen.value = true;
 }
 
 async function loadBases(keepCur = true): Promise<void> {
@@ -502,98 +555,109 @@ async function loadDocs(): Promise<void> {
 }
 
 async function createKb(): Promise<void> {
-  saving.value = true;
+  if (!s.can('kb:write') || !createOpen.value || saving.value) return;
+  const payload = { ...createForm };
+  createError.value = ''; saving.value = true;
   try {
-    await api('/admin/api/kb', { method: 'POST', body: JSON.stringify(createForm) });
-    ElMessage.success(`知识库 ${createForm.kb_id} 已创建`);
+    await api('/admin/api/kb', { method: 'POST', body: JSON.stringify(payload) });
+    ElMessage.success(`知识库 ${payload.kb_id} 已创建`);
+    createGuard.markSaved();
     createOpen.value = false;
     Object.assign(createForm, { kb_id: '', name: '', credential: '', model: '', dim: 1024, description: '' });
-    await loadBases(false);
-  } catch (e) { ElMessage.error((e as Error).message); }
+    await loadBases();
+  } catch (e) { createError.value = (e as Error).message || '建库失败，请重试'; }
   finally { saving.value = false; }
 }
 
 async function delKb(): Promise<void> {
-  if (!cur.value) return;
+  const kbId = cur.value?.kb_id;
+  if (!s.can('kb:write') || !kbId || anyEditorOpen.value || saving.value) return;
   try {
-    await api(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}`, { method: 'DELETE' });
+    await api(`/admin/api/kb/${encodeURIComponent(kbId)}`, { method: 'DELETE' });
     ElMessage.success('知识库已删除');
-    cur.value = null;
-    await loadBases(false);
+    if (cur.value?.kb_id === kbId) cur.value = null;
+    await loadBases();
   } catch (e) { ElMessage.error((e as Error).message); }
 }
 
 async function readFile(e: Event): Promise<void> {
-  const f = (e.target as HTMLInputElement).files?.[0];
-  if (!f) return;
-  if (!docForm.title) docForm.title = f.name.replace(/\.(txt|md|markdown|docx)$/i, '');
-  if (/\.docx$/i.test(f.name)) {
-    // Word 在浏览器本地转 markdown（mammoth: docx→HTML，turndown: HTML→markdown），文件不经任何服务器；
-    // 两个库按需加载，不进首屏包
-    converting.value = true;
-    try {
+  const input = e.target as HTMLInputElement, f = input.files?.[0];
+  if (!f || !docOpen.value || saving.value || converting.value) return;
+  const request = ++fileGeneration, kbId = docKbId.value;
+  const previousTitle = docForm.title, previousContent = docForm.content;
+  docFileSelection.value = { name: f.name, size: f.size, type: f.type, lastModified: f.lastModified, selection: request };
+  docError.value = ''; converting.value = true;
+  const current = () => request === fileGeneration && docOpen.value && docKbId.value === kbId;
+  try {
+    let content: string;
+    if (/\.docx$/i.test(f.name)) {
+      // Conversion stays in this browser; ignore results from a discarded editor.
       const [mammothMod, turndownMod] = await Promise.all([import('mammoth'), import('turndown')]);
       const mammoth = (mammothMod as any).default ?? mammothMod;
       const TurndownService = (turndownMod as any).default ?? turndownMod;
       const { value: html } = await mammoth.convertToHtml({ arrayBuffer: await f.arrayBuffer() });
-      let md: string = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' }).turndown(html);
-      // Word 内嵌图片是 base64：不入库（撑爆存储且向量无意义），换占位符提示改用图片链接
-      md = md.replace(/!\[([^\]]*)\]\(data:[^)]*\)/g, (_m: string, alt: string) => `[图：${alt || '嵌入图片'}（Word 内嵌图片不入库，需要图片请改用图片链接）]`);
-      docForm.content = md.trim();
-      ElMessage.success('Word 已转为 markdown，请检查后提交');
-    } catch (err) { ElMessage.error('Word 解析失败：' + (err as Error).message); }
-    finally { converting.value = false; (e.target as HTMLInputElement).value = ''; }
-    return;
-  }
-  const rd = new FileReader();
-  rd.onload = () => { docForm.content = String(rd.result ?? ''); };
-  rd.readAsText(f);
+      content = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' }).turndown(html);
+      content = content.replace(/!\[([^\]]*)\]\(data:[^)]*\)/g, (_m: string, alt: string) => `[图：${alt || '嵌入图片'}（Word 内嵌图片不入库，需要图片请改用图片链接）]`).trim();
+    } else content = await f.text();
+    if (!current()) return;
+    if (docForm.title !== previousTitle || docForm.content !== previousContent) {
+      docError.value = '文档草稿已变化，已保留现有内容；如需替换，请重新选择文件。'; return;
+    }
+    docForm.content = content;
+    if (!docForm.title) docForm.title = f.name.replace(/\.(txt|md|markdown|docx)$/i, '');
+    if (/\.docx$/i.test(f.name)) ElMessage.success('Word 已转为 markdown，请检查后提交');
+  } catch (e) { if (current()) docError.value = '文件读取失败：' + (e as Error).message; }
+  finally { if (current()) { converting.value = false; input.value = ''; } }
 }
 
 // ---- 库设置（名称/说明/可写接入方）----
 function openSettings(): void {
-  if (!cur.value) return;
+  if (!s.can('kb:write') || !cur.value || anyEditorOpen.value || saving.value) return;
+  settingsKb.value = { ...cur.value }; settingsError.value = '';
   settingsForm.name = cur.value.name;
   settingsForm.description = cur.value.description ?? '';
   settingsForm.writers = [...(cur.value.writers ?? [])];
-  settingsOpen.value = true;
+  settingsGuard.begin(); settingsOpen.value = true;
 }
 
 async function saveSettings(): Promise<void> {
-  if (!cur.value) return;
-  saving.value = true;
+  const kb = settingsKb.value;
+  if (!s.can('kb:write') || !kb || !settingsOpen.value || saving.value) return;
+  settingsError.value = ''; saving.value = true;
   try {
     // 同一 upsert 接口：kb_id 已存在时服务端只更新 name/description/writers/enabled（模型坐标系锁定）
     await api('/admin/api/kb', { method: 'POST', body: JSON.stringify({
-      kb_id: cur.value.kb_id, name: settingsForm.name, credential: cur.value.credential,
-      model: cur.value.model, dim: cur.value.dim, enabled: cur.value.enabled,
+      kb_id: kb.kb_id, name: settingsForm.name, credential: kb.credential,
+      model: kb.model, dim: kb.dim, enabled: kb.enabled,
       description: settingsForm.description, writers: settingsForm.writers,
     }) });
-    ElMessage.success('已保存');
+    ElMessage.success('已保存'); settingsGuard.markSaved();
     settingsOpen.value = false;
     await loadBases();
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) { settingsError.value = (e as Error).message || '保存失败，请重试'; }
   finally { saving.value = false; }
 }
 
 async function addDoc(): Promise<void> {
-  if (!cur.value) return;
-  saving.value = true;
+  const kbId = docKbId.value;
+  if (!s.can('kb:write') || !kbId || !docOpen.value || saving.value || converting.value) return;
+  docError.value = ''; saving.value = true;
   try {
-    await api(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/docs`, { method: 'POST', body: JSON.stringify(docForm) });
+    await api(`/admin/api/kb/${encodeURIComponent(kbId)}/docs`, { method: 'POST', body: JSON.stringify(docForm) });
     ElMessage.success('文档已提交，向量化进行中');
-    docOpen.value = false;
-    docForm.title = ''; docForm.content = '';
-    await loadDocs();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    docGuard.markSaved(); docOpen.value = false;
+    docForm.title = ''; docForm.content = ''; docFileSelection.value = null;
+    if (cur.value?.kb_id === kbId) { await loadDocs(); await loadBases(); }
+  } catch (e) { docError.value = (e as Error).message || '文档提交失败，请重试'; }
   finally { saving.value = false; }
 }
 
 async function delDoc(docId: number): Promise<void> {
-  if (!cur.value) return;
+  const kbId = cur.value?.kb_id;
+  if (!s.can('kb:write') || !kbId || anyEditorOpen.value || saving.value) return;
   try {
-    await api(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/docs/${docId}`, { method: 'DELETE' });
-    await loadDocs(); await loadBases();
+    await api(`/admin/api/kb/${encodeURIComponent(kbId)}/docs/${docId}`, { method: 'DELETE' });
+    if (cur.value?.kb_id === kbId) { await loadDocs(); await loadBases(); }
   } catch (e) { ElMessage.error((e as Error).message); }
 }
 
@@ -620,6 +684,8 @@ async function loadDs(): Promise<void> {
 }
 
 function openDsForm(row?: KbDs): void {
+  if (!s.can('kb:write') || !cur.value || anyEditorOpen.value || saving.value) return;
+  dsKbId.value = cur.value.kb_id; dsSaveError.value = ''; dsTestError.value = '';
   dsFormTab.value = 'connection';
   dsPreview.value = null;
   if (row) {
@@ -630,7 +696,7 @@ function openDsForm(row?: KbDs): void {
     Object.assign(dsForm, { ds_id: 0, name: '', db_host: '', db_port: '3306', db_user: '', db_password: '', db_database: '',
       query_sql: '', key_field: 'id', title_field: 'title', content_template: '${content}', interval_min: 60 });
   }
-  dsOpen.value = true;
+  dsGuard.begin(); dsOpen.value = true;
 }
 
 function dsBody(): Record<string, unknown> {
@@ -640,31 +706,35 @@ function dsBody(): Record<string, unknown> {
 }
 
 async function dsTest(): Promise<void> {
-  if (!cur.value) return;
-  dsTesting.value = true; dsPreview.value = null;
+  const kbId = dsKbId.value;
+  if (!s.can('kb:write') || !kbId || !dsOpen.value || dsTesting.value || saving.value) return;
+  const request = ++dsTestGeneration;
+  dsTesting.value = true; dsPreview.value = null; dsTestError.value = ''; dsSaveError.value = '';
+  const current = () => request === dsTestGeneration && dsOpen.value && dsKbId.value === kbId;
   try {
     const r = await api<{ preview: Array<{ source_key: string; title: string; content: string }> }>(
-      `/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/datasources/test`, { method: 'POST', body: JSON.stringify(dsBody()) });
-    dsPreview.value = r.preview;
-  } catch (e) { ElMessage.error((e as Error).message); }
-  finally { dsTesting.value = false; }
+      `/admin/api/kb/${encodeURIComponent(kbId)}/datasources/test`, { method: 'POST', body: JSON.stringify(dsBody()) });
+    if (current()) dsPreview.value = r.preview;
+  } catch (e) { if (current()) dsTestError.value = (e as Error).message || '测试失败，请重试'; }
+  finally { if (current()) dsTesting.value = false; }
 }
 
 async function dsSave(): Promise<void> {
-  if (!cur.value) return;
-  saving.value = true;
+  const kbId = dsKbId.value;
+  if (!s.can('kb:write') || !kbId || !dsOpen.value || saving.value || dsTesting.value) return;
+  dsSaveError.value = ''; saving.value = true;
   try {
-    await api(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/datasources`, { method: 'POST', body: JSON.stringify(dsBody()) });
+    await api(`/admin/api/kb/${encodeURIComponent(kbId)}/datasources`, { method: 'POST', body: JSON.stringify(dsBody()) });
     ElMessage.success(dsForm.ds_id ? '已保存' : '数据源已创建，点「同步」拉首轮');
-    dsOpen.value = false;
-    await loadDs();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    dsGuard.markSaved(); dsOpen.value = false;
+    if (cur.value?.kb_id === kbId) await loadDs();
+  } catch (e) { dsSaveError.value = (e as Error).message || '保存失败，请重试'; }
   finally { saving.value = false; }
 }
 
 async function dsSyncNow(row: KbDs): Promise<void> {
   const kbId = cur.value?.kb_id;
-  if (!kbId) return;
+  if (!s.can('kb:write') || !kbId || anyEditorOpen.value || saving.value) return;
   try {
     await api(`/admin/api/kb/${encodeURIComponent(kbId)}/datasources/${row.ds_id}/sync`, { method: 'POST', body: '{}' });
     ElMessage.success('同步已启动，首轮全量会逐篇向量化');
@@ -679,11 +749,12 @@ async function dsSyncNow(row: KbDs): Promise<void> {
 }
 
 async function dsDel(row: KbDs): Promise<void> {
-  if (!cur.value) return;
+  const kbId = cur.value?.kb_id;
+  if (!s.can('kb:write') || !kbId || anyEditorOpen.value || saving.value) return;
   try {
-    const r = await api<{ purged_docs: number }>(`/admin/api/kb/${encodeURIComponent(cur.value.kb_id)}/datasources/${row.ds_id}`, { method: 'DELETE' });
+    const r = await api<{ purged_docs: number }>(`/admin/api/kb/${encodeURIComponent(kbId)}/datasources/${row.ds_id}`, { method: 'DELETE' });
     ElMessage.success(`数据源已删除，清掉 ${r.purged_docs} 篇同步文档`);
-    await Promise.all([loadDs(), loadDocs(), loadBases()]);
+    if (cur.value?.kb_id === kbId) await Promise.all([loadDs(), loadDocs(), loadBases()]);
   } catch (e) { ElMessage.error((e as Error).message); }
 }
 
@@ -718,7 +789,7 @@ onMounted(async () => {
     try { clientOptions.value = await api<Array<{ app_id: string; name: string }>>('/admin/api/clients'); } catch { /* 可选 */ }
   }
 });
-onUnmounted(() => { ++basesGeneration; ++docsGeneration; ++dsGeneration; ++hitGeneration; if (pollTimer) clearTimeout(pollTimer); if (dsPollTimer) clearTimeout(dsPollTimer); });
+onUnmounted(() => { ++fileGeneration; ++dsTestGeneration; ++basesGeneration; ++docsGeneration; ++dsGeneration; ++hitGeneration; if (pollTimer) clearTimeout(pollTimer); if (dsPollTimer) clearTimeout(dsPollTimer); });
 </script>
 
 <style scoped>

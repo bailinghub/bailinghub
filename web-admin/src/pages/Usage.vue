@@ -1444,30 +1444,37 @@ async function openAccount(account: Account) {
   detailOpen.value = true;
   await loadDetail();
 }
+let detailGeneration = 0;
+let requestsGeneration = 0;
 async function loadDetail() {
   const id = selectedAccount.value?.id;
   if (!id) return;
+  const generation = ++detailGeneration;
+  const current = () => generation === detailGeneration && selectedAccount.value?.id === id;
   detailLoading.value = true;
   detailError.value = "";
   summary.value = null;
+  ++requestsGeneration; requestsLoading.value = false;
   requests.value = [];
   requestCursor.value = null;
   try {
     const value = await api<Summary>(
       `${billing}/accounts/${encodeURIComponent(id)}/summary`,
     );
-    if (selectedAccount.value?.id !== id) return;
+    if (!current()) return;
     summary.value = value;
     await loadRequests();
   } catch (e) {
-    detailError.value = describe(e);
+    if (current()) detailError.value = describe(e);
   } finally {
-    detailLoading.value = false;
+    if (current()) detailLoading.value = false;
   }
 }
 async function loadRequests(more = false) {
   const id = selectedAccount.value?.id;
   if (!id || requestsLoading.value || !billingReady.value) return;
+  const generation = ++requestsGeneration;
+  const current = () => generation === requestsGeneration && selectedAccount.value?.id === id;
   requestsLoading.value = true;
   try {
     const query = new URLSearchParams({ limit: "30" });
@@ -1475,13 +1482,13 @@ async function loadRequests(more = false) {
     const r = await api<{ items: RequestView[]; next_cursor: string | null }>(
       `${billing}/accounts/${encodeURIComponent(id)}/requests?${query}`,
     );
-    if (selectedAccount.value?.id !== id) return;
+    if (!current()) return;
     requests.value = more ? [...requests.value, ...r.items] : r.items;
     requestCursor.value = r.next_cursor;
   } catch (e) {
-    detailError.value = describe(e);
+    if (current()) detailError.value = describe(e);
   } finally {
-    requestsLoading.value = false;
+    if (current()) requestsLoading.value = false;
   }
 }
 const grantOpen = ref(false),

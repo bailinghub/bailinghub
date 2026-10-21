@@ -610,9 +610,12 @@ async function openAccount(account: Account) {
   detailOpen.value = true;
   await loadDetail();
 }
+let detailGeneration = 0;
 async function loadDetail() {
   const id = selected.value?.id;
   if (!id) return;
+  const generation = ++detailGeneration;
+  const current = () => generation === detailGeneration && selected.value?.id === id;
   detailLoading.value = true;
   detailError.value = "";
   members.value = [];
@@ -620,14 +623,14 @@ async function loadDetail() {
     const result = await api<{ account: Account | null; members: Member[] }>(
       `${base}/accounts/${segment(id)}`,
     );
-    if (selected.value?.id !== id) return;
+    if (!current()) return;
     if (!result.account) throw new Error("USAGE_ACCOUNT_NOT_FOUND");
     selected.value = result.account;
     members.value = result.members;
   } catch (e) {
-    detailError.value = message(e);
+    if (current()) detailError.value = message(e);
   } finally {
-    detailLoading.value = false;
+    if (current()) detailLoading.value = false;
   }
 }
 async function openForm(kind: FormKind) {
