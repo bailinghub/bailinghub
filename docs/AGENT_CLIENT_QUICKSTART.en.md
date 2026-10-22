@@ -50,9 +50,7 @@ the end user to paste a BailingHub Client Token, Tool Provider Secret, or busine
 
 ### 3.1 Deploy Core and apply migrations
 
-For the complete cross-system flow, use BailingHub 0.7.0, Agent Client SDK 0.5.0 and DSH 0.5.0
-or a compatible client. Apply all outstanding migrations, including 055–059, as part of the
-deployment; runtime startup does not apply them.
+The current component set is Core 0.10.0, MCP / Agent Client SDK 0.8.0 and DSH 0.8.0 or a compatible host. Complete conversation audit retains its existing protocol; hosts explicitly negotiate on-demand knowledge. Apply all outstanding migrations through 068 as a deployment step. Public 0.9.4 upgrades add no SQL, and runtime startup never applies migrations. See the [upgrade guide](UPGRADE_v0.10.0.en.md).
 Confirm that health and readiness pass, no migration is pending, the console can edit
 Agent Client settings, and production traffic uses HTTPS.
 

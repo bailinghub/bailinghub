@@ -6,10 +6,10 @@
 
 ## 版本与阅读口径
 
-- 正式发行基线：[v0.9.4](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.4)，对应 [v0.9.4 源码 Tag](https://github.com/bailinghub/bailinghub/tree/v0.9.4)。下表机制均包含在该版本中，各次修复仍标注首次发行版本；不代表默认安装后已启用所有可选功能。
+- 正式发行基线：[v0.10.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.10.0)，对应 [v0.10.0 源码 Tag](https://github.com/bailinghub/bailinghub/tree/v0.10.0)。下表机制均包含在该版本中，各次修复仍标注首次发行版本；不代表默认安装后已启用所有可选功能。
 - 历史基线：[v0.9.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.0)，对应提交 [`dae5260ede6565080d21e94ae63d52f3a7d23556`](https://github.com/bailinghub/bailinghub/tree/dae5260ede6565080d21e94ae63d52f3a7d23556)。原 Tag 的异步关闭缺口在后文保留；源码、npm、镜像和具体部署应分别核验，不能从新版文档推导旧制品已修复。
 - 表中的测试链接是**公开测试代码及其检查范围**，不是本页重新执行所得的通过记录。单元测试、模拟供应商响应、MySQL 集成测试和完整 demo 验证分别说明各自覆盖的条件。未执行或跳过的测试不能写成已通过，也不能据此把已有机制写成“计划实现”。
-- 版本发行内容与升级前提以 [v0.9.4 说明](RELEASE_NOTES_v0.9.4.md) 和 [升级指南](UPGRADE_v0.9.4.md) 为准。适配客户端、应用迁移、模型凭据、存储和具体业务授权仍需各自配置、验证。
+- 版本发行内容与升级前提以 [v0.10.0 说明](RELEASE_NOTES_v0.10.0.md) 和 [升级指南](UPGRADE_v0.10.0.md) 为准。适配客户端、应用迁移、模型凭据、存储和具体业务授权仍需各自配置、验证。
 
 ## 能力归属与发行状态
 
@@ -17,18 +17,18 @@ Core 默认是一个组织的管理与审计域。不同 Client、route 或工�
 
 | 能力与责任方 | 发行状态 | 公开实现与证据入口 | 范围与限制 |
 |---|---|---|---|
-| 能力声明、工具发现、受控调用：Core 解析和治理，业务系统执行 | Core v0.9.4 已包含 | [工具模型](TOOLS_MODEL.md)；[工具索引源码](../src/services/tools-index.ts) / [测试](../src/services/tools-index.test.ts)；[执行治理测试](../src/core/runtime/execution-runtime.test.ts) | 工具可发现不等于当前调用获准。业务接口还需验签，并重新检查主体、租户、权限和业务状态；声明不能赋予调用方原本没有的权力。 |
-| Agent Auth：Core 绑定客户端会话，业务授权页提供可信身份 | Core v0.9.4 已包含 | [Agent Auth 契约](AGENT_AUTH_API.md)；[路由源码](../src/routes/agent-auth.ts)；[生命周期 HTTP 测试](../src/routes/agent-auth-lifecycle-http.test.ts) / [竞态测试](../src/infrastructure/config/config-agent-auth-lifecycle-race.test.ts) | PKCE、授权绑定、刷新和撤销有公开实现；不接管业务系统的登录、角色管理或最终授权，也不允许模型从文本指定可信主体。 |
-| Agent Client Runtime：Core 提供工作区、turn、搜索和工具调用接口 | Core v0.9.4 已包含 | [Runtime API](AGENT_CLIENT_RUNTIME_API.md)；[运行面源码](../src/app/agent-client-runtime.ts) / [测试](../src/app/agent-client-runtime.test.ts)；[调用测试](../src/app/agent-tool-invocations.test.ts) | 本地 Agent 的模型选择、推理循环和工具编排由客户端宿主负责。Core 的原有 `/run` 管线是另一种公开接入路径，不能把两者混为同一客户端执行模式。 |
-| 审批、原调用快照和只读回执：Core 治理，业务系统保留执行结果 | Core v0.9.4 已包含 | [只读回执与恢复](INVOCATION_RECEIPTS.md)；[调用源码](../src/app/agent-tool-invocations.ts) / [测试](../src/app/agent-tool-invocations.test.ts)；[审批账本测试](../src/infrastructure/config/config-approval-ledger.test.ts) | 原调用回执读取与可能继续业务的 resume 分开。未知结果不构成重发写操作的许可；没有历史参数时不能补造。审批本身不证明业务已成功，也不是分布式业务事务的回滚保证。 |
-| 跨轮任务控制：Core 持久化原成员、写调用预算与并发占用 | Core v0.9.4 已包含（v0.8.0 引入） | [任务控制契约](AGENT_TASK_CONTROL.md)；[运行面源码](../src/core/runtime/agent-task-control.ts) / [测试](../src/core/runtime/agent-task-control.test.ts)；[MySQL 日志集成测试](../src/infrastructure/config/config-agent-task-control-journal-mysql.test.ts) | 这是受治理业务调用的控制，不是模型轮次套餐。写调用次数不等于退款金额、成功业务数或 Token 数；暂停/取消不能撤回已放行或已完成的业务效果。 |
-| 可见对话审计：客户端显式上传，Core 校验成员和保存事件 | Core v0.9.4 已包含 | [对话审计契约](AGENT_CONVERSATION_AUDIT.md)；[运行面测试](../src/core/runtime/agent-conversation-audit.test.ts) | 不采集隐藏推理。确认成员和具备写接口不证明宿主已上传全部历史；审计归档不合并业务授权、会话或运行时记忆。跨绑定仍受同一中枢及各自身份边界约束。 |
-| 当前线程上下文和可选滚动摘要：Core 的路由/线程机制 | Core v0.9.4 已包含 | [记忆配置与渲染](../src/core/runtime/memory.ts)；[线程注入源码](../src/core/runtime/memory-runtime.ts) / [测试](../src/core/runtime/memory-runtime.test.ts)；[摘要测试](../src/core/runtime/summary-runtime.test.ts) | 摘要默认关闭，启用后仍按原线程读取。它不是完整的用户级跨新会话长期记忆模块；公开的可见对话审计也不会自动变成模型上下文。 |
-| 附件空间：宿主提供获准图片，Core 上传并返回可用 URL | Core v0.9.4 已包含（v0.8.0 引入） | [图片附件契约](GENERATED_ARTIFACTS.md)；[附件源码](../src/app/agent-artifacts.ts) / [测试](../src/app/agent-artifacts.test.ts) | 首期 PNG/JPEG/WebP，不接受文档或视频。存储和保留策略需运营者配置；Core 不能读取客户端文件系统。上传图片与使用 URL 改变业务是两个独立动作。 |
-| 可选模型网关与美元额度结算：Core 接入、计量，客户端宿主编排 | Core v0.9.4 已包含 | [模型计费契约](MODEL_BILLING.md)；[网关源码](../src/modules/usage/model-gateway.ts)；[模型网关 MySQL 测试](../src/modules/usage/model-gateway.mysql.test.ts)；[账本单元测试](../src/modules/usage/billing-ledger.test.ts) | 共享 USD 额度、统一倍率、周期售价与额度分离；不恢复按轮次/任务步数收费。参考价格不是供应商实际账单，原始 Token 不是额度分母。未取得权威 usage 的结果不能编造 Token 或费用。 |
-| 模型工具目录、文生图和原请求核对：Core 的可选网关扩展 | Core v0.9.4 已包含 | [工具描述源码](../src/modules/usage/model-tools.ts) / [测试](../src/modules/usage/model-tools.test.ts)；[供应商适配测试](../src/modules/usage/model-tool-provider.test.ts)；[异步图片 MySQL 测试](../src/modules/usage/model-tool-gateway.mysql.test.ts) | 公开可执行适配器包括阿里云兼容 Images、原生 DashScope 与 OpenRouter Images。视频、语音或自定义服务的目录声明不等于存在可执行适配器；异步完成与关闭边界见下文。 |
-| Kernel Host API、显式迁移和托管生命周期：Core 提供稳定嵌入入口，Host 管理进程与隔离 | Core v0.9.4 已包含 | [Kernel Host API](KERNEL_HOST_API.md)；[Kernel 源码](../src/app/kernel.ts) / [测试](../src/app/kernel.test.ts)；[制品清单测试](../src/kernel-api/v1/artifact.test.ts)；[迁移测试](../src/infrastructure/schema/core-schema-migrator.test.ts) | 独立 MySQL schema 与 runtimeRoot、可信 instanceKey、显式迁移和 Host 的 tick/close 都是前提。此 API 不提供租户注册、平台套餐、集群目录或多副本升级编排；可选 usage 网关也不等于 Host 的平台计费产品。 |
-| 安装、体检与可选运维指标：Core 提供入口，部署者配置和验收 | Core v0.9.4 已包含 | [快速开始](QUICKSTART.md)；[安装脚本](../scripts/install.sh)；[体检脚本](../scripts/smoke.ts)；[OpenMetrics 测试](../src/core/observability/openmetrics.test.ts)；[独立复现任务卡](INDEPENDENT_VALIDATION.md) | 健康响应不证明全部业务或供应商可用。指标端点需显式启用并保护访问；有安装/诊断入口不等于已建立持续监控、告警值守或完成特定部署验收。 |
+| 能力声明、工具发现、受控调用：Core 解析和治理，业务系统执行 | Core v0.10.0 已包含 | [工具模型](TOOLS_MODEL.md)；[工具索引源码](../src/services/tools-index.ts) / [测试](../src/services/tools-index.test.ts)；[执行治理测试](../src/core/runtime/execution-runtime.test.ts) | 工具可发现不等于当前调用获准。业务接口还需验签，并重新检查主体、租户、权限和业务状态；声明不能赋予调用方原本没有的权力。 |
+| Agent Auth：Core 绑定客户端会话，业务授权页提供可信身份 | Core v0.10.0 已包含 | [Agent Auth 契约](AGENT_AUTH_API.md)；[路由源码](../src/routes/agent-auth.ts)；[生命周期 HTTP 测试](../src/routes/agent-auth-lifecycle-http.test.ts) / [竞态测试](../src/infrastructure/config/config-agent-auth-lifecycle-race.test.ts) | PKCE、授权绑定、刷新和撤销有公开实现；不接管业务系统的登录、角色管理或最终授权，也不允许模型从文本指定可信主体。 |
+| Agent Client Runtime：Core 提供工作区、turn、搜索和工具调用接口 | Core v0.10.0 已包含 | [Runtime API](AGENT_CLIENT_RUNTIME_API.md)；[运行面源码](../src/app/agent-client-runtime.ts) / [测试](../src/app/agent-client-runtime.test.ts)；[调用测试](../src/app/agent-tool-invocations.test.ts) | 本地 Agent 的模型选择、推理循环和工具编排由客户端宿主负责。Core 的原有 `/run` 管线是另一种公开接入路径，不能把两者混为同一客户端执行模式。 |
+| 审批、原调用快照和只读回执：Core 治理，业务系统保留执行结果 | Core v0.10.0 已包含 | [只读回执与恢复](INVOCATION_RECEIPTS.md)；[调用源码](../src/app/agent-tool-invocations.ts) / [测试](../src/app/agent-tool-invocations.test.ts)；[审批账本测试](../src/infrastructure/config/config-approval-ledger.test.ts) | 原调用回执读取与可能继续业务的 resume 分开。未知结果不构成重发写操作的许可；没有历史参数时不能补造。审批本身不证明业务已成功，也不是分布式业务事务的回滚保证。 |
+| 跨轮任务控制：Core 持久化原成员、写调用预算与并发占用 | Core v0.10.0 已包含（v0.8.0 引入） | [任务控制契约](AGENT_TASK_CONTROL.md)；[运行面源码](../src/core/runtime/agent-task-control.ts) / [测试](../src/core/runtime/agent-task-control.test.ts)；[MySQL 日志集成测试](../src/infrastructure/config/config-agent-task-control-journal-mysql.test.ts) | 这是受治理业务调用的控制，不是模型轮次套餐。写调用次数不等于退款金额、成功业务数或 Token 数；暂停/取消不能撤回已放行或已完成的业务效果。 |
+| 可见对话审计：客户端显式上传，Core 校验成员和保存事件 | Core v0.10.0 已包含 | [对话审计契约](AGENT_CONVERSATION_AUDIT.md)；[运行面测试](../src/core/runtime/agent-conversation-audit.test.ts) | 不采集隐藏推理。确认成员和具备写接口不证明宿主已上传全部历史；审计归档不合并业务授权、会话或运行时记忆。跨绑定仍受同一中枢及各自身份边界约束。 |
+| 当前线程上下文和可选滚动摘要：Core 的路由/线程机制 | Core v0.10.0 已包含 | [记忆配置与渲染](../src/core/runtime/memory.ts)；[线程注入源码](../src/core/runtime/memory-runtime.ts) / [测试](../src/core/runtime/memory-runtime.test.ts)；[摘要测试](../src/core/runtime/summary-runtime.test.ts) | 摘要默认关闭，启用后仍按原线程读取。它不是完整的用户级跨新会话长期记忆模块；公开的可见对话审计也不会自动变成模型上下文。 |
+| 附件空间：宿主提供获准图片，Core 上传并返回可用 URL | Core v0.10.0 已包含（v0.8.0 引入） | [图片附件契约](GENERATED_ARTIFACTS.md)；[附件源码](../src/app/agent-artifacts.ts) / [测试](../src/app/agent-artifacts.test.ts) | 首期 PNG/JPEG/WebP，不接受文档或视频。存储和保留策略需运营者配置；Core 不能读取客户端文件系统。上传图片与使用 URL 改变业务是两个独立动作。 |
+| 可选模型网关与美元额度结算：Core 接入、计量，客户端宿主编排 | Core v0.10.0 已包含 | [模型计费契约](MODEL_BILLING.md)；[网关源码](../src/modules/usage/model-gateway.ts)；[模型网关 MySQL 测试](../src/modules/usage/model-gateway.mysql.test.ts)；[账本单元测试](../src/modules/usage/billing-ledger.test.ts) | 共享 USD 额度、统一倍率、周期售价与额度分离；不恢复按轮次/任务步数收费。参考价格不是供应商实际账单，原始 Token 不是额度分母。未取得权威 usage 的结果不能编造 Token 或费用。 |
+| 模型工具目录、文生图和原请求核对：Core 的可选网关扩展 | Core v0.10.0 已包含 | [工具描述源码](../src/modules/usage/model-tools.ts) / [测试](../src/modules/usage/model-tools.test.ts)；[供应商适配测试](../src/modules/usage/model-tool-provider.test.ts)；[异步图片 MySQL 测试](../src/modules/usage/model-tool-gateway.mysql.test.ts) | 公开可执行适配器包括阿里云兼容 Images、原生 DashScope 与 OpenRouter Images。视频、语音或自定义服务的目录声明不等于存在可执行适配器；异步完成与关闭边界见下文。 |
+| Kernel Host API、显式迁移和托管生命周期：Core 提供稳定嵌入入口，Host 管理进程与隔离 | Core v0.10.0 已包含 | [Kernel Host API](KERNEL_HOST_API.md)；[Kernel 源码](../src/app/kernel.ts) / [测试](../src/app/kernel.test.ts)；[制品清单测试](../src/kernel-api/v1/artifact.test.ts)；[迁移测试](../src/infrastructure/schema/core-schema-migrator.test.ts) | 独立 MySQL schema 与 runtimeRoot、可信 instanceKey、显式迁移和 Host 的 tick/close 都是前提。此 API 不提供租户注册、平台套餐、集群目录或多副本升级编排；可选 usage 网关也不等于 Host 的平台计费产品。 |
+| 安装、体检与可选运维指标：Core 提供入口，部署者配置和验收 | Core v0.10.0 已包含 | [快速开始](QUICKSTART.md)；[安装脚本](../scripts/install.sh)；[体检脚本](../scripts/smoke.ts)；[OpenMetrics 测试](../src/core/observability/openmetrics.test.ts)；[独立复现任务卡](INDEPENDENT_VALIDATION.md) | 健康响应不证明全部业务或供应商可用。指标端点需显式启用并保护访问；有安装/诊断入口不等于已建立持续监控、告警值守或完成特定部署验收。 |
 
 ## 公开验证能说明什么
 
@@ -40,7 +40,7 @@ Core 默认是一个组织的管理与审计域。不同 Client、route 或工�
 
 ### 公开 demo 与独立复现任务卡
 
-[Docker Demo](DEMO.md) 与 [独立验证任务卡](INDEPENDENT_VALIDATION.md) 提供从 v0.9.4 安装、基础体检到 `npm run demo:e2e` 的公开路径。其订单、工单、退款和故障工具均为仓库 demo 数据；不需要真实模型 Key、客户接口或生产凭据。
+[Docker Demo](DEMO.md) 与 [独立验证任务卡](INDEPENDENT_VALIDATION.md) 提供从 v0.10.0 安装、基础体检到 `npm run demo:e2e` 的公开路径。其订单、工单、退款和故障工具均为仓库 demo 数据；不需要真实模型 Key、客户接口或生产凭据。
 
 任务卡要求记录服务、控制台、匿名预览边界、基础体检和完整业务闭环的具体结果。README 的 demo 图像与动画展示同一公开样例，不能当作客户采用证据。任务卡存在也不意味着已有外部开发者完成验证；报告结果应保留验证者实际版本、环境、检查项和失败范围。
 
@@ -87,3 +87,7 @@ Core v0.9.1 增加了每个 `UsageRepository` 独立拥有的 [后台工作登�
 ## Core v0.9.4 的依赖与通知修复
 
 Core v0.9.4 新增 [DOCX 依赖处置](DOCX_DEPENDENCY.md)与[通知持久化](NOTIFICATION_DURABILITY.md)，包含自带控制台管理入口和增量迁移 068。公开源码和合成测试覆盖内置持久化与恢复，不证明各部署的真实收件；Webhook 接收方按稳定事件 ID 去重，原生未知送达须人工核对。不改变 v0.9.3 的历史证据，独立消费者仍需各自升级。见[升级指南](UPGRADE_v0.9.4.md)。
+
+## Core v0.10.0 的兼容新增与修复
+
+本版新增[Agent 知识按需协议](AGENT_KNOWLEDGE_API.md)、[工具按名指导](AGENT_CLIENT_RUNTIME_API.md)和[显式模型预算](MODEL_OUTPUT_BUDGET.md)，并改善后台首次接入、草稿保护与排障。旧客户端保持 inline、旧模型配置不自动改变，自带聊天装配保持。大参数仍有界、完整审批与原调用防重保留；[宿主续段](MODEL_CONTINUATION.md)由客户端实现，不是中枢新增自动模型循环。只读升级计划与真实资源 readiness 见[升级指南](UPGRADE_v0.10.0.md)，相对 0.9.4 无新增 SQL。

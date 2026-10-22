@@ -1,5 +1,9 @@
 # Compatibility And Upgrade Policy
 
+## Core 0.10.0 compatible extensions
+
+Pair Core 0.10.0 with MCP / Agent Client SDK 0.8.0 and DSH 0.8.0 for optional Agent knowledge, tool guidance and explicit model-output policies. No new SQL is added relative to public 0.9.4. Existing clients retain inline delivery and old model policies are not changed automatically. Readiness now checks actual state/configuration resources and full migration digests; custom MySQL stores must expose `schemaReadinessDb` or fail closed. See the [0.10.0 upgrade guide](UPGRADE_v0.10.0.en.md) for configuration rollback and independent-consumer boundaries.
+
 ## Current 0.9.x upgrade path
 
 Core 0.9.2, 0.9.3 and 0.9.4 add migrations 065/066, 067 and 068 respectively. **A patch does not imply no schema migration or a restart-only upgrade.** Read the [0.9.2](UPGRADE_v0.9.2.en.md), [0.9.3](UPGRADE_v0.9.3.en.md) and [0.9.4](UPGRADE_v0.9.4.en.md) guides for the selected path. Preserve original jobs, approvals, notifications and migration records. Historical pairing notes below do not replace the target-version guide.

@@ -8,6 +8,11 @@
 
 | 文档 | 用途 |
 |---|---|
+| [RELEASE_NOTES_v0.10.0.md](RELEASE_NOTES_v0.10.0.md) · [English](RELEASE_NOTES_v0.10.0.en.md) | v0.10.0：知识按需读取、后台交互、大参数与模型预算。 |
+| [UPGRADE_v0.10.0.md](UPGRADE_v0.10.0.md) · [English](UPGRADE_v0.10.0.en.md) | 相对 0.9.4 无新 SQL；readiness、配套客户端、显式策略与回退边界。 |
+| [AGENT_KNOWLEDGE_API.md](AGENT_KNOWLEDGE_API.md) · [English](AGENT_KNOWLEDGE_API.en.md) | 智能体专用的知识提示、搜索、受授权引用与有界分页读取。 |
+| [MODEL_OUTPUT_BUDGET.md](MODEL_OUTPUT_BUDGET.md) · [English](MODEL_OUTPUT_BUDGET.en.md) | 默认预算、服务上限、供应商参数与思考语义。 |
+| [MODEL_CONTINUATION.md](MODEL_CONTINUATION.md) · [English](MODEL_CONTINUATION.en.md) | 宿主续段、原 operation 恢复和工具防重的责任边界。 |
 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) · [English](IMPLEMENTATION_STATUS.en.md) | Core 能力归属、正式发行与主分支状态、公开证据和未覆盖范围。 |
 | [RELEASE_NOTES_v0.9.4.md](RELEASE_NOTES_v0.9.4.md) · [English](RELEASE_NOTES_v0.9.4.en.md) | v0.9.4：DOCX 依赖处置、通知持久化与控制台补发。 |
 | [UPGRADE_v0.9.4.md](UPGRADE_v0.9.4.md) · [English](UPGRADE_v0.9.4.en.md) | 068 显式迁移、状态/配置库、事件去重和回退限制。 |

@@ -1,5 +1,7 @@
 # 模型输出预算契约
 
+[English](MODEL_OUTPUT_BUDGET.en.md)
+
 AIaaS 模型服务将“新请求默认使用多少 token”和“服务最多允许请求多少 token”分开配置。适用范围为 `/usage/v1/model/models` 与对话模型网关，不改变嵌入聊天的知识库装配、图片模型工具、计量或请求恢复机制。
 
 ## 服务配置与目录

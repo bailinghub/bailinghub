@@ -56,6 +56,8 @@ Persist the original `operation_id` locally. Missing responses, offline reopenin
 
 Responses expose `result_state`, `billing_state`, `response`, raw `usage` (possibly absent), `raw_usage`, `reference_cost_usd`, `billed_usd` and `overage_usd`. `billing_rate` includes plan revision, multiplier and price snapshot. Results have bounded retention; `response_expired` does not authorize re-dispatch.
 
+For chat, `result_state=complete` means the provider exchange was saved, not that the answer or Agent task is complete. Native finish reasons, partial text, reasoning and tool calls remain in `bailing.provider-response.v1` for the host adapter. Explicit output-budget cutoff differs from transport uncertainty; Core never generates another request automatically. See [output budgets](MODEL_OUTPUT_BUDGET.en.md) and [host continuation/recovery](MODEL_CONTINUATION.en.md).
+
 Trusted backends retain the existing identity-exchange entry point. `model_access: token_gateway` identifies plan-scoped credentials, not a legacy Token allowance mode; `service` remains restricted to one model. Identity, business authority, fixed session scope, approvals and business-call archives remain independent and are not expanded by a plan.
 
 Console endpoints use `/admin/api/usage/billing/`. Business backends can use `/usage/v1/external/billing/plans` and `/accounts/{id}/summary|grant|control`, retaining source ownership, permissions and idempotent grants.

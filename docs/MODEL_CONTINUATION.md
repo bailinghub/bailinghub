@@ -1,5 +1,7 @@
 # 长任务续跑与原请求恢复
 
+[English](MODEL_CONTINUATION.en.md)
+
 模型每次生成有输出预算；宿主 Agent 的整项任务可以由多次模型调用和工具操作组成。合理预算与自动续跑相互配合，不能靠取消边界、无条件放大预算或重复整项任务解决截断。此文使用现有 `bailing.model-operation.v1`、`bailing.model-stream.v1` 与 `bailing.provider-response.v1`，不新增续跑接口或私有结束字段。
 
 ## 中枢和宿主的边界
