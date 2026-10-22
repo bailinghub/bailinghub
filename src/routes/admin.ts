@@ -9,6 +9,7 @@ import { normalizeHttpMountPath, readBody, send } from '../app/http';
 import { type Principal, ROLE_PERMS, SESSION_COOKIE, can, permsOf, readCookie } from '../app/auth';
 import { hashPassword, verifyPassword } from '../core/platform/password';
 import { buildVersionInfo } from '../core/platform/version';
+import { checkReadinessFor } from '../app/readiness';
 import { inspectConfig } from '../core/config/config-diagnostics';
 import { runHubSmoke } from '../core/runtime/smoke-runtime';
 import { handleAdminAccessApiFor } from './admin-access';
@@ -137,6 +138,7 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     [/^\/admin\/api\/delivery-dlq/, 'runs:read', 'runs:write'], // 送达死信队列（查看/重投），运行面操作
     [/^\/admin\/api\/notification-outbox/, 'runs:read', 'runs:write'],
     [/^\/admin\/api\/version/, 'audit:read', 'audit:read'], // 版本/数据库结构状态：系统可观测
+    [/^\/admin\/api\/readiness/, 'audit:read', 'audit:read'],
   ];
   for (const [re, readPerm, writePerm] of PERM_RULES) {
     if (!re.test(path)) continue;
@@ -161,6 +163,13 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
 
   if (path === '/admin/api/version' && method === 'GET') {
     send(res, 200, buildVersionInfo(deps.cfg.root, await configStore.observability.listSchemaMigrations()));
+    return true;
+  }
+  if (path === '/admin/api/readiness' && method === 'GET') {
+    const report = await checkReadinessFor(deps.cfg, configStore, deps.stateStore);
+    // The console consumes the same actual stores and check as /readyz. A failed
+    // probe is a valid report, distinct from failing to retrieve this endpoint.
+    send(res, 200, { ...report, checked_at: deps.now() });
     return true;
   }
   if (path === '/admin/api/config-diagnostics' && method === 'GET') {

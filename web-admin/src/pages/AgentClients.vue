@@ -1,13 +1,14 @@
 <template>
   <div class="agent-clients-page">
     <div class="page-navigation"><div><b>本地智能体</b><span>配置接入与管理授权设备</span></div><div class="actions"><el-button v-if="me.can('clients:read') && me.hasModule('agent-tasks')" @click="router.push('/agent-tasks')">任务控制</el-button><el-radio-group v-model="pageTab"><el-radio-button value="setup">接入配置</el-radio-button><el-radio-button value="activity">设备与运行</el-radio-button></el-radio-group></div></div>
-    <el-card v-if="pageTab === 'activity'" shadow="never">
+    <el-alert v-if="overviewError" type="error" :closable="false" show-icon :title="overviewError"><template #default>无法确认当前接入状态，请重试。<el-button link @click="loadOverview">重新读取</el-button></template></el-alert>
+    <el-card v-if="pageTab === 'activity' && overviewLoaded && !overviewError" shadow="never">
       <template #header>
         <div class="head">
           <div>
-            <b>智能体客户端</b>
+            <b>本地智能体</b>
             <HelpTip title="和执行器有什么区别">
-              <p><b>智能体客户端</b>在本地理解用户意图、选择能力并完成多步编排；中枢继续负责业务身份、授权、审批、执行与审计。</p>
+              <p><b>本地智能体</b>在本地理解用户意图、选择能力并完成多步编排；中枢继续负责业务身份、授权、审批、执行与审计。</p>
               <p><b>执行器</b>是中枢下发 Job、由本地运行时执行本地任务后回报结果。两者是独立概念。</p>
               <p>在“配置接入”中集中设置授权入口、系统说明和工具范围；设置仍保存在原接入方与业务路由中。</p>
               <p>每个接入方只配置一个不绑定账号、租户或门店的业务授权入口；账号切换与租户选择由业务授权页完成。</p>
@@ -27,7 +28,7 @@
       <div v-loading="loading" class="overview">
         <div class="metric primary"><span>客户端应用</span><b>{{ int(summary.agent_auth_enabled) }}</b><em>共 {{ int(summary.applications) }} 个接入方</em></div>
         <div class="metric"><span>有效授权设备</span><b>{{ int(summary.sessions?.active) }}</b><em>总会话 {{ int(summary.sessions?.total) }}</em></div>
-        <div class="metric"><span>Agent Run</span><b>{{ int(summary.runs) }}</b><em>{{ int(summary.conversations) }} 个本地会话</em></div>
+        <div class="metric"><span>智能体运行</span><b>{{ int(summary.runs) }}</b><em>{{ int(summary.conversations) }} 个本地会话</em></div>
         <div class="metric"><span>工具调用</span><b>{{ int(summary.tool_calls) }}</b><em>审批 {{ int(approvalTotal) }} 次</em></div>
         <div class="metric"><span>累计 Token</span><b>{{ int(summary.total_tokens) }}</b><em>由客户端公开 usage 汇总</em></div>
         <div class="metric" :class="{ danger: Number(summary.failure_rate || 0) > 0.1 }"><span>失败率</span><b>{{ percent(summary.failure_rate) }}</b><em>{{ int(summary.failed) }} 个失败或取消</em></div>
@@ -35,7 +36,7 @@
     </el-card>
 
     <el-card v-if="pageTab === 'setup'" shadow="never" class="setup-intro">
-      <div><span class="intro-kicker">从接入到业务操作</span><h2>把一个业务系统接给本地智能体</h2><p>选中下方应用，按顺序完成授权入口、系统说明和工具范围。连接、业务授权与实际执行分别检查。</p></div>
+      <div><span class="intro-kicker">从接入到业务操作</span><h2>把一个业务系统接给本地智能体</h2><p>选中下方接入方，按顺序完成授权入口、系统说明和工具范围。工作空间对应一条已有的业务路由。连接、业务授权与实际执行分别检查。</p></div>
       <div class="intro-flow"><span>1 授权入口</span><i>→</i><span>2 系统说明</span><i>→</i><span>3 工具与审批</span><i>→</i><span>4 检查连接</span></div>
     </el-card>
 
@@ -43,12 +44,13 @@
       <template #header>
         <div class="section-head">
           <div><b>业务系统接入</b><span>在一个入口完成本地智能体配置；授权记录与用量请切换到“设备与运行”。</span></div>
-          <el-button size="small" @click="router.push('/clients')">新建接入方</el-button>
+          <el-button v-if="me.can('clients:write') && me.hasModule('clients')" size="small" @click="router.push('/clients?create=1')">新建接入方</el-button>
         </div>
       </template>
       <p v-if="pageRoute.query.workspace" class="muted">以下为允许使用工作空间 {{ pageRoute.query.workspace }} 的接入方，请选择要配置的应用。<el-button link @click="router.replace('/agent-clients')">显示全部</el-button></p>
-      <el-empty v-if="!visibleApplications.length" description="当前没有匹配的接入方，请先创建接入方并关联工作空间。" />
-      <el-table v-else :data="visibleApplications" size="small">
+      <p v-if="loading" class="muted">正在读取接入配置…</p>
+      <el-empty v-else-if="!overviewError && !visibleApplications.length" description="当前没有匹配的接入方，请先创建接入方并关联工作空间。" />
+      <el-table v-else-if="!overviewError" :data="visibleApplications" size="small">
         <el-table-column label="应用" :width="180">
           <template #default="{ row }"><div class="stack"><b>{{ row.name || row.app_id }}</b><code>{{ row.app_id }}</code></div></template>
         </el-table-column>
@@ -60,7 +62,7 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="工作空间" :width="180">
+        <el-table-column label="工作空间（业务路由）" :width="180">
           <template #default="{ row }"><div class="tags"><el-tag v-for="route in previewRoutes(row.allowed_routes)" :key="route" size="small" effect="plain" type="info">{{ route }}</el-tag></div></template>
         </el-table-column>
         <el-table-column label="近期开销" :width="150" align="right">
@@ -92,8 +94,10 @@
           </div>
         </div>
       </template>
-      <el-empty v-if="!sessions.length" description="当前筛选下没有 Agent Session" />
-      <el-table v-else v-loading="sessionsLoading" :data="sessions" size="small" row-key="session_id">
+      <el-alert v-if="sessionsError" type="error" :closable="false" :title="sessionsError"><template #default><el-button link @click="loadSessions">重新读取</el-button></template></el-alert>
+      <p v-if="sessionsLoading" class="muted">正在读取授权设备…</p>
+      <el-empty v-else-if="!sessionsError && !sessions.length" description="当前筛选下没有授权设备。首次在本地客户端登录业务授权后，会在这里出现。" />
+      <el-table v-else-if="!sessionsError" v-loading="sessionsLoading" :data="sessions" size="small" row-key="session_id">
         <el-table-column label="授权名称" :min-width="180">
           <template #default="{ row }"><div class="stack"><b class="subject-name">{{ subjectName(row) || '待同步' }}</b><span class="muted">{{ subjectName(row) ? '业务系统提供' : '业务系统尚未提供名称' }}</span></div></template>
         </el-table-column>
@@ -103,7 +107,7 @@
         <el-table-column label="业务主体" :width="150">
           <template #default="{ row }"><div class="stack"><span>{{ row.principal?.id || row.on_behalf_of }}</span><span class="muted">{{ row.principal?.tenant || '未声明租户' }}</span></div></template>
         </el-table-column>
-        <el-table-column label="应用 / Workspace" :min-width="190">
+        <el-table-column label="接入方 / 工作空间" :min-width="190">
           <template #default="{ row }"><div class="stack"><code>{{ row.client_app_id }}</code><span class="muted">{{ (row.allowed_routes || []).join('、') || '无可用路由' }}</span></div></template>
         </el-table-column>
         <el-table-column label="活跃与有效期" :width="185">
@@ -111,10 +115,10 @@
         </el-table-column>
         <el-table-column label="状态" :width="80"><template #default="{ row }"><el-tag size="small" effect="plain" :type="stateType(row.state)">{{ stateText(row.state) }}</el-tag></template></el-table-column>
         <el-table-column :width="130" align="right">
-          <template #default="{ row }"><el-button link @click="sessionDetail = row">详情</el-button><el-button v-if="row.state !== 'revoked'" link type="danger" :loading="revoking === row.session_id" @click="revoke(row)">远程撤销</el-button><span v-else class="muted">已处理</span></template>
+          <template #default="{ row }"><el-button link @click="sessionDetail = row">详情</el-button><el-button v-if="row.state !== 'revoked' && me.can('clients:write')" link type="danger" :loading="revoking === row.session_id" @click="revoke(row)">远程撤销</el-button><span v-else-if="row.state === 'revoked'" class="muted">已处理</span></template>
         </el-table-column>
       </el-table>
-      <div v-if="sessionTotal > sessionPageSize" class="pagination">
+      <div v-if="!sessionsError && sessionTotal > sessionPageSize" class="pagination">
         <el-pagination v-model:current-page="sessionPage" :page-size="sessionPageSize" :total="sessionTotal" layout="prev, pager, next, total" @current-change="loadSessions" />
       </div>
     </el-card>
@@ -136,9 +140,9 @@
       </template>
     </el-dialog>
 
-    <AgentSetupPanel v-model="setup.open" :app-id="setup.appId" :initial-workspace="setup.workspace" :workspaces="setupWorkspaces" @saved="loadOverview" @connect="connectFromSetup" />
+    <AgentSetupPanel v-model="setup.open" :app-id="setup.appId" :initial-workspace="setup.workspace" :workspaces="setupWorkspaces" :overview-loading="loading" :overview-error="overviewError" @retry-overview="loadOverview" @saved="loadOverview" @connect="connectFromSetup" />
 
-    <el-dialog v-model="connection.open" title="生成智能体客户端连接配置" width="620px">
+    <el-dialog v-model="connection.open" title="生成本地智能体连接配置" width="620px">
       <el-alert type="info" :closable="false" show-icon title="这里只生成公开连接元数据，不包含业务 URL、业务身份、Client Token、Agent Token 或模型密钥。" />
       <p class="connection-note"><code>connectionName</code> 只是本机连接选择器。登录时会统一打开接入方配置的业务授权页，由该页面确认当前账号与租户。</p>
       <el-form label-position="top" class="connection-form">
@@ -147,7 +151,7 @@
           <el-form-item label="Client App ID"><el-input :model-value="connection.app_id" readonly class="mono" /></el-form-item>
           <el-form-item label="Connection Name"><el-input v-model="connection.name" maxlength="128" class="mono" /></el-form-item>
         </div>
-        <el-form-item label="Workspace">
+        <el-form-item label="工作空间（Workspace）">
           <el-select v-model="connection.workspace" style="width: 100%"><el-option v-for="workspace in connection.workspaces" :key="workspace.route" :label="workspace.name + '（' + workspace.route + '）'" :value="workspace.route" /></el-select>
         </el-form-item>
       </el-form>
@@ -178,8 +182,11 @@ const me = useMe();
 const pageRoute = useRoute();
 const pageTab = ref('setup');
 const days = ref(30);
-const loading = ref(false);
-const sessionsLoading = ref(false);
+const loading = ref(true);
+const overviewError = ref('');
+const overviewLoaded = ref(false);
+const sessionsLoading = ref(true);
+const sessionsError = ref('');
 const revoking = ref('');
 const applications = ref<Application[]>([]);
 const visibleApplications = computed(() => {
@@ -213,7 +220,7 @@ function shortId(value: string): string { return value ? `${value.slice(0, 8)}�
 function fmtTime(value?: string | null): string { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '从未'; }
 function stateText(value: SessionRow['state']): string { return value === 'active' ? '有效' : value === 'expired' ? '已过期' : '已撤销'; }
 function stateType(value: SessionRow['state']): 'success' | 'warning' | 'info' { return value === 'active' ? 'success' : value === 'expired' ? 'warning' : 'info'; }
-function previewRoutes(routes: string[]): string[] { return routes.includes('*') ? ['全部 Workspace'] : routes.slice(0, 4); }
+function previewRoutes(routes: string[]): string[] { return routes.includes('*') ? ['全部工作空间'] : routes.slice(0, 4); }
 function allowedWorkspaces(app: Application): SetupWorkspace[] { return setupWorkspaces.value.filter((workspace) => app.allowed_routes.includes('*') || app.allowed_routes.includes(workspace.route)); }
 function eligibleWorkspaces(app: Application): Workspace[] { return allowedWorkspaces(app).filter((workspace) => workspace.enabled && workspace.runtime_enabled); }
 function connectionReady(app: Application): boolean { return app.enabled && app.agent_auth_enabled && eligibleWorkspaces(app).length > 0; }
@@ -229,27 +236,34 @@ function setupReason(app: Application): string {
   if (active.some((w) => !w.system_info_configured)) return '建议补充系统说明，帮助智能体首次选择目标';
   return '连接与工具通道已配置；实际可用动作以业务授权为准';
 }
-function openSetup(app: Application, workspace = ''): void { setup.appId = app.app_id; setup.workspace = workspace; setup.open = true; }
+function openSetup(app: Application, workspace = ''): void { if (overviewError.value || loading.value) return; setup.appId = app.app_id; setup.workspace = workspace; setup.open = true; }
 function connectFromSetup(value: { app_id: string; workspace: string }): void {
   const app = applications.value.find((item) => item.app_id === value.app_id); if (!app) return;
   openConnection(app); connection.workspace = value.workspace;
 }
 
+let overviewRequest = 0;
 async function loadOverview(): Promise<void> {
+  const request = ++overviewRequest;
   loading.value = true;
   try {
     const response = await kernelFetch(`/admin/api/agent-clients/overview?days=${days.value}`);
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || '加载失败');
     const data = await response.json();
-    applications.value = data.applications || [];
+    if (!Array.isArray(data.applications) || !Array.isArray(data.setup_workspaces)) throw new Error('接入配置返回格式异常');
+    if (request !== overviewRequest) return;
+    applications.value = data.applications;
     workspaces.value = data.workspaces || [];
     setupWorkspaces.value = data.setup_workspaces || [];
     Object.assign(summary, data.summary || {});
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '加载智能体客户端失败'); }
-  finally { loading.value = false; }
+    overviewLoaded.value = true; overviewError.value = '';
+  } catch (error) { if (request === overviewRequest) overviewError.value = `读取接入配置失败：${error instanceof Error ? error.message : '请求异常'}`; }
+  finally { if (request === overviewRequest) loading.value = false; }
 }
 
+let sessionsRequest = 0;
 async function loadSessions(): Promise<void> {
+  const request = ++sessionsRequest;
   sessionsLoading.value = true;
   try {
     const params = new URLSearchParams({
@@ -261,15 +275,18 @@ async function loadSessions(): Promise<void> {
     const response = await kernelFetch(`/admin/api/agent-clients/sessions?${params}`);
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || '加载失败');
     const data = await response.json();
-    sessions.value = data.list || [];
-    sessionTotal.value = Number(data.total || 0);
-  } catch (error) { ElMessage.error(error instanceof Error ? error.message : '加载授权设备失败'); }
-  finally { sessionsLoading.value = false; }
+    if (!Array.isArray(data.list)) throw new Error('授权设备返回格式异常');
+    if (request !== sessionsRequest) return;
+    sessions.value = data.list;
+    sessionTotal.value = Number(data.total || 0); sessionsError.value = '';
+  } catch (error) { if (request === sessionsRequest) sessionsError.value = `读取授权设备失败：${error instanceof Error ? error.message : '请求异常'}`; }
+  finally { if (request === sessionsRequest) sessionsLoading.value = false; }
 }
 
 async function refreshAll(): Promise<void> { await Promise.all([loadOverview(), loadSessions()]); }
 async function resetSessions(): Promise<void> { sessionPage.value = 1; await loadSessions(); }
 function openConnection(app: Application): void {
+  if (overviewError.value || loading.value || !connectionReady(app)) return;
   const options = eligibleWorkspaces(app);
   connection.app_id = app.app_id;
   connection.name = app.app_id.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'default';
@@ -279,7 +296,8 @@ function openConnection(app: Application): void {
 }
 async function copy(value: string): Promise<void> { await navigator.clipboard.writeText(value); ElMessage.success('已复制'); }
 async function revoke(row: SessionRow): Promise<void> {
-  await ElMessageBox.confirm(`撤销设备“${row.device_label || shortId(row.session_id)}”的 Agent Session？撤销后需要重新登录授权。`, '远程撤销', { type: 'warning', confirmButtonText: '确认撤销' });
+  if (!me.can('clients:write') || revoking.value) return;
+  try { await ElMessageBox.confirm(`撤销设备“${row.device_label || shortId(row.session_id)}”的 Agent Session？撤销后需要重新登录授权。`, '远程撤销', { type: 'warning', confirmButtonText: '确认撤销' }); } catch { return; }
   revoking.value = row.session_id;
   try {
     const response = await kernelFetch(`/admin/api/agent-clients/sessions/${row.session_id}/revoke`, { method: 'POST' });

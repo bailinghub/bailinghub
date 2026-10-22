@@ -6,12 +6,15 @@
           <p>完整生命周期、字段对照与对接三步，见官网「<b>开发文档</b>」。</p>
         </HelpTip>
         <el-button style="margin-left: auto" @click="openDocs('routes')">开发文档</el-button>
-        <el-button type="primary" @click="openCreate">新建路由</el-button></div>
+        <el-button v-if="s.can('routes:write')" type="primary" @click="openCreate">新建路由</el-button></div>
     </template>
-    <el-empty v-if="!list.length" description="还没有路由：业务系统的每个触发场景对应一条路由">
-      <el-button type="primary" @click="openCreate">建第一条</el-button>
+    <el-alert v-if="returnToClient" title="接入方草稿已临时保留，创建路由后可返回继续授权。刷新浏览器会丢失这份草稿。" type="info" :closable="false" show-icon style="margin-bottom:12px"><el-button link type="primary" @click="returnToClientDraft">返回接入方草稿</el-button></el-alert>
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :related-focus="relatedFocus" :return-to="listReturnTo" @clear="clearListLocation" />
+    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有路由：业务系统的每个触发场景对应一条路由">
+      <el-button v-if="s.can('routes:write')" type="primary" @click="openCreate">建第一条</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="场景" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="route-main">
@@ -57,8 +60,8 @@
           <div class="route-actions">
           <el-button link type="primary" @click="router.push({ path: '/agent-clients', query: { workspace: row.route_key } })">本地智能体配置</el-button>
           <el-button link type="primary" @click="openCode(row)">调用代码</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="删除该路由？业务侧再调用会报未知 route。" width="240" @confirm="del(row.route_key)">
+          <el-button v-if="s.can('routes:write')" link type="primary" :disabled="Boolean(listError)" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="s.can('routes:write')" title="删除该路由？业务侧再调用会报未知 route。" width="240" @confirm="del(row.route_key)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
           </div>
@@ -68,17 +71,18 @@
   </el-card>
 
   <!-- 新建/编辑路由 -->
-  <el-drawer v-model="open" :title="editing ? '编辑路由' : '新建路由'" size="640px">
-    <el-alert type="info" :closable="false" show-icon style="margin-bottom: 16px" title="配置本地智能体时，可使用“智能体客户端 → 接入配置”，集中设置授权入口、系统说明、工具与审批。本页保留业务路由及高级治理设置。" />
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑路由' : '新建路由'" size="640px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="dependencyErrors.length" :title="`关联配置读取失败：${dependencyErrors.join('、')}。已有输入保持不变，不能据此判断这些配置不存在。`" type="warning" :closable="false" show-icon style="margin-bottom:12px"><el-button link :loading="dependenciesLoading" @click="loadDependencies">重试读取关联配置</el-button></el-alert>
+    <el-form label-position="top" :disabled="saving || !s.can('routes:write')">
       <el-tabs v-model="routeFormTab" class="console-tabs route-form-tabs">
         <el-tab-pane label="基础与大脑" name="basic">
       <el-form-item>
         <template #label>{{ routeFieldTitle('route_key', '场景标识') }} <span v-if="routeFieldRequired('route_key')" class="field-required">*</span> <HelpTip :title="routeFieldTitle('route_key', '场景标识')">
+          <p>配置本地智能体时，可使用“本地智能体 → 接入配置”，集中设置授权入口、系统说明、工具与审批。本页保留业务路由及高级治理设置。</p>
           <p>{{ routeFieldDesc('route_key', '本场景的唯一标识，触发方凭它调用。') }}</p>
           <p><b>建好后不可改</b>（触发方代码里写死了它）；小写字母 / 数字 / 中划线。场景配置随时改，key 不变触发方就无感知。</p>
         </HelpTip></template>
-        <el-input v-model="form.route_key" :disabled="editing" placeholder="如 business-assistant" class="mono" />
+        <el-input v-model="form.route_key" :disabled="editing || saving" placeholder="如 business-assistant" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ routeFieldTitle('name', '名称') }} <span v-if="routeFieldRequired('name')" class="field-required">*</span> <HelpTip :title="routeFieldTitle('name', '名称')">
@@ -181,9 +185,9 @@
               <el-radio-button value="inline">直送大脑</el-radio-button>
             </el-radio-group>
           </el-form-item>
-          <el-form-item v-if="vis.mode === 'tool'" label="单任务看图次数上限">
+          <el-form-item v-if="vis.mode === 'tool'">
+            <template #label>单任务看图次数上限 <HelpTip title="看图次数上限"><p>see_image 调用上限（不占业务工具的 max_calls）</p></HelpTip></template>
             <el-input-number v-model="vis.max_calls" :min="1" :max="30" />
-            <span class="muted" style="margin-left: 8px">see_image 调用上限（不占业务工具的 max_calls）</span>
           </el-form-item>
         </template>
         <el-form-item>
@@ -231,9 +235,9 @@
               <div v-if="voiceCredProviderFree" class="field-hint">该平台模型多/需准确 ID，列表仅常用建议，可手填——记得带 <code>org/</code> 前缀</div>
             </el-form-item>
           </template>
-          <el-form-item label="单段大小上限">
+          <el-form-item>
+            <template #label>单段大小上限（MB） <HelpTip title="语音大小上限"><p>默认 12MB。</p></HelpTip></template>
             <el-input-number v-model="voice.max_bytes_mb" :min="1" :max="50" />
-            <span class="muted" style="margin-left: 8px">MB；默认 12MB</span>
           </el-form-item>
         </template>
         <el-form-item>
@@ -273,13 +277,13 @@
               <div v-if="fileCredProviderFree" class="field-hint">该平台模型多/需准确 ID，列表仅常用建议，可手填——记得带 <code>org/</code> 前缀</div>
             </el-form-item>
           </template>
-          <el-form-item label="单文件大小上限">
+          <el-form-item>
+            <template #label>单文件大小上限（MB） <HelpTip title="文件大小上限"><p>默认 20MB。</p></HelpTip></template>
             <el-input-number v-model="fileInput.max_bytes_mb" :min="1" :max="100" />
-            <span class="muted" style="margin-left: 8px">MB；默认 20MB</span>
           </el-form-item>
-          <el-form-item v-if="fileInput.mode !== 'inline'" label="注入字符上限">
+          <el-form-item v-if="fileInput.mode !== 'inline'">
+            <template #label>注入字符上限 <HelpTip title="文件注入字符上限"><p>默认 24000 字符，按文件数自动分配。</p></HelpTip></template>
             <el-input-number v-model="fileInput.max_chars" :min="1000" :max="200000" :step="1000" />
-            <span class="muted" style="margin-left: 8px">默认 24000 字符，按文件数自动分配</span>
           </el-form-item>
         </template>
       </template>
@@ -291,22 +295,22 @@
         <el-input v-model="form.target_config" type="textarea" :rows="2" class="mono" placeholder="{}" />
       </el-form-item>
       <el-form-item>
-        <template #label>{{ routeFieldTitle('permission', '权限') }} <HelpTip :title="routeFieldTitle('permission', '权限')">
-          <p>{{ routeFieldDesc('permission', '发送给执行器或大脑的权限边界提示。') }}</p>
-          <p>三档固定值，<b>中枢内置、人人都一样</b>，不依赖任何执行器上报：</p>
-          <p>· <b>只读</b>——只查询/读取/分析，不许改任何东西、不跑有副作用的操作（给公开聊天入口这种不可信来源的安全档）；<br />· <b>可写</b>——允许常规读写，删除/外发等不可逆动作要谨慎；<br />· <b>全开</b>——不加限制（只给你完全信任的内部入口）。</p>
-          <p><b>实现方式 = 提示词指导，不是硬沙箱。</b>中枢把这条要求作为一段【权限】说明前置进任务发给执行器；执行器是否照做由它自己决定，<b>中枢不保证强制</b>。需要强制隔离时，应由具备沙箱能力的执行器配合实现。</p>
+        <template #label>执行行为提示 <HelpTip title="执行行为提示">
+          <p>中枢把所选要求写入模型或执行器的提示词：只读要求只查询与分析；常规读写允许处理业务变更；不附加限制则不增加这层行为要求。</p>
+          <p>这里不授予任何工具权限，也不能保证模型或执行器遵守要求。强制限制仍由工具范围、业务侧授权、审批规则和执行器沙箱分别执行。</p>
+          <p>此项是提示词约束，不是强制授权或沙箱。实际可调用工具、写操作与审批要求请查看「工具治理」，并由业务系统校验权限。</p>
         </HelpTip></template>
         <el-select v-model="form.permission" style="width: 100%">
-          <el-option value="readonly" label="只读 · 只查不改" />
-          <el-option value="readwrite" label="可写 · 允许常规读写" />
-          <el-option value="full" label="全开 · 不加限制" />
+          <el-option value="readonly" label="只读（提示词约束）" />
+          <el-option value="readwrite" label="常规读写（提示词约束）" />
+          <el-option value="full" label="不附加行为限制" />
         </el-select>
+        <div class="field-hint">仅提示词约束；工具授权与审批在「工具治理」配置。</div>
       </el-form-item>
       <el-form-item v-if="form.target !== 'llm'">
         <template #label>{{ routeFieldTitle('profile', '角色档') }} <HelpTip :title="routeFieldTitle('profile', '角色档')">
           <p>{{ routeFieldDesc('profile', '执行器可选的角色档或任务模板。') }}</p>
-          <p>执行器侧可选的角色档（profile），比如结构化输出、某类专业任务模板。它管“以什么角色、按什么 schema 干活”，<b>跟上面的「权限」是两回事</b>。</p>
+          <p>执行器侧可选的角色档（profile），比如结构化输出、某类专业任务模板。它管“以什么角色、按什么 schema 干活”，<b>跟上面的「执行行为提示」是两回事</b>。</p>
           <p><b>非必填，留空即可。</b>下拉里是服务当前 target 的在线执行器自报的档，也可手填。执行器是否支持 profile，由该执行器自己的适配器决定。</p>
         </HelpTip></template>
         <el-select v-model="form.profile" filterable allow-create clearable default-first-option style="width: 100%" placeholder="留空即可（实验性，后续并入云端 skill）">
@@ -379,9 +383,9 @@
         <el-input v-model="mem.summary_model" placeholder="留空=用本路由凭证默认模型" class="mono" />
       </el-form-item>
       <el-collapse><el-collapse-item title="本地智能体运行设置（高级）" name="agent-runtime">
-      <p class="muted hint">日常接入请使用“智能体客户端 → 接入配置”。以下是同一工作空间的底层设置。</p>
       <el-form-item>
         <template #label>本地 Agent Runtime <HelpTip title="本地 Agent Runtime">
+          <p>日常接入请使用“本地智能体 → 接入配置”。以下是同一工作空间的底层设置。</p>
           <p>开启后，已通过业务网页授权的本地 Agent 可以读取本路由的安全运行档、会话记忆和按需工具定义，并在本地完成编排。</p>
           <p>它仍复用 <code>tools.agent_direct</code> 的工具授权与审批治理；这里只配置本地编排补充指令和每轮主动披露数量，不会返回模型凭证或工具源密钥。</p>
         </HelpTip></template>
@@ -392,9 +396,9 @@
           <el-input v-model="agentClient.instructions" type="textarea" :rows="4" maxlength="20000" show-word-limit
             placeholder="可选：仅给本地 Agent 的补充规则；路由系统提示词会安全抽取并一并下发" @input="agentClient.configured = true" />
         </el-form-item>
-        <el-form-item label="每轮主动工具数">
+        <el-form-item>
+          <template #label>每轮主动工具数 <HelpTip title="每轮主动工具数"><p>每轮只返回最相关的完整 typed tools；其余授权能力可通过搜索按需发现，避免全量 schema 撑大上下文。</p></HelpTip></template>
           <el-input-number v-model="agentClient.active_tool_limit" :min="1" :max="12" @change="agentClient.configured = true" />
-          <div class="muted hint">每轮只返回最相关的完整 typed tools；其余授权能力可通过搜索按需发现，避免全量 schema 撑大上下文。</div>
         </el-form-item>
       </template>
       </el-collapse-item></el-collapse>
@@ -413,12 +417,12 @@
             <el-radio-button value="month">每月</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="硬限">
+        <el-form-item>
+          <template #label>硬限 <HelpTip title="预算硬限"><p>两个都为空等于不设硬限；任一达到上限即拒绝新任务。</p></HelpTip></template>
           <div class="inline-row">
             <span class="muted">成本 USD</span><el-input-number v-model="budget.hard_cost_usd" :min="0" :step="0.1" :precision="4" />
             <span class="muted">Token</span><el-input-number v-model="budget.hard_tokens" :min="0" :step="1000" />
           </div>
-          <div class="muted hint">两个都为空等于不设硬限；任一达到上限即拒绝新任务。</div>
         </el-form-item>
       </template>
         </el-tab-pane>
@@ -534,9 +538,9 @@
               :label="c.name + '（' + (c.kind === 'wecom' ? '企业微信' : c.kind) + '）'" :disabled="c.enabled === false" />
           </el-select>
         </el-form-item>
-        <el-form-item label="收件人字段">
+        <el-form-item>
+          <template #label>收件人字段 <HelpTip title="收件人字段"><p>值支持单个 id、数组或 <code>"A|B|C"</code> 推给多人；中枢按它定位收件人，不写死在路由上。</p></HelpTip></template>
           <el-input v-model="dv.to_field" placeholder="如 channel_user_id" class="mono" />
-          <div class="muted hint">值支持单个 id、数组或 <code>"A|B|C"</code> 推给多人；中枢按它定位收件人，不写死在路由上。</div>
         </el-form-item>
         <el-form-item label="后备收件人">
           <el-input v-model="dv.to" placeholder="渠道原生 id；多人用 A|B|C" class="mono" />
@@ -608,6 +612,7 @@
         <HelpTip title="本地 Agent 直连工具">
           <p>仅用于已通过业务身份授权的本地 Agent Runtime。本地 Agent 负责编排，中枢仍在每次调用时执行路由、主体、ACC 风险与审批治理。</p>
           <p>开启后只读工具按上方 scope 白名单自动可见；写工具还必须在下方按精确 <code>operationId</code> 再授权，不接受 <code>*</code>。</p>
+          <p>这里只放行本地 Agent 工具面，不会把工具源密钥或模型凭证下发到本地。</p>
         </HelpTip>
       </div>
       <el-form-item label="允许本地 Agent 直调">
@@ -616,8 +621,6 @@
       <el-alert v-if="agentClient.enabled && !agentDirect.enabled" class="agent-direct-alert" type="warning" :closable="false" show-icon
         title="本地 Agent Runtime 已开启，但直连工具面未开启；本地 Agent 不会获得这条路由的业务工具。" />
       <template v-if="agentDirect.enabled">
-        <el-alert class="agent-direct-alert" type="info" :closable="false" show-icon
-          title="这里只放行本地 Agent 工具面，不会把工具源密钥或模型凭证下发到本地。" />
         <el-alert v-if="form.permission === 'readonly'" class="agent-direct-alert" type="warning" :closable="false" show-icon
           title="当前路由权限档为只读；即使列出写 operationId，运行时也不会暴露写工具。" />
         <div v-if="agentDirectToolOptions.length" class="agent-direct-catalog-summary">
@@ -627,12 +630,13 @@
           <template #label>允许的写操作 <HelpTip title="本地 Agent 写操作白名单">
             <p>只有精确列入的写工具才会暴露给本地 Agent。候选项来自已选工具源的 <code>/tools</code> 编译结果，并且必须已被上方 scope 放行。</p>
             <p>可手动填写尚未拉取到的 operationId，但不允许 <code>*</code> 或其他通配符。</p>
+            <p>“全选当前”保存的是此刻工具目录的精确 operationId 快照，不会自动授权未来新增写操作；只读工具仍按工具源 scope 与业务主体权限自动暴露。</p>
           </HelpTip></template>
           <div class="agent-direct-write-actions">
             <span>当前目录已选 {{ agentDirectSelectedCatalogWriteCount }} / {{ agentDirectWriteOptions.length }}</span>
-            <el-button size="small" type="primary" plain :disabled="!agentDirectWriteOptions.length || agentDirectAllCurrentWritesSelected"
+            <el-button size="small" type="primary" plain :disabled="saving || !agentDirectWriteOptions.length || agentDirectAllCurrentWritesSelected"
               @click="selectAllCurrentAgentDirectWrites">全选当前写操作（{{ agentDirectWriteOptions.length }}）</el-button>
-            <el-button size="small" :disabled="!agentDirect.write_tools.length" @click="clearAgentDirectWrites">清空</el-button>
+            <el-button size="small" :disabled="saving || !agentDirect.write_tools.length" @click="clearAgentDirectWrites">清空</el-button>
           </div>
           <el-select v-model="agentDirect.write_tools" multiple filterable allow-create default-first-option
             style="width: 100%" placeholder="选择写操作，或手填精确 operationId" @change="onAgentDirectNamesChange('write_tools')">
@@ -646,7 +650,6 @@
               </div>
             </el-option>
           </el-select>
-          <div class="field-hint">“全选当前”保存的是此刻工具目录的精确 operationId 快照，不会自动授权未来新增写操作；只读工具仍按工具源 scope 与业务主体权限自动暴露。</div>
         </el-form-item>
         <el-form-item>
           <template #label>额外强制审批 <HelpTip title="额外强制审批">
@@ -682,9 +685,9 @@
             <el-option value="business_webhook" label="业务侧 webhook（推荐生产）" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="ap.type === 'business_webhook'" label="审批意图接收地址">
+        <el-form-item v-if="ap.type === 'business_webhook'">
+          <template #label>审批意图接收地址 <span class="field-required">*</span> <HelpTip title="审批意图接收地址"><p>中枢会签名 POST <code>tool_approval_request</code>；业务审批完成后回调 <code>/approvals/&lt;id&gt;/decision</code>。</p></HelpTip></template>
           <el-input v-model="ap.url" placeholder="https://your-system.example.com/ai/approvals" class="mono" />
-          <div class="muted hint">中枢会签名 POST <code>tool_approval_request</code>；业务审批完成后回调 <code>/approvals/&lt;id&gt;/decision</code>。</div>
         </el-form-item>
       </template>
       <el-form-item>
@@ -717,8 +720,11 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon style="margin-bottom:12px" />
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button v-if="returnToClient" :disabled="saving" @click="returnToClientDraft">返回接入方草稿</el-button>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button v-if="s.can('routes:write')" type="primary" :loading="saving" @click="save">{{ returnToClient ? '保存并返回接入方' : '保存' }}</el-button>
     </template>
   </el-drawer>
 
@@ -731,7 +737,7 @@
           <el-option v-for="c in eligibleClients" :key="c.app_id" :value="c.app_id" :label="c.name + '（' + c.app_id + '）'" />
         </el-select>
       </div>
-      <div class="code-context-note">下方示例使用所选接入方的 token；送达 webhook 验签也应使用同一把 token。</div>
+      <div class="code-context-note">示例从运行环境读取 <code>BAILING_CLIENT_TOKEN</code>，不包含密钥。送达 webhook 验签也应使用同一接入方的完整 Token。</div>
     </div>
 
     <div v-if="codeRoute" class="code-route-summary">
@@ -773,6 +779,11 @@
       </div>
     </div>
     <div class="code-notices compact">
+      <div class="code-notice warning">
+        <b>运行前配置完整 Token</b>
+        <span>到「接入方」找到 {{ codeClientId }}，点击「复制完整」，再将完整值配置为运行代码的终端或服务端环境变量 <code>BAILING_CLIENT_TOKEN</code>。不要使用列表中的掩码，也不要放进浏览器前端或代码仓库；取值需要接入方管理权限。</span>
+        <el-button link type="primary" @click="router.push('/clients')">前往接入方</el-button>
+      </div>
       <div class="code-notice info">
         <b>完整 SDK</b>
         <span>本弹窗保留 HTTP / Node.js / Python / PHP 的高频示例；Java、Go、.NET 与任意语言接入见官网 SDK 文档。</span>
@@ -840,7 +851,7 @@
           </div>
           <pre class="snippet-code">{{ skillCode }}</pre>
           <div class="snippet-notes">
-            <span>内容包含接入密钥，只能放在受信环境，不要提交进代码仓库。</span>
+            <span>说明不包含密钥。由用户在受信运行环境设置完整 Token；不要让 Agent 索取、回显或记录密钥。</span>
           </div>
         </section>
       </el-tab-pane>
@@ -866,8 +877,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { WarningFilled } from '@element-plus/icons-vue';
@@ -880,11 +893,21 @@ import { LLM_PROVIDERS, detectProvider } from '../llm-catalog';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
 import { kernelOrigin } from '../runtime-path';
 import { EXACT_OPERATION_ID_RE, includesAllCurrentOperationIds, mergeExactOperationIds } from '../agent-direct-selection';
+import { buildRouteCallSnippets, canCallRoute } from '../route-call-snippets';
+import { useUnsavedForm } from '../use-unsaved-form';
+import { hasClientRouteDraft } from '../client-route-draft';
 
 const s = useMe();
 const router = useRouter();
+const route = useRoute();
+const returnToClient = computed(() => route.query.return_to === 'clients' && hasClientRouteDraft(`${s.me?.via}:${s.me?.username}`));
+async function returnToClientDraft(): Promise<void> { await router.push({ path: '/clients', query: { resume: 'route-create' } }); }
 const routeSchema = useConfigSchema('route');
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, relatedFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.route_key), text: r => `${r.route_key} ${r.name || ""} ${r.target || ""}` });
+const listLoading = ref(false), listError = ref('');
+let listGeneration = 0;
+const dependencyErrors = ref<string[]>([]), dependenciesLoading = ref(false);
 const projectNames = ref<string[]>([]);
 const clients = ref<any[]>([]);
 const chatEntries = ref<any[]>([]); // 用于判断当前路由是否被聊天入口/渠道入站使用（这些入口自动续聊、不读会话策略）
@@ -892,6 +915,7 @@ const channels = ref<any[]>([]);
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
+const saveError = ref('');
 const routeFormTab = ref<'basic' | 'audience' | 'knowledge' | 'delivery' | 'tools' | 'publish'>('basic');
 const form = reactive({
   route_key: '', name: '', target: 'llm', project: '', profile: '', permission: 'full',
@@ -956,6 +980,7 @@ interface AgentDirectToolOption extends Omit<ProviderToolOption, 'provider'> {
   allowed: boolean;
 }
 let toolSourceSeq = 0;
+const scopeRequests = new WeakMap<ToolSourceForm, number>();
 function newToolSource(over: Partial<ToolSourceForm> = {}): ToolSourceForm {
   return { form_key: `tool-source-${++toolSourceSeq}`, provider: '', allow: [], subject_field: '', scopeOptions: [], toolOptions: [], scopesLoading: false, rest: {}, ...over };
 }
@@ -971,6 +996,13 @@ const mem = reactive({ recent_messages: 12, recent_budget_chars: 3500, summary_e
 const agentClient = reactive({ configured: false, inherited: false, enabled: false, instructions: '', active_tool_limit: 8 });
 const budget = reactive<{ enabled: boolean; window: 'hour' | 'day' | 'month'; hard_cost_usd?: number; hard_tokens?: number }>({ enabled: false, window: 'day', hard_cost_usd: undefined, hard_tokens: undefined });
 let llmRest: Record<string, unknown> = {}, inputRest: Record<string, unknown> = {}, knRest: Record<string, unknown> = {}, dvRest: Record<string, unknown> = {}, rtRest: Record<string, unknown> = {}, tlRest: Record<string, unknown> = {}, agentDirectRest: Record<string, unknown> = {}, builtinRest: Record<string, unknown> = {}, sendRest: Record<string, unknown> = {}, apRest: Record<string, unknown> = {}, audienceRest: Record<string, unknown> = {}, memRest: Record<string, unknown> = {}, agentClientRest: Record<string, unknown> = {}, budgetRest: Record<string, unknown> = {};
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, name: '路由配置', retainedDraft: () => returnToClient.value,
+  snapshot: () => ({ form, llm, vis, voice, fileInput, kn, dv, rt, agentDirect, ap, au, mem, agentClient, budget,
+    // Catalog requests and loading flags are presentation state, not edits.
+    tools: { max_calls: tl.max_calls, send_channels: tl.send_channels,
+      sources: tl.sources.map(({ provider, allow, subject_field, rest }) => ({ provider, allow, subject_field, rest })) } }),
+});
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
 
 // 会话策略只对 /run API 触发生效；聊天入口与渠道入站走自己的 scope 自动续聊、不读此项。
 // 算出当前编辑路由被哪些入口/渠道使用，据此提示用户「本项在这条路由下到底有没有用」。
@@ -1073,9 +1105,14 @@ const notifyChannels = computed(() => notifyTargetsRaw.value.map((t) => {
 }));
 
 async function loadScopes(source: ToolSourceForm): Promise<void> {
+  const provider = source.provider;
+  const request = (scopeRequests.get(source) ?? 0) + 1;
+  scopeRequests.set(source, request);
+  const current = () => scopeRequests.get(source) === request && source.provider === provider && tl.sources.includes(source);
   source.scopesLoading = true; source.scopeOptions = []; source.toolOptions = [];
   try {
-    const d = await api<{ tools: Array<{ name: string; scope: string; readonly: boolean; risk: string; confirm_required: boolean }> }>('/admin/api/tool-providers/' + encodeURIComponent(source.provider) + '/tools');
+    const d = await api<{ tools: Array<{ name: string; scope: string; readonly: boolean; risk: string; confirm_required: boolean }> }>('/admin/api/tool-providers/' + encodeURIComponent(provider) + '/tools');
+    if (!current()) return;
     const m = new Map<string, string[]>();
     for (const t of d.tools) {
       if (!m.has(t.scope)) m.set(t.scope, []);
@@ -1088,12 +1125,14 @@ async function loadScopes(source: ToolSourceForm): Promise<void> {
       readonly: tool.readonly === true,
       risk: String(tool.risk || 'unknown'),
       confirm_required: tool.confirm_required === true,
-      provider: source.provider,
+      provider,
     }));
   } catch { /* 无权限/源异常 → 手输 scope（allow-create） */ }
-  finally { source.scopesLoading = false; }
+  finally { if (current()) source.scopesLoading = false; }
 }
 function onProviderChange(source: ToolSourceForm): void {
+  scopeRequests.set(source, (scopeRequests.get(source) ?? 0) + 1);
+  source.scopesLoading = false; source.scopeOptions = []; source.toolOptions = [];
   source.allow = [];
   if (source.provider) void loadScopes(source);
 }
@@ -1212,11 +1251,11 @@ const curTargetNeedsProject = computed(() => targetOptions.value.find((t) => t.n
 
 // 执行器池（用于「可执行性」覆盖度判定）：route → target → 服务该 target 的在线执行器，且其自报 profiles 是否覆盖本路由的 profile。
 const execs = ref<Array<{ executor_id: string; online: boolean; targets: string[]; capabilities: { profiles?: string[]; runtime?: string } | null }>>([]);
-// 权限档 → 表格徽标（与表单三档一致）
+// 执行行为提示 → 表格徽标（枚举保持不变，不表示工具授权）
 function permTag(p?: string): { label: string; type: 'info' | 'success' | 'warning' | 'danger' } {
-  if (p === 'readonly') return { label: '只读', type: 'success' };
-  if (p === 'readwrite') return { label: '可写', type: 'warning' };
-  return { label: '全开', type: 'info' }; // full / 空
+  if (p === 'readonly') return { label: '行为提示：只读', type: 'info' };
+  if (p === 'readwrite') return { label: '行为提示：常规读写', type: 'info' };
+  return { label: '行为提示：不附加限制', type: 'info' }; // full / 空
 }
 type RouteFeatureTag = { label: string; type: 'primary' | 'success' | 'warning' | 'danger' | 'info' };
 function sessionLabel(row: any): string {
@@ -1266,7 +1305,15 @@ function coverage(row: any): { text: string; tagType: 'success' | 'danger' | 'wa
   return { text: `✓ ${online.length} 在线`, tagType: 'success', hint: `${online.length} 个在线执行器在认领调度目标「${row.target}」` };
 }
 
-async function load(): Promise<void> { list.value = await api('/admin/api/routes'); }
+async function load(): Promise<void> {
+  const generation = ++listGeneration;
+  listLoading.value = true;
+  try {
+    const rows = await api<any[]>('/admin/api/routes');
+    if (generation === listGeneration) { list.value = rows; listError.value = ''; }
+  } catch { if (generation === listGeneration) listError.value = list.value.length ? '路由列表刷新失败，当前保留旧快照。' : '路由列表读取失败，请重试。'; }
+  finally { if (generation === listGeneration) listLoading.value = false; }
+}
 function resetSubForms(): void {
   Object.assign(llm, { credential: '', model: '', system_prompt: '' });
   Object.assign(vis, { on: false, credential: '', model: '', mode: 'tool', max_calls: 6 }); visRest = {};
@@ -1285,13 +1332,16 @@ function resetSubForms(): void {
   llmRest = {}; inputRest = {}; knRest = {}; dvRest = {}; rtRest = {}; tlRest = {}; agentDirectRest = {}; audienceRest = {}; memRest = {}; agentClientRest = {}; budgetRest = {};
 }
 function openCreate(): void {
+  if (!s.can('routes:write') || saving.value || open.value) return;
   editing.value = false;
   routeFormTab.value = 'basic';
   Object.assign(form, { route_key: '', name: '', target: 'llm', project: '', profile: '', permission: 'full', session_policy: 'new', session_key_field: '', session_fixed_id: '', target_config: '', description: '', enabled: true });
   resetSubForms();
+  saveError.value = ''; formGuard.begin();
   open.value = true;
 }
 function openEdit(row: any): void {
+  if (!s.can('routes:write') || saving.value || open.value || listError.value) return;
   editing.value = true;
   routeFormTab.value = 'basic';
   const j = (o: unknown): string => (o && Object.keys(o as object).length ? JSON.stringify(o) : '');
@@ -1449,6 +1499,7 @@ function openEdit(row: any): void {
   });
   budgetRest = bur;
   for (const source of tl.sources) if (source.provider) void loadScopes(source);
+  saveError.value = ''; formGuard.begin();
   open.value = true;
 }
 function parseJson(label: string, text: string): Record<string, unknown> | undefined {
@@ -1458,6 +1509,8 @@ function parseJson(label: string, text: string): Record<string, unknown> | undef
   catch { throw new Error(`${label} 不是合法 JSON`); }
 }
 async function save(): Promise<void> {
+  if (!s.can('routes:write') || saving.value) return;
+  saveError.value = '';
   saving.value = true;
   try {
     // 防御：表单字段一律先 String 兜底再 trim，任何字段为 undefined/null 都不会炸（读到异常路由行也能编辑保存）
@@ -1591,11 +1644,14 @@ async function save(): Promise<void> {
       description: TR(form.description) || undefined, enabled: form.enabled,
     };
     await api('/admin/api/routes', { method: 'POST', body: JSON.stringify(body) });
-    ElMessage.success('已保存'); open.value = false; await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    formGuard.markSaved(); ElMessage.success('已保存'); open.value = false;
+    if (returnToClient.value) await returnToClientDraft();
+    else await load();
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 async function del(key: string): Promise<void> {
+  if (!s.can('routes:write')) return;
   try { await api('/admin/api/routes/' + encodeURIComponent(key), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
@@ -1605,172 +1661,27 @@ const codeOpen = ref(false);
 const codeTab = ref('curl');
 const codeRoute = ref<any | null>(null);
 const codeClientId = ref('');
-const eligibleClients = computed(() => clients.value.filter((c) => (c.allowed_routes || []).includes('*') || (c.allowed_routes || []).includes(codeRoute.value?.route_key)));
-const codeClient = computed(() => clients.value.find((c) => c.app_id === codeClientId.value));
+const eligibleClients = computed(() => clients.value.filter((c) => canCallRoute(c, codeRoute.value?.route_key)));
+const codeClient = computed(() => eligibleClients.value.find((c) => c.app_id === codeClientId.value));
 const codeCoverage = computed(() => codeRoute.value ? coverage(codeRoute.value) : null);
 // 目标是执行器类时，多给一页「执行器接入」
 const codeTargetIsExecutor = computed(() => targetOptions.value.find((t) => t.name === codeRoute.value?.target)?.kind === 'executor');
 function openCode(row: any): void {
   codeRoute.value = row;
   codeTab.value = 'curl';
-  const eligible = clients.value.filter((c) => (c.allowed_routes || []).includes('*') || (c.allowed_routes || []).includes(row.route_key));
-  if (!eligible.length) { ElMessage.warning(`还没有可调用该路由的接入方——先在「接入方」建一个，可调路由含 ${row.route_key} 或 *`); return; }
+  const eligible = eligibleClients.value;
+  if (!eligible.length) { ElMessage.warning(`没有已启用且可调用本路由的接入方。请到「接入方」创建或启用应用，并将 ${row.route_key} 加入可调路由。`); return; }
   codeClientId.value = eligible[0]!.app_id;
   codeOpen.value = true;
 }
-// 示例 metadata：把会话键（per_key）与「渠道直推」的收件人字段都带进去，免得开发者漏传收件人。
-function demoMetaJson(r: any, sessionVal: string): string {
-  const m: Record<string, string> = {};
-  if (r.session_policy === 'per_key' && r.session_key_field) m[r.session_key_field] = sessionVal;
-  if (r.delivery?.type === 'channel' && r.delivery?.to_field) m[r.delivery.to_field] = '<收件人id>';
-  return Object.keys(m).length ? JSON.stringify(m) : '{}';
-}
-const phpCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const fn = 'bailing_' + r.route_key.replace(/[^a-z0-9]+/gi, '_');
-  const keyField = r.session_policy === 'per_key' && r.session_key_field ? r.session_key_field : '';
-  const rcpt = r.delivery?.type === 'channel' ? String(r.delivery.to_field || '').trim() : '';
-  const metaPairs = [keyField ? `'${keyField}' => $bizId` : '', rcpt ? `'${rcpt}' => $userId` : ''].filter(Boolean);
-  const metaExample = metaPairs.length ? `, [${metaPairs.join(', ')}]` : '';
-  return `/**
- * 百灵中枢 · ${r.name}（route: ${r.route_key}）
- * 在业务事件点调用，如：${fn}('唯一事件号', $content${metaExample});
- * request_id 是幂等键：同一事件重复触发不会重复跑，建议用业务唯一号。${rcpt ? `\n * ⚠ 本路由配了「渠道直推」：metadata 必须带 '${rcpt}'（收件人在「${r.delivery.channel}」渠道里的原生 id）——任务跑完自动推给 ta，无需再调 /send。` : ''}
- */
-function ${fn}(string $requestId, string $input, array $metadata = []): void
-{
-    try {
-        $ch = curl_init('${base}/run');
-        curl_setopt_array($ch, [
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode([
-                'request_id' => '${c.app_id}_' . $requestId,
-                'route'      => '${r.route_key}',
-                'input'      => $input,
-                'metadata'   => $metadata,
-            ], JSON_UNESCAPED_UNICODE),
-            CURLOPT_HTTPHEADER     => ['Content-Type: application/json', 'Authorization: Bearer ${c.token}'],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 1,
-            CURLOPT_TIMEOUT        => 2, // 解耦保护：中枢不可用时最多拖慢业务 2 秒
-        ]);
-        curl_exec($ch);
-        curl_close($ch);
-    } catch (\\Throwable $e) {
-        // 只记日志，绝不影响业务主流程
-    }
-}`;
-});
-const curlCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const metaJson = demoMetaJson(r, 'demo-1');
-  return `# 触发
-curl -m 2 -X POST '${base}/run' \\
-  -H 'Content-Type: application/json' \\
-  -H 'Authorization: Bearer ${c.token}' \\
-  -d '{"request_id":"${c.app_id}_demo-1","route":"${r.route_key}","input":"联调测试内容","metadata":${metaJson}}'
-
-# 查询结果（用上一步返回的 job_id）
-curl -H 'Authorization: Bearer ${c.token}' '${base}/jobs/<job_id>'`;
-});
-const nodeCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const metaJson = demoMetaJson(r, 'demo-1');
-  return `// 百灵中枢 · ${r.name}（route: ${r.route_key}）
-// request_id 是幂等键：同一业务事件重复触发不会重复执行。
-// 需要回流结果时配置路由 callback；需要主动查询时，用返回的 job_id 调 GET /jobs/{job_id}。
-
-const controller = new AbortController();
-const timeout = setTimeout(() => controller.abort(), 2000);
-
-try {
-  const response = await fetch('${base}/run', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: 'Bearer ${c.token}',
-    },
-    body: JSON.stringify({
-      request_id: '${c.app_id}_demo-1',
-      route: '${r.route_key}',
-      input: '联调测试内容',
-      metadata: ${metaJson},
-    }),
-    signal: controller.signal,
-  });
-
-  const data = await response.json();
-  console.log(data.job_id, data.status);
-} catch (err) {
-  // 只记录，不影响业务主流程
-  console.error('bailing trigger failed', err);
-} finally {
-  clearTimeout(timeout);
-}`;
-});
-const pythonCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const metaJson = demoMetaJson(r, 'demo-1');
-  return `# 百灵中枢 · ${r.name}（route: ${r.route_key}）
-# request_id 是幂等键：同一业务事件重复触发不会重复执行。
-# pip install requests
-
-import requests
-
-payload = {
-    "request_id": "${c.app_id}_demo-1",
-    "route": "${r.route_key}",
-    "input": "联调测试内容",
-    "metadata": ${metaJson},
-}
-
-try:
-    response = requests.post(
-        "${base}/run",
-        json=payload,
-        headers={"Authorization": "Bearer ${c.token}"},
-        timeout=2,
-    )
-    print(response.json())
-except requests.RequestException as exc:
-    # 只记录，不影响业务主流程
-    print("bailing trigger failed", exc)`;
-});
-// 触发方向：给任意 agent 一段可保存的提示词/技能说明
-const skillCode = computed(() => {
-  const r = codeRoute.value; const c = clients.value.find((x) => x.app_id === codeClientId.value);
-  if (!r || !c) return '';
-  const base = kernelOrigin();
-  const metaJson = demoMetaJson(r, '<业务编号>');
-  return `# Agent Skill: bailing-${r.route_key}
-
-当用户要求「${r.name}」或当前工作产生适合交给该场景处理的任务时，调用百灵中枢路由 \`${r.route_key}\`。
-
-派单（fire-and-forget，返回 202 + job_id）：
-
-\`\`\`bash
-curl -m 5 -X POST '${base}/run' \\
-  -H 'Content-Type: application/json' \\
-  -H 'Authorization: Bearer ${c.token}' \\
-  -d '{"request_id":"${c.app_id}_<本次事件唯一号>","route":"${r.route_key}","input":"<任务内容>","metadata":${metaJson}}'
-\`\`\`
-
-- request_id 是幂等键：用本次事件的唯一编号，重复触发不会重复执行
-- 需要结果时轮询（通常异步任务无需等待）：
-
-\`\`\`bash
-curl -H 'Authorization: Bearer ${c.token}' '${base}/jobs/<job_id>'
-\`\`\`
-`;
-});
+const callSnippets = computed(() => codeRoute.value && codeClient.value
+  ? buildRouteCallSnippets(codeRoute.value, codeClient.value, kernelOrigin())
+  : { curl: '', node: '', python: '', php: '', skill: '' });
+const phpCode = computed(() => callSnippets.value.php);
+const curlCode = computed(() => callSnippets.value.curl);
+const nodeCode = computed(() => callSnippets.value.node);
+const pythonCode = computed(() => callSnippets.value.python);
+const skillCode = computed(() => callSnippets.value.skill);
 // 承接方向：后台只交付本次连接参数；稳定流程由公开、可版本化的 Skill 承载。
 const execCode = computed(() => {
   const r = codeRoute.value;
@@ -1795,42 +1706,52 @@ ${base}/connect/skills/connect-bailinghub-executor/SKILL.md
 5. 成功标准：控制台显示同一 executor_id 在线且 target 为「${r.target}」，专用测试任务返回真实处理结果而不是原样复读。`;
 });
 
+async function loadDependencies(): Promise<void> {
+  if (dependenciesLoading.value) return;
+  dependenciesLoading.value = true; dependencyErrors.value = [];
+  try {
+    if (s.can('targets:read')) {
+      try {
+        const ts = await api<any[]>('/admin/api/targets');
+        // 后缀不代表执行能力；合法自定义执行目标也可能以 -notify 结尾。
+        targetOptions.value = ts;
+        notifyTargetsRaw.value = ts.filter((t) => t.name.endsWith('-notify'));
+      } catch { dependencyErrors.value.push('调度目标'); }
+    }
+    if (s.can('runs:read')) {
+      try { execs.value = await api('/admin/api/executors'); } catch { dependencyErrors.value.push('执行器状态'); }
+    }
+    if (s.can('projects:read')) {
+      try { projectNames.value = (await api<any[]>('/admin/api/projects')).map((p) => p.name); } catch { dependencyErrors.value.push('项目目录'); }
+    }
+    if (s.can('clients:read')) {
+      try { clients.value = await api('/admin/api/clients'); } catch { dependencyErrors.value.push('接入方'); }
+    }
+    // 路由的入口/渠道绑定用于会话策略提示；读取失败时显示独立提示，不冒充空配置。
+    if (s.can('routes:read')) {
+      try { chatEntries.value = await api('/admin/api/chat-entries'); } catch { dependencyErrors.value.push('聊天入口'); }
+    }
+    if (s.can('channels:read')) {
+      try { channels.value = await api('/admin/api/channels'); } catch { dependencyErrors.value.push('渠道'); }
+    }
+    // 表单下拉的关联注册表（无权限时静默退化为 allow-create 手输）
+    if (s.can('credentials:read')) {
+      try { credOptions.value = await api('/admin/api/credentials'); } catch { dependencyErrors.value.push('模型凭证'); }
+    }
+    if (s.can('kb:read')) {
+      try { kbOptions.value = await api('/admin/api/kb'); } catch { dependencyErrors.value.push('知识库'); }
+    }
+    if (s.can('tools:read')) {
+      try { providerOptions.value = await api('/admin/api/tool-providers'); } catch { dependencyErrors.value.push('工具源'); }
+    }
+  } finally { dependenciesLoading.value = false; }
+}
 onMounted(async () => {
   void routeSchema.load().catch(() => undefined);
-  await load();
-  if (s.can('targets:read')) {
-    try {
-      const ts = await api<any[]>('/admin/api/targets');
-      // 送达承接者(*-notify)不作为路由 target，单独留给「送达」渠道下拉
-      targetOptions.value = ts.filter((t) => !t.name.endsWith('-notify'));
-      notifyTargetsRaw.value = ts.filter((t) => t.name.endsWith('-notify'));
-    } catch { /* 退化为内置 */ }
-  }
-  if (s.can('runs:read')) {
-    try { execs.value = await api('/admin/api/executors'); } catch { /* 覆盖度可选，无则不显示 */ }
-  }
-  if (s.can('projects:read')) {
-    try { projectNames.value = (await api<any[]>('/admin/api/projects')).map((p) => p.name); } catch { /* 可选 */ }
-  }
-  if (s.can('clients:read')) {
-    try { clients.value = await api('/admin/api/clients'); } catch { /* 可选 */ }
-  }
-  // 路由的入口/渠道绑定：用于「会话策略」上下文提示（判断本项在该路由下是否生效）。失败则静默退化为通用提示。
-  if (s.can('routes:read')) {
-    try { chatEntries.value = await api('/admin/api/chat-entries'); } catch { /* 可选 */ }
-    try { channels.value = await api('/admin/api/channels'); } catch { /* 可选 */ }
-  }
-  // 表单下拉的关联注册表（无权限时静默退化为 allow-create 手输）
-  if (s.can('credentials:read')) {
-    try { credOptions.value = await api('/admin/api/credentials'); } catch { /* 可选 */ }
-  }
-  if (s.can('kb:read')) {
-    try { kbOptions.value = await api('/admin/api/kb'); } catch { /* 可选 */ }
-  }
-  if (s.can('tools:read')) {
-    try { providerOptions.value = await api('/admin/api/tool-providers'); } catch { /* 可选 */ }
-  }
+  if (route.query.create === '1') openCreate();
+  await Promise.all([load(), loadDependencies()]);
 });
+watch(() => route.query.create, (create) => { if (create === '1') openCreate(); });
 </script>
 
 <style scoped>

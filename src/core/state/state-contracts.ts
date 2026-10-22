@@ -2,6 +2,7 @@ import type { AuditEntry, Job, JobStatus } from '../contracts/types';
 import type { ApprovalRequeueInput, ApprovalRequeueOutcome } from '../contracts/approval-continuation';
 import type { DeliveryRequeueInput, DeliveryRequeueOutcome } from '../contracts/delivery-replay';
 import type { NotificationOutboxRepository } from '../contracts/notification-outbox';
+import type { SchemaReadinessDatabase } from '../contracts/schema-readiness';
 
 export interface JobOperationalMetricsSnapshot {
   byStatus: Record<JobStatus, number>;
@@ -51,6 +52,8 @@ export interface RuntimeLockRepository {
 }
 
 export interface RuntimeStateStore extends JobRepository, AuditLedger, RuntimeLockRepository {
+  /** Optional extension contract; MySQL readiness fails closed if its actual DB cannot be checked. */
+  readonly schemaReadinessDb?: SchemaReadinessDatabase;
   readonly notificationOutbox?: NotificationOutboxRepository;
   /** Fenced terminal transition and notification intentions in the same durable write. */
   completeJobWithNotifications?(original: Job, patch: Partial<Job>, context?: { brandName?: string }): Promise<Job | null>;

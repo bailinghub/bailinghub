@@ -7,8 +7,10 @@
         </HelpTip>
         <el-button style="margin-left: auto" :loading="loading" @click="load">刷新</el-button></div>
     </template>
-    <el-empty v-if="!list.length && !loading" description="暂无配置变更记录" />
-    <el-table v-else :data="list" v-loading="loading">
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon title="审计记录读取失败"
+      :description="loadError + (loadedAt ? `；以下保留 ${fmtTime(loadedAt, true)} 的旧快照` : '')" style="margin-bottom: 12px" />
+    <el-empty v-if="loadedAt && !loadError && !list.length && !loading" description="暂无配置变更记录" />
+    <el-table v-else :data="list" v-loading="loading" :empty-text="loadError ? '读取失败，请点击刷新重试' : '正在读取…'">
       <el-table-column label="变更事件" min-width="260" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="audit-main">
@@ -31,7 +33,8 @@
         </template>
       </el-table-column>
     </el-table>
-    <div v-if="more" class="loadmore"><el-button :loading="moreLoading" @click="loadMore">加载更多</el-button></div>
+    <el-alert v-if="moreError" type="error" :closable="false" show-icon title="加载更多失败" :description="moreError" style="margin-top: 12px" />
+    <div v-if="more && !loadError" class="loadmore"><el-button :loading="moreLoading" :disabled="loading" @click="loadMore">加载更多</el-button></div>
   </el-card>
 </template>
 
@@ -46,6 +49,9 @@ const list = ref<any[]>([]);
 const loading = ref(false);
 const more = ref(false);
 const moreLoading = ref(false);
+const loadedAt = ref('');
+const loadError = ref('');
+const moreError = ref('');
 function objectLabel(path: string): string {
   const p = String(path || '');
   return p
@@ -67,18 +73,21 @@ function actionLabel(method: string): string {
   return method || '变更';
 }
 async function load(): Promise<void> {
+  if (loading.value || moreLoading.value) return;
   loading.value = true;
   try {
     const rows = await api<any[]>(`/admin/api/config-audit?limit=${PAGE}&offset=0`);
     list.value = rows; more.value = rows.length === PAGE;
-  } finally { loading.value = false; }
+    loadedAt.value = new Date().toISOString(); loadError.value = ''; moreError.value = '';
+  } catch (e) { loadError.value = e instanceof Error ? e.message : '请求失败，请重试'; } finally { loading.value = false; }
 }
 async function loadMore(): Promise<void> {
+  if (loading.value || moreLoading.value || loadError.value) return;
   moreLoading.value = true;
   try {
     const rows = await api<any[]>(`/admin/api/config-audit?limit=${PAGE}&offset=${list.value.length}`);
-    list.value = list.value.concat(rows); more.value = rows.length === PAGE;
-  } finally { moreLoading.value = false; }
+    list.value = list.value.concat(rows); more.value = rows.length === PAGE; moreError.value = '';
+  } catch (e) { moreError.value = e instanceof Error ? e.message : '请求失败，请重试'; } finally { moreLoading.value = false; }
 }
 onMounted(load);
 </script>

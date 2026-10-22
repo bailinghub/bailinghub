@@ -10,12 +10,14 @@ import { buildAgentClientTrace } from '../core/runtime/agent-client-trace';
 import type { RuntimeStateStore } from '../core/state/state-contracts';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import type { AgentClientRunRecord } from '../infrastructure/config/config-agent-client-runtime-repository';
-import type { Principal } from '../app/auth';
+import { can, type Principal } from '../app/auth';
 import type { ChannelMessage, ChannelSendResult } from '../app/channels';
 import { isAgentToolInvocationJob } from '../app/agent-tool-job';
 import { continueApprovalDecisionFor, supportsApprovalContinuations } from '../app/approval-continuations';
 import { classifyDeliveryDlq, replayExecutorDeliveryDlq, DeliveryReplayError } from '../app/delivery-dlq-replay';
 import { handleAdminNotificationsFor } from './admin-notifications';
+import { approvalContinuationView, consoleExecution } from './admin-runtime-ux';
+import { approvalDetailView, approvalListView } from './admin-approval-view';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
 
@@ -192,7 +194,7 @@ export async function handleAdminRuntimeApiFor(
       configStore.deliveryDlq.listByParentJob(jobId, true, 100).catch(() => []),
       routeKey ? configStore.routes.get(routeKey).catch(() => null) : Promise.resolve(null),
     ]);
-    const jobWithRaw = { ...job, raw_input: rawInput, ...await conversationLinkForJob(job) };
+    const jobWithRaw = { ...job, raw_input: rawInput, ...await conversationLinkForJob(job), console_execution: consoleExecution(job) };
     const trace = buildJobTrace({ job, audit, approvals, messages });
     const dispatchSnapshot = {
       status: job.status,
@@ -466,7 +468,7 @@ export async function handleAdminRuntimeApiFor(
     if (method === 'GET' && !mRun[2]) {
       // raw_input = 未装配的原始触发输入（总账 in 消息），供审计区分"用户发了啥"与"我们组装成的 input"；无总账时前端回落 input_preview
       const rawInput = await configStore.conversations.rawInputForJob(jobId).catch(() => null);
-      send(res, 200, { ...job, raw_input: rawInput });
+      send(res, 200, { ...job, raw_input: rawInput, console_execution: consoleExecution(job) });
       return true;
     }
     if (method === 'GET' && mRun[2] === '/audit') {
@@ -493,10 +495,33 @@ export async function handleAdminRuntimeApiFor(
     }
   }
 
-  // ---- 工具审批（确认车道 B：批准后自动重跑；批准范围锁定当时那个调用快照）----
+  // ---- 工具审批（批准范围锁定调用快照；中枢任务续办，Agent 直调由原客户端继续）----
   if (path === '/admin/api/tool-approvals' && method === 'GET') {
+    if (!can(principal, 'runs:read')) { send(res, 403, { error: '当前角色无此权限' }); return true; }
     const status = new URL(req.url ?? '/', 'http://x').searchParams.get('status') ?? 'pending';
-    send(res, 200, await configStore.approvals.list(status === 'all' ? undefined : status));
+    const approvals = await configStore.approvals.list(status === 'all' ? undefined : status);
+    const rows = [];
+    // Bound the extra read-only lookups; a missing old record must not hide its decision.
+    for (let offset = 0; offset < approvals.length; offset += 8) {
+      rows.push(...await Promise.all(approvals.slice(offset, offset + 8).map(async (approval) => {
+        const [job, intent] = await Promise.all([
+          stateStore.getJob(approval.job_id).catch(() => null),
+          configStore.approvals.getContinuation?.(approval.id).catch(() => undefined),
+        ]);
+        return { ...approvalListView(approval), ...approvalContinuationView(job, intent) };
+      })));
+    }
+    send(res, 200, rows);
+    return true;
+  }
+  const mApprovalDetail = path.match(/^\/admin\/api\/tool-approvals\/(\d+)\/details$/);
+  if (mApprovalDetail && method === 'GET') {
+    if (!can(principal, 'runs:read')) { send(res, 403, { error: '当前角色无此权限' }); return true; }
+    const id = Number(mApprovalDetail[1]);
+    if (!Number.isSafeInteger(id) || id < 1) { send(res, 400, { error: '审批单标识无效' }); return true; }
+    const approval = await configStore.approvals.get(id);
+    if (!approval) { send(res, 404, { error: '审批单不存在' }); return true; }
+    send(res, 200, approvalDetailView(approval));
     return true;
   }
   const mApproval = path.match(/^\/admin\/api\/tool-approvals\/(\d+)\/(approve|deny)$/);
@@ -515,11 +540,13 @@ export async function handleAdminRuntimeApiFor(
       send(res, 503, { error: '审批持久续办需要配套状态与配置仓储', code: 'approval_continuations_unavailable' }); return true;
     }
     let recorded: 'decided' | 'same' | 'conflict';
+    let continuationMode: 'manual' | 'rerun';
     try {
       const job = await stateStore.getJob(appr.job_id);
       if (!job) { send(res, 404, { error: '审批单关联任务不存在' }); return true; }
+      continuationMode = isAgentToolInvocationJob(job) ? 'manual' : 'rerun';
       recorded = await configStore.approvals.decideWithContinuation!(id, decision, by, {
-        source: 'console', auth: 'admin-console', mode: isAgentToolInvocationJob(job) ? 'manual' : 'rerun',
+        source: 'console', auth: 'admin-console', mode: continuationMode,
       });
     } catch {
       send(res, 503, { error: '审批决策持久化暂不可用，请重试原审批单', code: 'approval_continuations_unavailable' }); return true;
@@ -528,9 +555,10 @@ export async function handleAdminRuntimeApiFor(
     try {
       const continued = await continueApprovalDecisionFor(continuationDeps, id);
       send(res, 200, { ok: true, id, status: decision, idempotent: recorded === 'same',
-        rerun: continued.rerun, continuation_pending: continued.pending });
+        rerun: continued.rerun, continuation_mode: continuationMode, continuation_pending: continued.pending });
     } catch {
-      send(res, 503, { error: '审批决策已保存，原任务续办等待恢复', decision_recorded: true, continuation_pending: true });
+      send(res, 503, { error: '审批决策已保存，原任务续办等待恢复', decision_recorded: true,
+        continuation_mode: continuationMode, continuation_pending: true });
     }
     return true;
   }

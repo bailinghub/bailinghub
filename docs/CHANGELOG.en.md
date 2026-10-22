@@ -22,6 +22,18 @@ Each public version should describe:
 - validation commands;
 - related docs.
 
+## v0.10.0 - On-demand Agent knowledge and clearer configuration
+
+Release date: 2026-10-22. A compatible feature release relative to public Core 0.9.4. MCP / Agent Client SDK 0.8.0 and DSH 0.8.0 upgrade independently. [Release notes](RELEASE_NOTES_v0.10.0.en.md), [upgrade guide](UPGRADE_v0.10.0.en.md).
+
+- Add Agent-only knowledge capabilities/search/read with explicit `knowledge_delivery: on_demand`. Hints/references remain authority-, revision-, expiry- and size-bound. Existing clients retain inline delivery; bundled chat/embed/widget knowledge assembly is unchanged.
+- Keep short tool descriptions and add named guidance reads, actual truncation markers and explicit discovery statistics. Preserve standard summary/description/ACC examples; separate discovery revisions from frozen execution fingerprints. Bounded authorization-execution summaries remain reference_only, not user-level long-term memory.
+- Align serialized tool-argument UTF-8 capacity to 1 MiB and tool-call HTTP envelopes to 2 MiB, with matching independent MCP/SDK checks. Oversize replies keep pre-dispatch status and safe counts. Full approval arguments remain; notifications preview them and the console must load them completely before approval. Authority/signatures/idempotency and business limits stay effective.
+- Optional model policies separate default, service ceiling, provider parameter and reasoning/answer scope. Old services are not opted in automatically. Parameter/ceiling errors are explicit; original operations stay intact. Clarify host continuation versus original-request recovery without Hub retries or repeated tools.
+- Improve onboarding, invocation examples, permission text, approval continuation/rerun, unsaved forms and diagnostic/filter/tab restoration. Place routine help behind question marks while retaining visible risks/errors; fix stale responses and login-password autofill into configuration forms.
+- Add read-only artifact/ledger upgrade planning; include boot recovery in Kernel shutdown drain; inspect actual state/configuration pools and complete migration digests for readiness. Custom MySQL stores without schemaReadinessDb now fail closed. Update the Vite safety floor and dependency notices.
+- No new SQL from 0.9.4; old migrations/migrator stay unchanged. Earlier sources still follow their original upgrade chain. Coordinate explicit configuration/client fallback during rollback without deleting operations, approvals or unknown outcomes. Synthetic regressions and isolated consumers do not establish acceptance of every vendor, host product, real business or long-term runtime. ACC, independent Hosts and clients are not deployed by a Core release.
+
 ## v0.9.4 - DOCX dependency remediation and durable notifications
 
 Version date: 2026-10-15. A patch from Core 0.9.3; MCP / Agent Client SDK 0.7.0 and DSH 0.7.0 remain unchanged. See [release notes](RELEASE_NOTES_v0.9.4.en.md) and the [upgrade guide](UPGRADE_v0.9.4.en.md).

@@ -25,8 +25,9 @@
         <el-button v-if="route.path === '/usage' || route.path === '/usage-access'" class="mobile-nav-toggle" text :aria-expanded="mobileNavOpen" @click="mobileNavOpen = !mobileNavOpen">菜单</el-button>
         <span class="page-title">{{ route.meta.title }}</span>
         <span class="spacer" />
-        <span class="health" :class="{ bad: !healthy }">{{ healthy ? '中枢正常' : '中枢异常' }}</span>
+        <span class="health" :class="{ bad: healthy === false, pending: healthy === null }" title="仅表示服务连接状态；运行就绪情况请查看系统状态">{{ healthy === null ? '连接检查中' : healthy ? '服务在线' : '服务连接异常' }}</span>
         <span v-if="execText" class="health" :class="{ bad: execBad }">{{ execText }}</span>
+        <el-button v-if="s.can('audit:read')" text :disabled="route.path === '/setup'" @click="router.push('/setup')">接入向导</el-button>
         <el-dropdown v-if="configCenterPages.length" trigger="click" @command="onCmd">
           <span class="top-action">
             <el-icon><Setting /></el-icon>
@@ -47,8 +48,7 @@
           </span>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-if="s.can('audit:read')" command="setup">上手向导</el-dropdown-item>
-              <el-dropdown-item v-if="s.hasModule('accounts')" :divided="s.can('audit:read')" command="pwd">修改密码</el-dropdown-item>
+              <el-dropdown-item v-if="s.hasModule('accounts')" command="pwd">修改密码</el-dropdown-item>
               <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -69,24 +69,11 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="demoOpen" title="导入演示数据" width="520px" class="demo-dialog" :close-on-click-modal="false">
-    <div class="demoBody">
-      <p>当前实例还是空的。可以导入确定性演示目标、只读工具源、触发路由和接入方，快速看懂 Core 如何装配一条业务 AI 链路。</p>
-      <ul>
-        <li>导入本身不会伪造任务、审批或成本数据；运行 smoke 后才会生成真实任务与 trace。</li>
-        <li>Core 会用持久 ownership manifest 精确记录它拥有的配置；清理不删除运行记录或审计账本。</li>
-        <li>真实接入时仍建议按自己的业务系统重新配置。</li>
-      </ul>
-    </div>
-    <template #footer>
-      <el-button @click="dismissDemo">暂不导入</el-button>
-      <el-button type="primary" :loading="demoImporting" @click="importDemo">导入演示数据</el-button>
-    </template>
-  </el-dialog>
+
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, markRaw, nextTick, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { Box, Brush, ChatDotRound, Coin, Collection, Connection, Cpu, Document, Folder, InfoFilled, Key, Lock, Monitor, Promotion, SetUp, Setting, Stamp, Tickets, User, Warning } from '@element-plus/icons-vue';
@@ -161,11 +148,14 @@ function rememberGroupClose(index: string): void {
   saveOpenGroups(next);
 }
 
-const healthy = ref(true);
+const healthy = ref<boolean | null>(null);
 const execText = ref('');
 const execBad = ref(false);
 async function loadStatus(): Promise<void> {
-  try { healthy.value = (await (await kernelFetch('/health')).json()).status === 'ok'; }
+  try {
+    const response = await kernelFetch('/health');
+    healthy.value = response.ok && (await response.json()).status === 'ok';
+  }
   catch { healthy.value = false; }
   if (!s.can('runs:read')) return;
   try {
@@ -174,58 +164,21 @@ async function loadStatus(): Promise<void> {
     const off = st.executors.length - on;
     execText.value = st.executors.length ? `执行器 ${on}/${st.executors.length} 在线` : '';
     execBad.value = off > 0;
-  } catch { /* 状态条可选 */ }
+  } catch {
+    execText.value = '执行器状态读取失败';
+    execBad.value = true;
+  }
 }
+let statusTimer: ReturnType<typeof setInterval> | undefined;
 onMounted(() => {
   void loadStatus();
-  void loadDemoDatasetStatus();
-  setInterval(() => void loadStatus(), 60_000);
+  statusTimer = setInterval(() => void loadStatus(), 60_000);
 });
+onBeforeUnmount(() => { if (statusTimer) clearInterval(statusTimer); });
 
 const pwdOpen = ref(false);
 const pwdSaving = ref(false);
 const pwdForm = reactive({ old: '', next: '' });
-const demoOpen = ref(false);
-const demoImporting = ref(false);
-const demoStatus = ref<any | null>(null);
-const demoCanManage = computed(() => ['targets:write', 'tools:write', 'routes:write', 'clients:write'].every((permission) => s.can(permission)));
-
-function demoDismissKey(): string {
-  return `bailing:demo-dataset:dismissed:${s.me?.username ?? 'anonymous'}`;
-}
-
-async function loadDemoDatasetStatus(): Promise<void> {
-  if (!s.me || !demoCanManage.value) return;
-  try {
-    const status = await api<any>('/admin/api/demo-dataset/status');
-    demoStatus.value = status;
-    if (status?.available && !status.imported && status.empty && localStorage.getItem(demoDismissKey()) !== '1') {
-      demoOpen.value = true;
-    }
-  } catch {
-    demoStatus.value = null;
-  }
-}
-
-function dismissDemo(): void {
-  localStorage.setItem(demoDismissKey(), '1');
-  demoOpen.value = false;
-}
-
-async function importDemo(): Promise<void> {
-  demoImporting.value = true;
-  try {
-    demoStatus.value = await api('/admin/api/demo-dataset/import', { method: 'POST', body: '{}' });
-    localStorage.removeItem(demoDismissKey());
-    demoOpen.value = false;
-    window.dispatchEvent(new CustomEvent('bailing-demo-dataset-imported'));
-    ElMessage.success('演示数据已导入');
-  } catch (e) {
-    ElMessage.error((e as Error).message);
-  } finally {
-    demoImporting.value = false;
-  }
-}
 async function savePwd(): Promise<void> {
   pwdSaving.value = true;
   try {
@@ -238,7 +191,6 @@ async function savePwd(): Promise<void> {
 
 async function onCmd(cmd: string): Promise<void> {
   if (cmd.startsWith('nav:')) { void router.push('/' + cmd.slice(4)); return; }
-  if (cmd === 'setup') void router.push('/setup');
   if (cmd === 'pwd') pwdOpen.value = true;
   if (cmd === 'logout') { await s.logout(); void router.push('/login'); }
 }
@@ -336,6 +288,7 @@ async function onCmd(cmd: string): Promise<void> {
 .spacer { flex: 1; }
 .health { font-size: 12px; color: var(--el-color-success); }
 .health.bad { color: var(--el-color-danger); }
+.health.pending { color: var(--el-text-color-secondary); }
 .top-action {
   display: inline-flex;
   align-items: center;

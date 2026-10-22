@@ -18,6 +18,7 @@ import { getBillingRepository } from './billing-repository';
 import type { UsageRepository } from './repository';
 import { referencePricing } from './pricing';
 import { executeModelTool, modelToolBody, modelToolEndpoint } from './model-tool-provider';
+import { outputBudgetDescriptor, outputBudgetPolicy } from './output-budget';
 
 export interface UsageGatewayDeps {
   usage: UsageRepository | null;
@@ -43,6 +44,7 @@ function scheduleResponseCleanup(repository: UsageRepository): void {
 export const MODEL_GATEWAY_CAPABILITIES = {
   schema: 'bailing.model-gateway.v1', supported: true, orchestration: 'host', streaming: true, provider_response: 'bailing.provider-response.v1', settlement: 'asynchronous',
   model_tools: { schema: 'bailing.model-tools.v1', directory: true, execution: true, tools_path: '/usage/v1/model/tools' },
+  output_budget: { schema: 'bailing.model-output-budget.v1', separate_default: true, explicit_parameter: true, explicit_scope: true },
   requests_path: '/usage/v1/model/requests', models_path: '/usage/v1/model/models',
   summary_path: '/usage/v1/model/summary', billing_unit: 'USD', turn_required: false,
 } as const;
@@ -76,6 +78,7 @@ export function modelAllowedServices(actor: UsageSessionContext, serviceIds: str
   return actor.modelAccess === 'token_gateway' ? serviceIds : serviceIds.filter(id => id === actor.serviceId);
 }
 export function modelDescriptor(service: UsageService, multiplier = 1) {
+  const policy = outputBudgetPolicy(service.config);
   return { schema: 'bailing.usage-model.v1', service_id: service.id, service_revision: service.revision,
     label: service.label, model: service.config.model, state: service.state, orchestration: 'host', streaming: true,
     billing_rate: { multiplier },
@@ -83,7 +86,8 @@ export function modelDescriptor(service: UsageService, multiplier = 1) {
     context_window_tokens: service.config.contextWindowTokens ?? null, max_input_bytes: service.config.maxInputBytes,
     input_limit_scope: 'serialized_provider_request', max_messages: 1024, max_tools: 128,
     max_output_tokens: service.config.maxOutputTokens, timeout_ms: service.config.timeoutMs,
-    provider_options: ['max_tokens','max_completion_tokens','top_p','stop','seed','presence_penalty','frequency_penalty','parallel_tool_calls','response_format','reasoning_effort','enable_thinking','thinking','verbosity'] };
+    ...outputBudgetDescriptor(service.config),
+    provider_options: [...(policy ? [policy.parameter] : ['max_tokens','max_completion_tokens']), 'top_p','stop','seed','presence_penalty','frequency_penalty','parallel_tool_calls','response_format','reasoning_effort','enable_thinking','thinking','verbosity'] };
 }
 
 /** One durable request, one provider dispatch; accounting never drives the local agent loop. */

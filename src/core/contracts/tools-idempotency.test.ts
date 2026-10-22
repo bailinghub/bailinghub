@@ -4,6 +4,96 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TOOL_DEFINITION_SCHEMA_VERSION, type ToolDefinition } from './tool-definition';
 import { argsHash, AUDIT_MAX_BYTES, buildToolRuntime, toolCallIdempotencyKey, type ToolExecutionJournalEntry, type ToolRuntimeDeps } from './tools';
+import { TOOL_ARGUMENTS_MAX_BYTES } from './tool-input-limits';
+
+function sourceArgsWithBytes(bytes: number): Record<string, unknown> {
+  const prefix = 'synthetic-中😀"\\';
+  const args = { source: { html: prefix, css: '' } };
+  const used = Buffer.byteLength(JSON.stringify(args), 'utf8');
+  assert.ok(bytes >= used);
+  args.source.html += 'x'.repeat(bytes - used);
+  assert.equal(Buffer.byteLength(JSON.stringify(args), 'utf8'), bytes);
+  return args;
+}
+
+function sourceTool(over: Partial<ToolDefinition> = {}): ToolDefinition {
+  return mkTool({ inputSchema: { type: 'object', properties: { source: { type: 'object', properties: {
+    html: { type: 'string' }, css: { type: 'string' },
+  }, required: ['html', 'css'], additionalProperties: false } }, required: ['source'] }, ...over });
+}
+
+test('runtime transport preserves JSON source and signatures through the inclusive 1 MiB budget', async () => {
+  const originalFetch = globalThis.fetch;
+  const sent: string[] = [];
+  globalThis.fetch = async (_url, init) => {
+    const body = String(init?.body);
+    const headers = new Headers(init?.headers);
+    const ts = Number(headers.get('x-bailing-timestamp'));
+    const { signToolCall } = await import('./tools');
+    assert.equal(headers.get('x-bailing-signature'), signToolCall('s', ts, 'POST', '/create', body, 'u1', 'job1'));
+    sent.push(body);
+    return new Response('{"ok":true}', { status: 200 });
+  };
+  try {
+    for (const bytes of [4395, 5183, 16 * 1024, 64 * 1024, 256 * 1024, TOOL_ARGUMENTS_MAX_BYTES]) {
+      const args = sourceArgsWithBytes(bytes);
+      const out = await mkRuntime(sourceTool({ readonly: true })).invoke('create_thing', args);
+      assert.equal(out.ok, true);
+      assert.equal(sent.at(-1), JSON.stringify(args));
+      assert.deepEqual(JSON.parse(sent.at(-1)!), args);
+    }
+    assert.equal(sent.length, 6);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('runtime over-limit rejection precedes every approval, rate and dispatch side effect', async () => {
+  const audits: Array<Record<string, unknown>> = [];
+  const forbidden = async (): Promise<never> => { throw new Error('must not reach a governed side effect'); };
+  const originalFetch = globalThis.fetch; globalThis.fetch = forbidden;
+  try {
+    const runtime = mkRuntime(sourceTool({ risk: 'high' }), async (_event, detail) => { audits.push(detail); }, undefined, {
+      rateLimitAll: forbidden, beforeDispatch: forbidden,
+      approvals: { consumeApproved: forbidden, findPending: forbidden, findApprovedAnyArgs: forbidden, create: forbidden, notify: forbidden },
+      idempotency: { get: forbidden, reserve: forbidden, recordResponse: forbidden, complete: forbidden, markUncertain: forbidden, markEvidenceDegraded: forbidden },
+    });
+    const args = sourceArgsWithBytes(TOOL_ARGUMENTS_MAX_BYTES + 1);
+    const out = await runtime.invoke('create_thing', args);
+    assert.equal(out.error, 'arguments_too_large'); assert.equal(out.status, 413);
+    assert.equal(out.dispatch, 'not_dispatched'); assert.equal(out.origin, 'core');
+    assert.equal(out.governance_state, 'rejected_before_dispatch'); assert.equal(out.auto_retry_allowed, false);
+    assert.equal(out.actual_bytes, TOOL_ARGUMENTS_MAX_BYTES + 1); assert.equal(out.max_bytes, TOOL_ARGUMENTS_MAX_BYTES);
+    assert.equal(out.limit_scope, 'arguments');
+    assert.equal(audits.length, 1); assert.ok(JSON.stringify(audits).length < 300);
+    assert.equal(JSON.stringify(out).includes('synthetic-'), false);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test('large approval keeps exact frozen arguments and resumes once while notification is only a labelled view', async () => {
+  const args = sourceArgsWithBytes(TOOL_ARGUMENTS_MAX_BYTES);
+  const encoded = JSON.stringify(args); const hash = argsHash(args);
+  let approved = false, consumed = 0, calls = 0; const snapshots: any[] = [], notices: any[] = [];
+  const runtime = mkRuntime(sourceTool({ risk: 'high', confirmPrompt: '{source}' }), undefined, undefined, {
+    approvals: {
+      consumeApproved: async (_tool, seen) => { assert.equal(seen, hash); if (!approved) return null; consumed++; return 7; },
+      findPending: async () => null, findApprovedAnyArgs: async () => null,
+      create: async snap => { snapshots.push(snap); return 7; },
+      notify: async (_id, snap) => { notices.push(snap); },
+    },
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_url, init) => { calls++; assert.equal(String(init?.body), encoded); return new Response('{"ok":true}'); };
+  try {
+    assert.equal((await runtime.invoke('create_thing', args)).governance_state, 'awaiting_approval');
+    assert.equal(calls, 0); assert.equal(snapshots[0].args_json, encoded); assert.equal(snapshots[0].args_hash, hash);
+    assert.equal(notices[0].args_truncated, true); assert.equal(notices[0].args_bytes, TOOL_ARGUMENTS_MAX_BYTES);
+    assert.equal(notices[0].args_hash, hash); assert.ok(Buffer.byteLength(notices[0].args_json, 'utf8') <= 1000);
+    assert.equal(JSON.parse(notices[0].args_json).truncated, true);
+    approved = true;
+    assert.equal((await runtime.invoke('create_thing', JSON.parse(snapshots[0].args_json))).ok, true);
+    assert.equal((await runtime.invoke('create_thing', args)).ok, true);
+    assert.equal(calls, 1); assert.equal(consumed, 1);
+  } finally { globalThis.fetch = originalFetch; }
+});
 
 function mkTool(over: Partial<ToolDefinition>): ToolDefinition {
   return {

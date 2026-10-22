@@ -4,16 +4,18 @@
       <div class="head"><b>聊天入口</b> <HelpTip title="聊天入口是什么">
           <p>网页聊天组件的公开插座：建入口绑一条路由 → 拿一行 <code>script</code> 贴进任何网页；背后是 LLM 还是执行器智能体，入口无感。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" @click="openCreate">新建入口</el-button></div>
+        <el-button v-if="canWrite" type="primary" style="margin-left: auto" @click="openCreate">新建入口</el-button></div>
     </template>
     <el-alert class="preview-boundary" type="info" show-icon :closable="false">
       <template #title>“匿名预览”不会继承中枢后台登录状态，也不会自动携带业务身份票据。</template>
       <p>所有标记为“需主体（subject.required）”的工具，包括只读查询和写操作，都不会向 Agent 暴露。业务身份应由已登录的业务系统后端签发；内置演示链路请在“上手向导”手动运行 Smoke。</p>
     </el-alert>
-    <el-empty v-if="!list.length" description="还没有聊天入口：绑一条触发路由即可生成可嵌入的网页聊天组件">
-      <el-button type="primary" @click="openCreate">新建第一个</el-button>
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link :disabled="listLoading" @click="load">重新读取</el-button></el-alert>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
+    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有聊天入口：绑一条触发路由即可生成可嵌入的网页聊天组件">
+      <el-button v-if="canWrite" type="primary" @click="openCreate">新建第一个</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="入口" min-width="230" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="entry-main">
@@ -55,7 +57,7 @@
         <template #default="{ row }">
           <div class="protection-stack">
             <el-tooltip :content="row.enabled ? '聊天组件展示中' : '聊天组件已暂停'" placement="top">
-              <el-switch :model-value="!!row.enabled" :loading="entryToggleKey === row.entry_key" @change="toggleEntry(row, Boolean($event))" />
+              <el-switch :model-value="!!row.enabled" :loading="entryToggleKey === row.entry_key" :disabled="!canWrite || Boolean(entryToggleKey)" @change="toggleEntry(row, Boolean($event))" />
             </el-tooltip>
             <span class="muted">限速 {{ row.rate_limit_per_min }}/分/IP</span>
           </div>
@@ -66,7 +68,7 @@
           <div class="table-actions">
             <el-button link type="primary" @click="openEmbed(row)">嵌入代码</el-button>
             <el-button link type="primary" @click="openDemo(row)">匿名预览</el-button>
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-dropdown trigger="click" @command="(cmd) => handleEntryCommand(String(cmd), row)">
               <el-button link type="primary">更多</el-button>
               <template #dropdown>
@@ -76,7 +78,7 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-popconfirm title="删除该入口？已嵌入的页面组件会立即失效。" width="260" @confirm="del(row.entry_key)">
+            <el-popconfirm v-if="canWrite" title="删除该入口？已嵌入的页面组件会立即失效。" width="260" @confirm="del(row.entry_key)">
               <template #reference><el-button link type="danger">删</el-button></template>
             </el-popconfirm>
           </div>
@@ -86,8 +88,9 @@
   </el-card>
 
   <!-- 新建/编辑 -->
-  <el-drawer v-model="open" :title="editing ? '编辑聊天入口' : '新建聊天入口'" size="520px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑聊天入口' : '新建聊天入口'" size="520px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon />
+    <el-form label-position="top" :disabled="saving || !canWrite">
       <el-tabs v-model="chatFormTab" class="console-tabs">
         <el-tab-pane label="基础接入" name="basic">
       <el-form-item>
@@ -138,8 +141,14 @@
       <el-form-item label="按 IP 限速"><el-input-number v-model="form.rate_limit_per_min" :min="1" :max="600" /><span class="muted" style="margin-left: 8px">次/分钟</span></el-form-item>
         </el-tab-pane>
         <el-tab-pane label="外观" name="appearance">
-      <el-form-item label="组件标题"><el-input v-model="form.title" placeholder="留空用名称" /></el-form-item>
-      <el-form-item label="开场白（组件首条气泡）"><el-input v-model="form.greeting" placeholder="你好，有什么可以帮你？" /></el-form-item>
+      <el-form-item>
+        <template #label>组件标题 <HelpTip title="组件标题"><p>显示在聊天窗口顶部，留空时使用聊天入口名称。</p></HelpTip></template>
+        <el-input v-model="form.title" placeholder="可选" />
+      </el-form-item>
+      <el-form-item>
+        <template #label>开场白 <HelpTip title="开场白"><p>聊天组件显示的首条气泡，例如「你好，有什么可以帮你？」。</p></HelpTip></template>
+        <el-input v-model="form.greeting" placeholder="输入开场白" />
+      </el-form-item>
       <el-form-item label="主色">
         <el-color-picker v-model="form.color" :predefine="['#3fb950', '#3a6ea5', '#3a7a55', '#8a4f7d']" />
       </el-form-item>
@@ -150,11 +159,13 @@
           <el-radio-button value="left">居左</el-radio-button>
         </el-radio-group>
       </el-form-item>
-      <el-form-item label="展开窗口尺寸（px）">
+      <el-form-item>
+        <template #label>展开窗口尺寸（px） <HelpTip title="展开窗口尺寸">
+          <p>设置桌面端聊天窗口的宽度和高度。手机端自动接近全屏，不受此值限制。</p>
+        </HelpTip></template>
         <div class="row">
           <span class="muted">宽</span><el-input-number v-model="form.width" :min="280" :max="720" :step="10" controls-position="right" style="width: 128px" />
           <span class="muted">高</span><el-input-number v-model="form.height" :min="360" :max="900" :step="10" controls-position="right" style="width: 128px" />
-          <span class="muted">手机端自动接近全屏，不受此值限制</span>
         </div>
       </el-form-item>
       <el-form-item>
@@ -220,8 +231,9 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!canWrite" @click="save">保存</el-button>
     </template>
   </el-drawer>
 
@@ -353,12 +365,13 @@
   </el-drawer>
 
   <!-- 页面登记：URL 模式 → 页面说明，中枢匹配后注入 AI 并落任务详情 -->
-  <el-drawer v-model="pageCtxOpen" :title="'页面登记 · ' + pageCtxRow?.name" size="640px">
-    <el-alert type="info" :closable="false" style="margin-bottom: 14px"
-      title="组件每条消息自动上报当前页 URL（path+hash，去 query）。这里声明「URL 模式 → 页面说明」，中枢匹配后把页面背景注入 AI、并落到任务详情，便于精准定位用户从哪个页面发起。只需声明你在意的页面，未命中的自动按原始路径兜底；几百上千路由也无需逐个写代码。" />
-    <el-form label-position="top">
+  <el-drawer v-model="pageCtxOpen" :title="'页面登记 · ' + pageCtxRow?.name" size="640px" :before-close="pageGuard.beforeClose">
+    <el-alert v-if="pageSaveError" :title="pageSaveError" type="error" :closable="false" show-icon />
+    <el-form label-position="top" :disabled="pageSaving || !canWrite">
       <el-form-item>
-        <template #label>URL 模式 <HelpTip title="URL 模式">
+        <template #label>URL 模式 <HelpTip title="页面登记与 URL 模式">
+          <p>组件每条消息自动上报当前页 URL（<code>path+hash</code>，去掉 query）。声明「URL 模式 → 页面说明」后，中枢会把匹配的页面背景注入 AI，并记录到任务详情。</p>
+          <p>只需登记需要补充背景的页面，未命中时按原始路径兜底；不需要为每条前端路由逐个编写代码。</p>
           <p><code>*</code> 为通配，匹配组件抓到的 <code>path+hash</code>（子串命中即可）。如 <code>*/users/list*</code>、<code>/admin/settings</code>、<code>#/records/*/detail</code>。</p>
           <p>多条命中时取优先级高者；同级取模式更长（更具体）者。</p>
         </HelpTip></template>
@@ -372,15 +385,20 @@
           <el-input v-model="pageForm.page_name" placeholder="如 用户列表" />
         </el-form-item>
       </div>
-      <el-form-item label="页面说明（注入给 AI：这页承载什么功能）">
-        <el-input v-model="pageForm.description" type="textarea" :rows="3" placeholder="如：承载用户检索、标记、导出；权限配置在「设置」页维护" />
+      <el-form-item>
+        <template #label>页面说明 <HelpTip title="页面说明"><p>向 AI 说明当前页面承载的功能，例如：用户检索、标记、导出；权限配置在「设置」页维护。</p></HelpTip></template>
+        <el-input v-model="pageForm.description" type="textarea" :rows="3" placeholder="描述当前页面的功能" />
       </el-form-item>
       <div class="row2">
-        <el-form-item label="优先级（高者先匹配）"><el-input-number v-model="pageForm.priority" :min="0" :max="100" /></el-form-item>
+        <el-form-item>
+          <template #label>优先级 <HelpTip title="页面匹配优先级"><p>多条规则命中时取数值高者；同级取 URL 模式更长、更具体者。</p></HelpTip></template>
+          <el-input-number v-model="pageForm.priority" :min="0" :max="100" />
+        </el-form-item>
         <el-form-item label="启用"><el-switch v-model="pageForm.enabled" /></el-form-item>
       </div>
       <el-button type="primary" :loading="pageSaving" @click="savePageRule">{{ pageForm.id ? '更新规则' : '新增规则' }}</el-button>
-      <el-button v-if="pageForm.id" @click="resetPageForm">取消编辑</el-button>
+      <el-button v-if="pageForm.id" @click="cancelPageEdit">取消编辑</el-button>
+      <span v-if="pageGuard.dirty.value" class="muted" style="margin-left:12px">有未保存修改</span>
     </el-form>
     <el-divider />
     <el-empty v-if="!pageRules.length" description="还没有页面登记：上面加一条 URL 模式 → 页面说明" />
@@ -391,8 +409,8 @@
       <el-table-column label="启用" width="56" align="center"><template #default="{ row }">{{ row.enabled ? '✓' : '停' }}</template></el-table-column>
       <el-table-column width="100" align="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="editPageRule(row)">编辑</el-button>
-          <el-popconfirm title="删除该规则？" width="200" @confirm="delPageRule(row.id)">
+          <el-button link type="primary" :disabled="!canWrite || pageSaving" @click="editPageRule(row)">编辑</el-button>
+          <el-popconfirm v-if="canWrite" title="删除该规则？" width="200" @confirm="delPageRule(row.id)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
@@ -402,6 +420,8 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
@@ -409,8 +429,15 @@ import { openDoc } from '../docs';
 import { fmtTime } from '../util';
 import { kernelOrigin } from '../runtime-path';
 import HelpTip from '../components/HelpTip.vue';
+import { useUnsavedForm } from '../use-unsaved-form';
+import { useMe } from '../store';
 
+const me = useMe();
+const canWrite = computed(() => me.can('routes:write'));
+const saveError = ref('');
 const list = ref<any[]>([]);
+const listLoading = ref(false), listError = ref('');
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.entry_key), text: r => `${r.entry_key} ${r.name || ""} ${r.route_key || ""}` });
 const routes = ref<any[]>([]);
 const clients = ref<any[]>([]);
 const buckets = ref<any[]>([]);
@@ -420,6 +447,9 @@ const saving = ref(false);
 const chatFormTab = ref<'basic' | 'appearance' | 'publish'>('basic');
 const APPEARANCE_DEFAULTS = { title_align: 'center', width: 400, height: 600, position: 'right', offset_x: 24, offset_y: 24, avatar: '', launcher_icon: '', default_open: false, resizable: false, ai_notice: true, powered_by_visible: true, powered_by_text: '' };
 const form = reactive({ entry_key: '', name: '', route_key: '', origins_text: '', ticket_client: '', bucket: '', title: '', greeting: '', color: '#3fb950', ...APPEARANCE_DEFAULTS, rate_limit_per_min: 20, description: '', enabled: true });
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, snapshot: () => form, name: '聊天入口配置' });
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
+
 const entryToggleKey = ref('');
 
 function routeOf(routeKey?: string): any | undefined {
@@ -461,8 +491,10 @@ function ratingTagType(v: string): 'success' | 'danger' | 'info' {
 const pageCtxOpen = ref(false);
 const pageCtxRow = ref<any | null>(null);
 const pageRules = ref<any[]>([]);
-const pageSaving = ref(false);
+const pageSaving = ref(false), pageSaveError = ref('');
 const pageForm = reactive({ id: 0, url_pattern: '', page_key: '', page_name: '', description: '', priority: 0, enabled: true });
+const pageGuard = useUnsavedForm({ active: () => pageCtxOpen.value, saving: () => pageSaving.value, snapshot: () => pageForm, name: '页面登记配置' });
+async function cancelPageEdit(): Promise<void> { if (await pageGuard.confirmLeave()) resetPageForm(); }
 
 const embedOpen = ref(false);
 const embedRow = ref<any | null>(null);
@@ -541,18 +573,25 @@ const ticketCode = computed(() => {
 });
 
 async function load(): Promise<void> {
-  list.value = await api('/admin/api/chat-entries');
-  routes.value = await api('/admin/api/routes');
-  clients.value = await api('/admin/api/clients');
-  buckets.value = await api('/admin/api/storage-buckets').catch(() => []); // 无 storage 权限时静默退化为空（选项仅 admin 可见）
+  if (listLoading.value) return;
+  listLoading.value = true;
+  try {
+    list.value = await api('/admin/api/chat-entries');
+    routes.value = await api('/admin/api/routes');
+    clients.value = await api('/admin/api/clients');
+    buckets.value = await api('/admin/api/storage-buckets').catch(() => []); // 无 storage 权限时静默退化为空（选项仅 admin 可见）
+    listError.value = '';
+  } catch { listError.value = list.value.length ? '聊天入口列表刷新失败，当前保留旧快照。' : '聊天入口列表读取失败，请重试。'; }
+  finally { listLoading.value = false; }
 }
-function openCreate(): void {
+
+function openCreate(): void { if (!canWrite.value || saving.value || open.value) return;
   editing.value = false;
   chatFormTab.value = 'basic';
   Object.assign(form, { entry_key: '', name: '', route_key: '', origins_text: '', ticket_client: '', bucket: '', title: '', greeting: '', color: '#3fb950', ...APPEARANCE_DEFAULTS, rate_limit_per_min: 20, description: '', enabled: true });
-  open.value = true;
+  saveError.value = ''; formGuard.begin(); open.value = true;
 }
-function openEdit(row: any): void {
+function openEdit(row: any): void { if (!canWrite.value || saving.value || open.value || listError.value) return;
   editing.value = true;
   chatFormTab.value = 'basic';
   const ap = row.appearance || {};
@@ -569,33 +608,45 @@ function openEdit(row: any): void {
     powered_by_visible: ap.powered_by_visible !== false, powered_by_text: ap.powered_by_text || '',
     rate_limit_per_min: row.rate_limit_per_min, description: row.description || '', enabled: !!row.enabled,
   });
-  open.value = true;
+  saveError.value = ''; formGuard.begin(); open.value = true;
 }
 async function openRatings(row: any): Promise<void> {
   ratingsRow.value = row;
   ratings.value = await api('/admin/api/chat-ratings?entry=' + encodeURIComponent(row.entry_key));
   ratingsOpen.value = true;
 }
-function resetPageForm(): void { Object.assign(pageForm, { id: 0, url_pattern: '', page_key: '', page_name: '', description: '', priority: 0, enabled: true }); }
+function resetPageForm(): void { Object.assign(pageForm, { id: 0, url_pattern: '', page_key: '', page_name: '', description: '', priority: 0, enabled: true }); pageSaveError.value = ''; pageGuard.begin(); }
 async function loadPageRules(): Promise<void> {
   pageRules.value = await api('/admin/api/page-contexts?entry=' + encodeURIComponent(pageCtxRow.value.entry_key));
 }
 async function openPageCtx(row: any): Promise<void> {
   pageCtxRow.value = row; resetPageForm(); await loadPageRules(); pageCtxOpen.value = true;
 }
-function editPageRule(r: any): void {
+async function editPageRule(r: any): Promise<void> {
+  if (!canWrite.value || pageSaving.value || !await pageGuard.confirmLeave()) return;
   Object.assign(pageForm, { id: r.id, url_pattern: r.url_pattern, page_key: r.page_key || '', page_name: r.page_name || '', description: r.description || '', priority: r.priority || 0, enabled: r.enabled !== false });
+  pageSaveError.value = ''; pageGuard.begin();
 }
 async function savePageRule(): Promise<void> {
+  if (!canWrite.value || pageSaving.value) return;
+  pageSaveError.value = '';
   if (!pageForm.url_pattern.trim()) { ElMessage.error('URL 模式必填'); return; }
   pageSaving.value = true;
   try {
     await api('/admin/api/page-contexts', { method: 'POST', body: JSON.stringify({ ...pageForm, entry_key: pageCtxRow.value.entry_key, url_pattern: pageForm.url_pattern.trim() }) });
-    ElMessage.success('已保存'); resetPageForm(); await loadPageRules();
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) {
+    pageSaveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`;
+    pageSaving.value = false;
+    return;
+  }
+  ElMessage.success('已保存'); resetPageForm();
+  try { await loadPageRules(); }
+  catch (e) { pageSaveError.value = `已保存，但页面登记列表刷新失败：${(e as Error).message}。请关闭后重新打开页面登记核对列表，不必再次新增。`; }
   finally { pageSaving.value = false; }
 }
 async function delPageRule(id: number): Promise<void> {
+  if (!canWrite.value || pageSaving.value) return;
+  if (pageForm.id === id && !await pageGuard.confirmLeave()) return;
   try {
     await api('/admin/api/page-contexts/' + id + '?entry=' + encodeURIComponent(pageCtxRow.value.entry_key), { method: 'DELETE' });
     if (pageForm.id === id) resetPageForm();
@@ -603,6 +654,8 @@ async function delPageRule(id: number): Promise<void> {
   } catch (e) { ElMessage.error((e as Error).message); }
 }
 async function save(): Promise<void> {
+  if (!canWrite.value || saving.value) return;
+  saveError.value = '';
   saving.value = true;
   try {
     const origins = form.origins_text.split('\n').map((s) => s.trim()).filter(Boolean);
@@ -626,7 +679,7 @@ async function save(): Promise<void> {
       description: form.description.trim() || undefined, enabled: form.enabled,
     };
     const r = await api<{ entry_key: string }>('/admin/api/chat-entries', { method: 'POST', body: JSON.stringify(body) });
-    open.value = false;
+    formGuard.markSaved(); open.value = false;
     await load();
     const savedRow = list.value.find((x) => x.entry_key === r.entry_key);
     const savedOriginCount = Array.isArray(savedRow?.allowed_origins) ? savedRow.allowed_origins.filter(Boolean).length : 0;
@@ -634,7 +687,7 @@ async function save(): Promise<void> {
     if (!editing.value) { // 新建后直接亮嵌入代码，少一次寻找
       if (savedRow) openEmbed(savedRow);
     }
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 function openEmbed(row: any): void { embedRow.value = row; embedTab.value = 'script'; ticketTab.value = 'node'; embedOpen.value = true; }
@@ -657,6 +710,7 @@ function entryPayload(row: any, enabled: boolean): Record<string, unknown> {
   };
 }
 async function toggleEntry(row: any, enabled: boolean): Promise<void> {
+  if (!canWrite.value || entryToggleKey.value) return;
   const previous = !!row.enabled;
   row.enabled = enabled;
   entryToggleKey.value = row.entry_key;
@@ -679,6 +733,7 @@ async function copy(text: string): Promise<void> {
   catch { ElMessage.error('复制失败，请手动选择复制'); }
 }
 async function del(key: string): Promise<void> {
+  if (!canWrite.value) return;
   try { await api('/admin/api/chat-entries/' + encodeURIComponent(key), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }

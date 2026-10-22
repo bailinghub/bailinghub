@@ -1,10 +1,12 @@
 import { openInvocationArguments, sealInvocationArguments } from './agent-invocation-snapshot';
 import { bindingForTask, resolveAgentTaskRunFor } from './agent-task-control';
 import { taskAssert } from '../core/runtime/agent-task-control';
+import { TOOL_ARGUMENTS_MAX_BYTES, type ToolInputLimitDetails } from '../core/contracts/tool-input-limits';
 import type { ToolRateLimitFeedback } from '../core/contracts/tools';
 import { createHash, randomUUID } from 'node:crypto';
 import { agentDirectToolsConfig } from '../core/config/tools-config';
-import type { ToolDefinition } from '../core/contracts/tool-definition';
+import { TOOL_NAME_RE, type ToolDefinition } from '../core/contracts/tool-definition';
+import { boundedToolText, TOOL_USAGE_GUIDANCE_MAX_BYTES, TOOL_USAGE_GUIDANCE_MAX_CHARS } from '../core/contracts/tool-guidance';
 import { argsHash, type ToolExecutionJournalEntry } from '../core/contracts/tools';
 import type { AgentSession, Client, Job, Route } from '../core/contracts/types';
 import { audienceAllows } from '../core/runtime/identity-runtime';
@@ -25,10 +27,10 @@ const ROUTE_RE = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 const INVOCATION_RE = /^[a-f0-9]{64}$/;
 const AGENT_RUN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REVISION_RE = /^[a-f0-9]{64}$/;
-const ARGUMENTS_MAX_BYTES = 4096;
 const INVOCATION_LOCK_TTL_MS = 15 * 60_000;
 
 export const AGENT_TOOL_CATALOG_SCHEMA = 'bailing.agent-tool-catalog.v1';
+export const AGENT_TOOL_DETAIL_SCHEMA = 'bailing.agent-tool-detail.v1';
 export const AGENT_TOOL_INVOCATION_SCHEMA = 'bailing.agent-tool-invocation.v1';
 export const AGENT_INVOCATION_RECEIPT_SCHEMA = 'bailing.agent-invocation-receipt.v1';
 export const AGENT_INVOCATION_INSPECTION_SCHEMA = 'bailing.agent-invocation-inspection-capabilities.v1';
@@ -51,6 +53,8 @@ export interface AgentToolAuthContext {
 export interface AgentToolCatalogItem {
   name: string;
   description: string;
+  description_truncated?: boolean;
+  usage_guidance_available?: boolean;
   input_schema: Record<string, unknown>;
   scope: string;
   risk: string;
@@ -64,6 +68,21 @@ export interface AgentToolCatalog {
   route: string;
   capability_revision: string;
   tools: AgentToolCatalogItem[];
+}
+
+export interface AgentToolDetail {
+  schema_version: typeof AGENT_TOOL_DETAIL_SCHEMA;
+  route: string;
+  capability_revision: string;
+  tool: AgentToolCatalogItem;
+  usage_guidance: {
+    text: string;
+    truncated: boolean;
+    source_chars: number;
+    max_chars: number;
+    source_bytes: number;
+    max_bytes: number;
+  };
 }
 
 export const AGENT_TOOL_SEARCH_SCHEMA = 'bailing.agent-capability-search.v1';
@@ -136,6 +155,7 @@ export class AgentToolApiError extends Error {
     readonly statusCode: number,
     readonly code: string,
     message: string,
+    readonly details?: ToolInputLimitDetails,
   ) {
     super(message);
     this.name = 'AgentToolApiError';
@@ -247,6 +267,8 @@ function publicTool(tool: ToolDefinition): AgentToolCatalogItem {
   return {
     name: tool.name,
     description: safeDescription(tool.description),
+    ...(tool.descriptionTruncated ? { description_truncated: true } : {}),
+    ...(tool.usageGuidance ? { usage_guidance_available: true } : {}),
     input_schema: safeInputSchema(tool.inputSchema),
     scope: tool.scope,
     risk: tool.risk,
@@ -256,7 +278,8 @@ function publicTool(tool: ToolDefinition): AgentToolCatalogItem {
   };
 }
 
-function fingerprint(route: Route, context: AllowedToolContext): string {
+/** @internal Pure revision builder: compiled discovery changes invalidate client caches even for the same raw spec. */
+export function agentToolCatalogRevisionFor(route: Route, context: AllowedToolContext): string {
   return sha256(stableJson({
     schema: AGENT_TOOL_CATALOG_SCHEMA,
     route: route.route_key,
@@ -282,6 +305,8 @@ function fingerprint(route: Route, context: AllowedToolContext): string {
         idempotent: tool.idempotent,
         input_schema: tool.inputSchema,
         param_in: tool.paramIn,
+        discovery: publicTool(tool),
+        usage_guidance: tool.usageGuidance ?? null,
       })),
     })),
   }));
@@ -383,7 +408,7 @@ async function resolveSurface(deps: ToolProxyDeps, auth: AgentToolAuthContext, r
   const resolved = await resolveAllowedToolsFor(deps.configStore, probeJob(auth, route, deps.now()), route);
   if (!resolved) {
     const empty: AllowedToolContext = { sources: [], allowed: [], toolsCfg: route.tools ?? {}, lockedBySubject: 0 };
-    return { route, revision: fingerprint(route, empty), context: empty, tools: [] };
+    return { route, revision: agentToolCatalogRevisionFor(route, empty), context: empty, tools: [] };
   }
   const writeNames = new Set(direct.write_tools ?? []);
   const forceApproval = new Set(direct.force_approval_tools ?? []);
@@ -395,7 +420,7 @@ async function resolveSurface(deps: ToolProxyDeps, auth: AgentToolAuthContext, r
   })).filter((source) => source.allowed.length);
   const allowed = sources.flatMap((source) => source.allowed).sort((a, b) => a.name.localeCompare(b.name));
   const context: AllowedToolContext = { ...resolved, sources, allowed };
-  return { route, revision: fingerprint(route, context), context, tools: allowed.map(publicTool) };
+  return { route, revision: agentToolCatalogRevisionFor(route, context), context, tools: allowed.map(publicTool) };
 }
 
 export async function listAgentToolsFor(deps: ToolProxyDeps, auth: AgentToolAuthContext, route: string): Promise<AgentToolCatalog> {
@@ -405,6 +430,37 @@ export async function listAgentToolsFor(deps: ToolProxyDeps, auth: AgentToolAuth
     route: surface.route.route_key,
     capability_revision: surface.revision,
     tools: surface.tools,
+  };
+}
+
+/** A named, current-authority read: no job, approval, invocation or business dispatch is created. */
+export async function getAgentToolDetailFor(
+  deps: ToolProxyDeps,
+  auth: AgentToolAuthContext,
+  route: string,
+  name: string,
+  capabilityRevision: string,
+): Promise<AgentToolDetail> {
+  if (!TOOL_NAME_RE.test(name)) throw new AgentToolApiError(400, 'invalid_request', 'The tool name is invalid.');
+  if (!REVISION_RE.test(capabilityRevision)) throw new AgentToolApiError(400, 'invalid_request', 'A current capability_revision is required.');
+  const surface = await resolveSurface(deps, auth, route);
+  if (surface.revision !== capabilityRevision) throw new AgentToolApiError(409, 'capability_changed', 'The capability catalog changed; refresh tools before reading usage guidance.');
+  const definition = surface.context.allowed.find((tool) => tool.name === name);
+  if (!definition) throw new AgentToolApiError(404, 'tool_not_found', 'The tool is not available in the current capability catalog.');
+  const guidance = definition.usageGuidance ?? boundedToolText(definition.description, TOOL_USAGE_GUIDANCE_MAX_CHARS, TOOL_USAGE_GUIDANCE_MAX_BYTES);
+  return {
+    schema_version: AGENT_TOOL_DETAIL_SCHEMA,
+    route: surface.route.route_key,
+    capability_revision: surface.revision,
+    tool: publicTool(definition),
+    usage_guidance: {
+      text: guidance.text,
+      truncated: guidance.truncated,
+      source_chars: guidance.sourceChars,
+      max_chars: TOOL_USAGE_GUIDANCE_MAX_CHARS,
+      source_bytes: guidance.sourceBytes,
+      max_bytes: TOOL_USAGE_GUIDANCE_MAX_BYTES,
+    },
   };
 }
 
@@ -574,8 +630,12 @@ function assertInvocationInput(input: InvokeAgentToolInput): void {
     throw new AgentToolApiError(400, 'invalid_request', 'The Agent tool invocation request is invalid.');
   }
   const encoded = JSON.stringify(input.arguments);
-  if (Buffer.byteLength(encoded, 'utf8') > ARGUMENTS_MAX_BYTES) {
-    throw new AgentToolApiError(413, 'arguments_too_large', `Tool arguments exceed ${ARGUMENTS_MAX_BYTES} bytes.`);
+  const actualBytes = Buffer.byteLength(encoded, 'utf8');
+  if (actualBytes > TOOL_ARGUMENTS_MAX_BYTES) {
+    throw new AgentToolApiError(413, 'arguments_too_large', `Tool arguments exceed ${TOOL_ARGUMENTS_MAX_BYTES} bytes.`, {
+      origin: 'core', dispatch: 'not_dispatched', limit_scope: 'arguments',
+      actual_bytes: actualBytes, max_bytes: TOOL_ARGUMENTS_MAX_BYTES,
+    });
   }
 }
 

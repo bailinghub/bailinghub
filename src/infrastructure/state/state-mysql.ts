@@ -24,6 +24,9 @@ export class MysqlStore implements RuntimeStateStore {
     this.poolOwner = poolOwner ?? new MysqlPoolOwner(cfg);
   }
 
+  /** Reuses the store's existing pool; readiness never opens a fallback connection. */
+  get schemaReadinessDb(): Pool { return this.pool; }
+
   async init(): Promise<void> {
     this.pool = await this.poolOwner.get();
   }

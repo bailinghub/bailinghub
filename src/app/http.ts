@@ -10,7 +10,7 @@ export function errMsg(e: unknown): string { return e instanceof Error ? e.messa
 
 export class PayloadTooLargeError extends Error {
   readonly statusCode = 413;
-  constructor(readonly maxBytes: number) {
+  constructor(readonly maxBytes: number, readonly observedBytes?: number) {
     super(`payload too large: max ${maxBytes} bytes`);
     this.name = 'PayloadTooLargeError';
   }
@@ -28,7 +28,7 @@ export async function readBodyCapped(req: IncomingMessage, maxBytes: number): Pr
   let total = 0;
   for await (const c of req) {
     total += (c as Buffer).length;
-    if (total > maxBytes) throw new PayloadTooLargeError(maxBytes);
+    if (total > maxBytes) throw new PayloadTooLargeError(maxBytes, total);
     chunks.push(c as Buffer);
   }
   const raw = Buffer.concat(chunks).toString('utf8');
@@ -44,7 +44,7 @@ export async function readRawBody(req: IncomingMessage, maxBytes = 256 * 1024): 
   let total = 0;
   for await (const c of req) {
     total += (c as Buffer).length;
-    if (total > maxBytes) throw new PayloadTooLargeError(maxBytes);
+    if (total > maxBytes) throw new PayloadTooLargeError(maxBytes, total);
     chunks.push(c as Buffer);
   }
   return Buffer.concat(chunks).toString('utf8');

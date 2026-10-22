@@ -9,12 +9,18 @@
           <p>具体怎么调：点本页每行右侧的「<b>调用代码</b>」，直接复制 HTTP / Node.js / Python / PHP 高频示例；Java、Go、.NET 与任意语言按同一 HTTP 契约接入，见官网 SDK 文档。</p>
           <p><b>另一种用法 · 让任务结果自动经本渠道推（<code>delivery.type=channel</code>）：</b>到「路由」给某条路由的<b>送达</b>选「渠道直推」并绑定本渠道——业务 <code>/run</code> 触发一次，执行器/大脑跑完中枢就<b>自动</b>把结果推给指定用户（收件人由触发 metadata 带），<b>无需业务再调 /send</b>。适合"业务下发任务 → 跑完通知某人"。配法与示例在「路由」页该路由的「调用代码」里。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" @click="openCreate">新建渠道</el-button></div>
+        <el-button v-if="canWrite" type="primary" style="margin-left: auto" @click="openCreate">新建渠道</el-button></div>
     </template>
-    <el-empty v-if="!list.length" description="还没有渠道：把外部消息平台接进来从这里开始">
-      <el-button type="primary" @click="openCreate">添加第一个</el-button>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
+    <div v-if="channelsLoading" class="muted" role="status" style="padding: 24px">正在读取渠道…</div>
+    <el-alert v-else-if="channelsError" type="error" title="渠道读取失败" :closable="false" show-icon>
+      <p>{{ channelsError }}</p>
+      <el-button @click="load">重试读取渠道</el-button>
+    </el-alert>
+    <el-empty v-else-if="!list.length" description="还没有渠道：把外部消息平台接进来从这里开始">
+      <el-button v-if="canWrite" type="primary" @click="openCreate">添加第一个</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else :data="locatedRows" empty-text="没有匹配的渠道">
       <el-table-column label="渠道" min-width="230" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="channel-main">
@@ -55,8 +61,8 @@
       <el-table-column width="176" align="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openCode(row)">调用代码</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="删除该渠道？该平台应用的消息将无法再进中枢。" width="260" @confirm="del(row.name)">
+          <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="canWrite" title="删除该渠道？该平台应用的消息将无法再进中枢。" width="260" @confirm="del(row.name)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
@@ -64,20 +70,26 @@
     </el-table>
   </el-card>
 
-  <el-card shadow="never" style="margin-top: 14px">
+  <el-card id="alert-rules" shadow="never" style="margin-top: 14px; scroll-margin-top: 20px">
     <template #header>
       <div class="head"><b>告警通知</b> <HelpTip title="告警通知是什么">
           <p>中枢<b>自身的运行告警</b>（执行器离线 / 任务失败 / 积压 / 工具源变更等）经上面的渠道推给收件人。</p>
           <p>可按<b>事件类型分流</b>——不同的事通知不同的人 / 渠道。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" :disabled="!list.length" @click="openRuleCreate">新建规则</el-button></div>
+        <el-button v-if="canWrite" type="primary" style="margin-left: auto" :disabled="channelsLoading || !!channelsError || !list.length" @click="openRuleCreate">新建规则</el-button></div>
     </template>
-    <el-alert v-if="!list.length" type="warning" :closable="false" show-icon
+    <ListLocationBar v-model="ruleQuery" :count="locatedRules.length" :total="rules.length" :focus="ruleFocus" :return-to="listReturnTo" placeholder="搜索告警规则 / 渠道" @clear="clearRuleLocation" />
+    <el-alert v-if="!channelsLoading && !channelsError && !list.length" type="warning" :closable="false" show-icon style="margin-bottom: 14px"
       title="先在上方建一个可主动推的渠道（企业微信需填 AgentId + Secret，并把中枢出口 IP 加进该应用「企业可信 IP」），告警才有处可发。" />
+    <div v-if="rulesLoading" class="muted" role="status" style="padding: 24px">正在读取告警规则…</div>
+    <el-alert v-else-if="rulesError" type="error" title="告警规则读取失败" :closable="false" show-icon>
+      <p>{{ rulesError }}</p>
+      <el-button @click="loadRules">重试读取告警规则</el-button>
+    </el-alert>
     <el-empty v-else-if="!rules.length" description="还没有告警规则：建一条把运行告警推给自己">
-      <el-button type="primary" @click="openRuleCreate">添加第一条</el-button>
+      <el-button v-if="canWrite" type="primary" :disabled="channelsLoading || !!channelsError || !list.length" @click="openRuleCreate">添加第一条</el-button>
     </el-empty>
-    <el-table v-else :data="rules">
+    <el-table v-else :data="locatedRules" empty-text="没有匹配的告警规则">
       <el-table-column label="规则" min-width="220">
         <template #default="{ row }">
           <div class="channel-main">
@@ -105,7 +117,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column width="104" align="right">
+      <el-table-column v-if="canWrite" width="104" align="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openRuleEdit(row)">编辑</el-button>
           <el-popconfirm title="删除该告警规则？" width="200" @confirm="delRule(row.id)">
@@ -116,8 +128,9 @@
     </el-table>
   </el-card>
 
-  <el-drawer v-model="open" :title="editing ? '编辑渠道' : '新建渠道'" size="500px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑渠道' : '新建渠道'" size="500px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="saveError" type="error" :title="saveError" :closable="false" show-icon style="margin-bottom: 14px" />
+    <el-form name="channel-platform-settings" autocomplete="off" label-position="top" :disabled="saving">
       <el-tabs v-model="channelFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
@@ -155,32 +168,32 @@
           <template #label>{{ fieldTitle('config.token', 'Token') }} <span class="field-required">*</span> <HelpTip :title="fieldTitle('config.token', 'Token')">
             <p>{{ fieldDesc('config.token', '企业微信接收消息配置中的 Token；编辑时留空表示保留原值。') }}</p>
           </HelpTip></template>
-          <el-input v-model="form.token" :type="editing ? 'password' : 'text'" show-password autocomplete="off" class="mono" placeholder="企微「接收消息」里的 Token" />
+          <el-input v-model="form.token" name="channel-verification-token" :type="editing ? 'password' : 'text'" show-password autocomplete="new-password" class="mono" placeholder="企微「接收消息」里的 Token" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.aes_key', 'EncodingAESKey') }} <span class="field-required">*</span> <HelpTip :title="fieldTitle('config.aes_key', 'EncodingAESKey')">
             <p>{{ fieldDesc('config.aes_key', '企业微信接收消息配置中的 EncodingAESKey；编辑时留空表示保留原值。') }}</p>
           </HelpTip></template>
-          <el-input v-model="form.aes_key" type="password" show-password autocomplete="off" class="mono" />
+          <el-input v-model="form.aes_key" name="channel-encoding-aes-key" type="password" show-password autocomplete="new-password" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.corpid', '企业 ID') }} <HelpTip :title="fieldTitle('config.corpid', '企业 ID')">
             <p>{{ fieldDesc('config.corpid', '企业微信企业 ID；主动推、告警通知和慢回答推送需要填写。') }}</p>
             <p>被动回复能从消息里识别 corpid；主动推、告警通知和慢回答推送场景必须填写。</p>
           </HelpTip></template>
-          <el-input v-model="form.corpid" placeholder="ww… / wx…（要主动推或当告警渠道则必填）" class="mono" />
+          <el-input v-model="form.corpid" name="channel-corporation-id" autocomplete="off" placeholder="ww… / wx…" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.agentid', 'AgentId') }} <HelpTip :title="fieldTitle('config.agentid', 'AgentId')">
             <p>{{ fieldDesc('config.agentid', '平台应用 ID。需要慢回答主动推、告警通知或业务主动推送时填写。') }}</p>
           </HelpTip></template>
-          <el-input v-model="form.agentid" placeholder="如 1000013" class="mono" />
+          <el-input v-model="form.agentid" name="channel-platform-app-id" autocomplete="off" placeholder="如 1000013" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.secret', 'Secret') }} <HelpTip :title="fieldTitle('config.secret', 'Secret')">
             <p>{{ fieldDesc('config.secret', '平台应用 Secret。需要主动推送时填写；编辑时留空表示保留原值。') }}</p>
           </HelpTip></template>
-          <el-input v-model="form.secret" type="password" show-password autocomplete="off" class="mono" />
+          <el-input v-model="form.secret" name="channel-platform-app-secret" type="password" show-password autocomplete="new-password" class="mono" />
         </el-form-item>
         <el-form-item>
           <template #label>{{ fieldTitle('config.reply_wait_ms', '被动回复等待窗口') }} <HelpTip :title="fieldTitle('config.reply_wait_ms', '被动回复等待窗口')">
@@ -196,7 +209,7 @@
             <p>保存后的图片可用于视觉模型识别和会话回看；未选择外部存储时，中枢会使用服务器本地存储。</p>
           </HelpTip></template>
           <el-select v-model="form.bucket" filterable allow-create clearable style="width: 100%"
-            placeholder="选一个媒体存储（与「媒体存储」里登记的一致），留空 = 本地存储">
+            placeholder="使用服务器本地存储（默认）">
             <el-option v-for="b in buckets" :key="b.name" :value="b.name" :label="b.name + (b.enabled === false ? '（已停用）' : '')" />
           </el-select>
         </el-form-item>
@@ -220,13 +233,15 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right: 12px">有未保存的修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
       <el-button type="primary" :loading="saving" @click="save">保存</el-button>
     </template>
   </el-drawer>
 
-  <el-drawer v-model="ruleOpen" :title="ruleEditing ? '编辑告警规则' : '新建告警规则'" size="460px">
-    <el-form label-position="top">
+  <el-drawer v-model="ruleOpen" :title="ruleEditing ? '编辑告警规则' : '新建告警规则'" size="460px" :before-close="ruleFormGuard.beforeClose">
+    <el-alert v-if="ruleSaveError" type="error" :title="ruleSaveError" :closable="false" show-icon style="margin-bottom: 14px" />
+    <el-form label-position="top" :disabled="ruleSaving">
       <el-form-item>
         <template #label>触发事件 <HelpTip title="触发事件">
           <p>按告警标识前缀匹配。留空表示订阅所有事件。</p>
@@ -260,7 +275,8 @@
       <el-form-item v-if="ruleEditing" label="启用"><el-switch v-model="ruleForm.enabled" /></el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="ruleOpen = false">取消</el-button>
+      <span v-if="ruleFormGuard.dirty.value" class="muted" style="margin-right: 12px">有未保存的修改</span>
+      <el-button :disabled="ruleSaving" @click="closeRuleForm">取消</el-button>
       <el-button type="primary" :loading="ruleSaving" @click="saveRule">保存</el-button>
     </template>
   </el-drawer>
@@ -296,14 +312,20 @@
       </div>
       <div>
         <span>接入授权</span>
-        <b>{{ eligibleClients.length ? eligibleClients.length + ' 个接入方' : '无' }}</b>
-        <em>{{ codeClientId || '请先授权可推渠道' }}</em>
+        <b>{{ !clientsLoaded ? '未读取' : eligibleClients.length ? eligibleClients.length + ' 个接入方' : '无' }}</b>
+        <em>{{ codeClientId || (clientsLoaded ? '请先授权可推渠道' : '请由有接入方读取权限的账号核对') }}</em>
       </div>
     </div>
 
-    <el-alert v-if="!eligibleClients.length" type="warning" :closable="false" show-icon style="margin-bottom: 10px"
+    <el-alert v-if="!s.can('clients:read') || clientsError" type="info" :closable="false" show-icon style="margin-bottom: 10px"
+      :title="clientsError || '当前账号不能读取接入方目录；代码保留 token 占位，请由管理员核对推送授权。'" />
+    <p v-else-if="!clientsLoaded" class="muted">正在读取接入方目录…</p>
+    <el-alert v-else-if="!eligibleClients.length" type="warning" :closable="false" show-icon style="margin-bottom: 10px"
       :title="`还没有接入方被授权推送「${codeChannel?.name}」`"
       description="先到「接入方」页编辑一个接入方，把本渠道加入它的「可推渠道白名单」，回来这里就能拿到可直接运行的代码。下面示例先用占位 token。" />
+    <p v-if="codeTokenLoading" class="muted">正在读取所选接入方凭证，代码暂用占位符。</p>
+    <p v-else-if="codeTokenError" class="muted">{{ codeTokenError }}</p>
+    <p v-else-if="codeClientId && !s.can('clients:write')" class="muted">当前账号不能读取完整凭证；代码使用占位符。</p>
     <el-tabs v-model="codeTab" class="code-tabs">
       <el-tab-pane label="HTTP / cURL" name="curl">
         <section class="snippet-card">
@@ -376,35 +398,47 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import { openDoc } from '../docs';
 import { copyText } from '../util';
 import { useMe } from '../store';
+import { useUnsavedForm } from '../use-unsaved-form';
 import HelpTip from '../components/HelpTip.vue';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
 import { kernelOrigin } from '../runtime-path';
 
 const KIND: Record<string, string> = { wecom: '企业微信', feishu: '飞书' };
 const s = useMe();
+const canWrite = computed(() => s.can('channels:write'));
 const channelSchema = useConfigSchema('channel');
 const list = ref<any[]>([]);
+const channelsLoading = ref(true);
+const channelsError = ref('');
+let channelsRequest = 0;
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation, scrollToSection } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.description || ''} ${r.route_key || ''}` });
 // 调用代码弹窗（业务后端经本渠道主动推消息 /send）
-const clients = ref<any[]>([]);
+const clients = ref<any[]>([]), clientsLoaded = ref(false), clientsError = ref('');
 const codeOpen = ref(false);
 const codeChannel = ref<any | null>(null);
 const codeClientId = ref('');
-const codeToken = ref('<接入方token>');
+const codeToken = ref('<接入方token>'), codeTokenLoading = ref(false), codeTokenError = ref('');
+let codeTokenRequest = 0;
 const codeTab = ref('curl');
 const routes = ref<Array<{ route_key: string; name?: string; enabled?: boolean }>>([]);
 const buckets = ref<Array<{ name: string; enabled?: boolean }>>([]);
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
+const saveError = ref('');
 const channelFormTab = ref<'basic' | 'platform' | 'publish'>('basic');
 const blank = { name: '', kind: 'wecom', route_key: '', corpid: '', token: '', aes_key: '', agentid: '', secret: '', reply_wait_ms: 4000, bucket: '', description: '', enabled: true };
 const form = reactive({ ...blank });
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, snapshot: () => form, name: '渠道' });
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
 
 function fieldTitle(field: string, fallback: string): string {
   return schemaTitle(channelSchema.schema.value, field, fallback);
@@ -437,10 +471,28 @@ function recipientsText(recipients: unknown): string {
   return `${arr.slice(0, 3).join('、')} 等 ${arr.length} 人`;
 }
 
-async function load(): Promise<void> { list.value = await api('/admin/api/channels'); }
-function openCreate(): void { editing.value = false; channelFormTab.value = 'basic'; Object.assign(form, blank); open.value = true; }
+async function load(): Promise<void> {
+  const request = ++channelsRequest;
+  channelsLoading.value = true;
+  channelsError.value = '';
+  try {
+    const rows = await api<any[]>('/admin/api/channels');
+    if (request === channelsRequest) list.value = rows;
+  } catch (e) {
+    if (request === channelsRequest) channelsError.value = (e as Error).message || '请稍后重试';
+  } finally {
+    if (request === channelsRequest) channelsLoading.value = false;
+  }
+}
+function openCreate(): void {
+  if (!canWrite.value || open.value || saving.value) return;
+  editing.value = false; channelFormTab.value = 'basic'; saveError.value = '';
+  Object.assign(form, blank); formGuard.begin(); open.value = true;
+}
 function openEdit(row: any): void {
+  if (!canWrite.value || open.value || saving.value) return;
   editing.value = true;
+  saveError.value = '';
   channelFormTab.value = 'basic';
   const c = row.config || {};
   Object.assign(form, {
@@ -450,9 +502,12 @@ function openEdit(row: any): void {
     reply_wait_ms: Number(c.reply_wait_ms) || 4000, bucket: c.bucket || '',
     description: row.description || '', enabled: !!row.enabled,
   });
+  formGuard.begin();
   open.value = true;
 }
 async function save(): Promise<void> {
+  if (!canWrite.value || !open.value || saving.value) return;
+  saveError.value = '';
   saving.value = true;
   try {
     const body = {
@@ -461,11 +516,13 @@ async function save(): Promise<void> {
       config: { corpid: form.corpid, token: form.token, aes_key: form.aes_key, agentid: form.agentid, secret: form.secret, reply_wait_ms: form.reply_wait_ms, bucket: form.bucket },
     };
     await api('/admin/api/channels', { method: 'POST', body: JSON.stringify(body) });
+    formGuard.markSaved();
     ElMessage.success('已保存（密钥不再回显完整值）'); open.value = false; await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) { saveError.value = (e as Error).message || '保存失败，请重试'; }
   finally { saving.value = false; }
 }
 async function del(name: string): Promise<void> {
+  if (!canWrite.value) return;
   try { await api('/admin/api/channels/' + encodeURIComponent(name), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
@@ -476,29 +533,59 @@ const EVENT_LABEL: Record<string, string> = {
   spec_change: '工具源 spec 变更', spec_refresh_fail: '工具源 spec 刷新失败', authz_probe: '工具源鉴权探针告警',
 };
 const rules = ref<any[]>([]);
+const rulesLoading = ref(true);
+const rulesError = ref('');
+let rulesRequest = 0;
+const { keyword: ruleQuery, focus: ruleFocus, rows: locatedRules, clear: clearRuleLocation } = useListLocation(rules, { prefix: 'alert_', id: r => String(r.id), text: r => `${r.id} ${r.description || ''} ${r.event_prefix || ''} ${r.channel || ''}` });
 const ruleOpen = ref(false);
 const ruleEditing = ref(false);
 const ruleSaving = ref(false);
+const ruleSaveError = ref('');
 const ruleBlank = { id: 0, event_prefix: '', channel: '', recipients: [] as string[], cooldown_min: 60, description: '', enabled: true };
 const ruleForm = reactive({ ...ruleBlank });
-async function loadRules(): Promise<void> { try { rules.value = await api('/admin/api/alert-rules'); } catch { /* 可选 */ } }
-function openRuleCreate(): void { ruleEditing.value = false; Object.assign(ruleForm, ruleBlank, { recipients: [] }); ruleOpen.value = true; }
+const ruleFormGuard = useUnsavedForm({ active: () => ruleOpen.value, saving: () => ruleSaving.value, snapshot: () => ruleForm, name: '告警规则' });
+async function closeRuleForm(): Promise<void> { if (await ruleFormGuard.confirmLeave()) ruleOpen.value = false; }
+async function loadRules(): Promise<void> {
+  const request = ++rulesRequest;
+  rulesLoading.value = true;
+  rulesError.value = '';
+  try {
+    const rows = await api<any[]>('/admin/api/alert-rules');
+    if (request === rulesRequest) rules.value = rows;
+  } catch (e) {
+    if (request === rulesRequest) rulesError.value = (e as Error).message || '请稍后重试';
+  } finally {
+    if (request === rulesRequest) rulesLoading.value = false;
+  }
+}
+function openRuleCreate(): void {
+  if (!canWrite.value || ruleOpen.value || ruleSaving.value || channelsLoading.value || channelsError.value || !list.value.length) return;
+  ruleEditing.value = false; ruleSaveError.value = '';
+  Object.assign(ruleForm, ruleBlank, { recipients: [] }); ruleFormGuard.begin(); ruleOpen.value = true;
+}
 function openRuleEdit(row: any): void {
+  if (!canWrite.value || ruleOpen.value || ruleSaving.value) return;
   ruleEditing.value = true;
+  ruleSaveError.value = '';
   Object.assign(ruleForm, { id: row.id, event_prefix: row.event_prefix || '', channel: row.channel, recipients: [...(row.recipients || [])], cooldown_min: row.cooldown_min || 60, description: row.description || '', enabled: !!row.enabled });
+  ruleFormGuard.begin();
   ruleOpen.value = true;
 }
 async function saveRule(): Promise<void> {
-  if (!ruleForm.channel) { ElMessage.error('请选择渠道'); return; }
-  if (!ruleForm.recipients.length) { ElMessage.error('至少填一个收件人'); return; }
+  if (!canWrite.value || !ruleOpen.value || ruleSaving.value) return;
+  ruleSaveError.value = '';
+  if (!ruleForm.channel) { ruleSaveError.value = '请选择渠道'; return; }
+  if (!ruleForm.recipients.length) { ruleSaveError.value = '至少填一个收件人'; return; }
   ruleSaving.value = true;
   try {
     await api('/admin/api/alert-rules', { method: 'POST', body: JSON.stringify({ ...ruleForm, id: ruleForm.id || undefined }) });
+    ruleFormGuard.markSaved();
     ElMessage.success('已保存'); ruleOpen.value = false; await loadRules();
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) { ruleSaveError.value = (e as Error).message || '保存失败，请重试'; }
   finally { ruleSaving.value = false; }
 }
 async function delRule(id: number): Promise<void> {
+  if (!canWrite.value) return;
   try { await api('/admin/api/alert-rules/' + id, { method: 'DELETE' }); await loadRules(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
@@ -513,15 +600,20 @@ async function openCode(row: any): Promise<void> {
   const eligible = clients.value.filter((c) => (c.allowed_channels || []).includes('*') || (c.allowed_channels || []).includes(row.name));
   codeClientId.value = eligible[0]?.app_id || '';
   codeOpen.value = true;
-  if (codeClientId.value) await fetchCodeToken();
+  await fetchCodeToken();
 }
 // 取真实 token（列表只给掩码；要可直接运行就显式取回完整值，后端 clients:write 鉴权 + 审计留痕）
 async function fetchCodeToken(): Promise<void> {
-  if (!codeClientId.value) { codeToken.value = '<接入方token>'; return; }
+  const request = ++codeTokenRequest, clientId = codeClientId.value, channelName = codeChannel.value?.name;
+  codeToken.value = '<接入方token>'; codeTokenError.value = ''; codeTokenLoading.value = false;
+  if (!clientId || !s.can('clients:write')) return;
+  codeTokenLoading.value = true;
+  const stillCurrent = () => request === codeTokenRequest && codeOpen.value && codeClientId.value === clientId && codeChannel.value?.name === channelName;
   try {
-    const r = await api<{ token: string }>('/admin/api/clients/' + encodeURIComponent(codeClientId.value) + '/token');
-    codeToken.value = r.token;
-  } catch { codeToken.value = '<接入方token>'; } // 无权限取回则留占位，开发者自行替换
+    const r = await api<{ token: string }>('/admin/api/clients/' + encodeURIComponent(clientId) + '/token');
+    if (stillCurrent()) codeToken.value = r.token;
+  } catch { if (stillCurrent()) codeTokenError.value = '未取得当前接入方凭证，代码保留占位符；请重选接入方重试。'; }
+  finally { if (request === codeTokenRequest) codeTokenLoading.value = false; }
 }
 const phpCode = computed(() => {
   const ch = codeChannel.value; if (!ch) return '';
@@ -657,7 +749,8 @@ onMounted(async () => {
   await Promise.all([channelSchema.load().catch(() => undefined), load(), loadRules()]);
   if (s.can('routes:read')) { try { routes.value = await api('/admin/api/routes'); } catch { /* 可选 */ } }
   if (s.can('storage:read')) { try { buckets.value = await api('/admin/api/storage-buckets'); } catch { /* 桶列表可选，仍可手填 */ } }
-  if (s.can('clients:read')) { try { clients.value = await api('/admin/api/clients'); } catch { /* 「调用代码」要选接入方，可选 */ } }
+  if (s.can('clients:read')) { try { clients.value = await api('/admin/api/clients'); clientsLoaded.value = true; } catch { clientsError.value = '接入方目录读取失败，暂不能判断推送授权；请刷新页面后重试。'; } }
+  scrollToSection();
 });
 </script>
 

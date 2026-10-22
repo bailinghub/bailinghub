@@ -25,7 +25,7 @@ export function defaultPublicHttpDeps(): PublicHttpDeps {
     queue,
     isPaused,
     metrics,
-    readiness: () => checkReadinessFor(cfg, cfgStore),
+    readiness: () => checkReadinessFor(cfg, cfgStore, store),
     operationalStatus: () => {
       const audit = edition.auditFailures.snapshot();
       return { audit_write_failures: audit.total, last_audit_failure_at: audit.lastFailureAt };

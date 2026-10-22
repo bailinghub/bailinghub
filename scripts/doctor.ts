@@ -2,8 +2,11 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runDeploymentDoctorCli } from './doctor-deployment';
+import { runUpgradePlanCli } from './doctor-upgrade-plan';
 
-if (process.argv.includes('--deployment')) {
+if (process.argv.includes('--upgrade-plan')) {
+  process.exitCode = runUpgradePlanCli(process.argv.slice(2), process.cwd());
+} else if (process.argv.includes('--deployment')) {
   process.exitCode = await runDeploymentDoctorCli(process.argv.slice(2), process.cwd());
 } else {
 

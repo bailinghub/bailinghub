@@ -1,5 +1,5 @@
 <template>
-  <el-popover placement="top-start" :width="400" trigger="click">
+  <el-popover ref="popover" placement="top-start" :width="400" trigger="click">
     <template #reference>
       <span
         class="help-q-wrap"
@@ -12,6 +12,7 @@
         @click.stop.prevent
         @keydown.enter.stop.prevent
         @keydown.space.stop.prevent
+        @keydown.esc.stop.prevent="popover?.hide()"
       >
         <el-icon class="help-q"><QuestionFilled /></el-icon>
       </span>
@@ -26,6 +27,8 @@
 // 标题括号塞不下长说明，也保证全后台帮助形态一致。用法：
 //   <template #label>字段名 <HelpTip title="字段名是什么"><p>说明…</p></HelpTip></template>
 import { QuestionFilled } from '@element-plus/icons-vue';
+import { ref } from 'vue';
+const popover = ref<{ hide: () => void }>();
 defineProps<{ title: string }>();
 </script>
 

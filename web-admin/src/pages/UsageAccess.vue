@@ -266,15 +266,14 @@
                 :disabled="
                   service.state !== 'active'
                 " /></el-select></el-form-item
-          ><el-form-item label="服务端权限"
+          ><el-form-item
+            ><template #label>服务端权限 <UsageHelp title="服务端权限"><p v-for="permission in permissions" :key="permission.value"><b>{{ permission.label }}</b>：{{ permission.description }}</p></UsageHelp></template
             ><el-checkbox-group v-model="form.permissions" class="permissions"
               ><el-checkbox
                 v-for="permission in permissions"
                 :key="permission.value"
                 :value="permission.value"
-                ><span
-                  >{{ permission.label
-                  }}<small>{{ permission.description }}</small></span
+                ><span>{{ permission.label }}</span
                 ></el-checkbox
               ></el-checkbox-group
             ></el-form-item
@@ -393,10 +392,11 @@
       /><el-input
         class="credential"
         :model-value="credential"
+        name="usage-issuer-generated-credential"
         type="password"
         readonly
         show-password
-        autocomplete="off"
+        autocomplete="new-password"
       /><template #footer
         ><div class="drawer-actions">
           <el-button @click="copyCredential">复制凭证</el-button
@@ -611,9 +611,12 @@ async function openAccount(account: Account) {
   detailOpen.value = true;
   await loadDetail();
 }
+let detailGeneration = 0;
 async function loadDetail() {
   const id = selected.value?.id;
   if (!id) return;
+  const generation = ++detailGeneration;
+  const current = () => generation === detailGeneration && selected.value?.id === id;
   detailLoading.value = true;
   detailError.value = "";
   members.value = [];
@@ -621,14 +624,14 @@ async function loadDetail() {
     const result = await api<{ account: Account | null; members: Member[] }>(
       `${base}/accounts/${segment(id)}`,
     );
-    if (selected.value?.id !== id) return;
+    if (!current()) return;
     if (!result.account) throw new Error("USAGE_ACCOUNT_NOT_FOUND");
     selected.value = result.account;
     members.value = result.members;
   } catch (e) {
-    detailError.value = message(e);
+    if (current()) detailError.value = message(e);
   } finally {
-    detailLoading.value = false;
+    if (current()) detailLoading.value = false;
   }
 }
 async function openForm(kind: FormKind) {

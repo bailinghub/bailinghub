@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { errMsg, readBody, send } from './http';
+import { errMsg, PayloadTooLargeError, readBody, send } from './http';
+import { TOOL_ARGUMENTS_MAX_BYTES, TOOL_INVOCATION_BODY_MAX_BYTES } from '../core/contracts/tool-input-limits';
 import { TOOL_INLINE_MAX, type ToolRuntime } from '../core/contracts/tools';
 import type { ToolDefinition } from '../core/contracts/tool-definition';
 import { toolSummary } from '../core/contracts/tool-definition';
@@ -134,10 +135,31 @@ export async function handleToolInvokeFor(deps: ToolProxyDeps, req: IncomingMess
       return;
     }
   }
-  const body = await readBody(req).catch(() => ({} as Record<string, unknown>));
+  let body: Record<string, unknown>;
+  try { body = await readBody(req, TOOL_INVOCATION_BODY_MAX_BYTES); }
+  catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      send(res, 413, {
+        error: 'arguments_too_large', origin: 'core', dispatch: 'not_dispatched',
+        limit_scope: 'request_body', max_bytes: TOOL_INVOCATION_BODY_MAX_BYTES,
+        ...(error.observedBytes !== undefined ? { observed_bytes: error.observedBytes } : {}),
+      });
+    } else send(res, 400, { error: 'invalid_request', message: 'The tool request body must be valid JSON.' });
+    return;
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    send(res, 400, { error: 'invalid_request', message: 'The tool request body must be a JSON object.' });
+    return;
+  }
   const tool = String(body['tool'] ?? '');
   if (!tool) { send(res, 400, { error: 'tool 必填' }); return; }
   const args = (body['arguments'] as Record<string, unknown>) ?? {};
+  const argumentsBytes = Buffer.byteLength(JSON.stringify(args), 'utf8');
+  if (argumentsBytes > TOOL_ARGUMENTS_MAX_BYTES) {
+    send(res, 413, { error: 'arguments_too_large', origin: 'core', dispatch: 'not_dispatched',
+      limit_scope: 'arguments', actual_bytes: argumentsBytes, max_bytes: TOOL_ARGUMENTS_MAX_BYTES });
+    return;
+  }
   if (tool === SEND_TOOL_NAME) {
     const sendChannels = await resolveSendChannelsFor(deps.configStore, job.dispatch?.tools as Record<string, unknown> | undefined).catch(() => [] as string[]);
     if (!sendChannels.length) { send(res, 400, { error: '本路由未开放主动发送渠道' }); return; }

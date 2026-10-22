@@ -110,6 +110,25 @@ function stripImagesForEmbedding(text: string): string {
 
 interface IndexRow { id: number; doc_id: number; seq: number; content: string; title: string; vec: Float32Array }
 
+/** Agent-only snapshots never use the native chat injection cache or expose storage credentials. */
+export interface AgentKnowledgeDocument {
+  kb_id: string;
+  doc_id: number;
+  title: string;
+  content: string;
+  revision: string;
+}
+
+export interface AgentKnowledgeSearchResult {
+  status: 'ok' | 'partial' | 'unavailable';
+  documents: Array<AgentKnowledgeDocument & { summary: string; score: number }>;
+  truncated: boolean;
+}
+
+export function agentKnowledgeDocumentRevision(title: string, content: string): string {
+  return createHash('sha256').update(JSON.stringify([title, content]), 'utf8').digest('hex');
+}
+
 export class KbService {
   private indexCache = new Map<string, { at: number; rows: IndexRow[] }>();
 
@@ -248,6 +267,60 @@ export class KbService {
   async deleteDoc(kbId: string, docId: number): Promise<void> {
     await this.repository.deleteDoc(kbId, docId);
     this.indexCache.delete(kbId);
+  }
+
+  /** A current, ready document; caller owns route authorization and reference validation. */
+  async getAgentDocumentSnapshot(kbId: string, docId: number): Promise<AgentKnowledgeDocument | null> {
+    const base = await this.repository.getBase(kbId);
+    if (!base?.enabled) return null;
+    const doc = await this.repository.getDoc(docId);
+    if (!doc || doc.kb_id !== kbId || doc.status !== 'ready') return null;
+    // A KB can be disabled while its document query is in flight.
+    if (!(await this.repository.getBase(kbId))?.enabled) return null;
+    const title = String(doc.title ?? ''); const content = String(doc.content ?? '');
+    return { kb_id: kbId, doc_id: docId, title, content, revision: agentKnowledgeDocumentRevision(title, content) };
+  }
+
+  /** Fresh Agent retrieval. Existing search/searchMulti and native injection retain their behavior. */
+  async searchForAgent(kbIds: string[], query: string, topK: number, minScore: number, maxDocs: number): Promise<AgentKnowledgeSearchResult> {
+    const candidates: Array<AgentKnowledgeDocument & { summary: string; score: number }> = [];
+    let succeeded = 0; let failed = 0; let more = false;
+    for (const kbId of [...new Set(kbIds)]) {
+      try {
+        const base = await this.repository.getBase(kbId);
+        if (!base?.enabled) { failed++; continue; }
+        const cred = await this.resolveCred(base.credential);
+        if (!cred) { failed++; continue; }
+        const [vector] = await embedViaApi(cred, base.model, base.dim, [query.slice(0, 2000)]);
+        if (!vector) throw new Error('knowledge embedding unavailable');
+        // No indexCache: a ready check and exact current chunk match prevent an old index hit
+        // from being presented as current text after a source edit or an embedding race.
+        const rows = await this.repository.listIndexRows(kbId);
+        const scored = rows.map((row) => {
+          const buffer = row.embedding as Buffer;
+          const values = new Float32Array(Math.floor(buffer.length / 4));
+          for (let i = 0; i < values.length; i++) values[i] = buffer.readFloatLE(i * 4);
+          return { row, score: dot(vector, values) };
+        }).filter((hit) => Number.isFinite(hit.score) && hit.score >= minScore).sort((a, b) => b.score - a.score);
+        const seen = new Set<number>();
+        const count = Math.min(Math.max(topK, 1), 20);
+        more ||= scored.length > count;
+        for (const { row, score } of scored.slice(0, count)) {
+          if (seen.has(row.doc_id)) continue;
+          const doc = await this.getAgentDocumentSnapshot(kbId, row.doc_id);
+          if (!doc || doc.title !== String(row.title ?? '')) continue;
+          const chunks = chunkText(stripImagesForEmbedding(doc.content).replace(/\n{3,}/g, '\n\n').trim());
+          if (chunks[row.seq] !== row.content) continue;
+          seen.add(row.doc_id);
+          candidates.push({ ...doc, summary: row.content, score: Math.round(score * 1000) / 1000 });
+        }
+        succeeded++;
+      } catch { failed++; }
+    }
+    candidates.sort((a, b) => b.score - a.score);
+    const documents = candidates.slice(0, Math.min(Math.max(maxDocs, 1), 3));
+    return { status: failed ? succeeded ? 'partial' : 'unavailable' : 'ok', documents,
+      truncated: more || candidates.length > documents.length };
   }
 
   // ---- 检索 ----

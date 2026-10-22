@@ -5,13 +5,15 @@
           <p>业务系统的 <b>Agent 可调接口清单</b>（OpenAPI + <code>x-agent-capability</code> 契约）；注册后在「触发路由」挂 tools 白名单，即可让 Agent 查 / 办业务。</p>
         </HelpTip>
         <el-button style="margin-left: auto" @click="openDocs('tools')">开发文档</el-button>
-        <el-button type="primary" @click="openCreate">注册工具源</el-button></div>
+        <el-button v-if="s.can('tools:write')" type="primary" @click="openCreate">注册工具源</el-button></div>
     </template>
-    <el-empty v-if="!list.length" description="还没有工具源：业务系统在自己的 OpenAPI 上声明 x-agent-capability 后，把 spec 注册进来">
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
+    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有工具源：业务系统在自己的 OpenAPI 上声明 x-agent-capability 后，把 spec 注册进来">
       <el-button @click="openDocs('tools')">查看开发文档</el-button>
-      <el-button type="primary" @click="openCreate">注册第一个</el-button>
+      <el-button v-if="s.can('tools:write')" type="primary" @click="openCreate">注册第一个</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="工具源" min-width="270" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="tool-main">
@@ -86,11 +88,11 @@
       <el-table-column width="320" align="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="preview(row)">工具清单</el-button>
-          <el-button v-if="row.spec_source === 'url'" link type="primary" :loading="refreshing === row.name" @click="refresh(row.name)">刷新</el-button>
-          <el-button link type="primary" :loading="probing === row.name" @click="probeAuthz(row.name)">探针</el-button>
-          <el-button v-if="row.embed_credential" link type="primary" :loading="reindexing === row.name" @click="reindex(row.name)">重建索引</el-button>
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="删除该工具源？挂它的路由会降级为纯对话。" width="250" @confirm="del(row.name)">
+          <el-button v-if="s.can('tools:write') && row.spec_source === 'url'" link type="primary" :loading="refreshing === row.name" @click="refresh(row.name)">刷新</el-button>
+          <el-button v-if="s.can('tools:write')" link type="primary" :loading="probing === row.name" @click="probeAuthz(row.name)">探针</el-button>
+          <el-button v-if="s.can('tools:write') && row.embed_credential" link type="primary" :loading="reindexing === row.name" @click="reindex(row.name)">重建索引</el-button>
+          <el-button v-if="s.can('tools:write')" link type="primary" :disabled="Boolean(listError)" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="s.can('tools:write')" title="删除该工具源？挂它的路由会降级为纯对话。" width="250" @confirm="del(row.name)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
@@ -99,15 +101,15 @@
   </el-card>
 
   <!-- 注册/编辑 -->
-  <el-drawer v-model="open" :title="editing ? '编辑工具源' : '注册工具源'" size="560px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑工具源' : '注册工具源'" size="560px" :before-close="formGuard.beforeClose" @closed="clearSecret">
+    <el-form name="tool-source-settings" autocomplete="off" label-position="top" :disabled="saving || !s.can('tools:write')">
       <el-tabs v-model="toolFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
         <template #label>{{ fieldTitle('name', '名称') }} <span v-if="fieldRequired('name')" class="field-required">*</span>
           <HelpTip :title="fieldTitle('name', '名称')"><p>{{ fieldDesc('name') }}</p></HelpTip>
         </template>
-        <el-input v-model="form.name" :disabled="editing" placeholder="如 demo-business / business-api" class="mono" />
+        <el-input v-model="form.name" name="tool-source-name" autocomplete="off" :disabled="editing || saving" placeholder="如 demo-business / business-api" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('base_url', 'Base URL') }} <span v-if="fieldRequired('base_url')" class="field-required">*</span> <HelpTip :title="fieldTitle('base_url', 'Base URL')">
@@ -115,7 +117,7 @@
           <p>AI 调工具时，请求发到 <code>base_url + 接口 path</code>。</p>
           <p><b>必须指向源站直连地址</b>——中枢"签所发即所发"，URI 会被重写 / 重编码的 CDN 或网关后面验签必挂。</p>
         </HelpTip></template>
-        <el-input v-model="form.base_url" placeholder="https://server.example.com" class="mono" />
+        <el-input v-model="form.base_url" name="tool-source-base-url" type="url" autocomplete="off" placeholder="https://server.example.com" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>{{ fieldTitle('secret', '签名密钥') }} <span v-if="fieldRequired('secret')" class="field-required">*</span> <HelpTip :title="fieldTitle('secret', '签名密钥')">
@@ -124,7 +126,7 @@
           <p>这是中枢与业务的<b>共享密钥</b>——业务侧验签要用同一串。建好后列表里只显示掩码，点该行「<b>复制</b>」按钮可随时取回完整值交给业务方（与模型凭证的 api_key 不同，那是中枢出站凭证、永不外泄）。</p>
           <p>与接入方 token、中枢管理 token 完全解耦，可单独轮换；泄露只影响"伪装中枢调业务"，不波及其他面。</p>
         </HelpTip></template>
-        <el-input v-model="form.secret" type="password" show-password autocomplete="off" :placeholder="editing ? '留空 = 保留原密钥' : ''">
+        <el-input v-model="form.secret" name="tool-source-signing-secret" type="password" show-password autocomplete="new-password" :placeholder="editing ? '留空 = 保留原密钥' : ''">
           <template #append><el-button @click="genSecret">生成</el-button></template>
         </el-input>
       </el-form-item>
@@ -143,13 +145,14 @@
           <p>推荐约定路径 <code>/.well-known/bailing/tools.json</code>，但<b>不强制</b>——宝塔等面板对点开头路径有特殊处理（详见官网开发文档），换任意路径（如 <code>/api/bailing/tools</code>）即可绕开。</p>
           <p>建议 spec 根声明 <code>x-bailing-authz-probe</code>，并在业务系统单独挂一个授权探针端点；中枢刷新后会用不存在的主体验证业务侧是否 fail-closed。</p>
         </HelpTip></template>
-        <el-input v-model="form.spec_url" placeholder="https://server.example.com/.well-known/bailing/tools.json" class="mono" />
+        <el-input v-model="form.spec_url" name="tool-source-spec-url" type="url" autocomplete="off" placeholder="https://server.example.com/.well-known/bailing/tools.json" class="mono" />
       </el-form-item>
       <el-form-item v-if="form.spec_source === 'url'">
         <template #label>接口清单访问策略 <HelpTip title="接口清单访问策略">
           <p><b>签名保护（推荐）</b>：未签名或错误签名的请求必须被业务侧拒绝；中枢刷新时会用正确签名读取，再以未签名和错误签名请求确认它们均被拒绝。</p>
           <p><b>允许公开</b>：中枢以未签名请求读取；任何能访问该 URL 的人都可以下载接口路径、参数、scope 与风险声明。只应在你明确接受公开时选择。</p>
           <p>该策略只约束接口清单的读取方式；工具调用仍必须验签并按操作主体授权。</p>
+          <p>公开的是能力清单，不是签名密钥；但接口路径、参数和风险声明会对 URL 访问者可见。保存时还会再次确认。</p>
         </HelpTip></template>
         <div class="spec-access-policy">
           <el-radio-group v-model="form.spec_access_policy">
@@ -157,7 +160,7 @@
               签名保护（推荐）
               <el-tag v-if="historicalProtectedEvidence" size="small" type="success" effect="plain">与当前实测一致</el-tag>
             </el-radio>
-            <el-radio value="public_allowed">允许公开</el-radio>
+            <el-radio value="public_allowed">允许公开（任何 URL 访问者可读清单）</el-radio>
           </el-radio-group>
           <el-alert
             v-if="historicalAccessPending"
@@ -174,13 +177,6 @@
             size="small"
             @click="adoptProtectedSpecAccess"
           >采用实测结果：签名保护</el-button>
-          <el-alert
-            v-if="form.spec_access_policy === 'public_allowed'"
-            title="公开的是能力清单，不是签名密钥；但接口路径、参数和风险声明会对 URL 访问者可见。保存时还会再次确认。"
-            type="warning"
-            :closable="false"
-            show-icon
-          />
         </div>
       </el-form-item>
       <el-form-item v-if="form.spec_source === 'url'">
@@ -212,16 +208,18 @@
         <el-input-number v-model="form.timeout_ms" :min="1000" :max="60000" :step="1000" />
       </el-form-item>
       <el-form-item>
-        <template #label>工具源总限额（次/分钟，0=关闭）</template>
+        <template #label>工具源总限额（次/分钟，0=关闭） <HelpTip title="工具源总限额"><p>该工具源下所有工具、用户、授权和会话共用。设为 0 只关闭总闸，下方单工具策略独立生效。</p></HelpTip></template>
         <el-input-number v-model="form.rate_limit_per_min" :min="0" :max="1000000" :precision="0" :step="100" />
-        <div class="muted hint">该工具源下所有工具、用户、授权和会话共用。设为 0 只关闭总闸，下方单工具策略独立生效。</div>
       </el-form-item>
-      <el-form-item label="单工具默认策略">
+      <el-form-item>
+        <template #label>单工具默认策略 <HelpTip title="单工具默认策略">
+          <p>每个工具分别计数，同一工具的用户与会话共用；120 次/小时按一小时滑动窗口计数，允许在额度内连续调用。</p>
+          <p>自定义或关闭只调整中枢限额；接入方限额、业务系统自身限额、权限与审批仍独立生效。保存后对后续调度生效，当前窗口已有计数不会清零。</p>
+        </HelpTip></template>
         <ToolRateLimitEditor v-model="toolRateDefault" />
-        <div class="muted hint">每个工具分别计数，同一工具的用户与会话共用；120 次/小时按一小时滑动窗口计数，允许在额度内连续调用。</div>
-        <div class="muted hint">自定义或关闭只调整中枢限额；接入方限额、业务系统自身限额、权限与审批仍独立生效。保存后对后续调度生效，当前窗口已有计数不会清零。</div>
       </el-form-item>
-      <el-form-item label="指定工具覆盖">
+      <el-form-item>
+        <template #label>指定工具覆盖 <HelpTip title="指定工具覆盖"><p>覆盖优先于默认策略；“继承业务声明”使用该工具的原声明。刷新能力清单会保留这里的设置。</p></HelpTip></template>
         <div style="width: 100%">
           <div v-for="(entry, index) in toolRateOverrides" :key="index" style="margin-bottom: 12px">
             <div style="display: flex; gap: 8px; margin-bottom: 6px">
@@ -233,7 +231,6 @@
             <ToolRateLimitEditor v-model="entry.policy" />
           </div>
           <el-button @click="toolRateOverrides.push({ name: '', policy: { mode: 'inherit' } })">添加工具覆盖</el-button>
-          <div class="muted hint">覆盖优先于默认策略；“继承业务声明”使用该工具的原声明。刷新能力清单会保留这里的设置。</div>
         </div>
       </el-form-item>
         </el-tab-pane>
@@ -259,14 +256,21 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon style="margin-bottom:12px" />
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button v-if="s.can('tools:write')" type="primary" :loading="saving" @click="save">保存</el-button>
     </template>
   </el-drawer>
 
   <!-- 工具清单预览 -->
   <!-- 800 = 内表格最小宽 670 + 展开列 48 + 抽屉内边距 40 + 余量；改列宽时同步核算，别让抽屉底部出横向滚动 -->
   <el-drawer v-model="previewOpen" :title="'工具清单 · ' + previewName" size="800px">
+    <el-alert v-if="previewLoading" title="正在读取工具清单…" type="info" :closable="false" />
+    <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" show-icon>
+      <template #default><el-button link @click="retryPreview">重新读取</el-button></template>
+    </el-alert>
+    <el-empty v-if="!previewLoading && !previewError && !previewNote && !previewTools.length && !previewSkipped.length" description="该工具源当前没有可用工具" />
     <el-alert v-if="previewNote" :title="previewNote" type="warning" :closable="false" style="margin-bottom: 12px" />
     <template v-if="previewWarnings.length">
       <div class="muted" style="margin: 0 0 6px">接入体检提醒：</div>
@@ -333,7 +337,7 @@
         <div class="debug-actions">
           <el-checkbox v-model="debugAllowRisky" size="small">允许实调高风险/审批工具</el-checkbox>
           <el-button size="small" @click="syncDebugJsonFromForm">生成 JSON</el-button>
-          <el-button type="primary" size="small" :loading="debugLoading" @click="runDebugInvoke">实调验证</el-button>
+          <el-button v-if="s.can('tools:write')" type="primary" size="small" :loading="debugLoading" @click="runDebugInvoke">实调验证</el-button>
         </div>
         <div v-if="debugResult" class="debug-result">
           <div class="debug-status">
@@ -391,7 +395,7 @@
                 · {{ row.readonly ? '只读' : '会改数据' }}
               </div>
               <div class="muted">业务声明：{{ row.rate_limit ? row.rate_limit.count + ' 次/' + rateWindowLabel[row.rate_limit.window] : row.rate_limit_per_min ? row.rate_limit_per_min + ' 次/分钟' : '未声明限额' }}。生效来源：{{ ({ declaration: '业务声明', provider_default: '中枢默认策略', tool_override: '指定工具覆盖' } as any)[row.effective_rate_limit?.source] || '业务声明' }}。</div>
-              <el-button text type="primary" @click="editLimitsFromPreview">设置限额</el-button>
+              <el-button v-if="s.can('tools:write')" text type="primary" @click="editLimitsFromPreview">设置限额</el-button>
               <template v-if="row.confirm_prompt">
                 <div class="td-sec">审批通知话术（ACC approval.prompt，{参数名} 由实参填充后发给审批人）</div>
                 <div class="td-text">{{ row.confirm_prompt }}</div>
@@ -427,8 +431,11 @@
 </template>
 
 <script setup lang="ts">
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
 import ToolRateLimitEditor from '../components/ToolRateLimitEditor.vue';
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';
@@ -437,13 +444,19 @@ import { fmtTime } from '../util';
 import { useMe } from '../store';
 import HelpTip from '../components/HelpTip.vue';
 import { schemaDescription, schemaRequired, schemaTitle, useConfigSchema } from '../schema';
+import { useUnsavedForm } from '../use-unsaved-form';
 
 const s = useMe();
+const route = useRoute();
 const toolSchema = useConfigSchema('tool-provider');
 const list = ref<any[]>([]);
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.description || ""}` });
+const listLoading = ref(false), listError = ref('');
+let listGeneration = 0;
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
+const saveError = ref('');
 const toolFormTab = ref<'basic' | 'spec' | 'governance' | 'retrieval' | 'publish'>('basic');
 const refreshing = ref('');
 const reindexing = ref('');
@@ -468,11 +481,16 @@ function toolLimitLabel(limit: any): string {
   return limit?.enabled ? `${limit.count} 次/${rateWindowLabel[limit.window] || limit.window}` : '关闭';
 }
 function editLimitsFromPreview(): void {
+  if (!s.can('tools:write')) return;
   const row = list.value.find((item: any) => item.name === previewName.value);
   if (row) { openEdit(row); toolFormTab.value = 'governance'; }
 }
 const form = reactive({ name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', spec_access_policy: 'signed_required' as SpecAccessChoice, log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
 const editBaseline = ref<ToolProviderEditBaseline | null>(null);
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, name: '工具源配置',
+  snapshot: () => ({ form, defaultRate: toolRateDefault.value, overrides: toolRateOverrides.value }) });
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
+function clearSecret(): void { if (!open.value) form.secret = ''; }
 const historicalAccessPending = computed(() => editing.value
   && editBaseline.value?.spec_source === 'url'
   && editBaseline.value.spec_access_policy === 'legacy_unverified'
@@ -490,6 +508,8 @@ const historicalAccessDescription = computed(() => historicalProtectedEvidence.v
   : '这只是升级前配置缺少管理员意图，不代表清单已公开。当前继续按历史兼容方式运行；可先停用或维护说明、治理、检索等非清单字段。');
 
 const previewOpen = ref(false);
+const previewLoading = ref(false), previewError = ref('');
+let previewGeneration = 0, retrieveGeneration = 0, debugGeneration = 0;
 const previewName = ref('');
 const previewTools = ref<any[]>([]);
 const previewSkipped = ref<any[]>([]);
@@ -732,42 +752,51 @@ const debugDiagnosis = computed(() => {
 // 语义召回预演：跑派发同款向量检索，返回工具+分数，让开发者看精度、调优工具措辞
 async function runRetrieveTest(): Promise<void> {
   const q = retrieveQ.value.trim();
-  if (!q) return;
+  if (!q || retrieving.value) return;
+  const generation = ++retrieveGeneration, preview = previewGeneration, name = previewName.value;
+  const current = () => generation === retrieveGeneration && preview === previewGeneration && previewOpen.value;
   retrieving.value = true;
   try {
     const r = await api<{ enabled: boolean; min_score_default: number; hits: Array<{ name: string; scope: string; score: number }> }>(
-      '/admin/api/tool-providers/' + encodeURIComponent(previewName.value) + '/retrieve-test', { method: 'POST', body: JSON.stringify({ query: q }) });
+      '/admin/api/tool-providers/' + encodeURIComponent(name) + '/retrieve-test', { method: 'POST', body: JSON.stringify({ query: q }) });
+    if (!current()) return;
     retrieveMinScore.value = r.min_score_default ?? 0.3;
     retrieveHits.value = r.hits || [];
     lastRetrieveQ.value = q;
     if (!retrieveHits.value.length) ElMessage.info('没有召回（索引为空？先「重建索引」）');
-  } catch (e) { ElMessage.error((e as Error).message); }
-  finally { retrieving.value = false; }
+  } catch (e) { if (current()) ElMessage.error((e as Error).message); }
+  finally { if (current()) retrieving.value = false; }
 }
 
 async function runDebugInvoke(): Promise<void> {
+  if (!s.can('tools:write') || debugLoading.value) return;
   if (!debugTool.value) { ElMessage.error('请选择工具'); return; }
   let args: Record<string, unknown> = {};
   try {
     args = debugMode.value === 'form' ? buildDebugArgsFromForm() : parseDebugJson();
   } catch (e) { ElMessage.error((e as Error).message); return; }
+  const generation = ++debugGeneration, preview = previewGeneration, name = previewName.value, tool = debugTool.value;
+  const subject = debugSubject.value.trim();
+  const current = () => generation === debugGeneration && preview === previewGeneration && previewOpen.value && debugTool.value === tool;
   debugLoading.value = true;
   try {
-    debugResult.value = await api('/admin/api/tool-providers/' + encodeURIComponent(previewName.value) + '/debug-invoke', {
+    const result = await api<any>('/admin/api/tool-providers/' + encodeURIComponent(name) + '/debug-invoke', {
       method: 'POST',
       body: JSON.stringify({
-        tool: debugTool.value,
+        tool,
         args,
-        on_behalf_of: debugSubject.value.trim(),
+        on_behalf_of: subject,
         allow_risky: debugAllowRisky.value,
       }),
     });
-    saveDebugSample(args);
+    if (!current()) return;
+    debugResult.value = result;
+    saveDebugSample(args, subject);
     if (debugResult.value.blocked) ElMessage.warning('调用已被调试台阻断');
     else if (debugResult.value.ok) ElMessage.success('工具调用成功');
     else ElMessage.warning('工具调用返回失败状态');
-  } catch (e) { ElMessage.error((e as Error).message); }
-  finally { debugLoading.value = false; }
+  } catch (e) { if (current()) ElMessage.error((e as Error).message); }
+  finally { if (current()) debugLoading.value = false; }
 }
 
 function parseDebugJson(): Record<string, unknown> {
@@ -826,12 +855,13 @@ function loadDebugSamples(): void {
   }
 }
 
-function saveDebugSample(args: Record<string, unknown>): void {
-  const sample = { id: `${Date.now()}`, at: new Date().toISOString(), subject: debugSubject.value.trim(), args };
+function saveDebugSample(args: Record<string, unknown>, subject: string): void {
+  const sample = { id: `${Date.now()}`, at: new Date().toISOString(), subject, args };
   const same = (x: any) => x.subject === sample.subject && JSON.stringify(x.args) === JSON.stringify(args);
   const next = [sample, ...debugSamples.value.filter((x) => !same(x))].slice(0, 5);
   debugSamples.value = next;
-  localStorage.setItem(debugStorageKey(), JSON.stringify(next));
+  try { localStorage.setItem(debugStorageKey(), JSON.stringify(next)); }
+  catch { /* Sample persistence is optional and must not turn a completed business call into a failure. */ }
 }
 
 function applyDebugSampleById(id: string): void {
@@ -853,6 +883,7 @@ function applyDebugArgsToForm(args: Record<string, unknown>): void {
 }
 
 function resetDebugForTool(): void {
+  debugGeneration++; debugLoading.value = false;
   debugResult.value = null;
   debugAllowRisky.value = false;
   loadDebugSamples();
@@ -888,6 +919,7 @@ function paramRows(t: any): Array<{ name: string; loc: string; type: string; req
 
 // 取回完整签名密钥并复制（列表只给掩码；这把密钥要交给业务方验签，需随时可取）
 async function copySecret(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   try {
     const r = await api<{ secret: string }>(`/admin/api/tool-providers/${encodeURIComponent(name)}/secret`);
     await navigator.clipboard.writeText(r.secret);
@@ -896,11 +928,20 @@ async function copySecret(name: string): Promise<void> {
 }
 
 async function load(): Promise<void> {
-  list.value = await api('/admin/api/tool-providers');
+  const generation = ++listGeneration;
+  listLoading.value = true;
+  try {
+    const rows = await api<any[]>('/admin/api/tool-providers');
+    if (generation === listGeneration) { list.value = rows; listError.value = ''; }
+  } catch { if (generation === listGeneration) listError.value = list.value.length ? '工具源列表刷新失败，当前保留旧快照。' : '工具源列表读取失败，请重试。'; }
+  finally { if (generation === listGeneration) listLoading.value = false; }
   // 向量化凭证（工具检索选坐标系用）；无权限/失败不阻塞页面
-  try { embCreds.value = (await api<any[]>('/admin/api/credentials')).filter((c) => c.kind === 'embedding' || c.kind === 'both'); } catch { /* 可选 */ }
+  if (s.can('credentials:read')) {
+    try { embCreds.value = (await api<any[]>('/admin/api/credentials')).filter((c) => c.kind === 'embedding' || c.kind === 'both'); } catch { /* 可选 */ }
+  }
 }
 async function reindex(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   reindexing.value = name;
   try {
     const r = await api<{ total: number; added: string[]; changed: string[]; removed: string[] }>('/admin/api/tool-providers/' + encodeURIComponent(name) + '/reindex', { method: 'POST' });
@@ -909,6 +950,7 @@ async function reindex(name: string): Promise<void> {
   finally { reindexing.value = ''; }
 }
 async function probeAuthz(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   probing.value = name;
   try {
     const r = await api<{ authz_probe: any }>('/admin/api/tool-providers/' + encodeURIComponent(name) + '/authz-probe', { method: 'POST' });
@@ -919,6 +961,7 @@ async function probeAuthz(name: string): Promise<void> {
   finally { probing.value = ''; }
 }
 function openCreate(): void {
+  if (!s.can('tools:write') || saving.value || open.value) return;
   toolRateDefault.value = { mode: 'inherit' };
   toolRateOverrides.value = [];
   limitToolNames.value = [];
@@ -926,9 +969,11 @@ function openCreate(): void {
   editBaseline.value = null;
   toolFormTab.value = 'basic';
   Object.assign(form, { name: '', base_url: '', secret: '', spec_source: 'inline', spec_url: '', spec_json: '', spec_access_policy: 'signed_required', log_payload: true, timeout_ms: 10000, rate_limit_per_min: 120, auto_refresh_min: 0, description: '', enabled: true, embed_credential: '', embed_model: '', embed_dim: 1024 });
+  saveError.value = ''; formGuard.begin();
   open.value = true;
 }
 function openEdit(row: any): void {
+  if (!s.can('tools:write') || saving.value || open.value || listError.value) return;
   toolRateDefault.value = JSON.parse(JSON.stringify(row.tool_rate_limits?.default ?? { mode: 'inherit' }));
   toolRateOverrides.value = Object.entries(row.tool_rate_limits?.overrides ?? {}).map(([name, policy]) => ({ name, policy: JSON.parse(JSON.stringify(policy)) as RatePolicy }));
   limitToolNames.value = [];
@@ -950,6 +995,7 @@ function openEdit(row: any): void {
     ? policy === 'legacy_unverified' ? '' : policy
     : 'signed_required';
   Object.assign(form, { name: row.name, base_url: row.base_url, secret: '', spec_source: row.spec_source, spec_url: row.spec_url || '', spec_json: '', spec_access_policy: policyChoice, log_payload: !!row.log_payload, timeout_ms: row.timeout_ms, rate_limit_per_min: row.rate_limit_per_min, auto_refresh_min: row.auto_refresh_min ?? 0, description: row.description || '', enabled: !!row.enabled, embed_credential: row.embed_credential || '', embed_model: row.embed_model || '', embed_dim: row.embed_dim || 1024 });
+  saveError.value = ''; formGuard.begin();
   open.value = true;
 }
 function onEmbedCred(): void {
@@ -972,27 +1018,29 @@ function historicalAccessSensitiveChange(): boolean {
     || (!baseline.enabled && form.enabled);
 }
 async function save(): Promise<void> {
+  if (!s.can('tools:write') || saving.value) return;
+  saveError.value = '';
   if (historicalAccessSensitiveChange()) {
     toolFormTab.value = 'spec';
-    ElMessage.warning('这项修改会改变接口清单拉取或重新启用历史工具源，请先确认签名保护或允许公开');
+    saveError.value = '这项修改会改变接口清单拉取或重新启用历史工具源，请先确认签名保护或允许公开';
     return;
-  }
-  if (form.spec_source === 'url' && form.spec_access_policy === 'public_allowed') {
-    try {
-      const message = historicalProtectedEvidence.value
-        ? '当前实测为正签可读、未签和错签均被拒绝。选择允许公开是在改变访问方式；需先让业务端允许匿名读取，否则刷新会失败。确认仍允许公开吗？'
-        : '任何能访问该 URL 的人都可以下载接口路径、参数、scope 与风险声明。工具调用仍需验签和授权。确认允许公开这份接口清单吗？';
-      await ElMessageBox.confirm(
-        message,
-        '确认公开接口清单',
-        { confirmButtonText: '确认允许公开', cancelButtonText: '返回修改', type: 'warning' },
-      );
-    } catch {
-      return;
-    }
   }
   saving.value = true;
   try {
+    if (form.spec_source === 'url' && form.spec_access_policy === 'public_allowed') {
+      try {
+        const message = historicalProtectedEvidence.value
+          ? '当前实测为正签可读、未签和错签均被拒绝。选择允许公开是在改变访问方式；需先让业务端允许匿名读取，否则刷新会失败。确认仍允许公开吗？'
+          : '任何能访问该 URL 的人都可以下载接口路径、参数、scope 与风险声明。工具调用仍需验签和授权。确认允许公开这份接口清单吗？';
+        await ElMessageBox.confirm(
+          message,
+          '确认公开接口清单',
+          { confirmButtonText: '确认允许公开', cancelButtonText: '返回修改', type: 'warning' },
+        );
+      } catch {
+        return;
+      }
+    }
     const names = toolRateOverrides.value.map((entry) => entry.name);
     if (new Set(names).size !== names.length || names.some((name) => !/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(name))) throw new Error('指定工具覆盖的工具名不能为空、重复或包含特殊字符');
     const payload: Record<string, unknown> = { ...form, tool_rate_limits: {
@@ -1001,11 +1049,12 @@ async function save(): Promise<void> {
     // 历史 URL 工具源未确认时省略该字段：后端会保留既有 sentinel，空串绝不代表允许公开。
     if (form.spec_source === 'url' && form.spec_access_policy === '') delete payload.spec_access_policy;
     await api('/admin/api/tool-providers', { method: 'POST', body: JSON.stringify(payload) });
-    ElMessage.success('已保存（密钥不再回显完整值）'); open.value = false; await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    formGuard.markSaved(); ElMessage.success('已保存（密钥不再回显完整值）'); open.value = false; await load();
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 async function refresh(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   refreshing.value = name;
   try {
     const r = await api<{ tools: number }>('/admin/api/tool-providers/' + encodeURIComponent(name) + '/refresh', { method: 'POST' });
@@ -1014,30 +1063,46 @@ async function refresh(name: string): Promise<void> {
   finally { refreshing.value = ''; }
 }
 async function preview(row: any): Promise<void> {
+  const generation = ++previewGeneration;
+  retrieveGeneration++; debugGeneration++; retrieving.value = false; debugLoading.value = false;
   previewName.value = row.name;
+  previewLoading.value = true; previewError.value = ''; previewNote.value = ''; previewOpen.value = true;
   previewEmbed.value = !!row.embed_credential;
   previewFilter.value = ''; retrieveQ.value = ''; lastRetrieveQ.value = ''; retrieveHits.value = [];
   debugTool.value = ''; debugSubject.value = ''; debugArgs.value = '{}'; debugAllowRisky.value = false; debugResult.value = null; debugSamples.value = []; debugSampleId.value = '';
   previewWarnings.value = []; previewSkipped.value = []; previewTools.value = [];
   try {
     const r = await api<any>('/admin/api/tool-providers/' + encodeURIComponent(row.name) + '/tools');
+    if (generation !== previewGeneration || !previewOpen.value) return;
     previewTools.value = r.tools || [];
     previewSkipped.value = r.skipped || [];
     previewWarnings.value = r.warnings || [];
     previewNote.value = r.note || '';
-    previewOpen.value = true;
     debugTool.value = previewTools.value[0]?.name || '';
     resetDebugForTool();
-  } catch (e) { ElMessage.error((e as Error).message); }
+  } catch (e) { if (generation === previewGeneration && previewOpen.value) previewError.value = `工具清单读取失败：${(e as Error).message}`; }
+  finally { if (generation === previewGeneration) previewLoading.value = false; }
+}
+function retryPreview(): void {
+  const row = list.value.find(item => item.name === previewName.value);
+  if (row) void preview(row);
 }
 async function del(name: string): Promise<void> {
+  if (!s.can('tools:write')) return;
   try { await api('/admin/api/tool-providers/' + encodeURIComponent(name), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }
 onMounted(async () => {
+  if (route.query.create === '1') openCreate();
   await Promise.all([toolSchema.load().catch(() => undefined), load()]);
 });
+watch(() => route.query.create, (create) => { if (create === '1') openCreate(); });
 watch(debugTool, () => resetDebugForTool());
+watch(previewOpen, (value) => {
+  if (value) return;
+  previewGeneration++; retrieveGeneration++; debugGeneration++;
+  previewLoading.value = false; retrieving.value = false; debugLoading.value = false;
+}, { flush: 'sync' });
 </script>
 
 <style scoped>

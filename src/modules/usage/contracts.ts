@@ -26,7 +26,14 @@ export interface UsageServiceConfig {
   model: string;
   providerScope: string;
   maxInputBytes: number;
+  /** Operator service ceiling, not the model vendor's maximum capability. */
   maxOutputTokens: number;
+  /** Explicit output policy is an all-or-none group; absent means legacy behavior. */
+  defaultOutputTokens?: number;
+  outputTokenParameter?: 'max_tokens' | 'max_completion_tokens';
+  outputBudgetScope?: 'completion_total' | 'final_answer';
+  /** Verified vendor maximum for the configured parameter/scope; unknown remains absent. */
+  modelMaxOutputTokens?: number;
   timeoutMs: number;
   /** Operator-verified model metadata; absence means unknown, never a guessed context window. */
   contextWindowTokens?: number;

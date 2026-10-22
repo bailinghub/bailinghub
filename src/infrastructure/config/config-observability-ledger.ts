@@ -111,6 +111,8 @@ export class ObservabilityLedger {
     const off = Math.max(Math.floor(Number(offset) || 0), 0);
     const [rows] = await this.pool.query(
       'SELECT job_id,request_id,status,target,profile,project,source,client_app_id,session_id,input_preview,' +
+        'JSON_UNQUOTE(JSON_EXTRACT(dispatch,"$.route_key")) AS route_key,' +
+        'JSON_UNQUOTE(JSON_EXTRACT(dispatch,"$.route_name")) AS route_name,' +
         'JSON_UNQUOTE(JSON_EXTRACT(metadata,"$.visitor_uid")) AS visitor_uid,' +
         'JSON_UNQUOTE(JSON_EXTRACT(metadata,"$.thread_id")) AS thread_id,' +
         'JSON_UNQUOTE(JSON_EXTRACT(result,"$.report.severity")) AS severity,' +

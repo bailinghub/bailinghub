@@ -1,6 +1,6 @@
 # Agent Client Runtime v1
 
-Unreleased paired addition: [task control](AGENT_TASK_CONTROL.en.md) adds trusted `task_binding` to turns and echoes it. Enrolled Sessions cannot omit it; runtime searches must use the original `run_id`. Read-only inspection and explicit original-operation continuation remain separate.
+Available as an optional capability since Core 0.8.0, [task control](AGENT_TASK_CONTROL.en.md) adds trusted `task_binding` to turns and echoes it. Enrolled Sessions cannot omit it; runtime searches must use the original `run_id`. Read-only inspection and explicit original-operation continuation remain separate.
 
 English | [简体中文](AGENT_CLIENT_RUNTIME_API.md)
 
@@ -12,7 +12,9 @@ does not replace `/run`, chat entries, or the executor protocol. See the
 
 Every endpoint requires `Authorization: Bearer <Agent access token>` and returns
 `Cache-Control: no-store`. The workspace is the intersection of the Client `allowed_routes`, Agent
-Session `allowed_routes`, enabled and audience-compatible routes, and `tools.agent_direct`.
+Session `allowed_routes`, enabled and audience-compatible routes, with `agent_client.enabled`.
+Business tool discovery and execution additionally require `tools.agent_direct`. A knowledge-only
+workspace can bootstrap and prepare a turn with an empty business tool catalog.
 `agent_client.enabled=false` disables this Runtime only; it does not disable the older
 `/agent-api/v1/tools` surface.
 
@@ -22,12 +24,40 @@ Session `allowed_routes`, enabled and audience-compatible routes, and `tools.age
 - `GET /agent-api/v1/workspaces/:route/bootstrap`
 - `POST /agent-api/v1/workspaces/:route/turns`
 - `POST /agent-api/v1/workspaces/:route/capabilities/search`
+- `GET /agent-api/v1/workspaces/:route/knowledge/capabilities`
+- `POST /agent-api/v1/workspaces/:route/knowledge/search`
+- `POST /agent-api/v1/workspaces/:route/knowledge/read`
 - `POST /agent-api/v1/runs/:run_id/complete`
 - Tool execution continues to use `POST /agent-api/v1/tool-invocations` and the existing resume
   endpoint.
 
 Raw JSON for `turns` and `complete` is limited to 512 KiB. Parsed values still have strict field
 limits; the service rejects invalid input instead of truncating it silently.
+
+Hosts supporting the [Agent knowledge protocol](AGENT_KNOWLEDGE_API.en.md) may explicitly request
+`knowledge_delivery: "on_demand"` in a turn. This option is part of the immutable turn request hash.
+The server echoes the negotiated mode in `context.knowledge_delivery`, retaining instructions,
+governance and memory while replacing supplementary knowledge bodies with bounded hints.
+Absent this option, legacy inline knowledge remains unchanged. Native chat/embed/widget do not
+use this option. Hosts must not silently remove unnegotiated bodies.
+
+Tool invocation `arguments` must remain an object. The limit is **1048576 bytes (1 MiB)**,
+measured as UTF-8 bytes of `JSON.stringify(arguments)`, including JSON escaping. The full HTTP
+JSON envelope is limited to **2097152 bytes (2 MiB)**. Executor `/jobs/:job_id/tools/invoke`
+uses the same budgets. These explicit tool budgets are independent of `BAILING_JSON_BODY_MAX_BYTES`;
+other endpoints and business capability field limits remain separate. Composite HTML/CSS fields
+remain objects, subject to the capability schema and business validation.
+
+Oversize requests are rejected before dispatch with HTTP 413, `error=arguments_too_large`,
+`origin=core`, `dispatch=not_dispatched`, `limit_scope=arguments|request_body`, and `max_bytes`.
+Argument rejection includes exact `actual_bytes`. Streaming envelope rejection includes
+`observed_bytes`, the bytes observed when reading stopped, which may be less than the full request.
+No body or credential is echoed. Older MCP/SDK clients enforce their own smaller limits and need
+the matching client fix; updating Core alone cannot change installed clients.
+
+Complete approval argument snapshots retain the exact idempotency hash. Notifications use bounded
+summaries, and large snapshots are read on demand in the console. Larger transport budgets do not
+bypass identity, authorization, approval, idempotency, or audit checks.
 
 ## Write and approval semantics
 
@@ -160,6 +190,46 @@ owns dynamic tool replacement/append behavior and the current loaded-tool set.
 
 ## Tool invocation and recovery
 
+### Read usage guidance by tool name
+
+Discovery `description` remains short: the OpenAPI compiler caps it at 500 Unicode code points.
+Optional `usage_guidance_available: true` identifies separate guidance; `description_truncated: true`
+only means the short description itself was shortened, with a `tool_description_truncated` compile
+warning. Separate detail does not imply truncation. When both OpenAPI `summary` and `description`
+are present, both remain in explicit guidance rather than silently discarding `description`.
+
+```http
+GET /agent-api/v1/tools/page_save?route=pages&capability_revision=<current-capability-revision>
+Authorization: Bearer <Agent access token>
+```
+
+The `bailing.agent-tool-detail.v1` response contains `route`, `capability_revision`, the existing
+allowlisted `tool` projection, and `usage_guidance: { text, truncated, source_chars, max_chars,
+source_bytes, max_bytes }`. Scope, risk, approval, readonly and idempotency keep their existing
+machine meanings. Guidance never grants permission or replaces server validation. Detail combines
+only standard summary/description, ACC when-to-use/returns and the first example; it does not expose
+the original spec, extension bag, Provider URL or credentials.
+
+Guidance is bounded by both **32768 Unicode code points** and **65536 UTF-8 bytes**, whichever is
+reached first, without splitting characters. Source counts describe the guidance before truncation,
+after control-character cleanup. `truncated: true` means even this detail is incomplete, with a
+`tool_usage_guidance_truncated` compile warning. Authors should shorten guidance and put critical
+conditions first; schema and ACC machine checks continue independently. Catalogs and searches do
+not inline the full guidance.
+
+Each read revalidates current Client, Session, route, audience, subject and exact tool authorization.
+A stale revision returns `409 capability_changed`; an unavailable tool returns `404 tool_not_found`.
+This read creates no invocation/job, consumes no approval or execution allowance and makes no
+business request. Responses use `Cache-Control: no-store`. Older clients can ignore optional fields;
+missing fields or an unsupported endpoint on an older server do not prove its short description
+contains all prerequisites.
+
+The capability revision includes the compiled public projection and bounded guidance. A compiler
+upgrade that changes descriptions, flags or guidance therefore invalidates discovery caches even
+when the raw spec is unchanged. This discovery revision remains separate from an invocation's
+frozen execution fingerprint: guidance-only changes do not block original approval continuation
+and do not permit automatic redispatch.
+
 Invoke only a tool projected by the current bootstrap/search result. Core revalidates the Agent
 Session, route, operation ID, ACC declaration, approval state, limits, and business authorization
 on every invocation. When the result is pending, in progress, or uncertain, resume the original
@@ -179,6 +249,21 @@ and business status. It does not receive model hidden reasoning, complete sensit
 raw business response bodies.
 
 ## Complete
+
+Authorization-level execution summaries can use `bailing.authorization-execution-summary.v1`
+inside the existing `content` string. They contain only original invocation IDs, original tool
+names, last-known states, `next_action: "inspect_original"` for unresolved calls, and total/omitted
+counts. New DSH summaries exclude business result text. They are neither a complete audit nor a
+current outcome check, and they do not invent a reference for retrieving full original output.
+
+When assembling the next turn's `memory.recent`, Core recognizes this marker only in outbound
+messages and projects allowed fact fields again. It fixes `kind: "authorization_execution_summary"`,
+`source: "agent_client"` and `trust: "reference_only"`: a client-claimed schema does not verify an
+outcome or grant authority. User messages cannot acquire execution provenance by including the
+same marker. Memory limits omit whole invocation records with explicit counts; very small limits
+return an explicit omission notice, never partial JSON. Existing assistant text and immutable
+completion bodies remain compatible. This adds neither user long-term memory nor full-audit
+storage guarantees.
 
 ```json
 {

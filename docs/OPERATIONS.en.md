@@ -33,6 +33,12 @@ Business systems / channels
 | `GET /health` | Liveness: the process responds | Restart the process |
 | `GET /health/ready` | Readiness: MySQL is reachable and migrations are complete | Remove the instance from new traffic |
 
+A false readiness result / HTTP 503 signals the Host or load balancer to remove traffic; it does not automatically reject every `/run` request. Deployment admission must honor that signal. The probe compares the artifact inventory with the migration ledger, not every physical table definition: manually dropping a business table while leaving its ledger intact can escape this check.
+
+Readiness checks the actual state and configuration pools. Both databases must be complete when separate; one shared pool is checked once. JSONL state does not skip an attached MySQL configuration store. The installed artifact owns the active/retired migration inventory and SHA-256 checksums: missing active rows are pending; unknown rows, conflicting/missing/empty checksums, or an unreadable ledger are not-ready. Retired records are optional history but must match when present, and are never pending SQL. Probes only read: they do not create tables, backfill checksums, or run migrations. Legacy ledgers require the official migrator's validation/backfill in a controlled upgrade step first.
+
+Custom MySQL state stores can expose their existing pool/query resource through the optional `RuntimeStateStore.schemaReadinessDb` contract. If absent, readiness fails rather than opening another connection or substituting the configuration database. This tightens the readiness result for older extensions while preserving type compatibility. Pure JSONL instances without SQL configuration still skip SQL checks. Existing status fields are retained; connection details and raw SQL exceptions are not returned. `migrations.pending` counts distinct missing migration filenames across resources, not databases. Distinct pools are checked separately even if they point to one schema; connection settings are never used to guess that resources can be merged.
+
 Readiness intentionally does not probe models, tool providers, or channels. A third-party outage must not remove the entire hub from the load balancer. Use system diagnostics and alert rules for those dependencies.
 
 `/health` exposes the process-local `observability.audit_write_failures` counter and `last_audit_failure_at`. Any non-zero value should trigger an investigation of structured `audit_write_failed` runtime log events and database health. The counter resets on process restart and does not replace external monitoring. Security-critical audit remains fail-closed; best-effort callers may degrade, but their write failures still pass through this observer first.
@@ -143,9 +149,9 @@ The new stage-diagnostic event records cache state, index/credential/query-embed
 
 ## 5. Upgrades
 
-1. Back up MySQL.
-2. Run `npm run release:check` outside production.
-3. Run forward-only migrations from one deployment step. Do not let every replica migrate concurrently.
+1. Identify source/target artifacts and state/configuration stores using the [compatibility policy](COMPATIBILITY.en.md) and target-version guide. A [read-only upgrade plan](UPGRADE_PLAN.en.md) can help review the supplied evidence.
+2. Run `npm run release:check` outside production and rehearse the upgrade and consistent backup restoration.
+3. Stop admission to every instance and other writer sharing those stores, drain accepted work, and retain a consistent backup. Then run the target migrator once per distinct database. Do not assume online migration or mixed-version operation is safe without separate validation.
 4. Start a new replica and wait for `/health/ready` to return 200.
 5. Replace old replicas gradually while observing queue, errors, and lease recovery.
 
@@ -157,7 +163,7 @@ Back up the complete MySQL database, object-storage media and knowledge-source f
 
 Recovery order:
 
-1. Stop traffic to all hub replicas.
+1. Stop admission to all hub replicas and other writers sharing the stores, and confirm that background SQL, approvals and notification work have drained. Removing incoming traffic alone does not stop writes.
 2. Restore MySQL and shared object storage.
 3. Start one build compatible with the restored migration level.
 4. Verify readiness, diagnostics, and a representative trace.
@@ -173,6 +179,12 @@ Recovery order:
 - Graceful close drains accepted callback, delivery, approval-notification, alert and DLQ continuations within the shared Kernel budget before closing database/channel resources. A timeout preserves resources for another close attempt. Background failure logs contain fixed work kinds only.
 - Native delivery DLQs retain channel credentials. Custom `X-notify` DLQs requeue only the original failed notification child; queued acknowledges executor admission, not receipt. A permanent DLQ marker is saved atomically with admission, so repeated calls or lost resolve replies do not admit it again or rerun the business parent. Legacy entries are checked against the original job; binding conflicts return 409 and adapters without replay ports return 503.
 - Historical v0.9.3 drain does not provide a complete SIGKILL-safe notification outbox. Core v0.9.4 adds [durable notifications](NOTIFICATION_DURABILITY.en.md) and migration 068: new terminal transitions and approval creation commit alongside intents, and recovery sends notifications without rerunning business tasks. Ordinary alerts and legacy adapters retain best-effort boundaries. Receivers deduplicate stable event IDs; partial or unknown receipt must not be blindly resent.
+
+### Standalone boot-recovery close barrier (unreleased candidate)
+
+This candidate adds a close barrier that is not included in the published Core v0.9.4 artifact. An unfired recovery timer is cancelled; once recovery has started, `kernel.close(drainMs)` waits for target refresh, queries, audits and requeue work to settle. On `boot recovery drain timed out`, Kernel preserves resources and stops admitting new work. Investigate blockers such as database lock waits, then retry `close()` on **the same Kernel instance**; do not force-close its connection pool to bypass the barrier.
+
+Retry applies to the Kernel API. The default CLI exits with status 1 after a failed signal shutdown and does not retry automatically; another `server.shutdown()` call is not a Kernel close retry. This barrier does not protect against forced process exit or replace durable recovery and business-result reconciliation.
 
 ## 8. Security Baseline
 

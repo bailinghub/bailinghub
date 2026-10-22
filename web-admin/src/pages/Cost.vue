@@ -21,7 +21,11 @@
       </div>
     </template>
 
-    <div v-loading="loading" class="cost-page">
+    <el-alert v-if="error" title="成本数据读取失败" type="error" :closable="false" show-icon style="margin-bottom: 12px">
+      <template #default>{{ error }}{{ data ? `；以下为上次读取的 ${data.days} 天旧快照。` : '；请点击刷新重试。' }}</template>
+    </el-alert>
+    <div v-if="!data && loading" v-loading="loading" style="min-height: 140px" />
+    <div v-if="data" v-loading="loading" class="cost-page">
       <section class="overview">
         <div class="metric primary">
           <span>总花费</span>
@@ -161,6 +165,8 @@ const router = useRouter();
 const data = ref<CostData | null>(null);
 const days = ref(30);
 const loading = ref(false);
+const error = ref('');
+let loadGeneration = 0;
 
 const total = computed(() => data.value?.total ?? { jobs: 0, cost_usd: 0, tokens: 0 });
 const hasCost = computed(() => total.value.cost_usd > 0);
@@ -188,9 +194,14 @@ const headlineDesc = computed(() => {
 });
 
 async function load(): Promise<void> {
-  loading.value = true;
-  try { data.value = await api<CostData>('/admin/api/cost?days=' + days.value); }
-  finally { loading.value = false; }
+  const generation = ++loadGeneration;
+  loading.value = true; error.value = '';
+  try {
+    const value = await api<CostData>('/admin/api/cost?days=' + days.value);
+    if (generation === loadGeneration) data.value = value;
+  } catch (e) {
+    if (generation === loadGeneration) error.value = (e as Error).message;
+  } finally { if (generation === loadGeneration) loading.value = false; }
 }
 function usd(v: number): string {
   const n = Number(v) || 0;

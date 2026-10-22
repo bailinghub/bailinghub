@@ -6,12 +6,14 @@
           <p><b>默认不需要对象存储：</b>未配置时走服务器本地 <code>data/uploads</code>；生产环境可切到业务自己的 COS，得到的 URL 就是业务 CDN 地址。</p>
           <p><b>凭证铁律：</b>业务桶强烈建议给「限定 <code>path_prefix</code> 前缀的子账号 / RAM 策略或 STS 临时凭证」，别把整桶 AK/SK 交出来。落桶对象设为公读（多模态模型与前台都要取）。</p>
         </HelpTip>
-        <el-button type="primary" style="margin-left: auto" @click="openCreate">新建存储</el-button></div>
+        <el-button v-if="canWrite" type="primary" style="margin-left: auto" @click="openCreate">新建存储</el-button></div>
     </template>
-    <el-empty v-if="!list.length" description="未登记外部存储时，聊天入口会默认使用服务器本地存储">
-      <el-button type="primary" @click="openCreate">添加外部存储</el-button>
+    <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link :disabled="listLoading" @click="load">重新读取</el-button></el-alert>
+    <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
+    <el-empty v-if="!listLoading && !listError && !list.length" description="未登记外部存储时，聊天入口会默认使用服务器本地存储">
+      <el-button v-if="canWrite" type="primary" @click="openCreate">添加外部存储</el-button>
     </el-empty>
-    <el-table v-else :data="list">
+    <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
       <el-table-column label="存储桶" min-width="240" show-overflow-tooltip>
         <template #default="{ row }">
           <div class="bucket-main">
@@ -40,8 +42,8 @@
       <el-table-column label="状态" width="100" align="center"><template #default="{ row }"><el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">{{ row.enabled ? '启用' : '停用' }}</el-tag></template></el-table-column>
       <el-table-column width="110" align="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-popconfirm title="删除该存储桶登记？关联它的聊天入口将无法上传图片（已落桶的图不受影响）。" width="280" @confirm="del(row.name)">
+          <el-button v-if="canWrite" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-popconfirm v-if="canWrite" title="删除该存储桶登记？关联它的聊天入口将无法上传图片（已落桶的图不受影响）。" width="280" @confirm="del(row.name)">
             <template #reference><el-button link type="danger">删</el-button></template>
           </el-popconfirm>
         </template>
@@ -49,8 +51,9 @@
     </el-table>
   </el-card>
 
-  <el-drawer v-model="open" :title="editing ? '编辑媒体存储' : '新建媒体存储'" size="500px">
-    <el-form label-position="top">
+  <el-drawer v-model="open" :title="editing ? '编辑媒体存储' : '新建媒体存储'" size="500px" :before-close="formGuard.beforeClose">
+    <el-alert v-if="saveError" :title="saveError" type="error" :closable="false" show-icon />
+    <el-form name="media-storage-settings" autocomplete="off" label-position="top" :disabled="saving || !canWrite">
       <el-tabs v-model="bucketFormTab" class="console-tabs">
         <el-tab-pane label="基础" name="basic">
       <el-form-item>
@@ -60,7 +63,10 @@
         <el-input v-model="form.name" :disabled="editing" placeholder="如 shared-media / local-media" class="mono" />
       </el-form-item>
       <el-form-item>
-        <template #label>类型 <span class="field-required">必填</span></template>
+        <template #label>类型 <span class="field-required">必填</span> <HelpTip title="存储类型">
+          <p>本地存储写入服务器 <code>data/uploads</code>，并通过 <code>/uploads/*</code> 公开读取，不需要 AccessKey 或 SecretKey。</p>
+          <p>生产环境若需要 CDN、生命周期管理或多副本共享，可选择对象存储。</p>
+        </HelpTip></template>
         <el-select v-model="form.kind" style="width: 100%">
           <el-option value="local" label="服务器本地（开箱可用）" />
           <el-option value="cos" label="腾讯云 COS" />
@@ -68,7 +74,6 @@
           <el-option value="s3" label="AWS S3 / 兼容（预留，未实现）" disabled />
         </el-select>
       </el-form-item>
-      <el-alert v-if="form.kind === 'local'" title="本地存储会写入服务器 data/uploads，并通过 /uploads/* 公开读取。生产环境如果需要 CDN、生命周期管理或多副本共享，建议改用对象存储。" type="info" :closable="false" />
       <el-form-item v-if="form.kind !== 'local'">
         <template #label>桶名 <span class="field-required">必填</span></template>
         <el-input v-model="form.bucket" placeholder="COS 带 appid 后缀，如 example-1250000000" class="mono" />
@@ -79,26 +84,27 @@
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="访问凭证" name="secret">
-      <el-alert v-if="form.kind === 'local'" title="本地存储不需要 AccessKey 或 SecretKey。用于生成图片交付时，请填写指向 /uploads 的公开访问地址。" type="info" :closable="false" />
-      <template v-else>
+      <template v-if="form.kind !== 'local'">
       <el-form-item>
         <template #label>AccessKeyId <span class="field-required">必填</span> <HelpTip title="AccessKeyId">
           <p>对象存储访问身份。编辑时留空表示保留原值。</p>
         </HelpTip></template>
-        <el-input v-model="form.access_key" autocomplete="off" class="mono" :placeholder="editing ? '留空 = 保留原值' : ''" />
+        <el-input v-model="form.access_key" name="storage-access-key-id" autocomplete="off" class="mono" :placeholder="editing ? '留空 = 保留原值' : ''" />
       </el-form-item>
       <el-form-item>
         <template #label>SecretKey <span class="field-required">必填</span> <HelpTip title="SecretKey">
           <p>对象存储访问密钥。建议使用只允许写入指定前缀的子账号或临时凭证；编辑时留空表示保留原值。</p>
         </HelpTip></template>
-        <el-input v-model="form.secret_key" type="password" show-password autocomplete="off" />
+        <el-input v-model="form.secret_key" name="storage-secret-key" type="password" show-password autocomplete="new-password" />
       </el-form-item>
       </template>
       <el-form-item>
         <template #label>公开访问域名 <span class="field-required">必填</span> <HelpTip title="公开访问域名">
           <p>上传成功后返回给聊天、视觉模型和业务工具的 URL 前缀。可填 COS 原生域名或业务 CDN 域名，不带尾斜杠。</p>
+          <p v-if="form.kind === 'local'">本地存储不需要访问密钥；用于生成图片交付时，请填写指向 <code>/uploads</code> 的公开访问地址。</p>
+          <p v-else>例如 <code>https://demo-bucket-1234567890.cos.ap-shanghai.myqcloud.com</code>，或自定义 CDN 域名。</p>
         </HelpTip></template>
-        <el-input v-model="form.public_base_url" placeholder="https://demo-bucket-1234567890.cos.ap-shanghai.myqcloud.com 或自定义 CDN 域（无尾斜杠）" class="mono" />
+        <el-input v-model="form.public_base_url" name="storage-public-base-url" type="url" autocomplete="off" placeholder="https://…" class="mono" />
       </el-form-item>
       <el-form-item>
         <template #label>写入前缀 <HelpTip title="写入前缀">
@@ -106,7 +112,12 @@
         </HelpTip></template>
         <el-input v-model="form.path_prefix" placeholder="bailing/chat" class="mono" />
       </el-form-item>
-      <el-form-item v-if="form.kind !== 'local'" label="自定义 endpoint"><el-input v-model="form.endpoint" placeholder="一般留空，留空按类型 + 地域拼接" class="mono" /></el-form-item>
+      <el-form-item v-if="form.kind !== 'local'">
+        <template #label>自定义 endpoint <HelpTip title="自定义 endpoint">
+          <p>一般留空，系统会按存储类型和地域生成地址。</p>
+        </HelpTip></template>
+        <el-input v-model="form.endpoint" placeholder="可选" class="mono" />
+      </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="发布" name="publish">
       <el-form-item label="说明（可选）"><el-input v-model="form.description" /></el-form-item>
@@ -115,29 +126,51 @@
       </el-tabs>
     </el-form>
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+      <span v-if="formGuard.dirty.value" class="muted" style="margin-right:12px">有未保存修改</span>
+      <el-button :disabled="saving" @click="closeForm">取消</el-button>
+      <el-button type="primary" :loading="saving" :disabled="!canWrite" @click="save">保存</el-button>
     </template>
   </el-drawer>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import ListLocationBar from '../components/ListLocationBar.vue';
+import { useListLocation } from '../use-list-location';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { api } from '../request';
 import HelpTip from '../components/HelpTip.vue';
+import { useUnsavedForm } from '../use-unsaved-form';
+import { useMe } from '../store';
 
+const me = useMe();
+const canWrite = computed(() => me.can('storage:write'));
+const saveError = ref('');
 const list = ref<any[]>([]);
+const listLoading = ref(false), listError = ref('');
+const { keyword: listQuery, focus: listFocus, rows: locatedRows, returnTo: listReturnTo, clear: clearListLocation } = useListLocation(list, { id: r => String(r.name), text: r => `${r.name} ${r.provider || ""} ${r.bucket || ""}` });
 const open = ref(false);
 const editing = ref(false);
 const saving = ref(false);
 const bucketFormTab = ref<'basic' | 'secret' | 'publish'>('basic');
 const blank = { name: '', kind: 'local', region: '', bucket: '', endpoint: '', access_key: '', secret_key: '', public_base_url: '', path_prefix: 'bailing/chat', description: '', enabled: true };
 const form = reactive({ ...blank });
+const formGuard = useUnsavedForm({ active: () => open.value, saving: () => saving.value, snapshot: () => form, name: '媒体存储配置' });
+async function closeForm(): Promise<void> { if (await formGuard.confirmLeave()) open.value = false; }
 
-async function load(): Promise<void> { list.value = await api('/admin/api/storage-buckets'); }
-function openCreate(): void { editing.value = false; bucketFormTab.value = 'basic'; Object.assign(form, blank); open.value = true; }
-function openEdit(row: any): void {
+
+async function load(): Promise<void> {
+  if (listLoading.value) return;
+  listLoading.value = true;
+  try {
+    list.value = await api('/admin/api/storage-buckets');
+    listError.value = '';
+  } catch { listError.value = list.value.length ? '媒体存储列表刷新失败，当前保留旧快照。' : '媒体存储列表读取失败，请重试。'; }
+  finally { listLoading.value = false; }
+}
+
+function openCreate(): void { if (!canWrite.value || saving.value || open.value) return; editing.value = false; bucketFormTab.value = 'basic'; Object.assign(form, blank); saveError.value = ''; formGuard.begin(); open.value = true; }
+function openEdit(row: any): void { if (!canWrite.value || saving.value || open.value || listError.value) return;
   editing.value = true;
   bucketFormTab.value = 'basic';
   Object.assign(form, {
@@ -146,17 +179,20 @@ function openEdit(row: any): void {
     public_base_url: row.public_base_url || '', path_prefix: row.path_prefix || 'bailing/chat',
     description: row.description || '', enabled: !!row.enabled,
   });
-  open.value = true;
+  saveError.value = ''; formGuard.begin(); open.value = true;
 }
 async function save(): Promise<void> {
+  if (!canWrite.value || saving.value) return;
+  saveError.value = '';
   saving.value = true;
   try {
     await api('/admin/api/storage-buckets', { method: 'POST', body: JSON.stringify(form) });
-    ElMessage.success('已保存（SecretKey 不再回显完整值）'); open.value = false; await load();
-  } catch (e) { ElMessage.error((e as Error).message); }
+    ElMessage.success('已保存（SecretKey 不再回显完整值）'); formGuard.markSaved(); open.value = false; await load();
+  } catch (e) { saveError.value = `未能确认保存成功：${(e as Error).message}。输入已保留，请核对后重试。`; }
   finally { saving.value = false; }
 }
 async function del(name: string): Promise<void> {
+  if (!canWrite.value) return;
   try { await api('/admin/api/storage-buckets/' + encodeURIComponent(name), { method: 'DELETE' }); await load(); }
   catch (e) { ElMessage.error((e as Error).message); }
 }

@@ -41,6 +41,8 @@
 
 `GET /usage/v1/capabilities` 的 `model_gateway.supported=true` 为接入入口，schema 为 `bailing.model-gateway.v1`，`billing_unit=USD`、`orchestration=host`、`turn_required=false`。
 
+对话模型可显式分开默认输出预算和服务上限，并声明实际供应商参数及是否包含思考；旧服务不会自动迁移。配置、目录字段、拒绝回执及原请求恢复边界见[模型输出预算契约](MODEL_OUTPUT_BUDGET.md)。
+
 | 接口 | 用途 |
 | --- | --- |
 | `GET /usage/v1/model/models` | 当前账户套餐中的对话模型；显示管理员配置的 label |
@@ -55,6 +57,8 @@
 所有请求在本地持久保存原 `operation_id`。丢失回包、断网重开、结果不确定时只查询原请求，不能换 ID 重发生成。相同 ID、相同内容只派发一次；相同 ID 不同内容明确冲突。新动作和原调用恢复严格区分。取消的晚返回仍记录用量，不恢复已结束的本地轮次。
 
 响应分别提供 `result_state`、`billing_state`、`response`、原始 `usage`（可为空）、`raw_usage`、`reference_cost_usd`、`billed_usd`、`overage_usd`。`billing_rate` 包含套餐修订、统一倍率和参考价格快照。`response` 有限期保存，过期返回 `response_expired`，不能因此重发原操作。
+
+对话模型的 `result_state=complete` 只表示供应商响应交换已保存，不表示模型答案完整或宿主任务已经完成。供应商的原始 `finish_reason`、部分正文、思考内容及工具调用仍保留在 `bailing.provider-response.v1` 中，由宿主适配器解释。明确的输出预算截断与网络执行结果未知是两类情况；中枢不会因截断自动再次调用模型。参见[长任务续跑与原请求恢复](MODEL_CONTINUATION.md)。
 
 可信业务后端使用原身份交换接口。`model_access: token_gateway` 是套餐范围凭证的身份标记，不是旧 Token 额度模式；`service` 仍严格限制单个模型。身份、原业务授权、固定会话范围、审批和业务调用归档独立存在，不因套餐扩大授权。
 
@@ -82,9 +86,9 @@
 ## 生成结果与计费状态分开
 
 - `result_state=pending`：供应商请求仍在进行，宿主按原 ID 查询，不发起第二次生成。
-- `complete`：立即使用图片，即使 `billing_state=pending`；结算不阻塞结果。
+- `complete`：结果可以立即交给宿主适配器，即使 `billing_state=pending`；结算不阻塞结果。对话适配器仍需判断答案、工具调用是否完整，图片使用声明的工具结果。
 - `failed`：已获得明确拒绝（例如不存在的接口、无效参数、权限拒绝），`dispatch=rejected`，停止等待，显示安全错误；不自动重发。当前已确认拒绝无生成的请求以零扣费关闭。
-- `unknown`：连接断开、服务器错误或无法解析完整结果，执行结果确实不确定。停止“正在生成”的展示，保留原 ID 供核对；不能自动换 ID 或切接口重发。不阻塞其他独立模型请求。
+- `unknown`：派发后发生真实传输异常或无法持久确认原执行结果。停止“正在生成”的展示，保留原 ID 供核对；不能自动换 ID 或切接口重发。不阻塞其他独立模型请求。完整收到的对话响应原文即使包含 `finish_reason=length`、供应商错误或语义缺尾，也不因宿主解析结论被重写为中枢的传输未知状态。
 - `cancelled`：维持取消；晚到的结果和费用不重新启用宿主工具或恢复已结束轮次。
 
 失败回执的 `error` 仅包含 `code`、固定安全文案 `message`、可选的 `http_status / provider_code / provider_request_id`、`retryable=false` 及 `next_action`。不保存或返回供应商原始错误正文、提示词、密钥或地址。HTTP 408、409 与 5xx 不等于已证明没有执行。

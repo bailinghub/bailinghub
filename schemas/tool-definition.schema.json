@@ -52,6 +52,8 @@
       "minLength": 1,
       "maxLength": 500
     },
+    "descriptionTruncated": { "type": "boolean" },
+    "usageGuidance": { "$ref": "#/$defs/usageGuidance" },
     "scope": {
       "type": "string",
       "minLength": 1,
@@ -122,6 +124,17 @@
     }
   },
   "$defs": {
+    "usageGuidance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "truncated", "sourceChars", "sourceBytes"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 32768, "description": "Additionally bounded to 65536 UTF-8 bytes by the compiler/runtime validator." },
+        "truncated": { "type": "boolean" },
+        "sourceChars": { "type": "integer", "minimum": 0 },
+        "sourceBytes": { "type": "integer", "minimum": 0 }
+      }
+    },
     "confirmCondition": {
       "type": "object",
       "additionalProperties": false,

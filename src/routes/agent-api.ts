@@ -1,11 +1,13 @@
 import { handleAgentArtifacts } from './agent-artifacts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { PayloadTooLargeError, readBody, send } from '../app/http';
+import { TOOL_INVOCATION_BODY_MAX_BYTES } from '../core/contracts/tool-input-limits';
 import type { Principal } from '../app/auth';
 import type { ToolProxyDeps } from '../app/tool-proxy';
 import {
   AgentToolApiError,
   agentInvocationInspectionCapabilities,
+  getAgentToolDetailFor,
   inspectAgentToolInvocationFor,
   invokeAgentToolFor,
   listAgentToolsFor,
@@ -21,6 +23,7 @@ import { getAgentSystemInfoFor } from '../app/agent-system-info';
 import { agentTaskCapabilitiesFor, inspectAgentTaskFor, assertAgentLegacyTaskAllowedFor, taskErrorStatus, publicAgentTaskError } from '../app/agent-task-control';
 import { AgentTaskControlError } from '../core/runtime/agent-task-control';
 import type { KbService } from '../services/kb';
+import { getAgentKnowledgeCapabilitiesFor, searchAgentKnowledgeFor, readAgentKnowledgeFor } from '../app/agent-knowledge';
 import {
   completeAgentRunFor,
   getAgentWorkspaceBootstrapFor,
@@ -67,7 +70,7 @@ function sendAgentToolError(res: ServerResponse, error: unknown): void {
     return;
   }
   if (error instanceof AgentToolApiError) {
-    send(res, error.statusCode, { error: error.code, message: error.message });
+    send(res, error.statusCode, { error: error.code, message: error.message, ...error.details });
     return;
   }
   send(res, 500, { error: 'agent_tool_internal_error', message: 'The governed Agent tool operation failed.' });
@@ -87,7 +90,11 @@ async function readAgentToolBody(
     return body;
   } catch (error) {
     if (error instanceof PayloadTooLargeError) {
-      send(res, 413, { error: 'arguments_too_large', message: `The Agent tool request exceeds ${maxBytes} bytes.` });
+      send(res, 413, {
+        error: 'arguments_too_large', message: `The Agent tool request exceeds ${maxBytes} bytes.`,
+        origin: 'core', dispatch: 'not_dispatched', limit_scope: 'request_body', max_bytes: maxBytes,
+        ...(error.observedBytes !== undefined ? { observed_bytes: error.observedBytes } : {}),
+      });
     } else {
       send(res, 400, { error: 'invalid_request', message: 'The request body must be valid JSON.' });
     }
@@ -127,6 +134,44 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
   const runtimeDeps = (): AgentClientRuntimeDeps | null => deps.toolProxyDeps
     ? { toolProxyDeps: deps.toolProxyDeps, kbService: deps.kbService ?? null, stateStore: deps.stateStore }
     : null;
+  const knowledgeMatch = path.match(/^\/agent-api\/v1\/workspaces\/([a-z0-9][a-z0-9_-]{1,63})\/knowledge\/(capabilities|search|read)$/);
+  if (knowledgeMatch) {
+    const runtime = runtimeDeps();
+    if (!runtime) { send(res, 503, { error: 'agent_runtime_unavailable' }); return true; }
+    if (url.search) { send(res, 400, { error: 'invalid_request', message: 'Agent knowledge endpoints do not accept query parameters.' }); return true; }
+    const operation = knowledgeMatch[2]!;
+    if (operation === 'capabilities' && method === 'GET') {
+      try { send(res, 200, await getAgentKnowledgeCapabilitiesFor(runtime, auth, knowledgeMatch[1]!)); }
+      catch (error) { sendAgentToolError(res, error); }
+      return true;
+    }
+    if (operation === 'capabilities' || method !== 'POST') { send(res, 405, { error: 'method_not_allowed' }); return true; }
+    const body = await readAgentToolBody(req, res, 16 * 1024);
+    if (!body) return true;
+    const validRun = body['run_id'] === undefined || typeof body['run_id'] === 'string';
+    if (operation === 'search') {
+      if (!declaredFields(body, ['query', 'limit', 'run_id'], ['query']) || typeof body['query'] !== 'string' || !validRun
+        || (body['limit'] !== undefined && (!Number.isInteger(body['limit']) || Number(body['limit']) < 1 || Number(body['limit']) > 3))) {
+        send(res, 400, { error: 'invalid_request', message: 'The knowledge search contains missing, invalid or undeclared fields.' }); return true;
+      }
+      try { send(res, 200, await searchAgentKnowledgeFor(runtime, auth, knowledgeMatch[1]!, {
+        query: body['query'], ...(typeof body['limit'] === 'number' ? { limit: body['limit'] } : {}),
+        ...(typeof body['run_id'] === 'string' ? { run_id: body['run_id'] } : {}),
+      })); } catch (error) { sendAgentToolError(res, error); }
+    } else {
+      if (!declaredFields(body, ['ref', 'run_id', 'cursor', 'max_bytes'], ['ref']) || typeof body['ref'] !== 'string' || !validRun
+        || (body['cursor'] !== undefined && typeof body['cursor'] !== 'string')
+        || (body['max_bytes'] !== undefined && (!Number.isInteger(body['max_bytes']) || Number(body['max_bytes']) < 4096 || Number(body['max_bytes']) > 32768))) {
+        send(res, 400, { error: 'invalid_request', message: 'The knowledge read contains missing, invalid or undeclared fields.' }); return true;
+      }
+      try { send(res, 200, await readAgentKnowledgeFor(runtime, auth, knowledgeMatch[1]!, {
+        ref: body['ref'], ...(typeof body['run_id'] === 'string' ? { run_id: body['run_id'] } : {}),
+        ...(typeof body['cursor'] === 'string' ? { cursor: body['cursor'] } : {}),
+        ...(typeof body['max_bytes'] === 'number' ? { max_bytes: body['max_bytes'] } : {}),
+      })); } catch (error) { sendAgentToolError(res, error); }
+    }
+    return true;
+  }
   if (method === 'GET' && path === '/agent-api/v1/workspaces') {
     const runtime = runtimeDeps();
     if (!runtime) { send(res, 503, { error: 'agent_runtime_unavailable' }); return true; }
@@ -149,11 +194,12 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
     if (deps.isPaused()) { send(res, 503, { error: 'hub_paused', status: 'paused' }); return true; }
     const body = await readAgentToolBody(req, res, AGENT_RUNTIME_JSON_BODY_MAX_BYTES);
     if (!body) return true;
-    if (!declaredFields(body, ['client_conversation_id', 'client_turn_id', 'user_message_id', 'user_input', 'page_context', 'renderers', 'task_binding'], ['client_conversation_id', 'client_turn_id', 'user_message_id', 'user_input'])
+    if (!declaredFields(body, ['client_conversation_id', 'client_turn_id', 'user_message_id', 'user_input', 'page_context', 'renderers', 'task_binding', 'knowledge_delivery'], ['client_conversation_id', 'client_turn_id', 'user_message_id', 'user_input'])
       || typeof body['client_conversation_id'] !== 'string'
       || typeof body['client_turn_id'] !== 'string'
       || typeof body['user_message_id'] !== 'string'
       || typeof body['user_input'] !== 'string'
+      || (body['knowledge_delivery'] !== undefined && body['knowledge_delivery'] !== 'on_demand')
       || (body['page_context'] !== undefined && !record(body['page_context']))
       || (body['renderers'] !== undefined && (!Array.isArray(body['renderers']) || !body['renderers'].every((value) => typeof value === 'string')))) {
       send(res, 400, { error: 'invalid_request', message: 'The Agent turn contains missing or undeclared fields.' }); return true;
@@ -165,6 +211,7 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
         ...(record(body['page_context']) ? { page_context: record(body['page_context'])! } : {}),
         ...(Array.isArray(body['renderers']) ? { renderers: body['renderers'] as string[] } : {}),
         ...(Object.hasOwn(body, 'task_binding') ? { task_binding: body['task_binding'] } : {}),
+        ...(body['knowledge_delivery'] === 'on_demand' ? { knowledge_delivery: 'on_demand' } : {}),
       }));
     } catch (error) { sendAgentToolError(res, error); }
     return true;
@@ -224,6 +271,18 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
     catch (error) { sendAgentToolError(res, error); }
     return true;
   }
+  const toolDetailMatch = method === 'GET' ? path.match(/^\/agent-api\/v1\/tools\/([A-Za-z_][A-Za-z0-9_]{0,63})$/) : null;
+  if (toolDetailMatch) {
+    if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
+    if ([...url.searchParams.keys()].some((key) => !['route', 'capability_revision'].includes(key))
+      || url.searchParams.getAll('route').length !== 1 || url.searchParams.getAll('capability_revision').length !== 1) {
+      send(res, 400, { error: 'invalid_request', message: 'Tool detail requires exactly one route and capability_revision.' }); return true;
+    }
+    try { send(res, 200, await getAgentToolDetailFor(deps.toolProxyDeps, auth,
+      url.searchParams.get('route')!, toolDetailMatch[1]!, url.searchParams.get('capability_revision')!)); }
+    catch (error) { sendAgentToolError(res, error); }
+    return true;
+  }
   if (method === 'GET' && path === '/agent-api/v1/tool-invocations/inspection-capabilities') {
     if (!deps.toolProxyDeps || !deps.configStore) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
     if (url.search) { send(res, 400, { error: 'invalid_request', message: 'Invocation inspection does not accept query parameters.' }); return true; }
@@ -241,7 +300,7 @@ export async function handleAgentApiHttpFor(deps: AgentApiHttpDeps, req: Incomin
   if (method === 'POST' && path === '/agent-api/v1/tool-invocations') {
     if (!deps.toolProxyDeps) { send(res, 503, { error: 'agent_tools_unavailable' }); return true; }
     if (deps.isPaused()) { send(res, 503, { error: 'hub_paused', status: 'paused' }); return true; }
-    const body = await readAgentToolBody(req, res, 16 * 1024);
+    const body = await readAgentToolBody(req, res, TOOL_INVOCATION_BODY_MAX_BYTES);
     if (!body) return true;
     if (!body
         || !exactFields(body, ['invocation_id', 'route', 'capability_revision', 'agent_run_id', 'tool', 'arguments'])

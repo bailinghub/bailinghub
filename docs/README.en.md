@@ -6,6 +6,11 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [RELEASE_NOTES_v0.10.0.en.md](RELEASE_NOTES_v0.10.0.en.md) · [Chinese](RELEASE_NOTES_v0.10.0.md) | v0.10.0: on-demand knowledge, console consistency, larger arguments and model budgets. |
+| [UPGRADE_v0.10.0.en.md](UPGRADE_v0.10.0.en.md) · [Chinese](UPGRADE_v0.10.0.md) | No new SQL from 0.9.4; readiness, client pairing, explicit policies and rollback. |
+| [AGENT_KNOWLEDGE_API.en.md](AGENT_KNOWLEDGE_API.en.md) · [Chinese](AGENT_KNOWLEDGE_API.md) | Agent-only knowledge hints, search, authorized references and bounded reads. |
+| [MODEL_OUTPUT_BUDGET.en.md](MODEL_OUTPUT_BUDGET.en.md) · [Chinese](MODEL_OUTPUT_BUDGET.md) | Default budgets, service ceilings, provider parameters and reasoning scope. |
+| [MODEL_CONTINUATION.en.md](MODEL_CONTINUATION.en.md) · [Chinese](MODEL_CONTINUATION.md) | Host continuation, original-operation recovery and tool deduplication. |
 | [IMPLEMENTATION_STATUS.en.md](IMPLEMENTATION_STATUS.en.md) · [Chinese](IMPLEMENTATION_STATUS.md) | Core ownership, formal releases versus main, public evidence, and uncovered scope. |
 | [RELEASE_NOTES_v0.9.4.en.md](RELEASE_NOTES_v0.9.4.en.md) · [Chinese](RELEASE_NOTES_v0.9.4.md) | v0.9.4: DOCX dependency remediation, durable notifications and console recovery. |
 | [UPGRADE_v0.9.4.en.md](UPGRADE_v0.9.4.en.md) · [Chinese](UPGRADE_v0.9.4.md) | Explicit migration 068, state/configuration databases, event deduplication and rollback limits. |
