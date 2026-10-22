@@ -42,6 +42,28 @@ test('provider semantics are preserved for local parsing, never rejected by the 
   }
 });
 
+test('output-limit JSON and SSE preserve partial answers, reasoning and unfinished tool arguments without retry', async () => {
+  const message = { role: 'assistant', content: '已完成第一步，下一步继续。', reasoning_content: 'Synthetic reasoning only',
+    tool_calls: [{ id: 'unfinished-original', type: 'function', function: { name: 'save_draft', arguments: '{"title":"未完成' } }] };
+  const usage = { prompt_tokens: 10, completion_tokens: 8, total_tokens: 18, completion_tokens_details: { reasoning_tokens: 5 } };
+  const jsonBody = JSON.stringify({ id: 'original-json', choices: [{ index: 0, message, finish_reason: 'length' }], usage });
+  const sseBody = event({ id: 'original-sse', choices: [{ index: 0, delta: message, finish_reason: null }] })
+    + event({ id: 'original-sse', choices: [{ index: 0, delta: {}, finish_reason: 'length' }], usage }) + 'data: [DONE]\r\n\r\n';
+  for (const [format, body] of [['json', jsonBody], ['sse', sseBody]] as const) {
+    const packets: Record<string, unknown>[] = [];
+    const result = await readProviderExchange(new Response(body, { headers: { 'content-type': format === 'sse' ? 'text/event-stream' : 'application/json' } }),
+      async packet => { packets.push(packet); });
+    assert.equal(result.response.body, body);
+    assert.equal(packets.map(packet => packet.data).join(''), body);
+    assert.equal(result.response.format, format);
+    assert.deepEqual(result.usage, { inputTokens: 10, outputTokens: 8 });
+    assert.equal((result.rawUsage?.completion_tokens_details as Record<string, unknown>).reasoning_tokens, 5);
+    assert(body.includes('length') && body.includes('unfinished-original'));
+    // Transport does not repair JSON arguments or manufacture a tool execution.
+    assert.equal(JSON.parse(jsonBody).choices[0].message.tool_calls[0].function.arguments, '{"title":"未完成');
+  }
+});
+
 test('JSON and HTTP error responses keep native body/status; metering is independent', async () => {
   for (const status of [200, 400, 401, 404, 429, 503]) {
     const body = JSON.stringify({ unknown: 'extension', choices: [], error: { type: 'synthetic_error' }, usage: { total_tokens: 123 } });
