@@ -27,6 +27,8 @@ export function usageHttpError(res: ServerResponse, error: unknown, context: { d
   const message = known ? error.message : invalid ? '请求格式不正确或超过大小限制。' : '用量服务暂时不可用，请保留原请求重试。';
   const feedback = { schema: 'bailing.usage-feedback.v1', origin: 'hub_usage', code, dispatch, next_action, retryable: dispatch === 'not_dispatched' && next_action === 'retry_original',
     ...(known && error.details?.input_limit ? { input_limit: error.details.input_limit } : {}),
+    ...(known && code === 'USAGE_OUTPUT_LIMIT' && error.details?.output_limit ? { output_limit: error.details.output_limit } : {}),
+    ...(known && code === 'USAGE_OUTPUT_PARAMETER_MISMATCH' && error.details?.output_budget ? { output_budget: error.details.output_budget } : {}),
     ...(Number.isSafeInteger(resetAt) ? { resetAt, reset_at: resetAt } : {}), ...(context.operation_id ? { operation_id: context.operation_id } : {}) };
   send(res, known ? error.status : error instanceof PayloadTooLargeError ? 413 : invalid ? 400 : 503,
     { ...feedback, schema: 'bailing.usage-error.v1', error: code, message, feedback,

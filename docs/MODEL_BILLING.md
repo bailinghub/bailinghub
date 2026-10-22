@@ -41,6 +41,8 @@
 
 `GET /usage/v1/capabilities` 的 `model_gateway.supported=true` 为接入入口，schema 为 `bailing.model-gateway.v1`，`billing_unit=USD`、`orchestration=host`、`turn_required=false`。
 
+对话模型可显式分开默认输出预算和服务上限，并声明实际供应商参数及是否包含思考；旧服务不会自动迁移。配置、目录字段、拒绝回执及原请求恢复边界见[模型输出预算契约](MODEL_OUTPUT_BUDGET.md)。
+
 | 接口 | 用途 |
 | --- | --- |
 | `GET /usage/v1/model/models` | 当前账户套餐中的对话模型；显示管理员配置的 label |

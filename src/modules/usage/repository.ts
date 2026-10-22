@@ -1,5 +1,6 @@
 import { validatePricingBinding } from './pricing';
 import { validateModelToolConfig } from './model-tools';
+import { outputBudgetPolicy } from './output-budget';
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type { CreateUsageAccountInput, UsageAccount, UsageActor, UsageActorValidator, UsageService, UsageServiceConfig } from "./contracts";
@@ -474,6 +475,10 @@ export class UsageRepository {
         "providerScope",
         "maxInputBytes",
         "maxOutputTokens",
+        "defaultOutputTokens",
+        "outputTokenParameter",
+        "outputBudgetScope",
+        "modelMaxOutputTokens",
         "timeoutMs",
         "contextWindowTokens",
         "inputModalities",
@@ -505,6 +510,7 @@ export class UsageRepository {
     key(i.config.providerScope);
     integer(i.config.maxInputBytes, "maxInputBytes", 1, 16 * 1024 * 1024);
     integer(i.config.maxOutputTokens, "maxOutputTokens", 1, 131072);
+    outputBudgetPolicy(i.config);
     integer(i.config.timeoutMs, "timeoutMs", 1000, 600000);
     return this.withTransaction(async (c) => {
       const r = (

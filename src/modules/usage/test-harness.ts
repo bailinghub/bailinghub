@@ -25,10 +25,12 @@ export async function createUsageTestHarness() {
   const identity = getUsageIdentity(repository);
   const fixturePrice = {source:'openrouter' as const,modelId:'synthetic/model',endpointId:'synthetic',currency:'USD' as const,fetchedAt:Date.now(),lines:[{billable:'prompt',unit:'token' as const,costUsd:'1'},{billable:'completion',unit:'token' as const,costUsd:'1'}]};
   await pool.query('INSERT INTO bz_usage_price_snapshots VALUES(?,?,?)',[createHash('sha256').update('chat:synthetic/model').digest('hex'),JSON.stringify({fetchedAt:Date.now(),items:[{id:'synthetic',pricing:fixturePrice}]}),Date.now()]);
-  const state = { calls: 0, counts: 0, mode: 'ok' as 'ok' | 'missing_usage' | 'error' | 'incomplete' | 'delay' | 'stream' | 'stream_drop' | 'stream_tools_nullable', release: null as (() => void) | null };
+  const state = { calls: 0, counts: 0, bodies: [] as Record<string, unknown>[], mode: 'ok' as 'ok' | 'missing_usage' | 'error' | 'incomplete' | 'delay' | 'stream' | 'stream_drop' | 'stream_tools_nullable', release: null as (() => void) | null };
   const provider = createServer(async (req, res) => {
-    for await (const _chunk of req) { /* consume synthetic input */ }
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
     if (req.url === '/v1/count-input') { state.counts++; send(res, 200, { input_tokens: 20 }); return; }
+    state.bodies.push(JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>);
     state.calls++;
     if (state.mode === 'error') { send(res, 503, { error: 'synthetic_failure' }); return; }
     if (state.mode === 'incomplete') {

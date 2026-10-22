@@ -82,6 +82,7 @@
                 service.id
               }}
             </p>
+            <p v-if="purposeOf(service) === 'chat'" class="muted">{{ service.config.defaultOutputTokens !== undefined ? `默认 ${service.config.defaultOutputTokens.toLocaleString()} / 上限 ${service.config.maxOutputTokens.toLocaleString()} Token` : `兼容预算 ${service.config.maxOutputTokens.toLocaleString()} Token` }}</p>
             <p v-if="!serviceReady(service)" class="service-warning">{{ serviceUnavailableReason(service) }}</p>
             <div class="card-bottom">
               <el-button
@@ -825,12 +826,35 @@
           <summary>模型规格与连接设置</summary>
 
           <div class="form-grid">
-            <el-form-item label="输出 Token 上限"
-              ><el-input-number
-                v-model="serviceForm.maxOutputTokens"
-                :min="1"
-                :max="131072" /></el-form-item
-            ><el-form-item
+            <template v-if="serviceForm.purpose === 'chat'">
+              <el-form-item>
+                <template #label>输出预算方式 <UsageHelp title="输出预算方式"><p>独立配置默认请求预算和服务允许上限，并按当前供应商路由明确输出参数及是否包含思考。兼容方式沿用原行为：服务上限也作为默认预算，不推定参数含义。</p></UsageHelp></template>
+                <el-select v-model="serviceForm.budgetMode" data-testid="budget-mode"><el-option value="explicit" label="独立默认预算与上限"/><el-option value="legacy" label="兼容原配置"/></el-select>
+              </el-form-item>
+              <el-form-item>
+                <template #label>服务输出上限 <UsageHelp title="服务输出上限"><p>单次请求允许的最大输出 Token 数，平台最多 131072；受当前供应商参数的实际硬上限约束。它不代表上下文窗口。</p></UsageHelp></template>
+                <el-input-number v-model="serviceForm.maxOutputTokens" :min="1" :max="131072" :precision="0" data-testid="budget-max"/>
+              </el-form-item>
+              <template v-if="serviceForm.budgetMode === 'explicit'">
+                <el-form-item>
+                  <template #label>默认输出预算 <UsageHelp title="默认输出预算"><p>新请求未指定预算时使用；必须不大于服务上限。用户可在服务上限以内为单次请求选择更高或更低预算。</p></UsageHelp></template>
+                  <el-input-number v-model="serviceForm.defaultOutputTokens" :min="1" :max="131072" :precision="0" data-testid="budget-default"/>
+                </el-form-item>
+                <el-form-item>
+                  <template #label>供应商输出参数 <UsageHelp title="供应商输出参数"><p>按实际供应商、路由与模型核对。中枢使用所选字段派发；另一输出字段会被明确拒绝，不自动转换含义。更换模型或凭证后须重新核对。</p></UsageHelp></template>
+                  <el-select v-model="serviceForm.outputTokenParameter" placeholder="核对后选择" data-testid="budget-parameter" @change="changeOutputParameter"><el-option value="max_tokens" label="max_tokens"/><el-option value="max_completion_tokens" label="max_completion_tokens"/></el-select>
+                </el-form-item>
+                <el-form-item>
+                  <template #label>预算计算范围 <UsageHelp title="预算计算范围"><p>含思考的总输出预算可能先被推理消耗，最终可见答案会更短。仅最终答案预算不包含思考；max_completion_tokens 只可用于总输出预算。未知时保留兼容配置，不猜测。</p></UsageHelp></template>
+                  <el-select v-model="serviceForm.outputBudgetScope" placeholder="核对后选择" data-testid="budget-scope" @change="serviceForm.modelMaxOutputTokens = undefined"><el-option value="completion_total" label="思考与最终答案合计"/><el-option value="final_answer" label="仅最终答案" :disabled="serviceForm.outputTokenParameter === 'max_completion_tokens'"/></el-select>
+                </el-form-item>
+                <el-form-item>
+                  <template #label>已核供应商上限 <UsageHelp title="已核供应商上限"><p>可选。填写已核实的当前模型、路由、所选参数和计算范围对应的最大输出 Token 数；未知留空。不会据此自动提高服务上限。</p></UsageHelp></template>
+                  <el-input-number v-model="serviceForm.modelMaxOutputTokens" :min="1" :max="10000000" :precision="0" placeholder="未知留空" data-testid="budget-model-max"/>
+                </el-form-item>
+              </template>
+            </template>
+            <el-form-item
               ><template #label>上下文窗口 <UsageHelp title="上下文窗口"><p>填写模型支持的上下文 Token 数，0 表示未登记。</p></UsageHelp></template
               ><el-input-number
                 v-model="serviceForm.contextWindowTokens"
@@ -898,6 +922,7 @@ import UsageHelp from "../components/UsageHelp.vue";
 import UsageServiceReferences from "../components/UsageServiceReferences.vue";
 import { effectiveBillingModel, estimateModelAllowance, planEstimateBudget, type ReferenceQuote } from "../usage-price-preview";
 import type { ServiceReferenceReport } from "../usage-management";
+import { newBudgetForm, readBudgetForm, writeBudgetConfig, clearVerifiedBudgetRoute, type BudgetConfig } from "../usage-output-budget";
 import {
   readPresentation,
   previewPresentation,
@@ -941,7 +966,7 @@ interface Service {
   state: "active" | "suspended";
   availability?: {state: 'ready'|'unavailable'; code: string|null; message: string|null};
   reference_price?: ReferenceQuote | null;
-  config: {
+  config: BudgetConfig & {
     credential: string;
     model: string;
     providerScope: string;
@@ -1628,7 +1653,7 @@ const serviceDefaults = () => ({
   tool: {name:'generate_image',capability:'image_generation',description:'根据用户的描述生成图片，返回生成结果；不自动修改业务数据。',outputs:['image'],parameters:[{name:'prompt',type:'string',required:true,description:'要生成的画面内容'}],adapter:'pending'} as ModelTool,
   providerScope: "",
   active: true,
-  maxOutputTokens: 8192,
+  ...newBudgetForm(),
   contextWindowTokens: 0,
   modalities: "unknown",
   timeoutSeconds: 120,
@@ -1669,7 +1694,14 @@ async function loadPriceEndpoints(sync = false) {
   } catch(e) {if(sequence === endpointPriceSequence) pricingError.value = describe(e);}
   finally {if(sequence === endpointPriceSequence) endpointsLoading.value = false;}
 }
-function changeCallingModel() { if (!serviceForm.referenceModel.trim()) changeReferenceModel(); }
+function changeCallingModel() {
+  if (serviceForm.budgetMode === "explicit") clearVerifiedBudgetRoute(serviceForm);
+  if (!serviceForm.referenceModel.trim()) changeReferenceModel();
+}
+function changeOutputParameter() {
+  serviceForm.modelMaxOutputTokens = undefined;
+  if (serviceForm.outputTokenParameter === "max_completion_tokens" && serviceForm.outputBudgetScope === "final_answer") serviceForm.outputBudgetScope = "";
+}
 function changeReferenceModel() {serviceForm.referenceEndpoint = ''; void loadPriceEndpoints();}
 function changePurpose() {serviceForm.pricingKind = serviceForm.purpose === 'chat' ? 'chat':'image'; serviceForm.referenceModel = ''; serviceForm.referenceEndpoint = ''; void loadPriceModels(); void loadPriceEndpoints();}
 function changeToolCapability() {const kind = serviceForm.tool.capability; if(kind !== 'image_generation') {serviceForm.tool.adapter = 'pending';serviceForm.referenceModel = '';serviceForm.referenceEndpoint = '';void loadPriceEndpoints();} serviceForm.tool.outputs = [kind === 'video_generation' ? 'video':kind === 'speech_generation'?'audio':'image'];}
@@ -1802,7 +1834,7 @@ function openService(service?: Service) {
           ...(service.config.tool ? {tool: JSON.parse(JSON.stringify(service.config.tool))} : {}),
           providerScope: service.config.providerScope,
           active: service.state === "active",
-          maxOutputTokens: service.config.maxOutputTokens,
+          ...readBudgetForm(service.config),
           contextWindowTokens: service.config.contextWindowTokens || 0,
           modalities: service.config.inputModalities
             ? service.config.inputModalities.includes("image")
@@ -1850,7 +1882,7 @@ async function saveService() {
       model: serviceForm.model.trim(),
       providerScope:
         serviceForm.providerScope.trim() || serviceForm.credential.trim(),
-      maxOutputTokens: serviceForm.maxOutputTokens,
+      ...writeBudgetConfig(serviceForm, serviceForm.purpose),
       maxInputBytes: serviceForm.maxInputBytes,
       timeoutMs: serviceForm.timeoutSeconds * 1000,
     };

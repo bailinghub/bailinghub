@@ -2,6 +2,7 @@ import type { ResolvedLlmCredential } from '../../core/runtime/credential-resolv
 import type { UsageServiceConfig } from './contracts';
 import { UsageError, usageAssert } from './errors';
 import { readProviderExchange } from './provider-stream';
+import { resolveOutputBudget } from './output-budget';
 
 export type JsonObject = Record<string, unknown>;
 export interface UsageModelRequest {
@@ -106,9 +107,7 @@ export function providerBody(request: UsageModelRequest, config: UsageServiceCon
     'USAGE_UNSUPPORTED_INPUT', 'This model service is configured for text input only.', 400);
   const options = request.provider_options ?? {};
   validateProviderOptions(options);
-  const outputKey = options.max_completion_tokens === undefined ? 'max_tokens' : 'max_completion_tokens';
-  const requested = Number(options[outputKey] ?? config.maxOutputTokens);
-  usageAssert(requested <= config.maxOutputTokens, 'USAGE_OUTPUT_LIMIT', 'The requested output limit exceeds the model service limit.', 413);
+  const { parameter: outputKey, tokens: requested } = resolveOutputBudget(config, options);
   const result: JsonObject = { ...options, model: config.model, messages: request.messages, stream: streaming, [outputKey]: requested,
     ...(streaming ? { stream_options: { include_usage: true } } : {}) };
   for (const name of ['tools', 'tool_choice', 'temperature'] as const) if (request[name] !== undefined) result[name] = request[name];
