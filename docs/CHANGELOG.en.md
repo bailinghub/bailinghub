@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.9.4.en.md).
+Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.10.1.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,17 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.10.1 - Explicit business declarations and Core precedence
+
+Version date: 2026-11-05. A patch relative to Core 0.10.0; ACC 1.0.6 / declaration version: 1 remain unchanged. MCP / Agent Client SDK 0.8.0 and DSH 0.8.0 have no separate upgrade in this release. [Release notes](RELEASE_NOTES_v0.10.1.en.md), [upgrade guide](UPGRADE_v0.10.1.en.md).
+
+- Seven business-side generators—PHP7/PHP8, Node.js, Python, Go, Java and .NET—preserve explicit readonly/idempotent true/false and low/medium/high risk. Unspecified fields stay omitted; writes are not assigned low globally.
+- Core preserves boolean false and gives explicit readonly/idempotency precedence over GET defaults. Explicit risk wins; otherwise risk derives from the resolved readonly value. GET readonly=false with risk omitted becomes medium; unspecified non-readonly POST remains medium.
+- Update both PHP tgz packages and add complete file-set, per-file SHA-256 and source/extracted-generator verification. Add 24 readonly/risk cases plus independent idempotency checks per generator, PHP approval/subject preservation and matching Core consumption checks.
+- Review full declaration diffs during upgrades. Explicit low writes may change from previously incorrect medium to low, and GET false changes effective interpretation. PHP8 risk is nullable; see the upgrade guide for other intermediate defaults. Verify source, packages, Core and downstream acceptance separately.
+- Apply bounded development/build patches to fast-uri 3.1.9 and Vite 6.4.5 for release audit gates, without inferring a production vulnerability or observed exploit.
+- No new SQL from 0.10.0. Authentication, approval, final business authority, metering and original-request recovery rules are unchanged. Do not rewrite historical invocations, automatically replay business or automatically deploy downstreams. Rollback must consider the old generator/consumer misinterpretation together.
 
 ## v0.10.0 - On-demand Agent knowledge and clearer configuration
 

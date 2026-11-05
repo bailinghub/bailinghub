@@ -60,7 +60,7 @@ export function tool(opts) {
     path: opts.path,
     method: String(opts.method || 'GET').toUpperCase(),
     name: opts.name,
-    risk: opts.risk || 'low',
+    risk: opts.risk,
     confirm: !!opts.confirm,
     confirmWhen: opts.confirmWhen || [],
     readonly: opts.readonly,
@@ -100,7 +100,7 @@ function normalizeRateLimit(value) {
 
 function buildCapability(t, method) {
   const capability = { version: 1, enabled: true, scope: t.scope };
-  if (t.risk && t.risk !== 'low') capability.risk = { level: t.risk };
+  if (t.risk != null) capability.risk = { level: t.risk };
   if (t.confirm || t.confirmWhen?.length || t.confirmPrompt) {
     capability.approval = {};
     if (t.confirm) capability.approval.required = true;
@@ -109,8 +109,8 @@ function buildCapability(t, method) {
   }
   if (t.requiresSubject) capability.subject = { required: true };
   const execution = {};
-  if (t.readonly === true && method !== 'GET') execution.readonly = true;
-  if (t.idempotent === true && method !== 'GET') execution.idempotent = true;
+  if (typeof t.readonly === 'boolean') execution.readonly = t.readonly;
+  if (typeof t.idempotent === 'boolean') execution.idempotent = t.idempotent;
   const rateLimit = normalizeRateLimit(t.rateLimit);
   if (rateLimit) execution.rate_limit = rateLimit;
   if (t.timeoutMs !== undefined) execution.timeout_ms = t.timeoutMs;

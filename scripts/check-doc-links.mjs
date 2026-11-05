@@ -115,6 +115,8 @@ const englishCompanions = {
   'docs/UPGRADE_v0.9.4.md': 'docs/UPGRADE_v0.9.4.en.md',
   'docs/RELEASE_NOTES_v0.10.0.md': 'docs/RELEASE_NOTES_v0.10.0.en.md',
   'docs/UPGRADE_v0.10.0.md': 'docs/UPGRADE_v0.10.0.en.md',
+  'docs/RELEASE_NOTES_v0.10.1.md': 'docs/RELEASE_NOTES_v0.10.1.en.md',
+  'docs/UPGRADE_v0.10.1.md': 'docs/UPGRADE_v0.10.1.en.md',
   'docs/MODEL_OUTPUT_BUDGET.md': 'docs/MODEL_OUTPUT_BUDGET.en.md',
   'docs/MODEL_CONTINUATION.md': 'docs/MODEL_CONTINUATION.en.md',
   'docs/UPGRADE_v0.9.1.md': 'docs/UPGRADE_v0.9.1.en.md',

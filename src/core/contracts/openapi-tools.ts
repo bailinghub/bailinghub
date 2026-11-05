@@ -129,7 +129,7 @@ export function compileOpenApiTools(specText: string): ToolCompileResult {
       const confirmWhen = parseConfirmWhen(ann.confirmWhen, loc, diagnostics);
       if (confirmWhen === null) continue;
 
-      const ro = m === 'GET' ? true : ann.readonly === true;
+      const ro = ann.readonly ?? (m === 'GET');
       const inputSchema = { type: 'object', properties: props, ...(required.length ? { required: [...new Set(required)] } : {}) };
       const tool: ToolDefinition = {
         schemaVersion: TOOL_DEFINITION_SCHEMA_VERSION,
@@ -148,7 +148,7 @@ export function compileOpenApiTools(specText: string): ToolCompileResult {
         requiresSubject: ann.requiresSubject,
         sensitive: ann.sensitive,
         readonly: ro,
-        idempotent: m === 'GET' ? true : ann.idempotent === true,
+        idempotent: ann.idempotent ?? (m === 'GET'),
         timeoutMs: ann.timeoutMs,
         ...(confirmWhen.length ? { confirmWhen } : {}),
         confirmPrompt: ann.confirmPrompt,

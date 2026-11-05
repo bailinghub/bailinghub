@@ -67,6 +67,20 @@ $spec = ToolSpec::create('示例业务系统')              // 标题随便填�
 
 构建期即体检：scope 缺失、写接口无参数、工具名/路由重复、risk 非法等会**直接抛 `InvalidArgumentException`**，CI 跑构建即完成体检，不会等发布后才在控制台"被跳过"列表里发现。
 
+### 显式声明与缺省值
+
+`readonly(false)` / `readonly(true)`、`idempotent(false)` / `idempotent(true)` 和显式 `risk('low'|'medium'|'high')` 都会原样写入 ACC。未调用相应方法时保持省略，由 ACC v1 及 OpenAPI binding 的缺省规则推导：GET + `readonly(false)` 且未设置 risk 为 `medium`；非只读 POST 显式 `risk('low')` 仍为 `low`。风险值不取消既有审批与最终业务授权要求。
+
+升级后请重新生成、核对并刷新工具源声明。过去被省略的显式值现在会出现，JSON/ETag 可能变化，方法签名与 ACC 的 `version: 1` 不变。不需要批量给写接口添加 `risk('low')`。
+
+实际生成器回归兼容 PHP 7.3，覆盖 24 种 readonly/risk 组合、6 种幂等声明组合及审批/主体保留检查：
+
+```bash
+php tests/declaration-serialization.php
+# 用同一套测试检查另一个解包目录：
+php tests/declaration-serialization.php /path/to/bailing-connect-php7
+```
+
 ## 第二步：发布 spec
 
 把 `buildJson()` 的产物挂到中枢「工具源」登记的 `spec_url`。裸 PHP 单文件：

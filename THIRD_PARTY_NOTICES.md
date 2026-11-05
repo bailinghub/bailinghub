@@ -152,7 +152,7 @@ The package license texts and copyright notices remain in the installed package 
 | Console | [typescript](https://www.npmjs.com/package/typescript) | 5.9.3 | Apache-2.0 | runtime |
 | Console | [underscore](https://www.npmjs.com/package/underscore) | 1.13.8 | MIT | runtime |
 | Console | [util-deprecate](https://www.npmjs.com/package/util-deprecate) | 1.0.2 | MIT | runtime |
-| Console | [vite](https://www.npmjs.com/package/vite) | 6.4.4 | MIT | build/test |
+| Console | [vite](https://www.npmjs.com/package/vite) | 6.4.5 | MIT | build/test |
 | Console | [vue](https://www.npmjs.com/package/vue) | 3.5.43 | MIT | runtime |
 | Console | [vue-component-type-helpers](https://www.npmjs.com/package/vue-component-type-helpers) | 3.3.4 | MIT | runtime |
 | Console | [vue-demi](https://www.npmjs.com/package/vue-demi) | 0.14.10 | MIT | runtime |
@@ -209,7 +209,7 @@ The package license texts and copyright notices remain in the installed package 
 | Hub | [duck](https://www.npmjs.com/package/duck) | 0.1.12 | BSD | runtime |
 | Hub | [esbuild](https://www.npmjs.com/package/esbuild) | 0.28.1 | MIT | runtime |
 | Hub | [fast-deep-equal](https://www.npmjs.com/package/fast-deep-equal) | 3.1.3 | MIT | build/test |
-| Hub | [fast-uri](https://www.npmjs.com/package/fast-uri) | 3.1.8 | BSD-3-Clause | build/test |
+| Hub | [fast-uri](https://www.npmjs.com/package/fast-uri) | 3.1.9 | BSD-3-Clause | build/test |
 | Hub | [fsevents](https://www.npmjs.com/package/fsevents) | 2.3.2 | MIT | build/test |
 | Hub | [fsevents](https://www.npmjs.com/package/fsevents) | 2.3.3 | MIT | runtime |
 | Hub | [generate-function](https://www.npmjs.com/package/generate-function) | 2.3.1 | MIT | runtime |

@@ -8,6 +8,8 @@
 
 | 文档 | 用途 |
 |---|---|
+| [RELEASE_NOTES_v0.10.1.md](RELEASE_NOTES_v0.10.1.md) · [English](RELEASE_NOTES_v0.10.1.en.md) | v0.10.1：声明显式值保留、Core 优先级与实际配套包校验。 |
+| [UPGRADE_v0.10.1.md](UPGRADE_v0.10.1.md) · [English](UPGRADE_v0.10.1.en.md) | 无新增 SQL；生成器/消费者配套、全量声明差异及回退边界。 |
 | [RELEASE_NOTES_v0.10.0.md](RELEASE_NOTES_v0.10.0.md) · [English](RELEASE_NOTES_v0.10.0.en.md) | v0.10.0：知识按需读取、后台交互、大参数与模型预算。 |
 | [UPGRADE_v0.10.0.md](UPGRADE_v0.10.0.md) · [English](UPGRADE_v0.10.0.en.md) | 相对 0.9.4 无新 SQL；readiness、配套客户端、显式策略与回退边界。 |
 | [AGENT_KNOWLEDGE_API.md](AGENT_KNOWLEDGE_API.md) · [English](AGENT_KNOWLEDGE_API.en.md) | 智能体专用的知识提示、搜索、受授权引用与有界分页读取。 |

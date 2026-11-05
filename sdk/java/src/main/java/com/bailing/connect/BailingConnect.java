@@ -88,7 +88,7 @@ public final class BailingConnect {
 
     private static Map<String, Object> buildCapability(Tool t, String method) {
         Map<String, Object> capability = mapOf("version", 1, "enabled", true, "scope", t.scope);
-        if (t.risk != null && !"low".equals(t.risk)) capability.put("risk", mapOf("level", t.risk));
+        if (t.risk != null) capability.put("risk", mapOf("level", t.risk));
         if (t.confirm || !t.confirmWhen.isEmpty() || t.confirmPrompt != null) {
             Map<String, Object> approval = new LinkedHashMap<>();
             if (t.confirm) approval.put("required", true);
@@ -98,8 +98,8 @@ public final class BailingConnect {
         }
         if (t.requiresSubject) capability.put("subject", mapOf("required", true));
         Map<String, Object> execution = new LinkedHashMap<>();
-        if (Boolean.TRUE.equals(t.readonly) && !"GET".equals(method)) execution.put("readonly", true);
-        if (Boolean.TRUE.equals(t.idempotent) && !"GET".equals(method)) execution.put("idempotent", true);
+        if (t.readonly != null) execution.put("readonly", t.readonly);
+        if (t.idempotent != null) execution.put("idempotent", t.idempotent);
         Map<String, Object> rateLimit = normalizeRateLimit(t.rateLimit);
         if (rateLimit != null) execution.put("rate_limit", rateLimit);
         if (t.timeoutMs != null) execution.put("timeout_ms", t.timeoutMs);
@@ -285,7 +285,7 @@ public final class BailingConnect {
         public final String path;
         public String method = "GET";
         public String name;
-        public String risk = "low";
+        public String risk;
         public boolean confirm;
         public Boolean readonly;
         public boolean requiresSubject;

@@ -52,8 +52,8 @@ export function toolAnnotationsOf(op: Record<string, unknown>): ToolAnnotations 
     rateLimitPerMin: rateLimit ? rateLimitToPerMin(rateLimit) : 0,
     requiresSubject: subject?.['required'] === true,
     sensitive: audit?.['sensitive'] === true,
-    readonly: execution?.['readonly'] === true ? true : null,
-    idempotent: execution?.['idempotent'] === true ? true : null,
+    readonly: typeof execution?.['readonly'] === 'boolean' ? execution['readonly'] : null,
+    idempotent: typeof execution?.['idempotent'] === 'boolean' ? execution['idempotent'] : null,
     timeoutPresent: !!execution && Object.hasOwn(execution, 'timeout_ms'),
     timeoutRaw: execution?.['timeout_ms'],
     timeoutMs: parseTimeout(execution?.['timeout_ms']),
@@ -67,10 +67,10 @@ export function toolAnnotationsOf(op: Record<string, unknown>): ToolAnnotations 
   };
 }
 
-export function deriveRisk(explicit: unknown, method: string, readonly: boolean): ToolRisk {
+export function deriveRisk(explicit: unknown, _method: string, readonly: boolean): ToolRisk {
   const v = String(explicit ?? '').toLowerCase();
   if (v === 'low' || v === 'medium' || v === 'high') return v;
-  return method !== 'GET' && !readonly ? 'medium' : 'low';
+  return readonly ? 'low' : 'medium';
 }
 
 function parseRateLimit(v: unknown): ToolRateLimit | undefined {

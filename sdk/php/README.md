@@ -53,6 +53,22 @@ public function list() { /* 你原有的逻辑 */ }
 构建期即体检：scope 缺失、写接口无参数、工具名重复等会**直接抛异常**，
 不会等发布后才在控制台"被跳过"列表里发现。
 
+### 显式声明与缺省值
+
+`readonly`、`idempotent` 的显式 `true` / `false` 和 `risk` 的显式 `low` / `medium` / `high` 都会原样写入 ACC；未设置的字段保持省略。按 ACC v1 的 OpenAPI binding，只有未显式声明只读性时才使用 GET 的缺省信号。因此 GET + `readonly: false` 且未设置 risk 的有效风险是 `medium`；POST + `risk: 'low'` 的有效风险是 `low`，既有审批与最终业务授权要求仍然保留。
+
+升级后请重新生成、核对并刷新工具源声明。过去被省略的显式值现在会出现，JSON/ETag 可能变化，但 ACC 的 `version: 1` 不变。不需要批量给写接口添加 `risk: 'low'`。
+
+PHP 注解模型的 `AiTool::$risk` 现在是 `?string`，默认 `null` 表示未设置；构造参数名称和顺序不变。已有显式字符串声明保持兼容；若接入代码自行读取该属性，应处理 `null`，不要把它解释为统一的 low 风险。
+
+实际生成器回归（24 种 readonly/risk 组合、6 种幂等声明组合及审批/主体保留检查）：
+
+```bash
+php tests/declaration-serialization.php
+# 用同一套测试检查另一个解包目录：
+php tests/declaration-serialization.php /path/to/bailing-connect-php
+```
+
 ## 第二步：发布 spec（约定路径）
 
 ```

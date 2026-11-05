@@ -129,7 +129,7 @@ func normalizeRateLimit(value string) map[string]any {
 
 func buildCapability(t Tool, method string) map[string]any {
 	capability := map[string]any{"version": 1, "enabled": true, "scope": t.Scope}
-	if t.Risk != "" && t.Risk != "low" {
+	if t.Risk != "" {
 		capability["risk"] = map[string]any{"level": t.Risk}
 	}
 	if t.Confirm || len(t.ConfirmWhen) > 0 || t.ConfirmPrompt != "" {
@@ -149,11 +149,11 @@ func buildCapability(t Tool, method string) map[string]any {
 		capability["subject"] = map[string]any{"required": true}
 	}
 	execution := map[string]any{}
-	if t.Readonly != nil && *t.Readonly && method != "GET" {
-		execution["readonly"] = true
+	if t.Readonly != nil {
+		execution["readonly"] = *t.Readonly
 	}
-	if t.Idempotent != nil && *t.Idempotent && method != "GET" {
-		execution["idempotent"] = true
+	if t.Idempotent != nil {
+		execution["idempotent"] = *t.Idempotent
 	}
 	if rl := normalizeRateLimit(t.RateLimit); rl != nil {
 		execution["rate_limit"] = rl

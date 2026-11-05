@@ -110,9 +110,8 @@ final class ToolSpec
             if (trim((string) $d->name) === '') {
                 throw new InvalidArgumentException("path {$d->path}: 工具名（第 1 个参数）不能为空");
             }
-            $risk = isset($d->opt['risk']) ? $d->opt['risk'] : 'low';
-            if (!in_array($risk, array('low', 'medium', 'high'), true)) {
-                throw new InvalidArgumentException("{$where}: risk 仅支持 low/medium/high，收到 {$risk}");
+            if (isset($d->opt['risk']) && !in_array($d->opt['risk'], array('low', 'medium', 'high'), true)) {
+                throw new InvalidArgumentException("{$where}: risk 仅支持 low/medium/high，收到 {$d->opt['risk']}");
             }
             if (isset($d->opt['rateLimit']) && self::parseRateLimit($d->opt['rateLimit']) === null) {
                 throw new InvalidArgumentException("{$where}: rateLimit 格式应为 \"30/min\"、\"600/hour\"、\"10/s\" 或 \"1000/day\"，收到 {$d->opt['rateLimit']}");
@@ -195,11 +194,9 @@ final class ToolSpec
     private function buildCapability(ToolDef $d)
     {
         $o = $d->opt;
-        $method = $d->method;
         $capability = array('version' => 1, 'enabled' => true, 'scope' => $d->scope);
-        $risk = isset($o['risk']) ? $o['risk'] : 'low';
-        if ($risk !== 'low') {
-            $capability['risk'] = array('level' => $risk);
+        if (isset($o['risk'])) {
+            $capability['risk'] = array('level' => $o['risk']);
         }
         if (!empty($o['confirm']) || !empty($o['confirmWhen']) || isset($o['confirmPrompt'])) {
             $approval = array();
@@ -218,13 +215,11 @@ final class ToolSpec
             $capability['subject'] = array('required' => true);
         }
         $execution = array();
-        $readonly = array_key_exists('readonly', $o) ? $o['readonly'] : ($method === 'GET');
-        if ($readonly && $method !== 'GET') {
-            $execution['readonly'] = true;
+        if (array_key_exists('readonly', $o)) {
+            $execution['readonly'] = $o['readonly'];
         }
-        $idempotent = array_key_exists('idempotent', $o) ? $o['idempotent'] : ($method === 'GET');
-        if ($idempotent && $method !== 'GET') {
-            $execution['idempotent'] = true;
+        if (array_key_exists('idempotent', $o)) {
+            $execution['idempotent'] = $o['idempotent'];
         }
         if (isset($o['rateLimit'])) {
             $rateLimit = self::parseRateLimit($o['rateLimit']);
