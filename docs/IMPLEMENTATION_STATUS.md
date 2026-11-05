@@ -6,10 +6,10 @@
 
 ## 版本与阅读口径
 
-- 正式发行基线：[v0.10.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.10.0)，对应 [v0.10.0 源码 Tag](https://github.com/bailinghub/bailinghub/tree/v0.10.0)。下表机制均包含在该版本中，各次修复仍标注首次发行版本；不代表默认安装后已启用所有可选功能。
+- 正式发行基线：[v0.10.1](https://github.com/bailinghub/bailinghub/releases/tag/v0.10.1)，对应 [v0.10.1 源码 Tag](https://github.com/bailinghub/bailinghub/tree/v0.10.1)。下表机制均包含在该版本中，各次修复仍标注首次发行版本；不代表默认安装后已启用所有可选功能。
 - 历史基线：[v0.9.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.0)，对应提交 [`dae5260ede6565080d21e94ae63d52f3a7d23556`](https://github.com/bailinghub/bailinghub/tree/dae5260ede6565080d21e94ae63d52f3a7d23556)。原 Tag 的异步关闭缺口在后文保留；源码、npm、镜像和具体部署应分别核验，不能从新版文档推导旧制品已修复。
 - 表中的测试链接是**公开测试代码及其检查范围**，不是本页重新执行所得的通过记录。单元测试、模拟供应商响应、MySQL 集成测试和完整 demo 验证分别说明各自覆盖的条件。未执行或跳过的测试不能写成已通过，也不能据此把已有机制写成“计划实现”。
-- 版本发行内容与升级前提以 [v0.10.0 说明](RELEASE_NOTES_v0.10.0.md) 和 [升级指南](UPGRADE_v0.10.0.md) 为准。适配客户端、应用迁移、模型凭据、存储和具体业务授权仍需各自配置、验证。
+- 版本发行内容与升级前提以 [v0.10.1 说明](RELEASE_NOTES_v0.10.1.md) 和 [升级指南](UPGRADE_v0.10.1.md) 为准。适配客户端、应用迁移、模型凭据、存储和具体业务授权仍需各自配置、验证。
 
 ## 能力归属与发行状态
 
@@ -17,6 +17,7 @@ Core 默认是一个组织的管理与审计域。不同 Client、route 或工�
 
 | 能力与责任方 | 发行状态 | 公开实现与证据入口 | 范围与限制 |
 |---|---|---|---|
+| 声明显式值：业务 SDK 序列化，Core 解析优先级 | Core v0.10.1 修复 | [生成器/消费者升级](UPGRADE_v0.10.1.md)；[Core 矩阵](../src/core/contracts/explicit-capability-values.test.ts)；[PHP7 生成矩阵](../sdk/php7/tests/declaration-serialization.php) / [PHP8 生成矩阵](../sdk/php/tests/declaration-serialization.php)；[实际归档校验](../scripts/check-php-sdk-artifacts.mjs) | 显式 false 与 low 保留，未设置字段遵循原缺省。需核对有效风险变化并刷新声明；源码测试不证明下游包或部署已经更新。 |
 | 能力声明、工具发现、受控调用：Core 解析和治理，业务系统执行 | Core v0.10.0 已包含 | [工具模型](TOOLS_MODEL.md)；[工具索引源码](../src/services/tools-index.ts) / [测试](../src/services/tools-index.test.ts)；[执行治理测试](../src/core/runtime/execution-runtime.test.ts) | 工具可发现不等于当前调用获准。业务接口还需验签，并重新检查主体、租户、权限和业务状态；声明不能赋予调用方原本没有的权力。 |
 | Agent Auth：Core 绑定客户端会话，业务授权页提供可信身份 | Core v0.10.0 已包含 | [Agent Auth 契约](AGENT_AUTH_API.md)；[路由源码](../src/routes/agent-auth.ts)；[生命周期 HTTP 测试](../src/routes/agent-auth-lifecycle-http.test.ts) / [竞态测试](../src/infrastructure/config/config-agent-auth-lifecycle-race.test.ts) | PKCE、授权绑定、刷新和撤销有公开实现；不接管业务系统的登录、角色管理或最终授权，也不允许模型从文本指定可信主体。 |
 | Agent Client Runtime：Core 提供工作区、turn、搜索和工具调用接口 | Core v0.10.0 已包含 | [Runtime API](AGENT_CLIENT_RUNTIME_API.md)；[运行面源码](../src/app/agent-client-runtime.ts) / [测试](../src/app/agent-client-runtime.test.ts)；[调用测试](../src/app/agent-tool-invocations.test.ts) | 本地 Agent 的模型选择、推理循环和工具编排由客户端宿主负责。Core 的原有 `/run` 管线是另一种公开接入路径，不能把两者混为同一客户端执行模式。 |
@@ -40,7 +41,7 @@ Core 默认是一个组织的管理与审计域。不同 Client、route 或工�
 
 ### 公开 demo 与独立复现任务卡
 
-[Docker Demo](DEMO.md) 与 [独立验证任务卡](INDEPENDENT_VALIDATION.md) 提供从 v0.10.0 安装、基础体检到 `npm run demo:e2e` 的公开路径。其订单、工单、退款和故障工具均为仓库 demo 数据；不需要真实模型 Key、客户接口或生产凭据。
+[Docker Demo](DEMO.md) 与 [独立验证任务卡](INDEPENDENT_VALIDATION.md) 提供从 v0.10.1 安装、基础体检到 `npm run demo:e2e` 的公开路径。其订单、工单、退款和故障工具均为仓库 demo 数据；不需要真实模型 Key、客户接口或生产凭据。
 
 任务卡要求记录服务、控制台、匿名预览边界、基础体检和完整业务闭环的具体结果。README 的 demo 图像与动画展示同一公开样例，不能当作客户采用证据。任务卡存在也不意味着已有外部开发者完成验证；报告结果应保留验证者实际版本、环境、检查项和失败范围。
 
@@ -91,3 +92,11 @@ Core v0.9.4 新增 [DOCX 依赖处置](DOCX_DEPENDENCY.md)与[通知持久化](N
 ## Core v0.10.0 的兼容新增与修复
 
 本版新增[Agent 知识按需协议](AGENT_KNOWLEDGE_API.md)、[工具按名指导](AGENT_CLIENT_RUNTIME_API.md)和[显式模型预算](MODEL_OUTPUT_BUDGET.md)，并改善后台首次接入、草稿保护与排障。旧客户端保持 inline、旧模型配置不自动改变，自带聊天装配保持。大参数仍有界、完整审批与原调用防重保留；[宿主续段](MODEL_CONTINUATION.md)由客户端实现，不是中枢新增自动模型循环。只读升级计划与真实资源 readiness 见[升级指南](UPGRADE_v0.10.0.md)，相对 0.9.4 无新增 SQL。
+
+## Core v0.10.1 的显式值修复与配套包证据
+
+七种业务侧 SDK 生成器保留显式 readonly/idempotent true/false 和 risk low/medium/high，未设置字段继续省略；Core 保留 boolean false，显式值优先于 GET 缺省信号。见[版本说明](RELEASE_NOTES_v0.10.1.md)和[升级指南](UPGRADE_v0.10.1.md)。ACC 保持 1.0.6 / 声明 version: 1，MCP / Agent Client SDK 0.8.0 与 DSH 0.8.0 不因本补丁另行发行。
+
+[PHP7](../sdk/php7/tests/declaration-serialization.php)与[PHP8](../sdk/php/tests/declaration-serialization.php)通过实际 builder 和 JSON 序列化检查24种风险/只读组合、6种幂等组合以及审批/主体要求保留；[Core 回归](../src/core/contracts/explicit-capability-values.test.ts)检查消费者优先级。[PHP 配套包校验](../scripts/check-php-sdk-artifacts.mjs)比较完整文件集合、逐文件摘要，并对真实解包内容运行同一回归。这些链接提供可复现检查，不代表每个运行环境、生产部署或下游业务已经通过验收。
+
+修复会改变此前被丢弃或覆盖的声明解释：显式 low 的写操作可能从 medium 恢复为 low，GET readonly=false 且 risk 未设置为 medium，GET idempotent=false 得以保留。业务负责人应审阅自己的声明，并核对直接读取 SDK 中间对象的代码，例如 PHP8 nullable risk。只更新一侧无法修复另一侧；保留原调用和审批记录，不为验收重放业务。本补丁不新增 SQL 或业务权力，不回写旧版本保证。

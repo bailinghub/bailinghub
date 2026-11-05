@@ -140,7 +140,7 @@ public static class BailingConnect
     private static Dictionary<string, object?> BuildCapability(Tool t, string method)
     {
         var capability = new Dictionary<string, object?> { ["version"] = 1, ["enabled"] = true, ["scope"] = t.Scope };
-        if (!string.IsNullOrEmpty(t.Risk) && t.Risk != "low") capability["risk"] = new Dictionary<string, object?> { ["level"] = t.Risk };
+        if (!string.IsNullOrEmpty(t.Risk)) capability["risk"] = new Dictionary<string, object?> { ["level"] = t.Risk };
         if (t.Confirm || t.ConfirmWhen.Count > 0 || !string.IsNullOrEmpty(t.ConfirmPrompt))
         {
             var approval = new Dictionary<string, object?>();
@@ -151,8 +151,8 @@ public static class BailingConnect
         }
         if (t.RequiresSubject) capability["subject"] = new Dictionary<string, object?> { ["required"] = true };
         var execution = new Dictionary<string, object?>();
-        if (t.Readonly == true && method != "GET") execution["readonly"] = true;
-        if (t.Idempotent == true && method != "GET") execution["idempotent"] = true;
+        if (t.Readonly.HasValue) execution["readonly"] = t.Readonly.Value;
+        if (t.Idempotent.HasValue) execution["idempotent"] = t.Idempotent.Value;
         var rateLimit = NormalizeRateLimit(t.RateLimit);
         if (rateLimit is not null) execution["rate_limit"] = rateLimit;
         if (t.TimeoutMs is not null) execution["timeout_ms"] = t.TimeoutMs;
@@ -200,7 +200,7 @@ public sealed class Tool
     public string Scope { get; init; } = "";
     public string Path { get; init; } = "";
     public string Method { get; init; } = "GET";
-    public string Risk { get; init; } = "low";
+    public string Risk { get; init; } = "";
     public bool Confirm { get; init; }
     public List<Dictionary<string, object?>> ConfirmWhen { get; init; } = [];
     public bool? Readonly { get; init; }

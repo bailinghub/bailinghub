@@ -219,7 +219,25 @@ jobs:
       - run: npm run sdk:test-node
       - run: npm run sdk:test-python
       - run: npm run sdk:test-runtime
-      - run: npm run sdk:test-p1
+      - run: npm run sdk:test-p1 -- --require-all
+      - run: npm run sdk:test-declarations
+      - run: npm run sdk:artifacts:check
+
+  php73-sdk:
+    name: PHP 7.3 distribution regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '7.3'
+          extensions: mbstring
+      - run: node scripts/check-php-sdk-artifacts.mjs --sdk php7
 
   docker-demo:
     name: Docker demo e2e

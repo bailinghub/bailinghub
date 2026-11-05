@@ -27,13 +27,13 @@
 
 在线体验环境只用于了解产品和配置方式。请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
 
-## v0.10.0：按需读取知识，更清楚地配置与排障
+## v0.10.1：明确声明的 false 和 low 不再丢失
 
-本地智能体查一个能力时，可以先看简短提示，再按需读取相关知识与工具指导；旧客户端和自带聊天继续原有装配方式。控制台改善首次接入、调用示例、草稿保护、审批状态与排障返回路径；较大的工具参数使用统一有界限制，保留完整审批参数和原调用核对。
+业务侧 SDK 生成声明时保留显式只读、幂等与风险值；Core 消费时让显式值优先于 GET 缺省信号。未设置字段继续省略，非只读操作未设置 risk 时仍为 medium。PHP7/PHP8 配套包增加逐文件与实际生成器校验，其他语言生成器同步修正。
 
-配套为 **Core 0.10.0 + MCP / Agent Client SDK 0.8.0 + DSH 0.8.0**。新模型策略将默认输出预算、服务上限、供应商参数和思考预算语义分开；旧服务不自动改配置。相对 0.9.4 **没有新增 SQL**，更早版本仍按原升级链应用缺失迁移。客户端负责自己的任务循环与续段，中枢不自动重试模型或重做业务操作。
+本轮为 **Core 0.10.1** 补丁；ACC 规范 **1.0.6 / 声明 version: 1**、MCP / Agent Client SDK **0.8.0**、DSH **0.8.0** 保持。相对 0.10.0 **无新增 SQL**。业务负责人应核对重新生成的声明，尤其是此前被省略的显式 low 写操作和 GET 的显式 false；审批、鉴权与最终业务权限不变。
 
-[版本说明](docs/RELEASE_NOTES_v0.10.0.md) · [升级指南](docs/UPGRADE_v0.10.0.md) · [知识协议](docs/AGENT_KNOWLEDGE_API.md) · [上一版本](docs/RELEASE_NOTES_v0.9.4.md)
+[版本说明](docs/RELEASE_NOTES_v0.10.1.md) · [升级指南](docs/UPGRADE_v0.10.1.md) · [业务接入](docs/第三方对接指南.md) · [上一版本](docs/RELEASE_NOTES_v0.10.0.md)
 
 ## 适合哪些团队
 
@@ -115,7 +115,7 @@
 在本机启动中枢、MySQL、Demo 业务系统、工具源、路由和接入方：
 
 ```bash
-git clone --branch v0.10.0 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.10.1 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -199,7 +199,7 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 | 集中开启本地智能体与工具 | [四步配置指南](docs/LOCAL_AGENT_SETUP.md) · [系统说明](docs/AGENT_SYSTEM_INFO.md) |
 | 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |
 | 理解架构与长期取舍 | [架构](docs/ARCHITECTURE.md) · [项目愿景](VISION.md) |
-| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.10.0](docs/RELEASE_NOTES_v0.10.0.md) |
+| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.10.1](docs/RELEASE_NOTES_v0.10.1.md) |
 
 完整中英文文档地图见 [docs/README.md](docs/README.md)。公共 API、SDK、Schema、Docker Demo 与代码标识保持语言中立。
 

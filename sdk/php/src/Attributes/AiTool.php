@@ -38,17 +38,17 @@ final class AiTool
         public string $method = 'GET',
         /** 工具名（operationId），缺省 = 蛇形(类名去Controller)_蛇形(方法名)，如 StaffController::list → staff_list。建议显式指定；定了就别改：改名会让 AI 认为这是另一个新工具 */
         public ?string $name = null,
-        /** 风险级：low（默认，直接放行）/ medium（放行留痕）/ high（先进人工审批） */
-        public string $risk = 'low',
+        /** 显式风险级 low / medium / high；null 表示省略，由 ACC 及 binding 缺省规则推导。 */
+        public ?string $risk = null,
         /** true = 不论风险级一律先人工审批（批准后任务自动重跑执行） */
         public bool $confirm = false,
         /** 参数级确认规则，如 [['param' => 'amount', 'op' => '>', 'value' => 500, 'label' => '大额退款需确认']] */
         public array $confirmWhen = [],
-        /** 语义只读声明：GET 默认只读；POST 实现的查询接口务必标 true，AI 才敢放心调用 */
+        /** 显式只读声明，true/false 均保留；null 表示省略，由 binding 解释 GET 等缺省信号。 */
         public ?bool $readonly = null,
         /** true = 必须有操作主体（X-Bailing-On-Behalf-Of）才有意义；匿名任务（网页访客）直接看不到该工具 */
         public bool $requiresSubject = false,
-        /** 可安全重试（GET 默认 true）；网络抖动时大脑可凭此决定是否自动重发 */
+        /** 显式幂等提示，true/false 均保留；null 表示省略，不替运行时决定重试。 */
         public ?bool $idempotent = null,
         /** true = 参数含敏感数据（手机号/身份证等）：中枢审计只记参数键名不记值 */
         public bool $sensitive = false,

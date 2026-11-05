@@ -105,3 +105,11 @@ job = hub.run(
 result = hub.get_job(job["job_id"])
 hub.send("notice_1001", "team-im", "user_001", "任务已完成")
 ```
+
+## 声明字段的省略与显式值
+
+未设置的 `risk`、`readonly`、`idempotent` 不会写入 ACC 声明。显式的 `risk: low/medium/high` 和布尔值 `false/true` 都会保留，包括 GET 上的 `false`。省略风险时，按 ACC OpenAPI binding：显式只读优先于 HTTP 方法；未声明只读的 GET 默认 low，其余非只读操作默认 medium。风险声明不代替审批或业务最终授权。
+
+升级后应重新生成声明并比较差异；不要把以前省略的字段一律补成 low。 `tool()["risk"]` 在未设置时现在为 `None`，不再是 `"low"`；直接读取构建中间对象的调用方需兼容未设置状态。
+
+回归：`python3 sdk/python/tests/test_declaration.py`（24种只读/风险组合及6种幂等组合）。

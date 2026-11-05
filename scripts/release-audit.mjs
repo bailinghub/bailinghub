@@ -57,6 +57,10 @@ const requiredRepoFiles = [
   'docs/RELEASE_NOTES_v0.10.0.en.md',
   'docs/UPGRADE_v0.10.0.md',
   'docs/UPGRADE_v0.10.0.en.md',
+  'docs/RELEASE_NOTES_v0.10.1.md',
+  'docs/RELEASE_NOTES_v0.10.1.en.md',
+  'docs/UPGRADE_v0.10.1.md',
+  'docs/UPGRADE_v0.10.1.en.md',
   'docs/RELEASE_NOTES_v0.6.1.md',
   'docs/RELEASE_NOTES_v0.6.0.md',
   'docs/CHANGELOG.md',
@@ -179,7 +183,7 @@ function assertRepoEntrance() {
   for (const required of ['npm run release:consistency', 'npm run release:consistency:test', 'npm run images:policy:test']) {
     if (!releaseAudit.includes(required)) findings.push(`package.json: release:audit must include ${required}`);
   }
-  for (const required of ['npm run notices:check', 'npm run assets:check', 'npm run audit:deps', 'npm run client-api:contract', 'npm run client-api:ecosystem:clone', 'npm run typecheck', 'npm test', 'npm run widget:renderer:test', 'npm run web-admin:check', 'npm run docs:check', 'npm run examples:check', 'npm run sdk:test', 'npm run sdk:test7', 'npm run sdk:test-node', 'npm run sdk:test-python', 'npm run sdk:test-runtime', 'npm run sdk:test-p1', 'npm run release:audit', 'npm run oss:verify']) {
+  for (const required of ['npm run notices:check', 'npm run assets:check', 'npm run audit:deps', 'npm run client-api:contract', 'npm run client-api:ecosystem:clone', 'npm run typecheck', 'npm test', 'npm run widget:renderer:test', 'npm run web-admin:check', 'npm run docs:check', 'npm run examples:check', 'npm run sdk:test', 'npm run sdk:test7', 'npm run sdk:test-node', 'npm run sdk:test-python', 'npm run sdk:test-runtime', 'npm run sdk:test-p1', 'npm run sdk:test-declarations', 'npm run sdk:artifacts:check', 'npm run release:audit', 'npm run oss:verify']) {
     if (!releaseCheck.includes(required)) findings.push(`package.json: release:check must include ${required}`);
   }
   const imagesWorkflow = readText('.github/workflows/images.yml');

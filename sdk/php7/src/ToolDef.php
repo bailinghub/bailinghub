@@ -35,7 +35,7 @@ final class ToolDef
     }
 
     // ---- 治理面 ----
-    /** 风险级 low（默认）/ medium（放行留痕）/ high（先进人工审批） */
+    /** 显式风险级 low / medium / high；不调用时省略，由 ACC 及 binding 缺省规则推导。 */
     public function risk($level)
     {
         $this->opt['risk'] = $level;
@@ -68,13 +68,13 @@ final class ToolDef
         $this->opt['sensitive'] = (bool) $v;
         return $this;
     }
-    /** 语义只读声明：POST 实现的查询接口务必标，AI 才敢放心调用（GET 默认即只读） */
+    /** 显式只读声明，true/false 均保留；不调用时由 binding 解释 GET 等缺省信号。 */
     public function readonly($v = true)
     {
         $this->opt['readonly'] = (bool) $v;
         return $this;
     }
-    /** 可安全重试（GET 默认 true）：网络抖动时大脑可凭此自动重发 */
+    /** 显式幂等提示，true/false 均保留；未设置时省略，不替运行时决定重试。 */
     public function idempotent($v = true)
     {
         $this->opt['idempotent'] = (bool) $v;

@@ -6,6 +6,8 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
+| [RELEASE_NOTES_v0.10.1.en.md](RELEASE_NOTES_v0.10.1.en.md) · [Chinese](RELEASE_NOTES_v0.10.1.md) | v0.10.1: explicit declaration values, Core precedence and companion-package verification. |
+| [UPGRADE_v0.10.1.en.md](UPGRADE_v0.10.1.en.md) · [Chinese](UPGRADE_v0.10.1.md) | No new SQL; generator/consumer pairing, full declaration diffs and rollback boundaries. |
 | [RELEASE_NOTES_v0.10.0.en.md](RELEASE_NOTES_v0.10.0.en.md) · [Chinese](RELEASE_NOTES_v0.10.0.md) | v0.10.0: on-demand knowledge, console consistency, larger arguments and model budgets. |
 | [UPGRADE_v0.10.0.en.md](UPGRADE_v0.10.0.en.md) · [Chinese](UPGRADE_v0.10.0.md) | No new SQL from 0.9.4; readiness, client pairing, explicit policies and rollback. |
 | [AGENT_KNOWLEDGE_API.en.md](AGENT_KNOWLEDGE_API.en.md) · [Chinese](AGENT_KNOWLEDGE_API.md) | Agent-only knowledge hints, search, authorized references and bounded reads. |

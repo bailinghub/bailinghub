@@ -122,3 +122,11 @@ await hub.send({ requestId: `notice_${orderId}`, channel: 'team-im', to: 'user_0
 
 
 示例将准备和发送分开：先调用 `prepareBillingPlan` 并持久化 `grantInput`，再调用 `applyBillingPlan`；回包不确定时沿用已保存的输入，不能重新计算修订。服务端开通示例见 [examples/billing.mjs](examples/billing.mjs)。TypeScript 可通过 `import { UsageIssuerClient, type BillingSummary } from "@bailinghub/connect/usage"` 获取完整的套餐与身份类型。
+
+## 声明字段的省略与显式值
+
+未设置的 `risk`、`readonly`、`idempotent` 不会写入 ACC 声明。显式的 `risk: low/medium/high` 和布尔值 `false/true` 都会保留，包括 GET 上的 `false`。省略风险时，按 ACC OpenAPI binding：显式只读优先于 HTTP 方法；未声明只读的 GET 默认 low，其余非只读操作默认 medium。风险声明不代替审批或业务最终授权。
+
+升级后应重新生成声明并比较差异；不要把以前省略的字段一律补成 low。 `tool().risk` 在未设置时现在为 `undefined`，不再是 `low`；直接读取构建中间对象的调用方需兼容未设置状态。
+
+回归：`node --test sdk/node/tests/declaration.test.mjs`（24种只读/风险组合及6种幂等组合）。

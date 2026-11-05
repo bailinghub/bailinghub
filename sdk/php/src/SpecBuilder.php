@@ -101,7 +101,7 @@ final class SpecBuilder
                 if (trim($t->scope) === '') {
                     throw new InvalidArgumentException("{$where}: scope 不能为空（中枢会直接跳过该接口）");
                 }
-                if (!in_array($t->risk, ['low', 'medium', 'high'], true)) {
+                if ($t->risk !== null && !in_array($t->risk, ['low', 'medium', 'high'], true)) {
                     throw new InvalidArgumentException("{$where}: risk 仅支持 low/medium/high，收到 {$t->risk}");
                 }
                 if ($t->rateLimit !== null && self::parseRateLimit($t->rateLimit) === null) {
@@ -194,10 +194,10 @@ final class SpecBuilder
     }
 
     /** @return array<string,mixed> */
-    private function buildCapability(AiTool $t, string $method): array
+    private function buildCapability(AiTool $t): array
     {
         $capability = ['version' => 1, 'enabled' => true, 'scope' => $t->scope];
-        if ($t->risk !== 'low') {
+        if ($t->risk !== null) {
             $capability['risk'] = ['level' => $t->risk];
         }
         if ($t->confirm || $t->confirmWhen || $t->confirmPrompt !== null) {
@@ -217,11 +217,11 @@ final class SpecBuilder
             $capability['subject'] = ['required' => true];
         }
         $execution = [];
-        if (($t->readonly ?? ($method === 'GET')) && $method !== 'GET') {
-            $execution['readonly'] = true;
+        if ($t->readonly !== null) {
+            $execution['readonly'] = $t->readonly;
         }
-        if (($t->idempotent ?? ($method === 'GET')) && $method !== 'GET') {
-            $execution['idempotent'] = true;
+        if ($t->idempotent !== null) {
+            $execution['idempotent'] = $t->idempotent;
         }
         $rateLimit = self::parseRateLimit($t->rateLimit);
         if ($rateLimit !== null) {
@@ -261,7 +261,7 @@ final class SpecBuilder
         $op = [
             'operationId' => $name,
             'summary' => $t->description,
-            'x-agent-capability' => $this->buildCapability($t, $method),
+            'x-agent-capability' => $this->buildCapability($t),
         ];
         // 非核心 OpenAPI 字段才继续落到 operation 顶层；治理字段统一放入 ACC。
         if ($t->tags) {

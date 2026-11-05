@@ -85,7 +85,7 @@ def tool(**opts):
         "path": opts["path"],
         "method": str(opts.get("method", "GET")).upper(),
         "name": opts.get("name"),
-        "risk": opts.get("risk", "low"),
+        "risk": opts.get("risk"),
         "confirm": bool(opts.get("confirm", False)),
         "confirmWhen": opts.get("confirmWhen", []),
         "readonly": opts.get("readonly"),
@@ -130,7 +130,7 @@ def _normalize_rate_limit(value: Any) -> Optional[Dict[str, Any]]:
 
 def _build_capability(t: Dict[str, Any], method: str) -> Dict[str, Any]:
     capability: Dict[str, Any] = {"version": 1, "enabled": True, "scope": t["scope"]}
-    if t.get("risk") and t["risk"] != "low":
+    if t.get("risk") is not None:
         capability["risk"] = {"level": t["risk"]}
     if t.get("confirm") or t.get("confirmWhen") or t.get("confirmPrompt"):
         approval: Dict[str, Any] = {}
@@ -144,10 +144,10 @@ def _build_capability(t: Dict[str, Any], method: str) -> Dict[str, Any]:
     if t.get("requiresSubject"):
         capability["subject"] = {"required": True}
     execution: Dict[str, Any] = {}
-    if t.get("readonly") is True and method != "GET":
-        execution["readonly"] = True
-    if t.get("idempotent") is True and method != "GET":
-        execution["idempotent"] = True
+    if isinstance(t.get("readonly"), bool):
+        execution["readonly"] = t["readonly"]
+    if isinstance(t.get("idempotent"), bool):
+        execution["idempotent"] = t["idempotent"]
     rate_limit = _normalize_rate_limit(t.get("rateLimit"))
     if rate_limit:
         execution["rate_limit"] = rate_limit
