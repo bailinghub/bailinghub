@@ -45,3 +45,23 @@ For example, a protected test environment may set `BAILING_PUBLIC_DENYLIST_JSON=
 Core and its bundled console use a reproducible library-only Mammoth distribution. It retains the original parsing sources and license while removing the unused command-line interface and its `argparse → sprintf-js` dependency chain. The previous time-limited exception for [GHSA-hp3w-g68c-fv3c](https://github.com/advisories/GHSA-hp3w-g68c-fv3c) is retired; no dependency finding is currently excepted.
 
 `npm run audit:deps` requires zero raw findings, verifies the vendored source/archive, and separately queries direct advisories under the original upstream `mammoth` name and version. Registry failure, changed source/distribution, any finding or a reintroduced CLI dependency blocks the gate. See [DOCX source and audit policy](docs/DOCX_DEPENDENCY.en.md) ([中文](docs/DOCX_DEPENDENCY.md)) for reproduction, compatibility tests and the npm/Docker/source-export boundaries. This is not a general document-safety certification or an assertion that upstream sprintf-js is patched.
+
+## Project stewardship and security coordination
+
+BailingHub Core is independently maintained. It is not hosted by a foundation
+and has no designated external open-source steward or external CRA stewardship
+arrangement. The repository maintainer identified in [GOVERNANCE.md](GOVERNANCE.md)
+is responsible for security triage and coordination through the private
+vulnerability reporting channel above.
+
+The Apache-2.0 license permits use in business products and paid services. This
+statement does not assert that all possible downstream uses are outside the EU Cyber Resilience Act (CRA), and does
+not claim legal compliance, certification, or participation in another
+organization's stewardship framework. Downstream products and deployments must
+assess their own roles and obligations.
+
+For reliable evidence of active exploitation or a compromise of project
+infrastructure, use the same private reporting channel and identify the incident
+and urgency. Maintainers should follow the coordination steps in
+[CONTRIBUTING.md](CONTRIBUTING.md). The project has no separately staffed emergency
+hotline or guaranteed incident-response time.
