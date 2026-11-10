@@ -1,6 +1,6 @@
 header:
   schema-version: 2.2.0
-  last-updated: '2026-10-12'
+  last-updated: '2026-11-11'
   last-reviewed: '2026-10-12'
   url: https://raw.githubusercontent.com/bailinghub/bailinghub/main/security-insights.yml
   comment: >-
@@ -32,6 +32,10 @@ project:
       repository API on 2026-10-10. The direct report URL is
       https://github.com/bailinghub/bailinghub/security/advisories/new.
       No report was submitted as part of this check.
+      The project is independently maintained with no designated external
+      open-source steward. SECURITY.md describes project stewardship and
+      CONTRIBUTING.md documents security incident coordination. This is not a
+      claim of CRA legal compliance or certification.
   documentation:
     quickstart-guide: https://github.com/bailinghub/bailinghub/blob/main/docs/QUICKSTART.en.md
     detailed-guide: https://github.com/bailinghub/bailinghub/blob/main/docs/README.md

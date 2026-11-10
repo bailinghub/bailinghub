@@ -76,3 +76,23 @@ Automation-assisted pull requests are welcome when an accountable human submitte
 ## License
 
 By contributing, you agree that your contributions are licensed under the Apache License 2.0.
+
+## Security incident coordination
+
+For reliable evidence of active exploitation, or a compromise of the project's
+own build, release, or repository infrastructure, notify the repository
+maintainer through the private reporting channel in [SECURITY.md](SECURITY.md).
+Keep exploit details, credentials, and affected deployments out of public issues.
+
+Maintainers should preserve sanitized evidence, assess affected revisions and
+release integrity, and coordinate mitigation with relevant service providers
+and affected downstream maintainers where appropriate. Preparing a fix or
+mitigation should not wait for a decision about external notification.
+
+This independent project has no designated external steward to receive automatic
+escalations. Do not assume another foundation handles its incidents. If a
+stewardship arrangement is established, document the actual contact, scope, and
+escalation procedure in the security policy and governance documents. Ordinary
+vulnerability reports continue through the existing private triage and disclosure
+process. These are coordination instructions, not evidence of an exercised
+incident-response program.
