@@ -54,8 +54,8 @@ arrangement. The repository maintainer identified in [GOVERNANCE.md](GOVERNANCE.
 is responsible for security triage and coordination through the private
 vulnerability reporting channel above.
 
-The project permits commercial use. This statement does not assert that all
-possible downstream uses are outside the EU Cyber Resilience Act (CRA), and does
+The Apache-2.0 license permits use in business products and paid services. This
+statement does not assert that all possible downstream uses are outside the EU Cyber Resilience Act (CRA), and does
 not claim legal compliance, certification, or participation in another
 organization's stewardship framework. Downstream products and deployments must
 assess their own roles and obligations.
