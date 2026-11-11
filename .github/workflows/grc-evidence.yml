@@ -1,0 +1,60 @@
+name: Publish security assessment evidence
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/grc-evidence.yml'
+      - 'security-insights.yml'
+      - 'SECURITY.md'
+      - 'CONTRIBUTING.md'
+      - 'docs/security/**'
+  pull_request:
+    paths:
+      - '.github/workflows/grc-evidence.yml'
+  schedule:
+    - cron: '55 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Validate without signing or publishing results'
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: grc-evidence-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  results:
+    # Only main may publish. Pull requests are unsigned dry runs.
+    if: >-
+      github.repository == 'bailinghub/bailinghub' &&
+      (github.ref == 'refs/heads/main' ||
+       (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository))
+    permissions:
+      contents: read
+      id-token: write
+    # GRC checks this exact tag in the signing identity; a SHA pin is rejected.
+    # Reviewed v1 at 0cbfef2f58ea147021d3657d7b18ed89920f2f6d (2026-11-11).
+    uses: revanite-io/pvtr-publish-results/.github/workflows/publish.yml@v1
+    with:
+      target: bailinghub/core@${{ github.event_name == 'pull_request' && 'main-preflight' || github.sha }}
+      license: CC0-1.0
+      dry-run: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+    secrets:
+      config: |
+        targets:
+          core:
+            plugin: openssf/github-repo
+            version: 0.33.2
+            policy:
+              catalogs:
+                - osps-baseline-2026-08
+              applicability:
+                - maturity-1
+                - maturity-2
+                - maturity-3
+            vars:
+              owner: bailinghub
+              repo: bailinghub
+              token: ${{ secrets.GITHUB_TOKEN }}
