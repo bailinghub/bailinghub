@@ -18,6 +18,11 @@ token) from the signing/publishing job (OIDC). No long-lived credential or
 organization administrator token is provided. Source code licenses are
 unchanged; published assessment output uses CC0-1.0.
 
+GitHub statically validates permissions of every nested job, even a skipped
+optional job. The caller therefore declares `security-events: write` required
+by the official report job, but `upload-sarif: false` keeps that job disabled.
+The evaluator and signing jobs do not receive this scope.
+
 GRC currently requires the exact `@v1` workflow reference in its signing
 identity. It rejects a commit-pinned caller. The reviewed tag resolved to
 `0cbfef2f58ea147021d3657d7b18ed89920f2f6d` on 2026-11-11.
