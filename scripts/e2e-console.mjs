@@ -126,6 +126,7 @@ const conversation = {
   conversation_id: conversationId,
   client_archive_id: '723e4567-e89b-42d3-a456-426614174000',
   client_conversation_id: 'demo-client-conversation',
+  first_user_preview: conversationUser,
   client_app_id: 'demo-app',
   route_key: 'demo_support',
   state: 'ready',
@@ -788,7 +789,7 @@ async function verifyTroubleshooting(browser, base) {
     await p.locator('.notification-panel .el-table__expand-icon').first().click();
     await p.getByRole('button', { name: '查看原任务', exact: true }).click();
     await p.waitForURL(u => !!u.searchParams.get('detail'));
-    await p.locator('.el-drawer__close-btn').click();
+    await p.locator('.runDetailDrawer:visible .el-drawer__close-btn').click();
     await p.waitForURL(u => !u.searchParams.has('detail') && u.searchParams.get('outbox_status') === 'uncertain');
     await p.getByRole('button', { name: '返回来源页面', exact: true }).click();
     await p.waitForURL(u => u.pathname.endsWith('/diagnostics') && u.searchParams.get('q') === 'delivery_dlq');
@@ -891,10 +892,8 @@ try {
   await page.getByRole('button', { name: '取消', exact: true }).click();
 
   await page.getByRole('menuitem', { name: '任务', exact: true }).click();
-  const auditRadio = page.getByRole('radio', { name: '客户端完整对话', exact: true });
-  if (!await auditRadio.isChecked()) throw new Error('任务会话页应默认展示客户端完整对话');
   const auditList = page.locator('aside[aria-label="客户端对话列表"]');
-  await auditList.getByRole('button', { name: /demo-client-conversation/ }).click();
+  await auditList.getByRole('button', { name: new RegExp(conversationUser) }).click();
   const auditTurn = page.locator(`section[data-turn-id="${conversationTurnId}"]`);
   await expectVisible(page, conversationReply);
   if (await auditTurn.locator('.userMessage .messageText').innerText() !== conversationUser ||
@@ -904,31 +903,28 @@ try {
   await expectVisible(page, '已接收 1 轮 / 2 条消息');
   await expectVisible(page, '旧历史或未同步内容可能缺失');
   if (await auditTurn.locator('.authorizationRun').count() !== 2) throw new Error('本轮应保留两项独立授权执行');
-  const accountA = auditTurn.locator('.authorizationRun').filter({ hasText: agentRunId });
-  const accountB = auditTurn.locator('.authorizationRun').filter({ hasText: incompleteAgentRunId });
+  const accountA = auditTurn.locator(`[data-run-id="${agentRunId}"]`);
+  const accountB = auditTurn.locator(`[data-run-id="${incompleteAgentRunId}"]`);
   await accountA.getByText('演示账户 A', { exact: true }).waitFor();
   await accountB.getByText('演示账户 B', { exact: true }).waitFor();
-  await accountA.getByRole('button', { name: '查看授权轨迹', exact: true }).click();
+  await accountA.getByRole('button', { name: /授权执行.*演示账户 A/ }).click();
   await accountA.locator('.invocation').getByText('staff_edit', { exact: true }).waitFor();
   await accountA.getByRole('button', { name: '原授权记录', exact: true }).click();
   await expectVisible(page, '把员工资料改成新的姓名');
-  if (!await page.getByRole('radio', { name: '原授权记录', exact: true }).isChecked()) {
-    throw new Error('授权执行必须能回到原授权记录');
-  }
+  const rawPanel = page.locator('.rawRecordDrawer');
+  await rawPanel.waitFor({ state: 'visible' });
   await page.locator('.tracetoggle').filter({ hasText: '执行轨迹' }).first().click();
   await page.getByRole('button', { name: '查看客户端完整对话', exact: true }).click();
   await page.waitForURL((url) => url.searchParams.get('conversation') === conversationId &&
     url.searchParams.get('turn') === conversationTurnId);
   await auditTurn.locator('.assistantMessage .messageText').waitFor({ state: 'visible' });
-  if (!await auditRadio.isChecked() || await auditTurn.locator('.assistantMessage .messageText').innerText() !== conversationReply) {
+  if (await auditTurn.locator('.assistantMessage .messageText').innerText() !== conversationReply) {
     throw new Error('原执行轨迹必须返回同一客户端对话与原始答复');
   }
 
   // Keep the existing business-entry and authorization-scoped trace checks.
-  await page.locator('.conversationViewSwitch').getByText('原授权记录', { exact: true }).click();
-  if (!await page.getByRole('radio', { name: '原授权记录', exact: true }).isChecked()) {
-    throw new Error('切换后应展示原授权记录');
-  }
+  await auditList.getByRole('button', { name: '授权与接入记录' }).click();
+  await rawPanel.waitFor({ state: 'visible' });
   await expectVisible(page, '查询订单 SO-1001');
   await page.getByText('查询订单 SO-1001').first().click();
   await expectVisible(page, '订单 SO-1001 已查询完成');
@@ -936,7 +932,8 @@ try {
   await expectVisible(page, '工具返回');
   await expectVisible(page, '任务完成');
 
-  await page.getByText('员工资料已修改').first().click();
+  await rawPanel.getByRole('button', { name: '返回记录列表' }).click();
+  await rawPanel.getByText('员工资料已修改').first().click();
   await expectVisible(page, '把员工资料改成新的姓名');
   await page.locator('.tracetoggle').filter({ hasText: '执行轨迹' }).first().click();
   await expectVisible(page, '本地智能体编排');
@@ -950,12 +947,15 @@ try {
     throw new Error('Agent Client 会话轨迹不得展示隐藏推理');
   }
 
-  await page.getByText('等待本地智能体继续处理').first().click();
+  await rawPanel.getByRole('button', { name: '返回记录列表' }).click();
+  await rawPanel.getByText('等待本地智能体继续处理').first().click();
   await page.locator('.tracetoggle').filter({ hasText: '执行轨迹' }).first().click();
   await expectVisible(page, '上下文已就绪');
   await expectVisible(page, '已批准，等待本地智能体续执行');
   await expectVisible(page, '不代表全量');
 
+  await page.keyboard.press('Escape');
+  await rawPanel.waitFor({ state: 'hidden' });
   await verifyCallSnippets(page, `http://127.0.0.1:${port}`);
   await verifyStatusFeedback(page, context, `http://127.0.0.1:${port}`);
 

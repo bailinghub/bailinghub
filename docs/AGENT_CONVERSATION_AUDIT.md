@@ -154,6 +154,7 @@ ACK 丢失可原样重试。恢复归档队列不等于恢复 invocation 执行�
 会话头字段为 conversation_id、client_archive_id、client_conversation_id、client_app_id、route_key、
 state、member_count、confirmed_count、last_sequence、message_count、turn_count、last_turn_status、created_at、updated_at。
 末轮状态初始为 null，之后是 running/completed/failed/cancelled。sequence 统计所有事件，不能当成消息数。
+管理员列表和详情的会话头还可包含 `first_user_preview`，取本归档按 sequence 排序的首条已同步用户正文的前 96 个字符。尚无用户正文时为 null，较早版本可缺少该字段。读取完整消息请使用详情的事件分页。
 
 `GET /admin/api/conversation-audits/:id?after_sequence=0&limit=100` 返回 schema
 `bailing.agent-conversation-audit-detail.v1`、`conversation`、`members`、`events`、has_more、next_after_sequence。

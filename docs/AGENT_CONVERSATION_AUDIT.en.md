@@ -249,6 +249,7 @@ Each header includes `conversation_id`, `client_archive_id`,
 `last_turn_status`, `created_at` and `updated_at`. The last turn status is initially
 null, then `running`, `completed`, `failed` or `cancelled`. Sequences count all
 event kinds and must not be displayed as message counts.
+Admin list and detail headers can also include `first_user_preview`, the first 96 characters of this archive’s earliest synced user message in sequence order. It is null until a user message is present and may be absent on older versions. Read the paginated detail events for the full message.
 
 `GET /admin/api/conversation-audits/:id?after_sequence=0&limit=100` returns schema
 `bailing.agent-conversation-audit-detail.v1`, `conversation` (the header),

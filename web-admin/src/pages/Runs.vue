@@ -15,128 +15,9 @@
       <!-- ============ 会话视图：把平铺的 job 还原成「一个人一条对话」（收件箱式主从） ============ -->
       <el-tab-pane name="threads">
         <template #label><span><el-icon style="vertical-align:-2px"><ChatLineRound /></el-icon> 会话</span></template>
-        <div class="conversationViewSwitch">
-          <el-radio-group v-model="conversationView" size="small" @change="onConversationView">
-            <el-radio-button value="audit">客户端完整对话</el-radio-button>
-            <el-radio-button value="legacy">原授权记录</el-radio-button>
-          </el-radio-group>
-          <span class="muted">{{ conversationView === 'audit' ? '按客户端会话汇总正文；授权执行保持独立可追溯。' : '保留单授权、历史会话与业务接入记录；执行摘要不等于客户端完整答复。' }}</span>
-        </div>
-        <ClientConversations v-show="conversationView === 'audit'" :key="auditConversationId ? 'selected' : 'unselected'" ref="clientConversations" :selected-id="auditConversationId" :focus-turn="auditTurnId"
-          @select="selectAuditConversation" @open-thread="gotoThread" @open-job="openDetail({ job_id: $event })" />
-        <div v-show="conversationView === 'legacy'" class="convo">
-          <!-- 左：会话列表 -->
-          <div class="rail">
-            <el-alert v-if="threadsError" :title="threadsError" type="error" :closable="false" show-icon />
-            <el-input v-model="threadQ" size="default" placeholder="搜会话：身份 / 接入方 / 内容 / 路由" clearable class="railsearch" @input="persistThreadSearch">
-              <template #prefix><el-icon><Search /></el-icon></template>
-            </el-input>
-            <div v-loading="threadsLoading" class="raillist">
-              <el-empty v-if="!threadsLoading && !threadsError && !filteredThreads.length" :image-size="56"
-                :description="threadQ ? '没有匹配的会话' : '还没有会话：业务/聊天接入后这里会出现'" />
-              <div v-for="t in filteredThreads" :key="t.thread_id" class="threaditem"
-                :class="{ active: curThread === t.thread_id }" @click="openThread(t.thread_id)">
-                <div class="trow1">
-                  <el-tag v-if="partyVisible(t)" size="small" effect="plain" :type="partyType(t)">{{ partyLabel(t) }}</el-tag>
-                  <span class="who mono" :title="identityTitle(t)">{{ whoLabel(t) }}</span>
-                  <span class="tcount muted">{{ t.message_count }} 条消息</span>
-                </div>
-                <div class="tprev muted">{{ t.last_preview || '（无内容）' }}</div>
-                <div class="tmeta muted"><span class="mono">{{ t.route_name }}</span> · {{ fmtTime(t.last_active_at, true) }}</div>
-              </div>
-              <div v-if="threadsMore" class="loadmore"><el-button link :loading="threadsMoreLoading" @click="loadMoreThreads">加载更多会话</el-button></div>
-            </div>
-          </div>
-
-          <!-- 右：完整对话（聊天记录）+ 逐轮执行轨迹 -->
-          <div ref="paneRef" class="pane" v-loading="threadDataLoading">
-            <el-alert v-if="threadDataError" :title="threadDataError" type="error" :closable="false" show-icon />
-            <el-empty v-if="!threadData && !threadDataLoading && !threadDataError" :image-size="90" description="选择左侧记录，查看该授权或业务入口保存的消息与轨迹" />
-            <template v-if="threadData">
-              <div class="paneHead">
-                <div class="ph1">
-                  <el-tag v-if="partyVisible(threadData.thread)" size="small" effect="plain" :type="partyType(threadData.thread)">{{ partyLabel(threadData.thread) }}</el-tag>
-                  <b class="mono" :title="identityTitle(threadData.thread)">{{ whoLabel(threadData.thread) }}</b>
-                  <el-tag size="small" effect="plain" type="info" class="mono">{{ threadData.thread.route_name }}</el-tag>
-                  <span class="muted">{{ threadData.thread.message_count }} 条消息 · 最近 {{ fmtTime(threadData.thread.last_active_at, true) }}</span>
-                </div>
-                <div class="ph2 muted mono" :title="threadData.thread.scope_key">scope: {{ threadData.thread.scope_key }}</div>
-              </div>
-              <el-collapse v-if="threadData.thread.summary" class="coll summcoll">
-                <el-collapse-item title="记忆层滚动摘要（更早的对话已折叠进这里，装配上下文时注入）">
-                  <pre class="block">{{ cap(threadData.thread.summary) }}</pre>
-                </el-collapse-item>
-              </el-collapse>
-
-              <div class="chat">
-                <div v-for="m in threadData.messages" :key="m.id" class="turn" :class="m.direction === 'in' ? 'fromUser' : 'fromHub'">
-                  <div class="bubbleWrap">
-                    <div class="bMeta muted">{{ messageActorLabel(m, threadData.thread) }} · {{ fmtTime(m.created_at, true) }}</div>
-                    <div class="bubble"><RichText :text="m.content" /></div>
-                    <!-- AI 轮次：旧链路按 job_id，新 Agent Client 链路按 agent_run_id 懒拉各自的安全轨迹。 -->
-                    <div v-if="shouldShowMessageTrace(m)" class="traceLine">
-                      <span class="tracetoggle" @click="toggleTrace(m)">
-                        <svg class="traceCaret" :class="{ open: traces[traceKey(m)]?.open }" viewBox="0 0 1024 1024" aria-hidden="true">
-                          <path d="M0.085333 239.36L512 784.64l511.914667-545.28z" fill="currentColor"></path>
-                        </svg>
-                        执行轨迹
-                        <span v-if="traceBadge(traceKey(m))" class="muted">{{ traceBadge(traceKey(m)) }}</span>
-                      </span>
-                      <div v-if="traces[traceKey(m)]?.open" class="tracebox" v-loading="traces[traceKey(m)]?.loading">
-                        <template v-if="traces[traceKey(m)]?.detail">
-                          <div class="tmeta2">
-                            <el-tag v-if="isAgentTrace(traceKey(m))" size="small" type="primary" effect="plain">本地智能体编排</el-tag>
-                            <el-tag size="small" :type="statusType(traces[traceKey(m)].detail.status)" effect="plain">{{ traceStatusLabel(traces[traceKey(m)].detail.status) }}</el-tag>
-                            <span v-if="traceModel(traceKey(m))" class="mono muted">{{ traceModel(traceKey(m)) }}</span>
-                            <span v-if="traceDuration(traceKey(m))" class="muted">{{ (traceDuration(traceKey(m)) / 1000).toFixed(1) }}s</span>
-                            <span v-if="traceTokenCount(traceKey(m))" class="muted">{{ traceTokenCount(traceKey(m)) }} tok</span>
-                          </div>
-                          <div v-if="isAgentTrace(traceKey(m))" class="agentTraceHint">
-                            本地智能体负责理解、规划和工具选择；隐藏推理不会上传。以下只展示中枢可验证的运行边界、ACC 工具治理、审批与结果。
-                          </div>
-                          <el-button v-if="traces[traceKey(m)].detail.conversation_audit_id" size="small" plain type="primary" class="traceDetailBtn" @click="gotoAuditConversation(traces[traceKey(m)].detail.conversation_audit_id, traces[traceKey(m)].detail.client_turn_id)">查看客户端完整对话</el-button>
-                          <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.partial" class="agentTracePartial">
-                            本轮工具记录超过单次展示上限，以下是已通过归属校验的部分轨迹，不代表全量。
-                          </div>
-                          <div v-if="!isAgentTrace(traceKey(m))" class="muted toolsum">{{ fmtTools(traces[traceKey(m)].detail?.dispatch?.tools) }}</div>
-                          <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].invocations.length" class="agentInvocations">
-                            <div v-for="inv in traces[traceKey(m)].invocations" :key="inv.job_id" class="agentInvocation">
-                              <el-tag size="small" effect="plain" type="primary" class="mono">{{ inv.tool }}</el-tag>
-                              <span class="muted">{{ invocationStateLabel(inv) }}</span>
-                              <span v-if="inv.duration_ms" class="muted">{{ (inv.duration_ms / 1000).toFixed(1) }}s</span>
-                              <el-button link type="primary" size="small" @click.stop="openDetail({ job_id: inv.job_id })">工具详情</el-button>
-                            </div>
-                          </div>
-                          <el-timeline v-if="traces[traceKey(m)].events?.length" class="tline">
-                            <el-timeline-item v-for="(a, i) in traces[traceKey(m)].events" :key="i" :timestamp="fmtTime(a.ts)" placement="top">
-                              <b>{{ traceTitle(a) }}</b>
-                              <el-tag v-if="a.source" size="small" effect="plain" :type="a.source === 'local_agent' ? 'primary' : 'info'" class="traceSource">{{ traceSourceLabel(a.source) }}</el-tag>
-                              <el-tag size="small" effect="plain" :type="traceStageType(a.stage)" class="traceStage">{{ traceStageLabel(a.stage) }}</el-tag>
-                              <el-tag v-if="a.severity && a.severity !== 'info'" size="small" effect="plain" :type="traceSeverityType(a.severity)" class="traceSeverity">{{ a.severity }}</el-tag>
-                              <span v-if="traceSummaryText(a)" class="muted auditTag">{{ traceSummaryText(a) }}</span>
-                              <template v-if="detailLen(a.detail)">
-                                <el-collapse v-if="detailLen(a.detail) > 160" class="auditcoll">
-                                  <el-collapse-item :title="shortDetail(a.detail)"><pre class="block">{{ fullDetail(a.detail) }}</pre></el-collapse-item>
-                                </el-collapse>
-                                <div v-else class="muted detail-json">{{ shortDetail(a.detail) }}</div>
-                              </template>
-                            </el-timeline-item>
-                          </el-timeline>
-                          <div v-else class="muted notrace">这一轮没有可展示的执行事件</div>
-                          <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.tool_invocations === 0 && !traces[traceKey(m)].invocations.length" class="muted notrace">本轮未调用中枢治理工具。</div>
-                          <el-button v-if="m.job_id" plain type="primary" size="small" class="traceDetailBtn" @click="openDetail({ job_id: m.job_id })">查看完整详情</el-button>
-                        </template>
-                        <div v-else-if="!traces[traceKey(m)]?.loading" class="muted">该轮详情已不可用（记录可能已清理）</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
+        <ClientConversations ref="clientConversations" :selected-id="auditConversationId" :focus-turn="auditTurnId"
+          @select="selectAuditConversation" @back-list="backToConversationList" @open-directory="openRecordDirectory" @open-thread="gotoThread" @open-job="openDetail({ job_id: $event })" />
       </el-tab-pane>
-
       <!-- ============ 调度流：原有平铺列表，按时间审计每一次派发 ============ -->
       <el-tab-pane name="runs">
         <template #label><span><el-icon style="vertical-align:-2px"><List /></el-icon> 调度流</span></template>
@@ -283,7 +164,124 @@
     </el-tabs>
   </el-card>
 
-  <el-drawer :model-value="detailOpen" size="min(920px, 92vw)" class="runDetailDrawer" :title="'任务详情 · ' + (detail?.request_id || detail?.job_id || '')" @update:model-value="setDetailOpen">
+  <el-drawer :model-value="recordDrawerOpen" :title="curThread ? '原授权记录' : '授权与接入记录'"
+    size="min(660px, 100vw)" class="rawRecordDrawer" append-to-body :before-close="closeRecordDrawer">
+    <div ref="recordContents" class="recordContents">
+      <div class="recordTools">
+        <el-button v-if="curThread" size="small" data-record-list @click="backToRecordDirectory">返回记录列表</el-button>
+        <span v-else class="muted">按最近活动排序，筛选当前已加载的记录。</span>
+        <el-button size="small" :loading="curThread ? threadDataLoading : threadsLoading" @click="refreshRecords">刷新记录</el-button>
+      </div>
+      <div v-show="!curThread" class="rail" aria-label="原记录列表">
+        <el-alert v-if="threadsError" :title="threadsError" type="error" :closable="false" show-icon />
+        <el-input v-model="threadQ" size="default" aria-label="筛选已加载的授权与接入记录" placeholder="筛选身份、接入方、内容或路由" clearable class="railsearch" @input="persistThreadSearch">
+          <template #prefix><el-icon><Search /></el-icon></template>
+        </el-input>
+        <div v-loading="threadsLoading" class="raillist">
+          <el-empty v-if="!threadsLoading && !threadsError && !filteredThreads.length" :image-size="56"
+            :description="threadQ ? '已加载记录中没有匹配项' : '暂无授权或业务接入记录'" />
+          <button v-for="t in filteredThreads" :key="t.thread_id" type="button" class="threaditem"
+            :class="{ active: lastOpenedThread === t.thread_id }" :aria-current="lastOpenedThread === t.thread_id ? 'true' : undefined" :data-thread-id="t.thread_id" @click="gotoThread(t.thread_id)">
+            <div class="trow1">
+              <el-tag v-if="partyVisible(t)" size="small" effect="plain" :type="partyType(t)">{{ partyLabel(t) }}</el-tag>
+              <span class="who mono" :title="identityTitle(t)">{{ whoLabel(t) }}</span>
+              <span class="tcount muted">{{ t.message_count }} 条消息</span>
+            </div>
+            <div class="tprev muted">{{ t.last_preview || '（无内容）' }}</div>
+            <div class="tmeta muted"><span class="mono">{{ t.route_name }}</span> · {{ fmtTime(t.last_active_at, true) }}</div>
+          </button>
+          <div v-if="threadsMore" class="loadmore"><el-button link :loading="threadsMoreLoading" @click="loadMoreThreads">加载更多记录</el-button></div>
+        </div>
+      </div>
+
+      <div v-show="curThread" ref="paneRef" class="pane" v-loading="threadDataLoading" aria-label="原记录正文与轨迹">
+        <el-alert v-if="threadDataError" :title="threadDataError" type="error" :closable="false" show-icon />
+        <template v-if="threadData">
+          <div class="paneHead">
+            <div class="ph1">
+              <el-tag v-if="partyVisible(threadData.thread)" size="small" effect="plain" :type="partyType(threadData.thread)">{{ partyLabel(threadData.thread) }}</el-tag>
+              <b class="mono" :title="identityTitle(threadData.thread)">{{ whoLabel(threadData.thread) }}</b>
+              <el-tag size="small" effect="plain" type="info" class="mono">{{ threadData.thread.route_name }}</el-tag>
+              <span class="muted">{{ threadData.thread.message_count }} 条消息 · 最近 {{ fmtTime(threadData.thread.last_active_at, true) }}</span>
+            </div>
+            <div class="ph2 muted mono" :title="threadData.thread.scope_key">scope: {{ threadData.thread.scope_key }}</div>
+          </div>
+          <el-collapse v-if="threadData.thread.summary" class="coll summcoll">
+            <el-collapse-item title="记忆层滚动摘要（更早的对话已折叠进这里，装配上下文时注入）">
+              <pre class="block">{{ cap(threadData.thread.summary) }}</pre>
+            </el-collapse-item>
+          </el-collapse>
+
+          <div class="chat">
+            <div v-for="m in threadData.messages" :key="m.id" class="turn" :class="m.direction === 'in' ? 'fromUser' : 'fromHub'">
+              <div class="bubbleWrap">
+                <div class="bMeta muted">{{ messageActorLabel(m, threadData.thread) }} · {{ fmtTime(m.created_at, true) }}</div>
+                <div class="bubble"><RichText :text="m.content" /></div>
+                <!-- AI 轮次：旧链路按 job_id，新 Agent Client 链路按 agent_run_id 懒拉各自的安全轨迹。 -->
+                <div v-if="shouldShowMessageTrace(m)" class="traceLine">
+                  <button type="button" class="tracetoggle" :aria-expanded="Boolean(traces[traceKey(m)]?.open)" @click="toggleTrace(m)">
+                    <svg class="traceCaret" :class="{ open: traces[traceKey(m)]?.open }" viewBox="0 0 1024 1024" aria-hidden="true">
+                      <path d="M0.085333 239.36L512 784.64l511.914667-545.28z" fill="currentColor"></path>
+                    </svg>
+                    执行轨迹
+                    <span v-if="traceBadge(traceKey(m))" class="muted">{{ traceBadge(traceKey(m)) }}</span>
+                  </button>
+                  <div v-if="traces[traceKey(m)]?.open" class="tracebox" v-loading="traces[traceKey(m)]?.loading">
+                    <template v-if="traces[traceKey(m)]?.detail">
+                      <div class="tmeta2">
+                        <el-tag v-if="isAgentTrace(traceKey(m))" size="small" type="primary" effect="plain">本地智能体编排</el-tag>
+                        <el-tag size="small" :type="statusType(traces[traceKey(m)].detail.status)" effect="plain">{{ traceStatusLabel(traces[traceKey(m)].detail.status) }}</el-tag>
+                        <span v-if="traceModel(traceKey(m))" class="mono muted">{{ traceModel(traceKey(m)) }}</span>
+                        <span v-if="traceDuration(traceKey(m))" class="muted">{{ (traceDuration(traceKey(m)) / 1000).toFixed(1) }}s</span>
+                        <span v-if="traceTokenCount(traceKey(m))" class="muted">{{ traceTokenCount(traceKey(m)) }} tok</span>
+                      </div>
+                      <div v-if="isAgentTrace(traceKey(m))" class="agentTraceHint">
+                        本地智能体负责理解、规划和工具选择；隐藏推理不会上传。以下只展示中枢可验证的运行边界、ACC 工具治理、审批与结果。
+                      </div>
+                      <el-button v-if="traces[traceKey(m)].detail.conversation_audit_id" size="small" plain type="primary" class="traceDetailBtn" @click="gotoAuditConversation(traces[traceKey(m)].detail.conversation_audit_id, traces[traceKey(m)].detail.client_turn_id)">查看客户端完整对话</el-button>
+                      <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.partial" class="agentTracePartial">
+                        本轮工具记录超过单次展示上限，以下是已通过归属校验的部分轨迹，不代表全量。
+                      </div>
+                      <div v-if="!isAgentTrace(traceKey(m))" class="muted toolsum">{{ fmtTools(traces[traceKey(m)].detail?.dispatch?.tools) }}</div>
+                      <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].invocations.length" class="agentInvocations">
+                        <div v-for="inv in traces[traceKey(m)].invocations" :key="inv.job_id" class="agentInvocation">
+                          <el-tag size="small" effect="plain" type="primary" class="mono">{{ inv.tool }}</el-tag>
+                          <span class="muted">{{ invocationStateLabel(inv) }}</span>
+                          <span v-if="inv.duration_ms" class="muted">{{ (inv.duration_ms / 1000).toFixed(1) }}s</span>
+                          <el-button link type="primary" size="small" @click.stop="openDetail({ job_id: inv.job_id })">工具详情</el-button>
+                        </div>
+                      </div>
+                      <el-timeline v-if="traces[traceKey(m)].events?.length" class="tline">
+                        <el-timeline-item v-for="(a, i) in traces[traceKey(m)].events" :key="i" :timestamp="fmtTime(a.ts)" placement="top">
+                          <b>{{ traceTitle(a) }}</b>
+                          <el-tag v-if="a.source" size="small" effect="plain" :type="a.source === 'local_agent' ? 'primary' : 'info'" class="traceSource">{{ traceSourceLabel(a.source) }}</el-tag>
+                          <el-tag size="small" effect="plain" :type="traceStageType(a.stage)" class="traceStage">{{ traceStageLabel(a.stage) }}</el-tag>
+                          <el-tag v-if="a.severity && a.severity !== 'info'" size="small" effect="plain" :type="traceSeverityType(a.severity)" class="traceSeverity">{{ a.severity }}</el-tag>
+                          <span v-if="traceSummaryText(a)" class="muted auditTag">{{ traceSummaryText(a) }}</span>
+                          <template v-if="detailLen(a.detail)">
+                            <el-collapse v-if="detailLen(a.detail) > 160" class="auditcoll">
+                              <el-collapse-item :title="shortDetail(a.detail)"><pre class="block">{{ fullDetail(a.detail) }}</pre></el-collapse-item>
+                            </el-collapse>
+                            <div v-else class="muted detail-json">{{ shortDetail(a.detail) }}</div>
+                          </template>
+                        </el-timeline-item>
+                      </el-timeline>
+                      <div v-else class="muted notrace">这一轮没有可展示的执行事件</div>
+                      <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.tool_invocations === 0 && !traces[traceKey(m)].invocations.length" class="muted notrace">本轮未调用中枢治理工具。</div>
+                      <el-button v-if="m.job_id" plain type="primary" size="small" class="traceDetailBtn" @click="openDetail({ job_id: m.job_id })">查看完整详情</el-button>
+                    </template>
+                    <div v-else-if="!traces[traceKey(m)]?.loading" class="muted">该轮详情已不可用（记录可能已清理）</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </el-drawer>
+
+  <el-drawer :model-value="detailOpen" size="min(920px, 92vw)" class="runDetailDrawer" append-to-body :title="'任务详情 · ' + (detail?.request_id || detail?.job_id || '')" :before-close="closeJobDetail">
     <el-alert v-if="detailError" :title="detailError" :description="detail ? `当前保留旧快照（${fmtTime(detailLoadedAt, true)}），刷新成功前不能重新执行。` : '未取得任务详情，请重试。'" type="error" :closable="false" show-icon />
     <div v-if="detailLoading" class="muted">正在读取任务详情…</div>
     <el-button v-if="!detail && detailJobId && !detailLoading" @click="openDetail({ job_id: detailJobId })">重试读取任务</el-button>
@@ -553,7 +551,10 @@ interface DetailTraceGroup {
 const s = useMe();
 const activeTab = ref<RunsTab>(initialLocation.tab);
 const notificationPanel = ref<InstanceType<typeof NotificationOutboxPanel> | null>(null);
-const conversationView = ref<'audit' | 'legacy'>(initialLocation.view);
+const recordDrawerOpen = computed(() => {
+  const location = readRunsLocation(route.query);
+  return location.tab === 'threads' && location.view === 'legacy';
+});
 const auditConversationId = ref(initialLocation.conversation), auditTurnId = ref(initialLocation.turn);
 const clientConversations = ref<InstanceType<typeof ClientConversations> | null>(null);
 const list = ref<any[]>([]);
@@ -594,6 +595,8 @@ const threadsMore = ref(false);
 const threadsMoreLoading = ref(false);
 const threadQ = ref(initialLocation.threadQ);
 const curThread = ref<number | null>(null);
+const lastOpenedThread = ref<number | null>(null);
+const recordContents = ref<HTMLElement | null>(null);
 const threadData = ref<{ thread: any; messages: ThreadMessage[] } | null>(null);
 const threadDataLoading = ref(false);
 const threadDataError = ref('');
@@ -966,7 +969,7 @@ function scrollPaneToBottom(): void {
 async function loadThread(id: number): Promise<void> {
   const generation = ++threadLoadGeneration;
   if (curThread.value !== id) threadData.value = null;
-  curThread.value = id;
+  curThread.value = id; lastOpenedThread.value = id;
   threadDataLoading.value = true; threadDataError.value = '';
   // 切会话清空轨迹缓存（避免不同会话的 job 串台占内存）
   for (const k of Object.keys(traces)) delete traces[k];
@@ -1010,10 +1013,25 @@ async function toggleTrace(message: ThreadMessage): Promise<void> {
 }
 function onTab(name: string): void {
   if (name === readRunsLocation(route.query).tab) return;
-  void router.push({ query: patchTaskQuery(route.query, { tab: runsTabQuery(name as RunsTab), view: conversationView.value }) });
+  void router.push({ query: patchTaskQuery(route.query, { tab: runsTabQuery(name as RunsTab) }) });
 }
-function onConversationView(): void {
-  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: conversationView.value }) });
+function openRecordDirectory(): void { gotoThread(); }
+function closeRecordDrawer(): void {
+  const { position, rawRecordsOrigin } = router.options.history.state;
+  if (typeof position === 'number' && typeof rawRecordsOrigin === 'number' && rawRecordsOrigin < position) {
+    router.go(rawRecordsOrigin - position);
+    return;
+  }
+  // A bookmark has no in-app opener; keep its optional conversation, turn and return destination.
+  void router.replace({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', thread: undefined }) });
+}
+function backToRecordDirectory(): void {
+  const query = patchTaskQuery(route.query, { tab: 'conversations', view: 'legacy', thread: undefined });
+  if (router.options.history.state.back === router.resolve({ query }).fullPath) router.back();
+  else void router.replace({ query });
+}
+function refreshRecords(): void {
+  if (curThread.value) void loadThread(curThread.value); else void loadThreads();
 }
 function persistThreadSearch(): void { void router.replace({ query: patchTaskQuery(route.query, { thread_q: threadQ.value || undefined }) }); }
 function persistRunFilters(): void {
@@ -1022,14 +1040,9 @@ function persistRunFilters(): void {
     run_route: runFilters.route.trim() || undefined, run_period: runFilters.period === 'all' ? undefined : runFilters.period }) });
 }
 function clearRunFilters(): void { Object.assign(runFilters, { status: '', route: '', period: 'all' }); persistRunFilters(); }
-async function openThread(id: number): Promise<void> {
-  if (curThread.value === id && conversationView.value === 'legacy') { await loadThread(id); return; }
-  await router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'legacy', thread: String(id), detail: undefined }) });
-}
 function refresh(): void {
   if (activeTab.value === 'notifications') void notificationPanel.value?.refresh();
-  else if (activeTab.value === 'threads' && conversationView.value === 'audit') void clientConversations.value?.refresh();
-  else if (activeTab.value === 'threads') { void loadThreads(); if (curThread.value) void loadThread(curThread.value); }
+  else if (activeTab.value === 'threads') void clientConversations.value?.refresh();
   else if (activeTab.value === 'trace') { if (traceJobInput.value.trim()) void lookupJobTrace(); }
   else void load();
 }
@@ -1100,12 +1113,10 @@ function openTraceLookupDetail(): void {
   detailOpen.value = true;
   void router.push({ query: patchTaskQuery(route.query, { tab: 'trace', detail: detailJobId.value }) });
 }
-function setDetailOpen(value: boolean): void {
-  detailOpen.value = value;
-  if (!value) {
-    detailGeneration++; detailLoading.value = false; detailJobId.value = '';
-    void router.replace({ query: patchTaskQuery(route.query, { tab: runsTabQuery(activeTab.value), detail: undefined }) });
-  }
+function closeJobDetail(): void {
+  const query = patchTaskQuery(route.query, { tab: runsTabQuery(activeTab.value), detail: undefined });
+  if (router.options.history.state.back === router.resolve({ query }).fullPath) router.back();
+  else void router.replace({ query });
 }
 async function copyJobId(jobId: string): Promise<void> {
   try { await navigator.clipboard.writeText(jobId); ElMessage.success('已复制原 Job ID，可用于核对原调用结果'); }
@@ -1162,15 +1173,20 @@ async function copyTraceDebugReport(): Promise<void> {
     ElMessage.error('复制失败，请下载排障报告');
   }
 }
-// 从某个 job 跳到它所属的完整会话
-function gotoThread(threadId: number): void {
-  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'legacy', detail: undefined, job: undefined, thread: String(threadId) }) });
+function gotoThread(threadId?: number): void {
+  const { position, rawRecordsOrigin } = router.options.history.state;
+  const origin = recordDrawerOpen.value ? rawRecordsOrigin : position;
+  void router.push({
+    query: patchTaskQuery(route.query, { tab: 'conversations', view: 'legacy', detail: undefined, job: undefined, thread: threadId ? String(threadId) : undefined }),
+    state: { rawRecordsOrigin: typeof origin === 'number' ? origin : null },
+  });
 }
-function selectAuditConversation(id: string): void {
-  gotoAuditConversation(id);
+function selectAuditConversation(id: string): void { gotoAuditConversation(id); }
+function backToConversationList(): void {
+  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', thread: undefined, conversation: undefined, turn: undefined }) });
 }
 function gotoAuditConversation(id: string, turnId?: string): void {
-  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', detail: undefined, job: undefined, conversation: id, turn: turnId || undefined }) });
+  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', detail: undefined, job: undefined, thread: undefined, conversation: id, turn: turnId || undefined }) });
 }
 async function rerun(): Promise<void> {
   if (!canRerun.value || detailLoading.value || detailError.value || rerunning.value) return;
@@ -1189,11 +1205,11 @@ function applyLocation(): void {
   if (route.path !== '/runs') return;
   const location = readRunsLocation(route.query);
   Object.assign(runFilters, readRunFilters(route.query)); runFilterTime.value = Date.now();
-  activeTab.value = location.tab; conversationView.value = location.view;
+  activeTab.value = location.tab;
   auditConversationId.value = location.conversation; auditTurnId.value = location.turn;
   threadQ.value = location.threadQ; traceJobInput.value = location.traceQ;
   if (location.tab === 'threads' && location.view === 'legacy') {
-    if (!threadsLoaded.value && !threadsLoading.value) void loadThreads();
+    if (!location.thread && !threadsLoaded.value && !threadsLoading.value) void loadThreads();
     if (location.thread && curThread.value !== location.thread) void loadThread(location.thread);
     else if (!location.thread && curThread.value) { threadLoadGeneration++; curThread.value = null; threadData.value = null; threadDataError.value = ''; threadDataLoading.value = false; }
   }
@@ -1202,6 +1218,13 @@ function applyLocation(): void {
   if (location.detail && (!detailOpen.value || detailJobId.value !== location.detail)) void loadDetail(location.detail);
   else if (!location.detail && detailOpen.value) { detailGeneration++; detailOpen.value = false; detailLoading.value = false; detailJobId.value = ''; }
 }
+watch(curThread, async (id, previous) => {
+  if (!recordDrawerOpen.value || !recordContents.value) return;
+  await nextTick();
+  const selector = id ? '[data-record-list]' : `[data-thread-id="${previous}"]`;
+  const target = recordContents.value?.querySelector<HTMLElement>(selector) || recordContents.value?.querySelector('input');
+  target?.focus({ preventScroll: true });
+});
 onMounted(() => { void load(); applyLocation(); });
 watch(() => route.query, applyLocation);
 </script>
@@ -1209,7 +1232,6 @@ watch(() => route.query, applyLocation);
 <style scoped>
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .run-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 4px 0 14px; }
-.conversationViewSwitch { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
 .dangerText { color: var(--el-color-danger); }
 .warningText { color: var(--el-color-warning); }
 .loadmore { text-align: center; padding: 12px 0 4px; }
@@ -1242,8 +1264,8 @@ watch(() => route.query, applyLocation);
 	.auditcoll :deep(.el-collapse-item__content) { padding-bottom: 6px; }
 	.auditcoll :deep(.el-collapse-item__wrap) { border-bottom: none; }
 
-	:deep(.runDetailDrawer .el-drawer__header) { margin-bottom: 0; padding: 18px 22px 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
-	:deep(.runDetailDrawer .el-drawer__body) { padding: 16px 22px 24px; }
+	:global(.runDetailDrawer .el-drawer__header) { margin-bottom: 0; padding: 18px 22px 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
+	:global(.runDetailDrawer .el-drawer__body) { padding: 16px 22px 24px; }
 	.detailHero { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 12px 14px; border: 1px solid var(--el-border-color-lighter); border-radius: 0; background: var(--el-fill-color-light); margin-bottom: 12px; }
 	.detailHeroMain { min-width: 0; flex: 1; }
 	.detailTags { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
@@ -1281,14 +1303,19 @@ watch(() => route.query, applyLocation);
 	.detailContextGrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 10px; }
 	.sectionHint { margin-bottom: 6px; }
 
-	/* ===== 会话视图：收件箱式主从布局 ===== */
-.convo { display: flex; gap: 0; border: 1px solid var(--el-border-color-lighter); border-radius: 0; overflow: hidden; height: calc(100vh - 220px); min-height: 460px; }
-.rail { width: 320px; flex: none; border-right: 1px solid var(--el-border-color-lighter); display: flex; flex-direction: column; background: var(--el-fill-color-blank); }
-.railsearch { padding: 10px; }
+/* 授权与业务接入记录侧栏 */
+:global(.rawRecordDrawer .el-drawer__header) { margin-bottom: 0; padding: 16px 20px; border-bottom: 1px solid var(--el-border-color-lighter); }
+:global(.rawRecordDrawer .el-drawer__body) { padding: 0; min-height: 0; }
+.recordContents { display: flex; flex-direction: column; height: 100%; }
+.recordTools { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.rail { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--el-bg-color); }
+.railsearch { padding: 10px 16px; }
 .raillist { flex: 1; overflow-y: auto; }
-.threaditem { padding: 9px 12px; border-bottom: 1px solid var(--el-border-color-lighter); cursor: pointer; transition: background .12s; }
+.threaditem { display: block; width: 100%; text-align: left; padding: 12px 16px; border: 0; border-bottom: 1px solid var(--el-border-color-lighter); background: transparent; color: inherit; font: inherit; cursor: pointer; }
 .threaditem:hover { background: var(--el-fill-color-light); }
-.threaditem.active { background: var(--el-color-primary-light-9); box-shadow: inset 3px 0 0 var(--el-color-primary); }
+.threaditem.active { background: var(--el-color-primary-light-9); }
+.threaditem.active .who { color: var(--el-color-primary); }
+.threaditem:focus-visible, .tracetoggle:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
 .trow1 { display: flex; align-items: center; gap: 6px; }
 .trow1 .who { font-weight: 600; color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trow1 .tcount { margin-left: auto; flex: none; }
@@ -1298,6 +1325,8 @@ watch(() => route.query, applyLocation);
 .paneHead { position: sticky; top: -14px; background: var(--el-bg-color); padding: 4px 0 10px; margin: -4px 0 6px; border-bottom: 1px solid var(--el-border-color-lighter); z-index: 1; }
 .ph1 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .ph2 { margin-top: 4px; word-break: break-all; }
+.ph1 { overflow-wrap: anywhere; }
+.rawRecordDrawer .agentInvocation, .rawRecordDrawer .tmeta { overflow-wrap: anywhere; }
 .summcoll { margin-bottom: 8px; }
 .chat { display: flex; flex-direction: column; gap: 14px; padding-top: 6px; }
 .turn { display: flex; }
@@ -1310,15 +1339,15 @@ watch(() => route.query, applyLocation);
 .turn.fromUser .bubble { background: var(--el-color-primary-light-9); border: 1px solid var(--el-color-primary-light-7); }
 .turn.fromHub .bubble { background: var(--el-fill-color-light); border: 1px solid var(--el-border-color-lighter); }
 .traceLine { margin-top: 4px; }
-.tracetoggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--el-text-color-secondary); cursor: pointer; user-select: none; }
+.tracetoggle { border: 0; padding: 2px 0; background: none; font-family: inherit; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--el-text-color-secondary); cursor: pointer; user-select: none; }
 .tracetoggle:hover { color: var(--el-color-primary); }
 .traceCaret { width: 10px; height: 10px; color: currentColor; transform: rotate(-90deg); transition: transform .14s ease; flex: none; }
 .traceCaret.open { transform: rotate(0deg); }
 .tracebox { margin-top: 6px; padding: 10px 12px; border: 1px dashed var(--el-border-color); border-radius: 0; background: var(--el-fill-color-blank); }
 .traceDetailBtn { margin-top: 4px; height: 26px; padding: 0 10px; }
 .tmeta2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-.agentTraceHint { margin: 6px 0 9px; padding: 7px 9px; border-left: 3px solid var(--el-color-primary-light-3); background: var(--el-color-primary-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
-.agentTracePartial { margin: 6px 0 9px; padding: 7px 9px; border-left: 3px solid var(--el-color-warning); background: var(--el-color-warning-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
+.agentTraceHint { margin: 6px 0 9px; padding: 7px 9px; background: var(--el-color-primary-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
+.agentTracePartial { margin: 6px 0 9px; padding: 7px 9px; background: var(--el-color-warning-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
 .agentInvocations { display: flex; flex-direction: column; gap: 5px; margin: 7px 0 10px; }
 .agentInvocation { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-height: 28px; padding: 4px 7px; border: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-light); }
 .agentInvocation :deep(.el-button) { margin-left: auto; }
@@ -1361,7 +1390,7 @@ watch(() => route.query, applyLocation);
 	  .debugGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 	}
 	@media (max-width: 560px) {
-	  :deep(.runDetailDrawer .el-drawer__body) { padding: 12px 14px 18px; }
+	  :global(.runDetailDrawer .el-drawer__body) { padding: 12px 14px 18px; }
 	  .detailStats { grid-template-columns: minmax(0, 1fr); }
 	  .detailActions { justify-content: flex-start; }
 	}

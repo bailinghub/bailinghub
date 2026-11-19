@@ -68,6 +68,35 @@ test('full visible events are stored once, paginated without truncation, and lin
   for (const id of [AUDIT_SESSION_A, AUDIT_SESSION_B]) assert.ok(fx.queries.slice(0, writeIndex).some(({ sql, params, transactional }) => sql.includes('FROM bz_agent_sessions') && sql.includes('FOR UPDATE') && params[0] === id && transactional));
 });
 
+test('admin titles take a bounded preview from the first user message of each exact archive', async () => {
+  const fx = conversationAuditFixture();
+  const first = await fx.ready();
+  const input = fx.input({ client_archive_id: '423e4567-e89b-42d3-a456-426614174001' });
+  const other = await fx.repo.create(fx.auth(), input);
+  await fx.repo.confirm(fx.auth(AUDIT_SESSION_B), other.conversation_id);
+  const turn = { client_turn_id: 'turn-1' };
+  const start = { ...turn, sequence: 1, event_id: 'start', kind: 'turn_start' as const };
+  const assistant = { ...turn, sequence: 2, event_id: 'reply', kind: 'assistant_message' as const, content: 'Assistant-only record' };
+  const preview = '门'.repeat(95) + '🚀';
+  await fx.repo.append(fx.auth(), first.conversation_id, [
+    start, assistant, { ...turn, sequence: 3, event_id: 'user-1', kind: 'user_message', content: preview + 'TAIL' },
+    { ...turn, sequence: 4, event_id: 'user-2', kind: 'user_message', content: 'Later message' },
+  ]);
+  await fx.repo.append(fx.auth(), other.conversation_id, [start, assistant]);
+
+  const queryCount = fx.queries.length;
+  const list = await fx.repo.listForAdmin();
+  assert.equal(fx.queries.length - queryCount, 1);
+  assert.deepEqual(new Map(list.items.map((row: any) => [row.conversation_id, row.first_user_preview])), new Map([
+    [first.conversation_id, preview], [other.conversation_id, null],
+  ]));
+  const afterUser = await fx.repo.detailForAdmin(first.conversation_id, 3, 1);
+  assert.equal(afterUser!.conversation.first_user_preview, preview);
+  assert.equal(afterUser!.events[0].content, 'Later message');
+  const retry = await fx.repo.create(fx.auth(), fx.input());
+  assert.ok(!Object.hasOwn(retry, 'first_user_preview'));
+});
+
 test('changed retries, gaps and event-id reuse fail atomically', async () => {
   const fx = conversationAuditFixture();
   const created = await fx.ready();

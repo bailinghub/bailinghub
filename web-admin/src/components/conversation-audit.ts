@@ -13,6 +13,7 @@ export interface AuditConversation {
   message_count: number;
   turn_count: number;
   last_turn_status: AuditTurnStatus | null;
+  first_user_preview?: string | null;
   created_at: string;
   updated_at: string;
 }

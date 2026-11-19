@@ -1,101 +1,134 @@
 <template>
-  <div class="auditConvo">
-    <aside class="auditRail" aria-label="客户端对话列表">
-      <div class="railHeading"><b>客户端完整对话</b><span class="muted">按最近更新排序</span></div>
+  <div class="auditConvo" :class="{ hasSelection: !!selectedId }">
+    <aside ref="rail" class="auditRail" aria-label="客户端对话列表">
+      <div class="railHeading">
+        <div class="headingLine"><h3>最近会话</h3><span class="muted">最近更新</span></div>
+        <el-input v-model="query" clearable :prefix-icon="Search" aria-label="筛选已加载的会话" placeholder="筛选已加载的会话或编号" />
+      </div>
       <div v-loading="listLoading" class="conversationList">
         <el-alert v-if="listError" :title="listError" type="error" :closable="false" />
-        <el-empty v-else-if="!listLoading && !conversations.length" :image-size="56" description="尚无客户端正文归档；历史记录可在「原授权记录」查看" />
-        <button v-for="item in conversations" :key="item.conversation_id" type="button" class="conversationItem"
-          :class="{ selected: currentId === item.conversation_id }" @click="emit('select', item.conversation_id)">
-          <div class="itemHeading"><b>归档写入方：{{ item.client_app_id }}</b><el-tag size="small" effect="plain" :type="statusType(item.last_turn_status)">{{ item.last_turn_status ? turnStatusLabel(item.last_turn_status) : auditStatusLabel(item.state) }}</el-tag></div>
-          <div class="conversationName mono">{{ item.client_conversation_id }}</div>
-          <div class="muted">已接收 {{ item.turn_count }} 轮 / {{ item.message_count }} 条消息 · {{ item.member_count }} 项授权</div>
-          <div class="muted itemTime">{{ fmtTime(item.updated_at, true) }}</div>
+        <el-empty v-else-if="!listLoading && !visibleConversations.length" :image-size="48"
+          :description="query.trim() ? '已加载的会话中没有匹配项' : '尚无客户端对话归档'" />
+        <button v-for="item in visibleConversations" :key="item.conversation_id" type="button" class="conversationItem"
+          :aria-current="currentId === item.conversation_id ? 'true' : undefined" @click="emit('select', item.conversation_id)">
+          <strong class="itemTitle" :title="conversationTitle(item)">{{ conversationTitle(item) }}</strong>
+          <span class="itemMeta muted"><span>{{ item.client_app_id }} · {{ item.turn_count }} 轮</span><time>{{ fmtTime(item.updated_at) }}</time></span>
+          <span v-if="item.state !== 'ready' || (item.last_turn_status && item.last_turn_status !== 'completed')" class="itemState">
+            {{ item.state !== 'ready' ? auditStatusLabel(item.state) : turnStatusLabel(item.last_turn_status) }}
+          </span>
         </button>
         <div v-if="listMore" class="pager"><el-button link :loading="listMoreLoading" @click="loadMoreConversations">加载更多对话</el-button></div>
       </div>
+      <button class="directoryEntry" type="button" @click="emit('open-directory')">
+        <el-icon><Collection /></el-icon><span>授权与接入记录</span><el-icon><ArrowRight /></el-icon>
+      </button>
     </aside>
 
     <main ref="pane" v-loading="detailLoading" class="auditPane" aria-label="客户端对话正文与授权执行">
+      <el-button class="backToList" link @click="emit('back-list')"><el-icon><ArrowLeft /></el-icon>最近会话</el-button>
       <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" class="notice" />
-      <el-empty v-if="!conversation && !detailLoading && !detailError" :image-size="80" description="选择一条对话，查看客户端正文与每轮授权执行" />
+      <el-empty v-if="!conversation && !detailLoading && !detailError" :image-size="70" description="选择一条会话，查看对话与执行记录" />
       <template v-if="conversation">
         <header class="conversationHeader">
-          <div class="headerRow"><b>归档写入方：{{ conversation.client_app_id }}</b><el-tag size="small" effect="plain">写入路由：{{ conversation.route_key }}</el-tag><el-tag size="small" effect="plain" :type="conversation.state === 'ready' ? 'success' : 'warning'">{{ auditStatusLabel(conversation.state) }}</el-tag></div>
-          <div class="mono conversationName">{{ conversation.client_conversation_id }}</div>
-          <div class="muted">已接收 {{ conversation.turn_count }} 轮 / {{ conversation.message_count }} 条消息 · {{ conversation.confirmed_count }}/{{ conversation.member_count }} 项授权已确认</div>
-          <div class="muted provenance">展示客户端已同步的可见文本，旧历史或未同步内容可能缺失。授权卡片链接中枢验证的执行记录；正文与执行结果分别展示，隐藏推理不在此记录。</div>
-          <div class="muted provenance">每项授权分别记录其系统、路由与 Session，业务身份和权限不合并。</div>
-          <div class="members">
-            <article v-for="member in memberCards" :key="member.session_id" class="memberCard" :data-member-session-id="member.session_id">
-              <el-tag size="small" effect="plain" :type="member.confirmed ? 'info' : 'warning'">{{ member.display_label || '未命名授权' }}{{ member.confirmed ? '' : ' · 待确认' }}</el-tag>
-              <div class="muted memberTarget"><span>系统：{{ member.context.systemLabel }}</span><span>路由：{{ member.context.routeLabel }}</span></div>
-              <div v-if="member.context.source === 'legacy_header'" class="missingText">旧记录：仅有归档头部信息，未单独记录成员系统与路由。</div>
-              <div class="muted mono memberSession">Session：{{ member.session_id }}</div>
-            </article>
+          <h2>{{ conversationTitle(conversation) }}</h2>
+          <div class="headerMeta muted">{{ conversation.client_app_id }} · 最近更新 {{ fmtTime(conversation.updated_at, true) }} · 已接收 {{ conversation.turn_count }} 轮 / {{ conversation.message_count }} 条消息</div>
+          <div class="headerLinks">
+            <el-button link type="primary" @click="infoPanel = 'members'">关联授权（{{ conversation.member_count }}）</el-button>
+            <el-button link @click="infoPanel = 'archive'">归档信息</el-button>
           </div>
         </header>
         <el-alert v-if="conversation.state !== 'ready'" title="授权成员尚未全部确认，对话归档尚未就绪。" type="warning" :closable="false" class="notice" />
-        <div class="loadedCount muted">已加载 {{ turns.length }} 轮、{{ loadedMessageCount }} 条消息（{{ events.length }} 条归档事件）<span v-if="hasMore"> · 下方可继续加载</span></div>
-        <el-alert v-if="focusTurn && !turns.some(turn => turn.id === focusTurn)" title="目标轮次尚未加载，请继续加载后续记录。" type="info" :closable="false" class="notice" />
-        <el-empty v-if="!turns.length && !detailLoading" :image-size="56" description="尚未收到客户端正文或轮次记录" />
-
+        <el-alert v-if="focusTurn && !turns.some(turn => turn.id === focusTurn)" :title="hasMore ? '目标轮次尚未加载，请继续加载后续记录。' : '当前已接收的记录中没有目标轮次。'" type="info" :closable="false" class="notice" />
+        <el-empty v-if="!turns.length && !detailLoading" :image-size="48" description="尚未收到客户端正文或轮次记录" />
         <section v-for="(turn, index) in turns" :key="turn.id" :data-turn-id="turn.id" class="auditTurn" :class="{ focused: focusTurn === turn.id }">
-          <div class="turnHeading"><b>第 {{ index + 1 }} 轮</b><span class="muted mono">{{ turn.id }}</span><el-tag size="small" effect="plain" :type="statusType(turn.end?.status)">{{ turn.end ? turnStatusLabel(turn.end.status) : '尚未收到轮次结束记录' }}</el-tag></div>
+          <div class="turnHeading"><h3 :title="turn.id">第 {{ index + 1 }} 轮</h3>
+            <span class="muted" :class="{ attention: turn.end?.status === 'failed' }">{{ turn.end ? turnStatusLabel(turn.end.status) : '尚未收到轮次结束记录' }}</span>
+            <time class="muted">{{ fmtTime(turn.start?.created_at || turn.events[0]?.created_at, true) }}</time>
+          </div>
           <div v-if="!turn.messages.some(message => message.kind === 'user_message')" class="missingText">本轮尚未收到用户正文。</div>
-          <template v-for="event in turn.events" :key="event.event_id">
-            <article v-if="event.kind === 'user_message' || event.kind === 'assistant_message'" class="auditMessage" :class="event.kind === 'user_message' ? 'userMessage' : 'assistantMessage'">
-              <div class="messageMeta muted">{{ event.kind === 'user_message' ? '用户' : '客户端助手' }} · {{ fmtTime(event.created_at, true) }}</div>
-              <div v-if="typeof event.content === 'string'" class="messageText">{{ event.content || '（空消息）' }}</div>
-              <div v-else class="messageText missingText">正文未上传或已不可用；不以授权执行摘要替代。</div>
-            </article>
-          </template>
-          <div v-if="turn.end && !turn.messages.some(message => message.kind === 'assistant_message')" class="missingText">本轮已结束，但未收到客户端助手正文。授权执行摘要不能替代完整答复。</div>
+          <article v-for="event in turn.messages" :key="event.event_id" class="auditMessage" :class="event.kind === 'user_message' ? 'userMessage' : 'assistantMessage'">
+            <span class="messageMeta muted">{{ event.kind === 'user_message' ? '用户' : '客户端助手' }}<time :datetime="event.created_at" :title="fmtTime(event.created_at, true)">{{ fmtTime(event.created_at, true).split(' ').pop() }}</time></span>
+            <div v-if="typeof event.content === 'string'" class="messageText">{{ event.content || '（空消息）' }}</div>
+            <div v-else class="messageText missingText">正文未上传或已不可用。</div>
+          </article>
+          <div v-if="turn.end && !turn.messages.some(message => message.kind === 'assistant_message')" class="missingText">本轮已结束，但未收到客户端助手正文。</div>
+
           <div v-if="turn.runs.length" class="authorizationRuns">
-            <div class="muted runsHeading">本轮各授权执行 · {{ turn.runs.length }} 条关联记录</div>
-            <article v-for="run in turn.runs" :key="run.event_id" class="authorizationRun">
-              <div class="runHead"><b>{{ memberLabel(run.member_session_id) }}</b><el-tag size="small" effect="plain" :type="statusType(runTraces[run.run_id || '']?.data?.run.status)">{{ runTraces[run.run_id || '']?.data ? auditStatusLabel(runTraces[run.run_id || ''].data?.run.status) : '已关联执行' }}</el-tag></div>
-              <div class="muted memberTarget"><span>系统：{{ memberContext(run.member_session_id).systemLabel }}</span><span>路由：{{ memberContext(run.member_session_id).routeLabel }}</span></div>
-              <div v-if="memberContext(run.member_session_id).source === 'legacy_header'" class="missingText">旧记录：仅有归档头部信息，未单独记录成员系统与路由。</div>
-              <div v-else-if="memberContext(run.member_session_id).source === 'unavailable'" class="missingText">缺少授权成员的系统与路由信息，保留原执行关联。</div>
-              <div class="muted mono memberSession">Session：{{ run.member_session_id || '未记录' }}</div>
-              <div class="muted mono runId">run: {{ run.run_id || '缺少执行标识' }}</div>
-              <div class="runActions"><el-button v-if="run.run_id && run.thread_id" size="small" plain :loading="runTraces[run.run_id]?.loading" @click="toggleRunTrace(run)">{{ runTraces[run.run_id]?.open ? '收起授权轨迹' : '查看授权轨迹' }}</el-button><el-button v-if="run.thread_id" size="small" link type="primary" @click="emit('open-thread', run.thread_id)">原授权记录</el-button><span v-if="!run.thread_id" class="missingText">缺少原授权记录关联，无法打开执行轨迹。</span></div>
-              <div v-if="run.run_id && runTraces[run.run_id]?.open" class="runTrace">
-                <el-alert v-if="runTraces[run.run_id].error" :title="runTraces[run.run_id].error" type="error" :closable="false" />
-                <template v-if="runTraces[run.run_id].data">
-                  <div class="muted">以下是该授权的中枢执行轨迹，不是完整对话正文。</div>
-                  <el-alert v-if="runTraces[run.run_id].data?.trace.summary?.partial" title="原执行接口返回的是部分工具轨迹，不代表全量。可继续从原授权记录排查。" type="warning" :closable="false" class="notice" />
-                  <div v-for="invocation in runTraces[run.run_id].data?.invocations" :key="invocation.job_id" class="invocation"><b class="mono">{{ invocation.tool }}</b><span>{{ invocationStatus(invocation) }}</span><el-button link type="primary" size="small" @click="emit('open-job', invocation.job_id)">工具详情</el-button></div>
+            <article v-for="run in turn.runs" :key="run.event_id" class="authorizationRun" :data-run-id="run.run_id">
+              <div class="runHead">
+                <button v-if="run.run_id && run.thread_id" type="button" class="runToggle" :aria-expanded="!!runTraces[run.run_id]?.open"
+                  @click="toggleRunTrace(run)">
+                  <el-icon><ArrowDown v-if="runTraces[run.run_id]?.open" /><ArrowRight v-else /></el-icon>
+                  <span class="muted">授权执行</span><strong>{{ memberLabel(run.member_session_id) }}</strong>
+                  <span class="runState" :class="'state-' + (runSummaries[run.run_id]?.type || 'info')">{{ runSummaries[run.run_id]?.label || '查看轨迹' }}</span>
+                </button>
+                <span v-else class="unlinkedRun"><span class="muted">授权执行</span> {{ memberLabel(run.member_session_id) }}</span>
+              </div>
+              <p v-if="!run.thread_id" class="missingText">缺少原授权记录关联，无法打开执行轨迹。</p>
+              <div v-if="!run.thread_id || !run.run_id || runTraces[run.run_id]?.open" class="runTrace">
+                <div class="runActions">
+                  <el-button v-if="run.thread_id" link type="primary" @click="emit('open-thread', run.thread_id)">原授权记录</el-button>
+                  <details class="inlineMeta"><summary>执行标识</summary><div class="muted">系统：{{ memberContext(run.member_session_id).systemLabel }} · 路由：{{ memberContext(run.member_session_id).routeLabel }}</div>
+                    <div class="mono">Session：{{ run.member_session_id || '未记录' }}</div><div class="mono">Run：{{ run.run_id || '未记录' }}</div><div class="mono">轮次：{{ turn.id }}</div>
+                  </details>
+                </div>
+                <div v-if="memberContext(run.member_session_id).source === 'legacy_header'" class="missingText">旧记录：仅有归档头部信息，未单独记录成员系统与路由。</div>
+                <div v-else-if="memberContext(run.member_session_id).source === 'unavailable'" class="missingText">缺少授权成员的系统与路由信息，保留原执行关联。</div>
+                <span v-if="run.run_id && runTraces[run.run_id]?.loading" class="muted" role="status">正在读取执行轨迹…</span>
+                <el-alert v-if="run.run_id && runTraces[run.run_id]?.error" :title="runTraces[run.run_id].error" type="error" :closable="false" />
+                <template v-if="run.run_id && runTraces[run.run_id]?.data">
+                  <el-alert v-if="runTraces[run.run_id].data?.trace.summary?.partial" title="当前只显示部分工具轨迹，可继续查看原授权记录。" type="warning" :closable="false" />
+                  <div v-for="invocation in runTraces[run.run_id].data?.invocations" :key="invocation.job_id" class="invocation">
+                    <b class="mono">{{ invocation.tool }}</b><span>{{ invocationStatus(invocation) }}</span><el-button link type="primary" size="small" @click="emit('open-job', invocation.job_id)">工具详情</el-button>
+                  </div>
                   <el-timeline v-if="runTraces[run.run_id].data?.trace.events.length" class="executionTimeline">
                     <el-timeline-item v-for="(event, eventIndex) in runTraces[run.run_id].data?.trace.events" :key="eventIndex" :timestamp="fmtTime(event.ts, true)" placement="top">
                       <b>{{ event.title || event.event }}</b><div v-if="event.summary" class="muted">{{ event.summary }}</div>
                       <el-collapse v-if="event.detail && Object.keys(event.detail).length"><el-collapse-item title="事件详情"><pre class="eventDetail">{{ JSON.stringify(event.detail, null, 2) }}</pre></el-collapse-item></el-collapse>
                     </el-timeline-item>
                   </el-timeline>
-                  <div v-else class="muted">该授权尚无可展示的执行事件。</div>
+                  <p v-else class="muted">该授权尚无可展示的执行事件。</p>
                 </template>
               </div>
             </article>
           </div>
-          <div v-else class="muted noRuns">本轮尚无已关联的授权执行记录。</div>
+          <p v-else class="muted noRuns">本轮尚无已关联的授权执行记录。</p>
+          <details v-if="!turn.runs.length" class="inlineMeta"><summary>轮次标识</summary><span class="mono">{{ turn.id }}</span></details>
         </section>
-        <div v-if="hasMore" class="pager"><el-button :loading="moreLoading" @click="loadMoreEvents">加载后续记录</el-button><div class="muted">按原顺序继续加载；同一轮跨页记录会合并展示。</div></div>
-        <div v-else-if="events.length" class="pager muted">已加载当前全部已接收事件 · 旧历史或未同步内容可能缺失；刷新可获取后续上传内容</div>
+        <footer class="pager muted">已加载 {{ turns.length }} 轮、{{ loadedMessageCount }} 条消息（{{ events.length }} 条归档事件）<span v-if="!hasMore"> · 旧历史或未同步内容可能缺失</span>
+          <div v-if="hasMore"><el-button :loading="moreLoading" @click="loadMoreEvents">加载后续记录</el-button></div>
+        </footer>
       </template>
     </main>
+    <el-drawer :model-value="!!infoPanel" :title="infoPanel === 'members' ? '关联授权' : '归档信息'" size="min(480px, 96vw)" append-to-body @update:model-value="infoPanel = null">
+      <template v-if="conversation">
+        <div v-if="infoPanel === 'members'">
+          <p>已确认 {{ conversation.confirmed_count }} / {{ conversation.member_count }} 项授权</p>
+          <article v-for="member in memberCards" :key="member.session_id" class="memberCard" :data-member-session-id="member.session_id">
+            <h3>{{ member.display_label || '未命名授权' }} <span class="muted">{{ member.confirmed ? '已确认' : '待确认' }}</span></h3>
+            <dl class="facts"><dt>系统</dt><dd>{{ member.context.systemLabel }}</dd><dt>路由</dt><dd>{{ member.context.routeLabel }}</dd><dt>Session</dt><dd class="mono">{{ member.session_id }}</dd></dl>
+            <p v-if="member.context.source === 'legacy_header'" class="missingText">旧记录：仅有归档头部信息，未单独记录成员系统与路由。</p>
+          </article>
+        </div>
+        <dl v-else class="facts"><dt>归档写入方</dt><dd>{{ conversation.client_app_id }}</dd><dt>写入路由</dt><dd>{{ conversation.route_key }}</dd>
+          <dt>客户端会话 ID</dt><dd class="mono">{{ conversation.client_conversation_id }}</dd><dt>客户端归档 ID</dt><dd class="mono">{{ conversation.client_archive_id || '未记录' }}</dd><dt>归档记录 ID</dt><dd class="mono">{{ conversation.conversation_id }}</dd>
+          <dt>归档状态</dt><dd>{{ auditStatusLabel(conversation.state) }}</dd><dt>最近更新</dt><dd>{{ fmtTime(conversation.updated_at, true) }}</dd>
+        </dl>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { ArrowDown, ArrowLeft, ArrowRight, Collection, Search } from '@element-plus/icons-vue';
 import { api } from '../request';
 import { fmtTime } from '../util';
 import { auditMemberContext, auditStatusLabel, groupAuditTurns, mergeAuditEvents } from './conversation-audit';
 import type { AuditConversation, AuditMember, AuditEvent, AuditListPage, AuditDetailPage } from './conversation-audit';
 
 const props = defineProps<{ selectedId?: string; focusTurn?: string }>();
-const emit = defineEmits<{ select: [id: string]; 'open-thread': [id: number]; 'open-job': [id: string] }>();
+const emit = defineEmits<{ select: [id: string]; 'back-list': []; 'open-directory': []; 'open-thread': [id: number]; 'open-job': [id: string] }>();
 interface Invocation { job_id: string; tool: string; state?: string | null; status: string; approval_status?: string | null }
 interface RunTrace {
   run: { status: string };
@@ -105,6 +138,9 @@ interface RunTrace {
 interface RunTraceState { loading: boolean; open: boolean; data: RunTrace | null; error: string }
 const LIST_PAGE = 50, EVENT_PAGE = 100;
 const conversations = ref<AuditConversation[]>([]), listLoading = ref(false), listMoreLoading = ref(false), listMore = ref(false), listOffset = ref<number | null>(0), listError = ref('');
+const query = ref('');
+const rail = ref<HTMLElement | null>(null);
+const infoPanel = ref<'archive' | 'members' | null>(null);
 const currentId = ref(''), conversation = ref<AuditConversation | null>(null), members = ref<AuditMember[]>([]), events = ref<AuditEvent[]>([]);
 const detailLoading = ref(false), moreLoading = ref(false), hasMore = ref(false), afterSequence = ref<number | null>(0), detailError = ref(''), pane = ref<HTMLElement | null>(null);
 const runTraces = reactive<Record<string, RunTraceState>>({});
@@ -112,6 +148,18 @@ let listGeneration = 0, detailGeneration = 0;
 const turns = computed(() => groupAuditTurns(events.value));
 const memberCards = computed(() => members.value.map(member => ({ ...member, context: auditMemberContext(member, conversation.value) })));
 const loadedMessageCount = computed(() => events.value.filter(event => event.kind === 'user_message' || event.kind === 'assistant_message').length);
+function conversationTitle(item: AuditConversation): string {
+  if (item.first_user_preview?.trim()) return item.first_user_preview.trim();
+  const id = item.client_conversation_id;
+  return `${item.client_app_id} · ${id.length > 12 ? '…' + id.slice(-12) : id}`;
+}
+const visibleConversations = computed(() => {
+  const text = query.value.trim().toLowerCase();
+  if (!text) return conversations.value;
+  return conversations.value.filter(item =>
+    [item.first_user_preview, item.client_conversation_id, item.conversation_id, item.client_app_id, item.route_key]
+      .some(value => value?.toLowerCase().includes(text)));
+});
 function statusType(status?: string | null): 'info' | 'success' | 'warning' | 'danger' {
   if (status === 'completed' || status === 'executed' || status === 'ready') return 'success';
   if (status === 'failed' || status === 'denied' || status === 'business_rejected') return 'danger';
@@ -132,6 +180,26 @@ function invocationStatus(invocation: Invocation): string {
   if (invocation.approval_status === 'approved' && invocation.state === 'awaiting_approval') return '已批准，等待客户端续执行';
   return auditStatusLabel(invocation.state || invocation.status);
 }
+const runSummaries = computed(() => Object.fromEntries(
+  Object.entries(runTraces).map(([id, state]) => [id, summarizeTrace(state)]),
+));
+function summarizeTrace(state: RunTraceState): { label: string; type: string } {
+  if (state.loading) return { label: '读取中…', type: 'info' };
+  const trace = state.data;
+  if (!trace) return { label: '读取失败', type: 'danger' };
+  if (trace.trace.summary?.partial) return { label: '部分轨迹', type: 'warning' };
+  if (trace.invocations.length === 1) {
+    const inv = trace.invocations[0];
+    const state = inv.approval_status === 'pending' ? 'awaiting_approval' : inv.approval_status === 'denied' ? 'denied' : inv.state || inv.status;
+    return { label: invocationStatus(inv), type: statusType(state) };
+  }
+  if (trace.invocations.length > 1) {
+    const pending = trace.invocations.filter(inv => inv.approval_status === 'pending').length;
+    return pending ? { label: `${pending} 项等待审批`, type: 'warning' }
+      : { label: `${trace.invocations.length} 项工具调用`, type: 'info' };
+  }
+  return { label: '运行：' + auditStatusLabel(trace.run.status), type: 'info' };
+}
 async function loadConversations(): Promise<void> {
   const generation = ++listGeneration;
   listLoading.value = true; listError.value = ''; listMoreLoading.value = false;
@@ -139,6 +207,9 @@ async function loadConversations(): Promise<void> {
     const page = await api<AuditListPage>(`/admin/api/conversation-audits?limit=${LIST_PAGE}&offset=0`);
     if (generation !== listGeneration) return;
     conversations.value = page.items; listMore.value = page.has_more; listOffset.value = page.next_offset;
+    if (!props.selectedId && !currentId.value && page.items.length && window.matchMedia('(min-width: 901px)').matches) {
+      void openConversation(page.items[0].conversation_id);
+    }
   } catch (error) { if (generation === listGeneration) listError.value = (error as Error).message; }
   finally { if (generation === listGeneration) listLoading.value = false; }
 }
@@ -167,14 +238,27 @@ async function focusLoadedTurn(): Promise<void> {
 }
 async function openConversation(id: string): Promise<void> {
   const generation = ++detailGeneration;
-  currentId.value = id; conversation.value = null; events.value = []; members.value = []; hasMore.value = false; afterSequence.value = 0;
+  const same = currentId.value === id && !!conversation.value;
+  currentId.value = id;
+  if (!same) {
+    conversation.value = null; events.value = []; members.value = []; hasMore.value = false; afterSequence.value = 0;
+    infoPanel.value = null;
+  }
   detailLoading.value = true; moreLoading.value = false; detailError.value = '';
-  for (const key of Object.keys(runTraces)) delete runTraces[key];
+  for (const [key, state] of Object.entries(runTraces)) {
+    if (!same || state.loading) delete runTraces[key];
+  }
   try {
     const page = await api<AuditDetailPage>(`/admin/api/conversation-audits/${encodeURIComponent(id)}?after_sequence=0&limit=${EVENT_PAGE}`);
     if (generation !== detailGeneration) return;
-    applyPage(page); await nextTick(); if (pane.value) pane.value.scrollTop = 0; await focusLoadedTurn();
-  } catch (error) { if (generation === detailGeneration) detailError.value = (error as Error).message; }
+    if (same) {
+      events.value = [];
+      for (const key of Object.keys(runTraces)) delete runTraces[key];
+    }
+    applyPage(page); await nextTick(); if (!same && pane.value) pane.value.scrollTop = 0; await focusLoadedTurn();
+  } catch (error) {
+    if (generation === detailGeneration) detailError.value = (same ? '刷新未成功，以下为上次读取的记录。' : '') + (error as Error).message;
+  }
   finally { if (generation === detailGeneration) detailLoading.value = false; }
 }
 async function loadMoreEvents(): Promise<void> {
@@ -191,71 +275,117 @@ async function loadMoreEvents(): Promise<void> {
 async function toggleRunTrace(run: AuditEvent): Promise<void> {
   if (!run.run_id || !run.thread_id) return;
   const existing = runTraces[run.run_id];
+  if (existing?.loading) { existing.open = !existing.open; return; }
   if (existing?.open) { existing.open = false; return; }
   if (existing?.data) { existing.open = true; return; }
   const generation = detailGeneration, id = run.run_id;
   runTraces[id] = { loading: true, open: true, data: null, error: '' };
   try {
     const data = await api<RunTrace>(`/admin/api/threads/${run.thread_id}/agent-runs/${encodeURIComponent(id)}/trace`);
-    if (generation === detailGeneration) runTraces[id] = { loading: false, open: true, data, error: '' };
-  } catch (error) { if (generation === detailGeneration) runTraces[id] = { loading: false, open: true, data: null, error: `授权轨迹未能读取：${(error as Error).message}` }; }
+    if (generation === detailGeneration) runTraces[id] = { loading: false, open: runTraces[id]?.open ?? true, data, error: '' };
+  } catch (error) { if (generation === detailGeneration) runTraces[id] = { loading: false, open: runTraces[id]?.open ?? true, data: null, error: `授权轨迹未能读取：${(error as Error).message}` }; }
 }
 async function refresh(): Promise<void> { await Promise.all([loadConversations(), currentId.value ? openConversation(currentId.value) : Promise.resolve()]); }
-watch(() => props.selectedId, id => { if (id && id !== currentId.value) void openConversation(id); }, { immediate: true });
+watch(() => props.selectedId, async (id, previous) => {
+  if (id && id !== currentId.value) await openConversation(id);
+  if (!id && previous) {
+    infoPanel.value = null;
+    await nextTick();
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      const target = rail.value?.querySelector<HTMLElement>('[aria-current="true"]') || rail.value?.querySelector<HTMLInputElement>('input');
+      target?.focus({ preventScroll: true });
+    }
+  }
+}, { immediate: true });
 watch(() => props.focusTurn, () => { void focusLoadedTurn(); });
 onMounted(() => { void loadConversations(); });
 defineExpose({ refresh });
 </script>
 
 <style scoped>
-.auditConvo { display: flex; height: calc(100vh - 270px); min-height: 470px; border: 1px solid var(--el-border-color); overflow: hidden; }
+.auditConvo { display: grid; grid-template-columns: clamp(235px, 22vw, 310px) minmax(0, 1fr); height: max(480px, calc(100dvh - 258px)); border: 1px solid var(--el-border-color); }
+h2, h3, p { margin: 0; }
+h2 { font-size: 19px; line-height: 1.5; overflow-wrap: anywhere; }
+h3 { font-size: 14px; }
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
-.mono { font-family: var(--bz-mono, monospace); }
-.auditRail { flex: 0 0 300px; width: 300px; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--el-border-color); }
-.railHeading { display: flex; flex-direction: column; gap: 4px; padding: 14px; border-bottom: 1px solid var(--el-border-color-lighter); }
-.conversationList { overflow-y: auto; flex: 1; }
-.conversationItem { display: block; width: 100%; border: 0; border-bottom: 1px solid var(--el-border-color-lighter); padding: 14px; text-align: left; cursor: pointer; font: inherit; color: inherit; background: transparent; }
-.conversationItem:hover { background: var(--el-fill-color-light); }
-.conversationItem.selected { background: var(--el-color-primary-light-9); box-shadow: inset 3px 0 var(--el-color-primary); }
-.conversationItem:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
-.itemHeading, .headerRow, .turnHeading, .runHead, .runActions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.itemHeading { justify-content: space-between; }
-.conversationName { overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; margin: 6px 0; }
-.itemTime { margin-top: 5px; }
-.auditPane { flex: 1; min-width: 0; overflow-y: auto; padding: 16px 20px; }
-.conversationHeader { padding-bottom: 16px; border-bottom: 1px solid var(--el-border-color); }
-.provenance { margin-top: 10px; line-height: 1.65; }
-.members { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.notice { margin: 12px 0; }
-.loadedCount { margin: 16px 0; }
-.auditTurn { padding: 0 0 24px; margin-bottom: 20px; border-bottom: 1px solid var(--el-border-color-lighter); }
-.auditTurn.focused { outline: 1px solid var(--el-color-primary-light-5); outline-offset: 8px; }
-.turnHeading { padding-bottom: 14px; }
-.turnHeading .mono { overflow-wrap: anywhere; }
-.auditMessage { width: fit-content; max-width: 88%; margin: 12px 0; }
-.auditMessage.userMessage { margin-left: auto; }
-.messageMeta { margin: 0 0 5px; }
-.userMessage .messageMeta { text-align: right; }
-.messageText { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.75; padding: 11px 14px; background: var(--el-fill-color-light); border: 1px solid var(--el-border-color-lighter); }
-.userMessage .messageText { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-7); }
-.missingText { color: var(--el-color-warning-dark-2); font-size: 12px; line-height: 1.65; }
-.authorizationRuns { margin: 18px 0 0; border-left: 2px solid var(--el-border-color); padding-left: 12px; }
-.runsHeading { margin-bottom: 8px; }
-.authorizationRun { border: 1px solid var(--el-border-color-lighter); padding: 12px; margin-top: 8px; }
-.runId { margin: 7px 0; overflow-wrap: anywhere; }
-.memberCard { flex: 1 1 260px; min-width: 0; padding: 10px; border: 1px solid var(--el-border-color-lighter); }
-.memberTarget { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0; overflow-wrap: anywhere; }
-.memberSession { overflow-wrap: anywhere; }
-.runActions { margin-top: 8px; }
-.runActions .el-button + .el-button { margin-left: 0; }
-.runTrace { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--el-border-color); }
-.invocation { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 0; font-size: 12px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.mono { font-family: var(--bz-mono); overflow-wrap: anywhere; }
+.auditRail { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--el-border-color); }
+.railHeading { padding: 14px 14px 12px; }
+.headingLine, .itemMeta, .turnHeading, .runHead, .runActions, .headerLinks, .invocation { display: flex; align-items: center; gap: 8px; }
+.headingLine { justify-content: space-between; margin-bottom: 9px; }
+.conversationList { flex: 1; overflow: auto; }
+.conversationItem, .directoryEntry, .runToggle { font: inherit; color: inherit; text-align: left; background: transparent; border: 0; cursor: pointer; }
+.conversationItem { width: 100%; display: block; padding: 12px 14px; border-bottom: 1px solid var(--el-border-color-lighter); }
+.conversationItem:hover, .directoryEntry:hover, .runToggle:hover { background: var(--el-fill-color-light); }
+.conversationItem[aria-current=true] { background: var(--el-color-primary-light-9); }
+.conversationItem[aria-current=true] .itemTitle { color: var(--el-color-primary); }
+.conversationItem:focus-visible, .directoryEntry:focus-visible, .runToggle:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
+.itemTitle { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 14px; }
+.itemMeta { margin-top: 4px; justify-content: space-between; }
+.itemMeta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.itemState { font-size: 12px; color: var(--el-text-color-secondary); }
+.directoryEntry { width: 100%; display: flex; align-items: center; gap: 8px; padding: 13px 14px; font-weight: 600; border-top: 1px solid var(--el-border-color); }
+.directoryEntry .el-icon:last-child { margin-left: auto; }
+.auditPane { min-width: 0; overflow: auto; padding: 0 clamp(16px, 2vw, 32px); }
+.backToList { display: none; }
+.conversationHeader { padding: 17px 0 13px; border-bottom: 1px solid var(--el-border-color); }
+.headerMeta { margin: 5px 0; overflow-wrap: anywhere; }
+.headerLinks, .runActions, .invocation { flex-wrap: wrap; }
+.headerLinks .el-button + .el-button { margin-left: 4px; }
+.auditTurn { padding: 16px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
+.auditTurn.focused .turnHeading h3 { color: var(--el-color-primary); }
+.turnHeading { flex-wrap: wrap; margin-bottom: 10px; }
+.turnHeading time { margin-left: auto; }
+.auditMessage { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 8px; margin: 7px 0; align-items: baseline; }
+.messageMeta { display: flex; flex-wrap: wrap; column-gap: 6px; }
+.messageMeta time { font-size: 11px; }
+.messageText { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+.userMessage .messageText { font-weight: 600; }
+.authorizationRuns { margin: 10px 0 0 74px; }
+.authorizationRun { border: 1px solid var(--el-border-color); }
+.authorizationRun + .authorizationRun { margin-top: 6px; }
+.runHead { background: var(--el-fill-color-lighter); }
+.runToggle, .unlinkedRun { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: 8px; padding: 9px 10px; font-size: 13px; overflow-wrap: anywhere; }
+.runToggle .el-icon { align-self: center; }
+.runToggle .muted { flex-shrink: 0; }
+.runState { margin-left: auto; align-self: center; flex-shrink: 0; font-size: 12px; }
+.state-success { color: var(--el-color-success); }
+.state-warning, .missingText { color: var(--el-color-warning); }
+.state-danger, .attention { color: var(--el-color-danger); }
+.state-info { color: var(--el-text-color-secondary); }
+.missingText, .noRuns { font-size: 12px; padding: 5px 0; }
+.authorizationRun > .missingText { padding: 5px 10px; }
+.runTrace { padding: 10px; border-top: 1px solid var(--el-border-color-lighter); }
+.runActions { align-items: baseline; gap: 8px 18px; }
+.inlineMeta { color: var(--el-text-color-secondary); font-size: 12px; overflow-wrap: anywhere; }
+.inlineMeta summary { cursor: pointer; }
+.inlineMeta[open] > summary { margin-bottom: 5px; }
+.invocation { padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .invocation .el-button { margin-left: auto; }
-.executionTimeline { padding: 16px 0 0 4px; }
-.eventDetail { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; font-size: 12px; }
-.noRuns { margin-top: 14px; }
-.pager { padding: 18px 10px; text-align: center; }
-.pager .muted { margin-top: 8px; }
-@media (max-width: 1000px) { .auditRail { width: 240px; flex-basis: 240px; } .auditPane { padding: 14px; } }
-@media (max-width: 1000px) { .auditConvo { flex-direction: column; height: auto; min-height: 0; } .auditRail { width: 100%; flex-basis: auto; border-right: 0; max-height: 240px; border-bottom: 1px solid var(--el-border-color); } .auditPane { max-height: 75vh; min-height: 280px; } .auditMessage { max-width: 100%; } }
+.executionTimeline { margin: 10px 0; padding-left: 12px; }
+.eventDetail { white-space: pre-wrap; overflow-wrap: anywhere; }
+.pager { text-align: center; padding: 12px; }
+.pager .el-button { margin-top: 4px; }
+.notice { margin: 8px 0; }
+.memberCard { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--el-border-color); }
+.facts { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 10px 14px; margin: 12px 0; }
+.facts dt { color: var(--el-text-color-secondary); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 900px) {
+  .auditConvo { display: flex; flex-direction: column; min-width: 0; }
+  .auditRail, .auditPane { height: 100%; border-right: 0; }
+  .auditConvo.hasSelection .auditRail, .auditConvo:not(.hasSelection) .auditPane { display: none; }
+  .backToList { display: inline-flex; margin-top: 10px; }
+  .conversationHeader { padding-top: 6px; }
+  .auditPane { padding-inline: 12px; }
+  .authorizationRuns { margin-left: 0; }
+}
+@media (max-width: 550px) {
+  .auditConvo { height: max(355px, calc(100dvh - 235px)); }
+  .auditMessage { grid-template-columns: minmax(0,1fr); gap: 2px; }
+  .turnHeading time { font-size: 11px; }
+  .runHead { flex-wrap: wrap; gap: 0; }
+  .runToggle { flex-wrap: wrap; }
+}
 </style>

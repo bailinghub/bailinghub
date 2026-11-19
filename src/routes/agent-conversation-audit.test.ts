@@ -98,21 +98,25 @@ test('only an administrator with runs:read can read complete conversation pages'
     { kind: 'admin', via: 'session', role: 'kb_editor' },
     { kind: 'admin', via: 'session', role: 'admin', permissions: [] },
   ] as Principal[]) {
-    const denied = await admin(path, principal);
-    assert.equal(denied.statusCode, 403);
-    assert.doesNotMatch(denied.body, /ADMIN_ONLY_VISIBLE_TEXT/);
+    for (const deniedPath of [path, '/admin/api/conversation-audits']) {
+      const denied = await admin(deniedPath, principal);
+      assert.equal(denied.statusCode, 403);
+      assert.doesNotMatch(denied.body, /ADMIN_ONLY_VISIBLE_TEXT/);
+    }
   }
   const viewer: Principal = { kind: 'admin', via: 'session', role: 'viewer' };
   const first = await admin(`${path}?limit=1`, viewer);
   assert.equal(first.statusCode, 200);
   assert.equal(first.json().schema, 'bailing.agent-conversation-audit-detail.v1');
   assert.equal(first.json().has_more, true);
+  assert.equal(first.json().conversation.first_user_preview, 'ADMIN_ONLY_VISIBLE_TEXT');
   assert.equal(first.json().next_after_sequence, 1);
   const second = await admin(`${path}?limit=1&after_sequence=1`, viewer);
   assert.equal(second.json().events[0].content, 'ADMIN_ONLY_VISIBLE_TEXT');
   assert.equal(second.headers['cache-control'], 'no-store');
   assert.equal((await admin(`${path}?after_sequence=-1`, viewer)).statusCode, 400);
   const listed = await admin('/admin/api/conversation-audits?limit=1', viewer);
+  assert.equal(listed.json().items[0].first_user_preview, 'ADMIN_ONLY_VISIBLE_TEXT');
   assert.equal(listed.json().items[0].message_count, 1);
   assert.equal(listed.json().items[0].turn_count, 1);
   assert.equal(listed.json().items[0].last_turn_status, 'cancelled');

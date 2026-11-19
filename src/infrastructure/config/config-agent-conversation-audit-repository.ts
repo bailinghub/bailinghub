@@ -39,6 +39,18 @@ function head(row: Row): Row {
   };
 }
 
+// Admin-only projection. The primary key (conversation_id, sequence) scopes the
+// lookup to this archive and orders it in the same sequence as the transcript.
+const ADMIN_HEAD_COLUMNS = `a.*, (
+  SELECT LEFT(e.content, 96) FROM bz_agent_conversation_events e
+  WHERE e.conversation_id = a.conversation_id AND e.kind = 'user_message'
+  ORDER BY e.sequence LIMIT 1
+) AS first_user_preview`;
+
+function adminHead(row: Row): Row {
+  return { ...head(row), first_user_preview: row.first_user_preview ?? null };
+}
+
 function eventView(row: Row): Row {
   return {
     event_id: row.event_id, sequence: Number(row.sequence), client_turn_id: row.client_turn_id, kind: row.kind,
@@ -324,13 +336,17 @@ export class AgentConversationAuditRepository {
   async listForAdmin(limit = 50, offset = 0): Promise<Row> {
     const n = Math.min(Math.max(Math.floor(limit) || 50, 1), 100);
     const off = Math.max(Math.floor(offset) || 0, 0);
-    const [rows] = await this.pool.query('SELECT * FROM bz_agent_conversation_audits ORDER BY updated_at DESC,conversation_id DESC LIMIT ? OFFSET ?', [n + 1, off]);
-    const items = (rows as Row[]).slice(0, n).map(head);
+    const [rows] = await this.pool.query(`SELECT ${ADMIN_HEAD_COLUMNS} FROM (
+      SELECT conversation_id, updated_at FROM bz_agent_conversation_audits
+      ORDER BY updated_at DESC, conversation_id DESC LIMIT ? OFFSET ?
+    ) page JOIN bz_agent_conversation_audits a ON a.conversation_id = page.conversation_id
+    ORDER BY page.updated_at DESC, page.conversation_id DESC`, [n + 1, off]);
+    const items = (rows as Row[]).slice(0, n).map(adminHead);
     return { items, has_more: rows.length > n, next_offset: rows.length > n ? off + n : null };
   }
 
   async detailForAdmin(conversationId: string, afterSequence = 0, limit = 100): Promise<Row | null> {
-    const [rows] = await this.pool.query('SELECT * FROM bz_agent_conversation_audits WHERE conversation_id=?', [conversationId]);
+    const [rows] = await this.pool.query(`SELECT ${ADMIN_HEAD_COLUMNS} FROM bz_agent_conversation_audits a WHERE a.conversation_id=?`, [conversationId]);
     if (!rows[0]) return null;
     const n = Math.min(Math.max(Math.floor(limit) || 100, 1), 200);
     const after = Math.max(Math.floor(afterSequence) || 0, 0);
@@ -338,7 +354,7 @@ export class AgentConversationAuditRepository {
     const [rowsOfEvents] = await this.pool.query('SELECT * FROM bz_agent_conversation_events WHERE conversation_id=? AND sequence>? ORDER BY sequence LIMIT ?', [conversationId, after, n + 1]);
     const events = (rowsOfEvents as Row[]).slice(0, n).map(eventView);
     return {
-      conversation: head(rows[0]), members: (members as Row[]).map((member) => ({
+      conversation: adminHead(rows[0]), members: (members as Row[]).map((member) => ({
         session_id: member.session_id, display_label: member.display_label, confirmed: Boolean(member.confirmed_at),
         ...(Number(rows[0].membership_version) === 2 ? {
           client_app_id: member.client_app_id, client_name: member.client_name, route_key: member.route_key,

@@ -71,8 +71,15 @@ export function conversationAuditFixture(options: { crossBinding?: boolean; sche
       result = { affectedRows: existing ? 0 : 1 };
     } else if (sql.startsWith('SELECT') && sql.includes('FROM bz_agent_conversation_audits')) {
       if (sql.includes('WHERE creator_session_id')) result = [...archives.values()].filter((row) => row.creator_session_id === params[0] && row.route_key === params[1] && row.client_archive_id === params[2]);
-      else if (sql.includes('WHERE conversation_id')) result = archives.has(params[0]) ? [archives.get(params[0])] : [];
+      else if (sql.includes('WHERE conversation_id=?') || sql.includes('WHERE a.conversation_id=?')) result = archives.has(params[0]) ? [archives.get(params[0])] : [];
       else result = [...archives.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at) || b.conversation_id.localeCompare(a.conversation_id)).slice(params[1], params[1] + params[0]);
+      if (sql.includes(' AS first_user_preview')) {
+        result = result.map((archive: Row) => {
+          const first = [...events.values()].filter(event => event.conversation_id === archive.conversation_id && event.kind === 'user_message')
+            .sort((a, b) => a.sequence - b.sequence)[0];
+          return { ...archive, first_user_preview: first ? Array.from(String(first.content)).slice(0, 96).join('') : null };
+        });
+      }
     } else if (sql.startsWith('INSERT INTO bz_agent_conversation_members')) {
       const row = structuredClone(params[0]);
       const key = `${row.conversation_id}:${row.session_id}`;
