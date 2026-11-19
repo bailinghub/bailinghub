@@ -68,12 +68,12 @@ export type { InstanceBrandingRepositoryContract };
 export type DeliveryDlqLedgerContract = Pick<DeliveryDlqLedger, Exclude<keyof DeliveryDlqLedger, 'ensureExecutorReplay' | 'resolveByEventId'>>
   & Partial<Pick<DeliveryDlqLedger, 'ensureExecutorReplay' | 'resolveByEventId'>>;
 export type ObservabilityLedgerContract =
-  Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>
-  & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs'>>;
+  Omit<Pick<ObservabilityLedger, keyof ObservabilityLedger>, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs' | 'listFilteredJobs'>
+  & Partial<Pick<ObservabilityLedger, 'operationalMetricsSnapshot' | 'agentToolJobCandidatesForRun' | 'auditsForJobs' | 'listFilteredJobs'>>;
 export type AgentClientRuntimeRepositoryContract = Pick<AgentClientRuntimeRepository, keyof AgentClientRuntimeRepository>;
 // Existing private hosts may retain their v1 adapter without implementing v2.
-export type AgentConversationAuditRepositoryContract = Omit<Pick<AgentConversationAuditRepository, keyof AgentConversationAuditRepository>, 'createCrossBinding' | 'supportsCrossBindingMembers'>
-  & Partial<Pick<AgentConversationAuditRepository, 'createCrossBinding' | 'supportsCrossBindingMembers'>>;
+export type AgentConversationAuditRepositoryContract = Omit<Pick<AgentConversationAuditRepository, keyof AgentConversationAuditRepository>, 'createCrossBinding' | 'supportsCrossBindingMembers' | 'listFeedForAdmin'>
+  & Partial<Pick<AgentConversationAuditRepository, 'createCrossBinding' | 'supportsCrossBindingMembers' | 'listFeedForAdmin'>>;
 
 export interface ConfigStoreContract {
   readonly notificationOutbox?: NotificationOutboxRepository;

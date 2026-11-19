@@ -98,7 +98,7 @@ test('only an administrator with runs:read can read complete conversation pages'
     { kind: 'admin', via: 'session', role: 'kb_editor' },
     { kind: 'admin', via: 'session', role: 'admin', permissions: [] },
   ] as Principal[]) {
-    for (const deniedPath of [path, '/admin/api/conversation-audits']) {
+    for (const deniedPath of [path, '/admin/api/conversation-audits', '/admin/api/conversation-audits/feed']) {
       const denied = await admin(deniedPath, principal);
       assert.equal(denied.statusCode, 403);
       assert.doesNotMatch(denied.body, /ADMIN_ONLY_VISIBLE_TEXT/);
@@ -132,4 +132,32 @@ test('missing storage is explicit and unexpected internal errors never expose ra
   assert.equal(failure.statusCode, 500);
   assert.equal(failure.json().error, 'conversation_audit_internal_error');
   assert.doesNotMatch(failure.body, /PASSWORD|DATABASE_DETAIL/);
+});
+
+test('admin feed validates source and pagination and reports a legacy Host without the combined feed', async () => {
+  const path = '/admin/api/conversation-audits/feed';
+  const viewer: Principal = { kind: 'admin', via: 'session', role: 'viewer' };
+  const calls: unknown[][] = [];
+  const store = { agentConversationAudit: { listFeedForAdmin: async (...args: unknown[]) => {
+    calls.push(args);
+    return { items: [], has_more: false, next_offset: null };
+  } } } as unknown as ConfigStoreContract;
+  async function read(target: ConfigStoreContract | null, query: string, method = 'GET') {
+    const res = new Response();
+    await handleAdminConversationAuditFor(target, method, path, request(method, path + query), res as unknown as ServerResponse, viewer);
+    return res;
+  }
+  const success = await read(store, '?source=web&limit=2&offset=17');
+  assert.equal(success.statusCode, 200);
+  assert.equal(success.headers['cache-control'], 'no-store');
+  assert.deepEqual(success.json(), { schema: 'bailing.admin-conversation-feed.v1', items: [], has_more: false, next_offset: null });
+  assert.equal((await read(store, '')).statusCode, 200);
+  assert.equal((await read(store, '?source=unknown')).statusCode, 400);
+  assert.equal((await read(store, '?offset=-1')).statusCode, 400);
+  assert.equal((await read(store, '', 'POST')).statusCode, 404);
+  assert.deepEqual(calls, [['web', 2, 17, undefined], ['all', 50, 0, undefined]]);
+  const unsupported = await read({ agentConversationAudit: {} } as ConfigStoreContract, '');
+  assert.equal(unsupported.statusCode, 503);
+  assert.equal(unsupported.json().error, 'conversation_feed_unavailable');
+  assert.equal((await read(null, '')).statusCode, 503);
 });

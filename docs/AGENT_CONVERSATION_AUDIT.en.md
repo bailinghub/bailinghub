@@ -251,6 +251,8 @@ null, then `running`, `completed`, `failed` or `cancelled`. Sequences count all
 event kinds and must not be displayed as message counts.
 Admin list and detail headers can also include `first_user_preview`, the first 96 characters of this archive’s earliest synced user message in sequence order. It is null until a user message is present and may be absent on older versions. Read the paginated detail events for the full message.
 
+`GET /admin/api/conversation-audits/feed?source=all&limit=50&offset=0` returns the admin conversation feed (`bailing.admin-conversation-feed.v1`). Filter by `client`, `web`, `wecom` or `other`. Results from both ledgers share one recent-activity order and pagination. Continue with the returned `next_cursor` in the `cursor` parameter, using the same source filter. Open `kind=audit` items by archive ID and `kind=thread` items via `/admin/api/threads/:id`. When all inbound messages in a thread have verified archive links for their run and thread IDs, the archive and the original-record directory provide access to the execution evidence. Threads with an independent inbound message also appear in the feed.
+
 `GET /admin/api/conversation-audits/:id?after_sequence=0&limit=100` returns schema
 `bailing.agent-conversation-audit-detail.v1`, `conversation` (the header),
 `members`, `events`, `has_more` and `next_after_sequence`. Member views contain

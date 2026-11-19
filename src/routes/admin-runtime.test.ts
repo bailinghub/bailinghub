@@ -275,3 +275,33 @@ test('event-linked native dead letters have one retry entry point, while legacy 
   assert.equal((await invoke()).statusCode, 200);
   assert.equal(sends, 1); assert.equal(resolves, 1);
 });
+
+test('dispatch list validates filters and pagination, preserves the array response and masks error previews', async () => {
+  const deps = depsFor();
+  const calls: unknown[][] = [];
+  deps.configStore.observability.listFilteredJobs = async (...args) => {
+    calls.push(args);
+    return [{ job_id: VALID_JOB_ID, error_preview: 'invalid address: example@example.org' }];
+  };
+  async function read(query: string) {
+    const res = new FakeResponse();
+    const path = '/admin/api/runs';
+    await handleAdminRuntimeApiFor(deps, 'GET', path, { url: path + '?' + query } as IncomingMessage, res as unknown as ServerResponse,
+      { kind: 'admin', via: 'session', username: 'reader', role: 'viewer' });
+    return res;
+  }
+  for (const query of ['status=failed', 'period=2h', 'before_job_id=' + VALID_JOB_ID, 'before_created_at=bad&before_job_id=bad']) {
+    assert.equal((await read(query)).statusCode, 400);
+  }
+  assert.equal(calls.length, 0);
+  const response = await read('limit=51&status=error&route_key=orders&period=24h');
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), [{ job_id: VALID_JOB_ID, error_preview: 'invalid address: [REDACTED_EMAIL]' }]);
+  assert.deepEqual(calls[0], [51, 0, {status:'error', routeKey:'orders', period:'24h'}]);
+  assert.equal((await read('')).statusCode, 200);
+  assert.deepEqual(calls[1], [50, 0, {}]);
+  delete deps.configStore.observability.listFilteredJobs;
+  deps.configStore.observability.listRecentJobs = async () => [{ job_id: VALID_JOB_ID }];
+  assert.equal((await read('status=error')).statusCode, 503);
+  assert.equal((await read('')).json()[0].job_id, VALID_JOB_ID);
+});

@@ -197,7 +197,7 @@ export class ConversationLedger {
     return (rows as any[]).map(rowThreadHead);
   }
 
-  async threadDetail(threadId: number): Promise<{ thread: any; messages: any[] } | null> {
+  async threadDetail(threadId: number, afterId = 0): Promise<{ thread: any; messages: any[]; has_more?: boolean; next_after_id?: number | null } | null> {
     const [trows] = await this.pool.query(
       'SELECT t.thread_id,t.route_key,t.scope_key,t.principal_id,t.message_count,t.created_at,t.last_active_at,t.summary,' +
         'r.name AS route_name,' +
@@ -209,15 +209,18 @@ export class ConversationLedger {
     );
     const t = (trows as any[])[0];
     if (!t) return null;
+    const pageSize = 1000;
     const [mrows] = await this.pool.query(
-      'SELECT id,direction,channel,principal_id,job_id,agent_run_id,content,created_at FROM bz_messages WHERE thread_id=? ORDER BY id ASC LIMIT 1000',
-      [threadId],
+      'SELECT id,direction,channel,principal_id,job_id,agent_run_id,content,created_at FROM bz_messages WHERE thread_id=? AND id>? ORDER BY id ASC LIMIT ?',
+      [threadId, afterId, pageSize + 1],
     );
-    const messages = (mrows as any[]).map((m) => ({
+    const hasMore = mrows.length > pageSize;
+    const messages = (mrows as any[]).slice(0, pageSize).map((m) => ({
       id: Number(m.id), direction: m.direction, channel: m.channel, principal_id: m.principal_id ?? null,
       job_id: m.job_id ?? null, agent_run_id: m.agent_run_id ?? null,
       content: m.content, created_at: new Date(m.created_at).toISOString(),
     }));
-    return { thread: { ...rowThreadHead(t), summary: t.summary ?? null }, messages };
+    return { thread: { ...rowThreadHead(t), summary: t.summary ?? null }, messages,
+      has_more: hasMore, next_after_id: hasMore ? messages[messages.length - 1]!.id : null };
   }
 }

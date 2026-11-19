@@ -33,18 +33,12 @@ export function readRunFilters(query: PageQuery): RunFilters {
     period: period === '24h' || period === '7d' ? period : 'all' };
 }
 export function runRouteKey(row: FilterableRun): string { return String(row.route_key || row.dispatch?.route_key || ''); }
-/** Filters only the supplied, already loaded rows. No content search or server query is implied. */
-export function filterLoadedRuns<T extends FilterableRun>(rows: T[], filters: RunFilters, now: number): T[] {
-  const windowMs = filters.period === '24h' ? 86400000 : filters.period === '7d' ? 7 * 86400000 : undefined;
-  return rows.filter(row => {
-    if (filters.status && row.status !== filters.status) return false;
-    if (filters.route && runRouteKey(row) !== filters.route) return false;
-    if (windowMs !== undefined) {
-      const created = Date.parse(row.created_at || '');
-      if (!Number.isFinite(created) || created < now - windowMs || created > now) return false;
-    }
-    return true;
-  });
+export function runFilterParams(filters: RunFilters): URLSearchParams {
+  const query = new URLSearchParams();
+  if (filters.status) query.set('status', filters.status);
+  if (filters.route) query.set('route_key', filters.route);
+  if (filters.period !== 'all') query.set('period', filters.period);
+  return query;
 }
 export const OUTBOX_KINDS = ['callback', 'delivery', 'approval-notification', 'delivery-dlq'] as const;
 export const OUTBOX_STATUSES = ['pending', 'processing', 'completed', 'skipped', 'failed', 'uncertain'] as const;

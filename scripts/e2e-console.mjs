@@ -309,6 +309,11 @@ async function mockApi(context) {
     if (url.pathname === '/admin/api/clients') return route.fulfill({ json: fixtures.clients });
     if (url.pathname === '/admin/api/routes') return route.fulfill({ json: fixtures.routes });
     if (url.pathname === '/admin/api/runs') return route.fulfill({ json: fixtures.runs });
+    if (url.pathname === '/admin/api/conversation-audits/feed') {
+      const item = { ...conversation, kind: 'audit', source: 'client', title: conversationUser, source_label: 'Demo 客户端', thread_id: null };
+      const source = url.searchParams.get('source') || 'all';
+      return route.fulfill({ json: { items: source === 'all' || source === 'client' ? [item] : [], has_more: false, next_offset: null } });
+    }
     if (url.pathname === '/admin/api/conversation-audits') return route.fulfill({ json: {
       schema: 'bailing.agent-conversation-audit-list.v1', items: [conversation], has_more: false, next_offset: null,
     } });
@@ -747,7 +752,18 @@ async function verifyTroubleshooting(browser, base) {
   ];
   await context.route('**/admin/api/config-diagnostics', r => r.fulfill({ json: { ok: false, errors: 1, warnings: 3, diagnostics: ds } }));
   await context.route('**/admin/api/clients', r => r.fulfill({ json: [...fixtures.clients, { ...fixtures.clients[0], app_id: 'demo-app-extra', name: 'Similar client' }] }));
-  await context.route('**/admin/api/runs?*', r => r.fulfill({ json: [{ ...fixtures.runs[0], route_key: 'demo_support', status: 'error' }, { ...fixtures.runs[0], job_id: 'older-job', route_key: 'other_route', status: 'done', created_at: '2020-01-01T00:00:00Z' }] }));
+  const dispatchReads = [];
+  await context.route('**/admin/api/runs?*', r => {
+    const q = new URL(r.request().url()).searchParams;
+    dispatchReads.push(Object.fromEntries(q));
+    const jobs = [
+      ...Array.from({length:50}, (_, i) => ({ ...fixtures.runs[0], job_id: 'newer-' + i, route_key: 'other_route' })),
+      { ...fixtures.runs[0], route_key: 'demo_support', status: 'error', input_preview: '较早的失败任务', error_preview: '上游请求失败' },
+    ];
+    const offset = Number(q.get('offset') || 0);
+    const rows = jobs.filter(j => (!q.get('status') || j.status === q.get('status')) && (!q.get('route_key') || j.route_key === q.get('route_key')));
+    return r.fulfill({ json: rows.slice(offset, offset + Number(q.get('limit') || 50)) });
+  });
   await context.route('**/admin/api/notification-outbox?*', r => r.fulfill({ json: { items: [{ event_id: 'delivery-unknown', kind: 'delivery-dlq', status: 'uncertain', job_id: fixtures.runs[0].job_id, attempts: 1, updated_at: new Date().toISOString() }], total: 1, snapshot: { counts: { pending: 0, processing: 0, failed: 0, uncertain: 1 } } } }));
   try {
     await p.goto(`${base}/console/diagnostics?severity=error&q=demo`);
@@ -796,12 +812,14 @@ async function verifyTroubleshooting(browser, base) {
     await p.goto(`${base}/console/diagnostics?q=error_burst`);
     await p.locator('.groups .el-table__row').first().getByRole('button', { name: '打开', exact: true }).click();
     await p.waitForURL(u => u.pathname.endsWith('/runs') && u.searchParams.get('tab') === 'jobs');
-    await expectVisible(p, '当前匹配 1 条');
+    await expectVisible(p, '共 1 条任务');
     await p.locator('.run-filters .el-select__wrapper').nth(2).click();
     await p.getByRole('option', { name: '最近 24 小时', exact: true }).click();
     await p.waitForURL(u => u.searchParams.get('run_period') === '24h' && u.searchParams.get('run_status') === 'error');
     await p.reload();
-    await expectVisible(p, '当前匹配 1 条');
+    await expectVisible(p, '共 1 条任务');
+    await expectVisible(p, '较早的失败任务');
+    assert.ok(dispatchReads.some(q => q.period === '24h' && q.status === 'error' && q.offset === '0'));
     assert.deepEqual(errors, []);
     console.log('✓ troubleshooting: exact diagnostic focus, missing objects, filters, tabs, reload and return context passed');
   } finally { await context.close(); }
@@ -892,7 +910,7 @@ try {
   await page.getByRole('button', { name: '取消', exact: true }).click();
 
   await page.getByRole('menuitem', { name: '任务', exact: true }).click();
-  const auditList = page.locator('aside[aria-label="客户端对话列表"]');
+  const auditList = page.locator('aside[aria-label="会话列表"]');
   await auditList.getByRole('button', { name: new RegExp(conversationUser) }).click();
   const auditTurn = page.locator(`section[data-turn-id="${conversationTurnId}"]`);
   await expectVisible(page, conversationReply);

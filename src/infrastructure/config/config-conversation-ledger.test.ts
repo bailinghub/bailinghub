@@ -67,3 +67,23 @@ test('ConversationLedger 会话详情分别保留旧 job_id 与 Agent Client age
   assert.equal(detail.messages[1].agent_run_id, '223e4567-e89b-42d3-a456-426614174000');
   assert.equal(detail.messages[2].agent_run_id, detail.messages[1].agent_run_id);
 });
+
+test('message continuation preserves the first 1000 and follows the last displayed ID within the selected thread', async () => {
+  const source = Array.from({ length: 1002 }, (_, i) => ({id: i + 20, created_at: new Date(0)}));
+  const ledger = new ConversationLedger(() => ({
+    query: async (sql: string, [thread, afterId, limit]: number[]) => {
+      assert.equal(thread, 7);
+      if (!sql.includes('FROM bz_messages WHERE thread_id=? AND id>?')) return [[{thread_id: 7, message_count: source.length, created_at:new Date(0), last_active_at:new Date(0)}]];
+      assert.equal(limit, 1001);
+      return [source.filter(m => m.id > afterId!).slice(0, limit)];
+    },
+  }));
+  const first = (await ledger.threadDetail(7))!;
+  assert.equal(first.messages.length, 1000);
+  assert.equal(first.has_more, true);
+  assert.equal(first.next_after_id, 1019);
+  const last = (await ledger.threadDetail(7, first.next_after_id!))!;
+  assert.deepEqual(last.messages.map(row => row.id), [1020,1021]);
+  assert.equal(last.has_more, false);
+  assert.equal(last.next_after_id, null);
+});

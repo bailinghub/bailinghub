@@ -66,6 +66,67 @@ export interface AuditListPage {
   next_offset: number | null;
 }
 
+export const conversationSources = {
+  all: '全部渠道',
+  client: '客户端',
+  web: '网页助手',
+  wecom: '企业微信',
+  other: '其他接入',
+} as const;
+export type ConversationSource = keyof typeof conversationSources;
+export function readConversationSource(value?: string): ConversationSource {
+  return value && Object.hasOwn(conversationSources, value) ? value as ConversationSource : 'all';
+}
+export interface ConversationFeedItem {
+  kind: 'audit' | 'thread';
+  source: Exclude<ConversationSource, 'all'>;
+  conversation_id: string | null;
+  thread_id: number | null;
+  title: string | null;
+  source_label: string;
+  route_key: string;
+  updated_at: string;
+  message_count: number;
+  turn_count: number | null;
+  last_turn_status: string | null;
+  state: string | null;
+  client_app_id: string | null;
+  client_conversation_id: string | null;
+}
+export interface ConversationFeedPage {
+  next_cursor?: string | null;
+  items: ConversationFeedItem[];
+  has_more: boolean;
+  next_offset: number | null;
+}
+export function feedKey(item: ConversationFeedItem): string {
+  return item.kind === 'audit' ? `audit:${item.conversation_id}` : `thread:${item.thread_id}`;
+}
+export function feedTitle(item: ConversationFeedItem): string {
+  if (item.title?.trim()) return item.title.trim();
+  const id = item.client_conversation_id || item.conversation_id || String(item.thread_id ?? '');
+  return `${item.source_label || conversationSources[item.source]} · ${id.length > 12 ? '…' + id.slice(-12) : id}`;
+}
+interface ThreadTraceRef {
+  job_id?: string | null;
+  agent_run_id?: string | null;
+}
+export function traceKey(message: ThreadTraceRef): string {
+  if (message.job_id) return `job:${message.job_id}`;
+  return message.agent_run_id ? `agent-run:${message.agent_run_id}` : '';
+}
+/** Once per reference. An unanswered input stays traceable, then its reply takes over the link. */
+export function threadTraceOwners(messages: ReadonlyArray<ThreadTraceRef & { id: number; direction: 'in' | 'out' }>): Set<number> {
+  const owners = new Map<string, { id: number; direction: 'in' | 'out' }>();
+  for (const message of messages) {
+    const key = traceKey(message);
+    if (!key) continue;
+    const previous = owners.get(key);
+    if (!previous || (previous.direction === 'in' && message.direction === 'out')) owners.set(key, message);
+  }
+  return new Set([...owners.values()].map(message => message.id));
+}
+
 export interface AuditDetailPage {
   schema: string;
   conversation: AuditConversation;

@@ -3,7 +3,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { EngineRuntime } from '../app/engine';
 import { send } from '../app/http';
-import { redactValue, redactionSummary } from '../core/runtime/redaction-runtime';
+import { redactText, redactValue, redactionSummary } from '../core/runtime/redaction-runtime';
 import { renderDebugReport } from '../core/runtime/debug-report';
 import { buildJobTrace } from '../core/runtime/trace-runtime';
 import { buildAgentClientTrace } from '../core/runtime/agent-client-trace';
@@ -17,6 +17,8 @@ import { continueApprovalDecisionFor, supportsApprovalContinuations } from '../a
 import { classifyDeliveryDlq, replayExecutorDeliveryDlq, DeliveryReplayError } from '../app/delivery-dlq-replay';
 import { handleAdminNotificationsFor } from './admin-notifications';
 import { approvalContinuationView, consoleExecution } from './admin-runtime-ux';
+import { JOB_STATUSES, type JobStatus } from '../core/contracts/types';
+import type { RecentJobFilters } from '../infrastructure/config/config-observability-ledger';
 import { approvalDetailView, approvalListView } from './admin-approval-view';
 
 export type AdminChannelSender = (channelName: string, recipient: string, message: string | ChannelMessage) => Promise<ChannelSendResult>;
@@ -338,7 +340,31 @@ export async function handleAdminRuntimeApiFor(
 
   if (path === '/admin/api/runs' && method === 'GET') {
     const q = new URL(req.url ?? '/', 'http://x').searchParams;
-    send(res, 200, await configStore.observability.listRecentJobs(Number(q.get('limit')) || 50, Number(q.get('offset')) || 0));
+    const status = q.get('status'), period = q.get('period'), routeKey = q.get('route_key')?.trim();
+    const time = q.get('before_created_at'), id = q.get('before_job_id');
+    if ((status && !JOB_STATUSES.some(value => value === status)) || (period && !['all', '24h', '7d'].includes(period))) {
+      send(res, 400, { error: '无效的任务状态或时间范围' }); return true;
+    }
+    const filters: RecentJobFilters = {};
+    if (time !== null || id !== null) {
+      if (!time || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(time) || !Number.isFinite(Date.parse(time))
+        || !id || !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) {
+        send(res, 400, { error: '无效的任务分页位置' }); return true;
+      }
+      filters.before = { createdAt: Date.parse(time), jobId: id };
+    }
+    if (status) filters.status = status as JobStatus;
+    if (period === '24h' || period === '7d') filters.period = period;
+    if (routeKey) filters.routeKey = routeKey;
+    const ledger = configStore.observability;
+    if (!ledger.listFilteredJobs && (filters.status || filters.routeKey || filters.period)) {
+      send(res, 503, { error: '当前存储不支持按条件查询任务，可清除筛选查看全部记录。' }); return true;
+    }
+    const limit = Number(q.get('limit')) || 50, offset = Number(q.get('offset')) || 0;
+    const rows = ledger.listFilteredJobs
+      ? await ledger.listFilteredJobs(limit, offset, filters)
+      : await ledger.listRecentJobs(limit, offset);
+    send(res, 200, rows.map(row => ({ ...row, error_preview: row.error_preview ? redactText(String(row.error_preview)).slice(0, 200) : null })));
     return true;
   }
 
@@ -391,7 +417,11 @@ export async function handleAdminRuntimeApiFor(
   }
   const mThread = path.match(/^\/admin\/api\/threads\/(\d+)$/);
   if (mThread && method === 'GET') {
-    const d = await configStore.conversations.threadDetail(Number(mThread[1]));
+    const after = new URL(req.url ?? '/', 'http://x').searchParams.get('after_id');
+    if (after !== null && (!/^\d+$/.test(after) || !Number.isSafeInteger(Number(after)))) {
+      send(res, 400, { error: '无效的消息分页位置' }); return true;
+    }
+    const d = await configStore.conversations.threadDetail(Number(mThread[1]), Number(after));
     if (!d) { send(res, 404, { error: '会话不存在' }); return true; }
     send(res, 200, d);
     return true;

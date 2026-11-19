@@ -3,7 +3,7 @@
     <template #header>
       <div style="display: flex; justify-content: space-between; align-items: center">
         <span><b>任务</b> <HelpTip title="任务页是什么">
-            <p>「<b>会话</b>」展示客户端已同步的可见文本与每轮各授权执行，也保留原授权记录入口。旧历史或未同步内容可能缺失。</p>
+            <p>「<b>会话</b>」按最近活动汇总客户端、网页助手和其他渠道已记录的对话。可从消息查看执行轨迹，也可单独查原授权记录。</p>
             <p>「<b>调度流</b>」按时间倒序审计<b>每一次派发</b>，点行看任务全详情（输入 / 组装上下文 / 工具 / 回复）。</p>
             <p>「<b>追溯</b>」按 job_id、request_id、client_id、thread_id 或 principal_id 查单次任务完整生命周期，用于接入排障和审批/送达/工具调用对账。</p>
           </HelpTip></span>
@@ -15,57 +15,45 @@
       <!-- ============ 会话视图：把平铺的 job 还原成「一个人一条对话」（收件箱式主从） ============ -->
       <el-tab-pane name="threads">
         <template #label><span><el-icon style="vertical-align:-2px"><ChatLineRound /></el-icon> 会话</span></template>
-        <ClientConversations ref="clientConversations" :selected-id="auditConversationId" :focus-turn="auditTurnId"
+        <ClientConversations ref="clientConversations" :selected-id="auditConversationId" :focus-turn="auditTurnId" :channel-thread="channelThreadId" :source="conversationSource"
+          @select-channel="selectChannelThread" @change-source="changeConversationSource" @open-audit="gotoAuditConversation"
           @select="selectAuditConversation" @back-list="backToConversationList" @open-directory="openRecordDirectory" @open-thread="gotoThread" @open-job="openDetail({ job_id: $event })" />
       </el-tab-pane>
       <!-- ============ 调度流：原有平铺列表，按时间审计每一次派发 ============ -->
       <el-tab-pane name="runs">
         <template #label><span><el-icon style="vertical-align:-2px"><List /></el-icon> 调度流</span></template>
         <div class="run-filters">
-          <el-select v-model="runFilters.status" aria-label="任务状态筛选" style="width:170px" @change="persistRunFilters"><el-option value="" label="全部状态" /><el-option v-for="status in RUN_FILTER_STATUSES" :key="status" :value="status" :label="`${runStatusLabels[status]} · ${status}`" /></el-select>
+          <el-select v-model="runFilters.status" aria-label="任务状态筛选" placeholder="全部状态" style="width:170px" @change="persistRunFilters"><el-option value="" label="全部状态" /><el-option v-for="status in RUN_FILTER_STATUSES" :key="status" :value="status" :label="`${runStatusLabels[status]} · ${status}`" /></el-select>
           <el-select v-model="runFilters.route" aria-label="任务路由筛选" style="width:240px" filterable allow-create clearable placeholder="全部路由（输入精确标识）" @change="persistRunFilters"><el-option v-for="key in runRouteOptions" :key="key" :value="key" :label="key" /></el-select>
           <el-select v-model="runFilters.period" aria-label="任务时间筛选" style="width:150px" @change="persistRunFilters"><el-option value="all" label="全部时间" /><el-option value="24h" label="最近 24 小时" /><el-option value="7d" label="最近 7 天" /></el-select>
           <el-button v-if="hasRunFilters" @click="clearRunFilters">清除筛选</el-button>
         </div>
-        <el-alert type="info" :closable="false" show-icon :title="`筛选已加载 ${list.length} 条，当前匹配 ${filteredRuns.length} 条${runsMore ? '，可加载更多' : ''}。这是当前已加载记录的筛选，不是全库查询。`" />
-        <el-alert v-if="runFilters.route && list.length && !list.some(row => runRouteKey(row))" type="warning" :closable="false" title="已加载记录未提供路由标识，无法据此确认该路由是否有任务。可清除路由筛选或继续加载核对。" />
-        <el-alert v-if="runsError" :title="runsError" :description="list.length ? `正在展示旧快照，上次成功读取：${fmtTime(runsLoadedAt, true)}。` : '尚未取得任务列表，不能据此判断没有任务。'" type="error" :closable="false" show-icon />
-        <el-empty v-if="!filteredRuns.length && !loading && !runsError" :description="hasRunFilters ? '已加载记录中没有匹配项；可清除筛选或加载更多。' : '还没有任务：业务系统接入后，触发记录会出现在这里'"><el-button v-if="hasRunFilters" @click="clearRunFilters">清除筛选</el-button></el-empty>
-        <el-table v-else :data="filteredRuns" v-loading="loading" @row-click="openDetail" style="cursor: pointer">
-          <el-table-column label="时间" width="130">
-            <template #default="{ row }"><span class="muted">{{ fmtTime(row.created_at, true) }}</span></template>
-          </el-table-column>
-          <el-table-column label="调度目标" width="120">
-            <template #default="{ row }"><el-tag effect="plain" type="info">{{ row.target }}</el-tag></template>
-          </el-table-column>
-          <el-table-column label="路由" min-width="140" show-overflow-tooltip><template #default="{ row }"><span class="mono">{{ runRouteKey(row) || '未记录' }}</span></template></el-table-column>
-          <el-table-column label="触发方" min-width="150">
-            <template #default="{ row }">
-              <span v-if="row.client_app_id" class="mono">{{ row.client_app_id }}</span>
-              <template v-else-if="String(row.source || '').startsWith('chat:')">
-                <el-tag size="small" effect="plain" type="warning" :title="row.source">{{ String(row.source).slice(5, 17) }}…</el-tag>
-                <div class="muted mono">{{ row.visitor_uid || '匿名访客' }}{{ row.thread_id ? ' · ' + row.thread_id : '' }}</div>
-              </template>
-              <el-tag v-else-if="row.source === 'delivery'" size="small" effect="plain" type="info">送达子任务</el-tag>
-              <span v-else class="mono">admin</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="输入" min-width="200">
-            <template #default="{ row }">
-              <div>{{ row.project || '-' }}</div>
-              <div class="muted ellipsis">{{ row.input_preview }}</div>
-            </template>
-          </el-table-column>
-          <el-table-column label="状态" width="100">
-            <template #default="{ row }">
-              <el-tag :type="statusType(row.status)" effect="plain">{{ row.status }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="severity" label="级别" width="90" />
-          <el-table-column prop="summary" label="结果摘要" min-width="240" show-overflow-tooltip />
+        <el-alert v-if="runsError" :title="runsError" :description="list.length ? `保留上次读取的记录（${fmtTime(runsLoadedAt, true)}）。` : '请重试读取当前条件下的任务。'" type="error" :closable="false" show-icon />
+        <div v-if="!loading && !runsError && list.length" class="runCount muted">{{ runsMore ? '已显示 ' + list.length + ' 条，可继续加载' : '共 ' + list.length + ' 条任务' }}</div>
+        <el-empty v-if="!list.length && !loading && !runsError" :description="hasRunFilters ? '没有符合当前条件的任务' : '尚无任务记录'"><el-button v-if="hasRunFilters" @click="clearRunFilters">清除筛选</el-button></el-empty>
+        <el-table v-else :data="list" v-loading="loading" @row-click="openDetail" row-key="job_id" class="runsTable">
+          <el-table-column label="时间" width="125"><template #default="{ row }"><time>{{ fmtTime(row.created_at, true) }}</time></template></el-table-column>
+          <el-table-column label="任务" min-width="215"><template #default="{ row }">
+            <button type="button" class="runSubject" :title="row.input_preview || row.project || row.request_id || row.job_id" @click.stop="openDetail(row)">{{ row.input_preview || row.project || row.request_id || row.job_id }}</button>
+            <div v-if="row.project && row.input_preview" class="muted runCellLine">{{ row.project }}</div>
+          </template></el-table-column>
+          <el-table-column label="来源" min-width="110"><template #default="{ row }">
+            <span class="runCellLine" :title="row.source || row.client_app_id">{{ runSourceLabel(row) }}</span>
+            <span v-if="row.visitor_uid || row.thread_id" class="muted runCellLine">{{ [row.visitor_uid, row.thread_id].filter(Boolean).join(' · ') }}</span>
+          </template></el-table-column>
+          <el-table-column label="路由 / 调度目标" min-width="135"><template #default="{ row }">
+            <span class="runCellLine" :title="runRouteKey(row)">{{ runRouteKey(row) || '未记录' }}</span>
+            <span v-if="row.target" class="muted runCellLine">{{ row.target }}</span>
+          </template></el-table-column>
+          <el-table-column label="状态" width="95"><template #default="{ row }">
+            <el-tag :type="statusType(row.status)" effect="plain" :title="row.status">{{ runStatusLabels[row.status] || row.status || '未记录' }}</el-tag>
+          </template></el-table-column>
+          <el-table-column label="结果 / 异常摘要" min-width="180"><template #default="{ row }">
+            <div class="runCellLine" :class="{ errorText: row.error_preview }" :title="row.error_preview || row.summary">{{ row.error_preview || row.summary || '—' }}</div>
+            <span v-if="row.severity" class="muted runCellLine">级别 · {{ row.severity }}</span>
+          </template></el-table-column>
         </el-table>
-        <div v-if="runsMore" class="loadmore"><el-button :loading="moreLoading" @click="loadMoreRuns">加载更多</el-button></div>
-        <div v-else-if="list.length" class="loadmore muted">— 已到底（共 {{ list.length }} 条）—</div>
+        <div v-if="runsMore" class="loadmore"><el-button :loading="moreLoading" :disabled="loading" @click="loadMoreRuns">加载更多</el-button></div>
       </el-tab-pane>
 
       <!-- ============ 单 Job 追溯：开发者排障入口，job_id → 生命周期全链 ============ -->
@@ -170,7 +158,7 @@
       <div class="recordTools">
         <el-button v-if="curThread" size="small" data-record-list @click="backToRecordDirectory">返回记录列表</el-button>
         <span v-else class="muted">按最近活动排序，筛选当前已加载的记录。</span>
-        <el-button size="small" :loading="curThread ? threadDataLoading : threadsLoading" @click="refreshRecords">刷新记录</el-button>
+        <el-button size="small" :loading="curThread ? rawTranscript?.loading : threadsLoading" @click="refreshRecords">刷新记录</el-button>
       </div>
       <div v-show="!curThread" class="rail" aria-label="原记录列表">
         <el-alert v-if="threadsError" :title="threadsError" type="error" :closable="false" show-icon />
@@ -194,90 +182,7 @@
         </div>
       </div>
 
-      <div v-show="curThread" ref="paneRef" class="pane" v-loading="threadDataLoading" aria-label="原记录正文与轨迹">
-        <el-alert v-if="threadDataError" :title="threadDataError" type="error" :closable="false" show-icon />
-        <template v-if="threadData">
-          <div class="paneHead">
-            <div class="ph1">
-              <el-tag v-if="partyVisible(threadData.thread)" size="small" effect="plain" :type="partyType(threadData.thread)">{{ partyLabel(threadData.thread) }}</el-tag>
-              <b class="mono" :title="identityTitle(threadData.thread)">{{ whoLabel(threadData.thread) }}</b>
-              <el-tag size="small" effect="plain" type="info" class="mono">{{ threadData.thread.route_name }}</el-tag>
-              <span class="muted">{{ threadData.thread.message_count }} 条消息 · 最近 {{ fmtTime(threadData.thread.last_active_at, true) }}</span>
-            </div>
-            <div class="ph2 muted mono" :title="threadData.thread.scope_key">scope: {{ threadData.thread.scope_key }}</div>
-          </div>
-          <el-collapse v-if="threadData.thread.summary" class="coll summcoll">
-            <el-collapse-item title="记忆层滚动摘要（更早的对话已折叠进这里，装配上下文时注入）">
-              <pre class="block">{{ cap(threadData.thread.summary) }}</pre>
-            </el-collapse-item>
-          </el-collapse>
-
-          <div class="chat">
-            <div v-for="m in threadData.messages" :key="m.id" class="turn" :class="m.direction === 'in' ? 'fromUser' : 'fromHub'">
-              <div class="bubbleWrap">
-                <div class="bMeta muted">{{ messageActorLabel(m, threadData.thread) }} · {{ fmtTime(m.created_at, true) }}</div>
-                <div class="bubble"><RichText :text="m.content" /></div>
-                <!-- AI 轮次：旧链路按 job_id，新 Agent Client 链路按 agent_run_id 懒拉各自的安全轨迹。 -->
-                <div v-if="shouldShowMessageTrace(m)" class="traceLine">
-                  <button type="button" class="tracetoggle" :aria-expanded="Boolean(traces[traceKey(m)]?.open)" @click="toggleTrace(m)">
-                    <svg class="traceCaret" :class="{ open: traces[traceKey(m)]?.open }" viewBox="0 0 1024 1024" aria-hidden="true">
-                      <path d="M0.085333 239.36L512 784.64l511.914667-545.28z" fill="currentColor"></path>
-                    </svg>
-                    执行轨迹
-                    <span v-if="traceBadge(traceKey(m))" class="muted">{{ traceBadge(traceKey(m)) }}</span>
-                  </button>
-                  <div v-if="traces[traceKey(m)]?.open" class="tracebox" v-loading="traces[traceKey(m)]?.loading">
-                    <template v-if="traces[traceKey(m)]?.detail">
-                      <div class="tmeta2">
-                        <el-tag v-if="isAgentTrace(traceKey(m))" size="small" type="primary" effect="plain">本地智能体编排</el-tag>
-                        <el-tag size="small" :type="statusType(traces[traceKey(m)].detail.status)" effect="plain">{{ traceStatusLabel(traces[traceKey(m)].detail.status) }}</el-tag>
-                        <span v-if="traceModel(traceKey(m))" class="mono muted">{{ traceModel(traceKey(m)) }}</span>
-                        <span v-if="traceDuration(traceKey(m))" class="muted">{{ (traceDuration(traceKey(m)) / 1000).toFixed(1) }}s</span>
-                        <span v-if="traceTokenCount(traceKey(m))" class="muted">{{ traceTokenCount(traceKey(m)) }} tok</span>
-                      </div>
-                      <div v-if="isAgentTrace(traceKey(m))" class="agentTraceHint">
-                        本地智能体负责理解、规划和工具选择；隐藏推理不会上传。以下只展示中枢可验证的运行边界、ACC 工具治理、审批与结果。
-                      </div>
-                      <el-button v-if="traces[traceKey(m)].detail.conversation_audit_id" size="small" plain type="primary" class="traceDetailBtn" @click="gotoAuditConversation(traces[traceKey(m)].detail.conversation_audit_id, traces[traceKey(m)].detail.client_turn_id)">查看客户端完整对话</el-button>
-                      <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.partial" class="agentTracePartial">
-                        本轮工具记录超过单次展示上限，以下是已通过归属校验的部分轨迹，不代表全量。
-                      </div>
-                      <div v-if="!isAgentTrace(traceKey(m))" class="muted toolsum">{{ fmtTools(traces[traceKey(m)].detail?.dispatch?.tools) }}</div>
-                      <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].invocations.length" class="agentInvocations">
-                        <div v-for="inv in traces[traceKey(m)].invocations" :key="inv.job_id" class="agentInvocation">
-                          <el-tag size="small" effect="plain" type="primary" class="mono">{{ inv.tool }}</el-tag>
-                          <span class="muted">{{ invocationStateLabel(inv) }}</span>
-                          <span v-if="inv.duration_ms" class="muted">{{ (inv.duration_ms / 1000).toFixed(1) }}s</span>
-                          <el-button link type="primary" size="small" @click.stop="openDetail({ job_id: inv.job_id })">工具详情</el-button>
-                        </div>
-                      </div>
-                      <el-timeline v-if="traces[traceKey(m)].events?.length" class="tline">
-                        <el-timeline-item v-for="(a, i) in traces[traceKey(m)].events" :key="i" :timestamp="fmtTime(a.ts)" placement="top">
-                          <b>{{ traceTitle(a) }}</b>
-                          <el-tag v-if="a.source" size="small" effect="plain" :type="a.source === 'local_agent' ? 'primary' : 'info'" class="traceSource">{{ traceSourceLabel(a.source) }}</el-tag>
-                          <el-tag size="small" effect="plain" :type="traceStageType(a.stage)" class="traceStage">{{ traceStageLabel(a.stage) }}</el-tag>
-                          <el-tag v-if="a.severity && a.severity !== 'info'" size="small" effect="plain" :type="traceSeverityType(a.severity)" class="traceSeverity">{{ a.severity }}</el-tag>
-                          <span v-if="traceSummaryText(a)" class="muted auditTag">{{ traceSummaryText(a) }}</span>
-                          <template v-if="detailLen(a.detail)">
-                            <el-collapse v-if="detailLen(a.detail) > 160" class="auditcoll">
-                              <el-collapse-item :title="shortDetail(a.detail)"><pre class="block">{{ fullDetail(a.detail) }}</pre></el-collapse-item>
-                            </el-collapse>
-                            <div v-else class="muted detail-json">{{ shortDetail(a.detail) }}</div>
-                          </template>
-                        </el-timeline-item>
-                      </el-timeline>
-                      <div v-else class="muted notrace">这一轮没有可展示的执行事件</div>
-                      <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.tool_invocations === 0 && !traces[traceKey(m)].invocations.length" class="muted notrace">本轮未调用中枢治理工具。</div>
-                      <el-button v-if="m.job_id" plain type="primary" size="small" class="traceDetailBtn" @click="openDetail({ job_id: m.job_id })">查看完整详情</el-button>
-                    </template>
-                    <div v-else-if="!traces[traceKey(m)]?.loading" class="muted">该轮详情已不可用（记录可能已清理）</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
+      <ChannelThread v-if="curThread" ref="rawTranscript" :thread-id="curThread" @open-job="openDetail({ job_id: $event })" @open-audit="gotoAuditConversation" />
     </div>
   </el-drawer>
 
@@ -471,73 +376,18 @@ import { useMe } from '../store';
 import RichText from '../components/RichText.vue';
 import HelpTip from '../components/HelpTip.vue';
 import ClientConversations from '../components/ClientConversations.vue';
+import ChannelThread from '../components/ChannelThread.vue';
+import { cap, detailLen, shortDetail, fullDetail, fmtTools, statusType, traceTitle, traceSummaryText, traceStageLabel, traceStageType, traceSeverityType,
+  partyLabel, partyVisible, partyType, whoLabel, identityTitle, type TraceEvent, type TracePayload } from '../task-trace-presentation';
 import NotificationOutboxPanel from '../components/NotificationOutboxPanel.vue';
 import { canOfferRerun, rerunHint } from '../runtime-feedback';
-import { filterLoadedRuns, patchTaskQuery, readRunFilters, readRunsLocation, RUN_FILTER_STATUSES, runRouteKey, runsTabQuery, safeTaskReturnPath, type RunsTab } from '../task-page-location';
+import { runFilterParams, patchTaskQuery, readRunFilters, readRunsLocation, RUN_FILTER_STATUSES, runRouteKey, runsTabQuery, safeTaskReturnPath, type RunsTab } from '../task-page-location';
 
 const route = useRoute();
 const router = useRouter();
 const returnPath = computed(() => safeTaskReturnPath(route.query.return_to));
 const initialLocation = readRunsLocation(route.query);
 
-type TraceSeverity = 'info' | 'warning' | 'error';
-type TraceStage = 'launch' | 'context' | 'execution' | 'tool' | 'approval' | 'delivery' | 'summary' | 'recovery' | 'channel' | 'config' | 'system' | string;
-interface TraceEvent {
-  ts: string;
-  event: string;
-  stage?: TraceStage;
-  severity?: TraceSeverity;
-  title?: string;
-  summary?: string;
-  detail?: Record<string, unknown>;
-  source?: 'local_agent' | 'hub_governance';
-  tool_job_id?: string;
-}
-interface TracePayload {
-  job: any;
-  trace: { summary?: any; events: TraceEvent[] };
-  lookup?: any;
-  debug_bundle?: any;
-  debug_report?: string;
-}
-interface AgentRunInvocation {
-  job_id: string;
-  invocation_id: string;
-  tool: string;
-  status: string;
-  state: string | null;
-  ok: boolean | null;
-  business_status: string | number | null;
-  approval_status: string | null;
-  approval_id: number | null;
-  event_count: number;
-  duration_ms?: number;
-  created_at: string;
-  updated_at: string;
-}
-interface AgentRunTracePayload {
-  kind: 'agent_client_run';
-  run: any;
-  trace: { summary?: any; events: TraceEvent[] };
-  invocations: AgentRunInvocation[];
-}
-interface ThreadMessage {
-  id: number;
-  direction: 'in' | 'out';
-  content: string;
-  created_at: string;
-  job_id?: string | null;
-  agent_run_id?: string | null;
-}
-interface ConversationTraceState {
-  kind: 'job' | 'agent-run';
-  open: boolean;
-  loading: boolean;
-  detail: any;
-  events: TraceEvent[];
-  summary: any | null;
-  invocations: AgentRunInvocation[];
-}
 interface DetailTraceGroup {
   key: string;
   label: string;
@@ -556,18 +406,33 @@ const recordDrawerOpen = computed(() => {
   return location.tab === 'threads' && location.view === 'legacy';
 });
 const auditConversationId = ref(initialLocation.conversation), auditTurnId = ref(initialLocation.turn);
+const rawTranscript = ref<InstanceType<typeof ChannelThread> | null>(null);
+const channelThreadId = computed(() => {
+  const value = route.query.channel_thread;
+  return typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
+});
+const conversationSource = computed(() => typeof route.query.conversation_source === 'string' ? route.query.conversation_source : 'all');
 const clientConversations = ref<InstanceType<typeof ClientConversations> | null>(null);
 const list = ref<any[]>([]);
 const runFilters = reactive(readRunFilters(route.query));
-const runFilterTime = ref(Date.now());
 const runStatusLabels: Record<string, string> = { queued: '等待执行', running: '执行中', dispatched: '已派发', done: '已完成', error: '执行错误', rejected: '已拒绝' };
 const hasRunFilters = computed(() => Boolean(runFilters.status || runFilters.route || runFilters.period !== 'all'));
-const filteredRuns = computed(() => filterLoadedRuns(list.value, runFilters, runFilterTime.value));
-const runRouteOptions = computed(() => [...new Set([...list.value.map(runRouteKey).filter(Boolean), ...(runFilters.route ? [runFilters.route] : [])])].sort());
+const knownRunRoutes = ref<string[]>([]);
+const runRouteOptions = computed(() => [...new Set([...knownRunRoutes.value, ...(runFilters.route ? [runFilters.route] : [])])].sort());
+let requestedRunsKey: string | undefined;
+function runSourceLabel(row: { source?: string; client_app_id?: string }): string {
+  const src = row.source || '';
+  if (src.startsWith('chat:')) return '网页助手 · ' + src.slice(5);
+  if (src.startsWith('wecom:')) return '企微 · ' + src.slice(6);
+  if (src.startsWith('agent:') || src.startsWith('agent-tool:')) return '客户端 · ' + (row.client_app_id || src.slice(src.indexOf(':') + 1));
+  if (src === 'delivery') return '结果送达';
+  if (src === 'admin') return '控制台';
+  return row.client_app_id || src || '未记录';
+}
 const loading = ref(false);
 const runsError = ref(''), runsLoadedAt = ref('');
 let runsGeneration = 0;
-// 调度流分页：服务端按 offset 取，前端「加载更多」累加。每页 RUNS_PAGE 条；满页即推断还有更多。
+// 多取一条判断是否还有下一页，同秒的记录以 Job ID 排序。
 const RUNS_PAGE = 50;
 const runsMore = ref(false);
 const moreLoading = ref(false);
@@ -597,13 +462,6 @@ const threadQ = ref(initialLocation.threadQ);
 const curThread = ref<number | null>(null);
 const lastOpenedThread = ref<number | null>(null);
 const recordContents = ref<HTMLElement | null>(null);
-const threadData = ref<{ thread: any; messages: ThreadMessage[] } | null>(null);
-const threadDataLoading = ref(false);
-const threadDataError = ref('');
-let threadLoadGeneration = 0;
-const paneRef = ref<HTMLElement | null>(null);
-// 逐轮执行轨迹缓存：job:<id> / agent-run:<id> 分开命名，避免两类 UUID 语义混淆。
-const traces = reactive<Record<string, ConversationTraceState>>({});
 const traceLookupJob = computed(() => traceLookupResult.value?.job ?? {});
 const traceLookupEvents = computed(() => traceLookupResult.value ? normalizeTraceEvents(traceLookupResult.value) : []);
 const traceLookupSummary = computed(() => traceLookupResult.value?.trace.summary ?? {});
@@ -623,74 +481,9 @@ const DETAIL_TRACE_STAGE_TO_GROUP = DETAIL_TRACE_GROUP_DEFS.reduce<Record<string
   return acc;
 }, {});
 
-function statusType(st: string): 'success' | 'danger' | 'info' | 'warning' {
-  if (st === 'done' || st === 'completed') return 'success';
-  if (st === 'error' || st === 'rejected' || st === 'failed') return 'danger';
-  if (st === 'running' || st === 'dispatched' || st === 'preparing' || st === 'context_ready') return 'warning';
-  return 'info';
-}
-function traceStatusLabel(st: string): string {
-  const labels: Record<string, string> = {
-    completed: '已完成', failed: '失败', cancelled: '已取消', preparing: '准备中', context_ready: '上下文已就绪',
-  };
-  return labels[st] || st;
-}
-// 显示安全上限：审计要全量可追溯，但极端大内容（如几 MB 响应）整段塞进 DOM 会卡；
-// 200K 字符够覆盖正常审计内容，超出才尾部标注（真实留存在后端审计，这里只是展示护栏）。
-const SAFE_MAX = 200000;
-function cap(s: string): string {
-  return s.length > SAFE_MAX ? s.slice(0, SAFE_MAX) + `\n…[显示已达上限 ${SAFE_MAX} 字符，完整内容见后端审计 / 重跑导出]` : s;
-}
-function detailLen(d: unknown): number {
-  const t = JSON.stringify(d ?? {});
-  return t === '{}' ? 0 : t.length;
-}
-// 折叠态的预览（一行）：内容多时点箭头看 fullDetail 全量
-function shortDetail(d: unknown): string {
-  const t = JSON.stringify(d ?? {});
-  return t === '{}' ? '' : (t.length > 200 ? t.slice(0, 200) + ' …' : t);
-}
-// 展开态：全量、易读的 pretty JSON（不截断，仅受 SAFE_MAX 展示护栏）
-function fullDetail(d: unknown): string {
-  return cap(JSON.stringify(d ?? {}, null, 2));
-}
 const TOOL_MODE_LABEL: Record<string, string> = { retrieval: '语义检索注入', progressive: '渐进披露（目录+find_tools）', inline: '全量内联', none: '未注入工具' };
 function normalizeTraceEvents(t: TracePayload): TraceEvent[] {
   return t.trace.events;
-}
-function traceTitle(a: TraceEvent): string {
-  return a.title || a.event;
-}
-function traceSummaryText(a: TraceEvent): string {
-  return a.summary || '';
-}
-const STAGE_LABEL: Record<string, string> = {
-  launch: '入口',
-  context: '上下文',
-  execution: '执行',
-  tool: '工具',
-  approval: '审批',
-  delivery: '送达',
-  summary: '摘要',
-  recovery: '恢复',
-  channel: '渠道',
-  config: '配置',
-  system: '系统',
-};
-function traceStageLabel(stage?: string): string {
-  return STAGE_LABEL[stage || ''] || stage || '系统';
-}
-function traceStageType(stage?: string): 'success' | 'danger' | 'info' | 'warning' | 'primary' {
-  if (stage === 'tool') return 'primary';
-  if (stage === 'approval' || stage === 'recovery') return 'warning';
-  if (stage === 'delivery' || stage === 'summary') return 'success';
-  if (stage === 'context' || stage === 'execution') return 'info';
-  return 'info';
-}
-function traceSeverityType(severity?: string): 'success' | 'danger' | 'info' | 'warning' {
-  if (severity === 'error') return 'danger';
-  if (severity === 'warning') return 'warning';
-  return 'info';
 }
 function diagnosisType(severity?: string): 'success' | 'danger' | 'info' | 'warning' {
   if (severity === 'error') return 'danger';
@@ -701,12 +494,6 @@ function diagnosisLabel(severity?: string): string {
   if (severity === 'error') return '错误';
   if (severity === 'warning') return '提醒';
   return '信息';
-}
-// 工具摘要：详情抽屉与会话轨迹共用
-function fmtTools(t: any): string {
-  if (!t || !t.provider) return '未挂工具';
-  const allow = Array.isArray(t.allow) ? t.allow.join(' / ') : '';
-  return `工具源 ${t.provider}（放行 scope：${allow || '无'}；单任务上限 ${t.max_calls ?? 5}）`;
 }
 const resultText = computed(() => {
   const r = detail.value?.result ?? {};
@@ -803,55 +590,6 @@ function detailGroupType(g: DetailTraceGroup): 'success' | 'danger' | 'info' | '
   return 'info';
 }
 
-// ---- 会话标签：把内部的 channel / principal_id / scope_key 翻成人可读的通用主体 ----
-// 接入方：业务接入方名 > 网页入口名 > 渠道解析（企微/控制台）
-function partyLabel(t: any): string {
-  const ch = String(t.channel || '');
-  if (ch.startsWith('agent:')) return `智能体客户端 · ${t.client_name || ch.slice(6) || '未知接入方'}`;
-  if (t.client_name) return t.client_name;
-  if (t.entry_name) return t.entry_name;
-  if (ch.startsWith('chat:')) return '网页聊天';
-  if (ch.startsWith('wecom:')) return '企微·' + ch.slice(6);
-  if (ch === 'admin') return '控制台/自测';
-  if (ch === 'hub') return '中枢';
-  return ch || '—';
-}
-function partyVisible(t: any): boolean {
-  return partyLabel(t) !== '—';
-}
-function partyType(t: any): 'success' | 'warning' | 'primary' | 'info' | 'danger' {
-  const ch = String(t.channel || '');
-  if (ch.startsWith('agent:')) return 'primary';
-  if (t.client_name) return 'success';
-  if (ch.startsWith('wecom:')) return 'primary';
-  if (ch.startsWith('chat:')) return 'warning';
-  return 'info';
-}
-// 身份：principal_id 是接入方传入的业务主体编码，中枢不推断它的业务含义。
-// 例如 uid:t1:u1621 只说明它是一个稳定主体，不等价于中枢能判断出“租户/用户”。
-function whoLabel(t: any): string {
-  const p = String(t.principal_id || '');
-  if (p.startsWith('uid:')) {
-    const body = p.slice(4);
-    return body ? `身份 ${body}` : '身份';
-  }
-  if (p.startsWith('visitor:')) return '访客 ' + p.slice(8, 16);
-  if (p.startsWith('wxuid:')) return '企微 ' + p.slice(6);
-  if (p) return p;
-  const sc = String(t.scope_key || '');
-  if (sc.startsWith('req:')) return '单次任务 ' + sc.slice(4, 16);
-  return sc ? sc.slice(-24) : '匿名';
-}
-function messageActorLabel(message: ThreadMessage, thread: any): string {
-  if (message.direction === 'in') return whoLabel(thread);
-  return message.agent_run_id ? '本地智能体' : '中枢';
-}
-function identityTitle(t: any): string {
-  const p = String(t.principal_id || '');
-  const sc = String(t.scope_key || '');
-  return [p ? `principal_id: ${p}` : '', sc ? `scope_key: ${sc}` : ''].filter(Boolean).join('\n');
-}
-
 const filteredThreads = computed(() => {
   const q = threadQ.value.trim().toLowerCase();
   if (!q) return threads.value;
@@ -861,84 +599,47 @@ const filteredThreads = computed(() => {
   });
 });
 
-function traceKey(message: ThreadMessage): string {
-  return message.job_id ? `job:${message.job_id}` : `agent-run:${message.agent_run_id || 'missing'}`;
-}
-const agentRunIdsWithOutput = computed(() => new Set(
-  (threadData.value?.messages ?? [])
-    .filter((message) => message.direction === 'out' && !!message.agent_run_id)
-    .map((message) => message.agent_run_id as string),
-));
-function shouldShowMessageTrace(message: ThreadMessage): boolean {
-  if (message.direction === 'out') return !!(message.job_id || message.agent_run_id);
-  // 客户端在 complete 前崩溃或断网时只有入站消息；此时仍需从该轮入站气泡进入排障轨迹。
-  return !!message.agent_run_id && !agentRunIdsWithOutput.value.has(message.agent_run_id);
-}
-function isAgentTrace(key: string): boolean {
-  return traces[key]?.kind === 'agent-run';
-}
-function traceSourceLabel(source: TraceEvent['source']): string {
-  return source === 'local_agent' ? '本地编排' : '中枢治理';
-}
-function invocationStateLabel(invocation: AgentRunInvocation): string {
-  if (invocation.approval_status === 'denied') return '审批拒绝';
-  if (invocation.approval_status === 'pending') return '等待审批';
-  if (invocation.approval_status === 'approved' && invocation.state === 'awaiting_approval') return '已批准，等待本地智能体续执行';
-  const labels: Record<string, string> = {
-    executed: '执行成功', business_rejected: '业务拒绝', awaiting_approval: '等待审批', denied: '审批拒绝',
-    rejected_before_dispatch: '派发前拦截', reconciliation_required: '需要人工对账', in_progress: '执行中',
-  };
-  return labels[invocation.state || ''] || invocation.state || traceStatusLabel(invocation.status);
-}
-// 轨迹徽标（懒拉后才有）：工具次数 / 识图次数 / 耗时
-function traceBadge(key: string): string {
-  const tr = traces[key];
-  if (!tr || !tr.detail) return '';
-  const parts: string[] = [];
-  const tools = tr.summary?.tool_invocations ?? tr.summary?.tool_results ?? (tr.events || []).filter((a) => a.event === 'tool_result').length;
-  if (tools) parts.push(tools + ' 次工具');
-  const vc = tr.summary?.perceptions ?? (tr.events || []).filter((a) => a.event === 'perception').length;
-  if (vc) parts.push(vc + ' 次识图');
-  const warn = tr.summary?.warning_count ?? 0;
-  if (warn) parts.push(warn + ' 警告');
-  const err = tr.summary?.error_count ?? 0;
-  if (err) parts.push(err + ' 错误');
-  const dur = traceDuration(key);
-  if (dur) parts.push((dur / 1000).toFixed(1) + 's');
-  return parts.length ? '· ' + parts.join(' · ') : '';
-}
-function traceModel(key: string): string {
-  const d = traces[key]?.detail;
-  return String(d?.model || d?.runtime || d?.dispatch?.target_config?.model || d?.target || '');
-}
-function traceDuration(key: string): number {
-  const trace = traces[key];
-  return Number(trace?.summary?.duration_ms ?? trace?.detail?.usage?.duration_ms ?? 0) || 0;
-}
-function traceTokenCount(key: string): number {
-  const usage = traces[key]?.detail?.usage ?? {};
-  return Number(usage.total_tokens ?? usage.tokens ?? 0) || 0;
+function applyRunPage(rows: any[], append: boolean): void {
+  const page = rows.slice(0, RUNS_PAGE);
+  list.value = append ? [...list.value, ...page] : page;
+  runsMore.value = rows.length > RUNS_PAGE;
+  knownRunRoutes.value = [...new Set([...knownRunRoutes.value, ...page.map(runRouteKey).filter(Boolean)])];
 }
 
 async function load(): Promise<void> {
   const generation = ++runsGeneration;
-  loading.value = true; runsError.value = '';
+  const query = runFilterParams(runFilters);
+  const key = query.toString();
+  if (key !== requestedRunsKey) { list.value = []; runsMore.value = false; runsLoadedAt.value = ''; }
+  requestedRunsKey = key;
+  loading.value = true; moreLoading.value = false; runsError.value = '';
+  query.set('limit', String(RUNS_PAGE + 1)); query.set('offset', '0');
   try {
-    const rows = await api<any[]>(`/admin/api/runs?limit=${RUNS_PAGE}&offset=0`);
+    const rows = await api<any[]>('/admin/api/runs?' + query);
     if (generation !== runsGeneration) return;
-    list.value = rows; runsMore.value = rows.length === RUNS_PAGE; runsLoadedAt.value = new Date().toISOString(); runFilterTime.value = Date.now();
-  } catch { if (generation === runsGeneration) runsError.value = '暂时无法读取任务列表，请刷新重试。'; }
+    applyRunPage(rows, false); runsLoadedAt.value = new Date().toISOString();
+  } catch (error) {
+    if (generation === runsGeneration) runsError.value = (error as Error).message || '暂时无法读取任务列表，请刷新重试。';
+  }
   finally { if (generation === runsGeneration) loading.value = false; }
 }
 async function loadMoreRuns(): Promise<void> {
-  if (loading.value || moreLoading.value) return;
+  if (loading.value || moreLoading.value || !runsMore.value) return;
   const generation = runsGeneration;
+  const query = runFilterParams(runFilters);
+  if (query.toString() !== requestedRunsKey) return;
+  query.set('limit', String(RUNS_PAGE + 1)); query.set('offset', String(list.value.length));
+  const last = list.value.at(-1);
+  if (last?.created_at && last.job_id) {
+    query.set('before_created_at', last.created_at);
+    query.set('before_job_id', last.job_id);
+  }
   moreLoading.value = true;
   try {
-    const rows = await api<any[]>(`/admin/api/runs?limit=${RUNS_PAGE}&offset=${list.value.length}`);
-    if (generation === runsGeneration) { list.value = list.value.concat(rows); runsMore.value = rows.length === RUNS_PAGE; runFilterTime.value = Date.now(); }
-  } catch (e) { ElMessage.error((e as Error).message); }
-  finally { moreLoading.value = false; }
+    const rows = await api<any[]>('/admin/api/runs?' + query);
+    if (generation === runsGeneration) applyRunPage(rows, true);
+  } catch (e) { if (generation === runsGeneration) ElMessage.error((e as Error).message); }
+  finally { if (generation === runsGeneration) moreLoading.value = false; }
 }
 async function loadThreads(): Promise<void> {
   const generation = ++threadsGeneration;
@@ -961,56 +662,6 @@ async function loadMoreThreads(): Promise<void> {
   } catch (e) { ElMessage.error((e as Error).message); }
   finally { threadsMoreLoading.value = false; }
 }
-// 聊天场景：进会话直接落在最新消息（最底部），看历史自己向上翻——而不是每次从顶部往下翻
-function scrollPaneToBottom(): void {
-  const el = paneRef.value;
-  if (el) el.scrollTop = el.scrollHeight;
-}
-async function loadThread(id: number): Promise<void> {
-  const generation = ++threadLoadGeneration;
-  if (curThread.value !== id) threadData.value = null;
-  curThread.value = id; lastOpenedThread.value = id;
-  threadDataLoading.value = true; threadDataError.value = '';
-  // 切会话清空轨迹缓存（避免不同会话的 job 串台占内存）
-  for (const k of Object.keys(traces)) delete traces[k];
-  try {
-    const data = await api<{ thread: any; messages: ThreadMessage[] }>('/admin/api/threads/' + id);
-    if (generation === threadLoadGeneration) threadData.value = data;
-  }
-  catch { if (generation === threadLoadGeneration) threadDataError.value = threadData.value ? '会话读取失败，当前展示旧快照，请刷新重试。' : '未能读取此会话，请刷新重试。'; }
-  finally { if (generation === threadLoadGeneration) threadDataLoading.value = false; }
-  if (generation === threadLoadGeneration && threadData.value) {
-    await nextTick();
-    scrollPaneToBottom();
-    setTimeout(() => { if (generation === threadLoadGeneration) scrollPaneToBottom(); }, 150); // 图片/异步内容撑高后再贴底
-  }
-}
-async function toggleTrace(message: ThreadMessage): Promise<void> {
-  const generation = threadLoadGeneration;
-  const key = traceKey(message);
-  const cur = traces[key];
-  if (cur?.open) { cur.open = false; return; }
-  if (cur?.detail) { cur.open = true; return; }
-  const kind: ConversationTraceState['kind'] = message.job_id ? 'job' : 'agent-run';
-  traces[key] = { kind, open: true, loading: true, detail: null, events: [], summary: null, invocations: [] };
-  try {
-    if (message.job_id) {
-      const t = await api<TracePayload>('/admin/api/runs/' + message.job_id + '/trace');
-      if (generation !== threadLoadGeneration) return;
-      traces[key] = { kind, open: true, loading: false, detail: t.job, events: normalizeTraceEvents(t), summary: t.trace.summary ?? null, invocations: [] };
-    } else if (message.agent_run_id && curThread.value) {
-      const t = await api<AgentRunTracePayload>(`/admin/api/threads/${curThread.value}/agent-runs/${message.agent_run_id}/trace`);
-      if (generation !== threadLoadGeneration) return;
-      traces[key] = { kind, open: true, loading: false, detail: t.run, events: t.trace.events, summary: t.trace.summary ?? null, invocations: t.invocations ?? [] };
-    } else {
-      throw new Error('该轮缺少可追溯标识');
-    }
-  } catch (e) {
-    if (generation !== threadLoadGeneration) return;
-    traces[key] = { kind, open: true, loading: false, detail: null, events: [], summary: null, invocations: [] };
-    ElMessage.error((e as Error).message);
-  }
-}
 function onTab(name: string): void {
   if (name === readRunsLocation(route.query).tab) return;
   void router.push({ query: patchTaskQuery(route.query, { tab: runsTabQuery(name as RunsTab) }) });
@@ -1031,11 +682,10 @@ function backToRecordDirectory(): void {
   else void router.replace({ query });
 }
 function refreshRecords(): void {
-  if (curThread.value) void loadThread(curThread.value); else void loadThreads();
+  if (curThread.value) void rawTranscript.value?.refresh(); else void loadThreads();
 }
 function persistThreadSearch(): void { void router.replace({ query: patchTaskQuery(route.query, { thread_q: threadQ.value || undefined }) }); }
 function persistRunFilters(): void {
-  runFilterTime.value = Date.now();
   void router.replace({ query: patchTaskQuery(route.query, { tab: 'jobs', run_status: runFilters.status || undefined,
     run_route: runFilters.route.trim() || undefined, run_period: runFilters.period === 'all' ? undefined : runFilters.period }) });
 }
@@ -1182,11 +832,17 @@ function gotoThread(threadId?: number): void {
   });
 }
 function selectAuditConversation(id: string): void { gotoAuditConversation(id); }
+function selectChannelThread(id: number): void {
+  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', channel_thread: String(id), conversation: undefined, turn: undefined, thread: undefined, detail: undefined, job: undefined }) });
+}
+function changeConversationSource(source: string): void {
+  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', conversation_source: source === 'all' ? undefined : source, channel_thread: undefined, conversation: undefined, turn: undefined, thread: undefined, detail: undefined, job: undefined }) });
+}
 function backToConversationList(): void {
-  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', thread: undefined, conversation: undefined, turn: undefined }) });
+  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', thread: undefined, channel_thread: undefined, conversation: undefined, turn: undefined }) });
 }
 function gotoAuditConversation(id: string, turnId?: string): void {
-  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', detail: undefined, job: undefined, thread: undefined, conversation: id, turn: turnId || undefined }) });
+  void router.push({ query: patchTaskQuery(route.query, { tab: 'conversations', view: 'audit', detail: undefined, job: undefined, thread: undefined, channel_thread: undefined, conversation: id, turn: turnId || undefined }) });
 }
 async function rerun(): Promise<void> {
   if (!canRerun.value || detailLoading.value || detailError.value || rerunning.value) return;
@@ -1204,14 +860,15 @@ async function rerun(): Promise<void> {
 function applyLocation(): void {
   if (route.path !== '/runs') return;
   const location = readRunsLocation(route.query);
-  Object.assign(runFilters, readRunFilters(route.query)); runFilterTime.value = Date.now();
+  Object.assign(runFilters, readRunFilters(route.query));
+  if (location.tab === 'runs' && runFilterParams(runFilters).toString() !== requestedRunsKey) void load();
   activeTab.value = location.tab;
   auditConversationId.value = location.conversation; auditTurnId.value = location.turn;
   threadQ.value = location.threadQ; traceJobInput.value = location.traceQ;
   if (location.tab === 'threads' && location.view === 'legacy') {
     if (!location.thread && !threadsLoaded.value && !threadsLoading.value) void loadThreads();
-    if (location.thread && curThread.value !== location.thread) void loadThread(location.thread);
-    else if (!location.thread && curThread.value) { threadLoadGeneration++; curThread.value = null; threadData.value = null; threadDataError.value = ''; threadDataLoading.value = false; }
+    curThread.value = location.thread;
+    if (location.thread) lastOpenedThread.value = location.thread;
   }
   if (location.tab === 'trace' && location.traceQ && location.traceQ !== traceRequestedRaw) void lookupJobTrace(false);
   else if (!location.traceQ) { traceGeneration++; traceRequestedRaw = ''; traceLoadedQuery = ''; traceLookupResult.value = null; traceLookupMatches.value = []; traceLookupError.value = ''; traceLookupLoading.value = false; }
@@ -1225,12 +882,18 @@ watch(curThread, async (id, previous) => {
   const target = recordContents.value?.querySelector<HTMLElement>(selector) || recordContents.value?.querySelector('input');
   target?.focus({ preventScroll: true });
 });
-onMounted(() => { void load(); applyLocation(); });
+onMounted(applyLocation);
 watch(() => route.query, applyLocation);
 </script>
 
 <style scoped>
 .muted { color: var(--el-text-color-secondary); font-size: 12px; }
+.runCount { margin: 6px 0; }
+.runsTable { cursor: pointer; }
+.runCellLine { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.runSubject { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; max-width: 100%; overflow: hidden; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; padding: 0; border: 0; background: transparent; cursor: pointer; font-family: inherit; font-size: inherit; font-weight: 600; text-align: left; color: var(--el-text-color-primary); }
+.runSubject:hover, .runSubject:focus-visible { color: var(--el-color-primary); text-decoration: underline; }
+.errorText { color: var(--el-color-danger); }
 .run-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 4px 0 14px; }
 .dangerText { color: var(--el-color-danger); }
 .warningText { color: var(--el-color-warning); }
@@ -1315,45 +978,12 @@ watch(() => route.query, applyLocation);
 .threaditem:hover { background: var(--el-fill-color-light); }
 .threaditem.active { background: var(--el-color-primary-light-9); }
 .threaditem.active .who { color: var(--el-color-primary); }
-.threaditem:focus-visible, .tracetoggle:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
+.threaditem:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
 .trow1 { display: flex; align-items: center; gap: 6px; }
 .trow1 .who { font-weight: 600; color: var(--el-text-color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trow1 .tcount { margin-left: auto; flex: none; }
 .tprev { margin: 3px 0 2px; font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tmeta { font-size: 11px; }
-.pane { flex: 1; overflow-y: auto; padding: 14px 18px; min-width: 0; }
-.paneHead { position: sticky; top: -14px; background: var(--el-bg-color); padding: 4px 0 10px; margin: -4px 0 6px; border-bottom: 1px solid var(--el-border-color-lighter); z-index: 1; }
-.ph1 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.ph2 { margin-top: 4px; word-break: break-all; }
-.ph1 { overflow-wrap: anywhere; }
-.rawRecordDrawer .agentInvocation, .rawRecordDrawer .tmeta { overflow-wrap: anywhere; }
-.summcoll { margin-bottom: 8px; }
-.chat { display: flex; flex-direction: column; gap: 14px; padding-top: 6px; }
-.turn { display: flex; }
-.turn.fromUser { justify-content: flex-end; }
-.turn.fromHub { justify-content: flex-start; }
-.bubbleWrap { max-width: 80%; min-width: 0; }
-.bMeta { font-size: 11px; margin-bottom: 3px; }
-.turn.fromUser .bMeta { text-align: right; }
-.bubble { border-radius: 0; padding: 8px 12px; word-break: break-word; }
-.turn.fromUser .bubble { background: var(--el-color-primary-light-9); border: 1px solid var(--el-color-primary-light-7); }
-.turn.fromHub .bubble { background: var(--el-fill-color-light); border: 1px solid var(--el-border-color-lighter); }
-.traceLine { margin-top: 4px; }
-.tracetoggle { border: 0; padding: 2px 0; background: none; font-family: inherit; display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--el-text-color-secondary); cursor: pointer; user-select: none; }
-.tracetoggle:hover { color: var(--el-color-primary); }
-.traceCaret { width: 10px; height: 10px; color: currentColor; transform: rotate(-90deg); transition: transform .14s ease; flex: none; }
-.traceCaret.open { transform: rotate(0deg); }
-.tracebox { margin-top: 6px; padding: 10px 12px; border: 1px dashed var(--el-border-color); border-radius: 0; background: var(--el-fill-color-blank); }
-.traceDetailBtn { margin-top: 4px; height: 26px; padding: 0 10px; }
-.tmeta2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-.agentTraceHint { margin: 6px 0 9px; padding: 7px 9px; background: var(--el-color-primary-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
-.agentTracePartial { margin: 6px 0 9px; padding: 7px 9px; background: var(--el-color-warning-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
-.agentInvocations { display: flex; flex-direction: column; gap: 5px; margin: 7px 0 10px; }
-.agentInvocation { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-height: 28px; padding: 4px 7px; border: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-light); }
-.agentInvocation :deep(.el-button) { margin-left: auto; }
-.traceSource { margin-left: 8px; vertical-align: 1px; }
-.tline { padding-left: 4px; margin-top: 4px; }
-.notrace { font-size: 12px; margin: 4px 0; }
 .traceLookup { max-width: 720px; margin-bottom: 14px; }
 .traceMatches { margin-bottom: 14px; cursor: pointer; }
 .tracePanel { border: 1px solid var(--el-border-color-lighter); border-radius: 0; padding: 14px 16px; background: var(--el-bg-color); }

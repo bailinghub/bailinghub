@@ -156,6 +156,8 @@ state、member_count、confirmed_count、last_sequence、message_count、turn_co
 末轮状态初始为 null，之后是 running/completed/failed/cancelled。sequence 统计所有事件，不能当成消息数。
 管理员列表和详情的会话头还可包含 `first_user_preview`，取本归档按 sequence 排序的首条已同步用户正文的前 96 个字符。尚无用户正文时为 null，较早版本可缺少该字段。读取完整消息请使用详情的事件分页。
 
+`GET /admin/api/conversation-audits/feed?source=all&limit=50&offset=0` 返回管理后台的跨渠道会话列表（`bailing.admin-conversation-feed.v1`）。可按 `client`、`web`、`wecom` 或 `other` 筛选，结果按最近活动时间统一排序、分页。可用返回的 `next_cursor` 作为下页的 `cursor`，保持来源筛选一致。`kind=audit` 的详情使用归档 ID，`kind=thread` 的详情使用 `/admin/api/threads/:id`。线程内所有入站消息均已按 run ID 和 thread ID 关联归档时，其执行记录可从归档或原记录目录查阅。仍有独立入站消息的线程保留在列表中。
+
 `GET /admin/api/conversation-audits/:id?after_sequence=0&limit=100` 返回 schema
 `bailing.agent-conversation-audit-detail.v1`、`conversation`、`members`、`events`、has_more、next_after_sequence。
 成员包含 session_id/display_label/confirmed；确认后有冻结的 principal/on_behalf_of。

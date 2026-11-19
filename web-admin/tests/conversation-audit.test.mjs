@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { auditMemberContext, auditStatusLabel, groupAuditTurns, mergeAuditEvents } from '../src/components/conversation-audit.ts';
+import { auditMemberContext, auditStatusLabel, groupAuditTurns, mergeAuditEvents, traceKey, threadTraceOwners, feedKey, feedTitle, readConversationSource } from '../src/components/conversation-audit.ts';
 import { fixtureApi } from './conversation-audit.fixture.mjs';
 
 const event = (sequence, kind, overrides = {}) => ({
@@ -152,4 +152,26 @@ test('cross-system fixture keeps v1 pagination, missing text, and each original 
   const old = api(`/admin/api/conversation-audits/${history.conversation_id}`);
   assert.equal(old.members[0].client_app_id, undefined);
   assert.equal(auditMemberContext(old.members[0], old.conversation).source, 'legacy_header');
+});
+
+test('unanswered channel jobs retain their own trace and a reply takes over the single link', () => {
+  const messages = [
+    { id: 1, direction: 'in', job_id: 'same-id' },
+    { id: 2, direction: 'in', agent_run_id: 'same-id' },
+    { id: 3, direction: 'in', job_id: 'no-reply' },
+    { id: 4, direction: 'in' },
+  ];
+  assert.deepEqual([...threadTraceOwners(messages)], [1, 2, 3]);
+  messages.push({ id: 5, direction: 'out', job_id: 'same-id' }, { id: 6, direction: 'out', job_id: 'same-id' });
+  assert.deepEqual([...threadTraceOwners(messages)], [5, 2, 3]);
+  assert.notEqual(traceKey(messages[0]), traceKey(messages[1]));
+});
+
+test('mixed list keeps both record types distinct and labels missing titles without fabricating a transcript', () => {
+  const thread = { kind: 'thread', thread_id: 22, source: 'web', title: ' 周一营业吗？ ', source_label: '商城助手' };
+  assert.equal(feedTitle(thread), '周一营业吗？');
+  assert.equal(feedTitle({ ...thread, title: null }), '商城助手 · 22');
+  assert.notEqual(feedKey(thread), feedKey({ kind: 'audit', conversation_id: '22' }));
+  assert.equal(readConversationSource('web'), 'web');
+  assert.equal(readConversationSource('toString'), 'all');
 });
