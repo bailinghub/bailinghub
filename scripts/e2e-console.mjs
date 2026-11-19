@@ -753,6 +753,14 @@ async function verifyTroubleshooting(browser, base) {
   await context.route('**/admin/api/config-diagnostics', r => r.fulfill({ json: { ok: false, errors: 1, warnings: 3, diagnostics: ds } }));
   await context.route('**/admin/api/clients', r => r.fulfill({ json: [...fixtures.clients, { ...fixtures.clients[0], app_id: 'demo-app-extra', name: 'Similar client' }] }));
   const dispatchReads = [];
+  const missingJob = '00000000-0000-4000-8000-000000000099';
+  await context.route('**/admin/api/runs/trace?**', r => {
+    const q = new URL(r.request().url()).searchParams;
+    if (q.get('job_id') === missingJob) return r.fulfill({ status: 404, json: { error: 'job 不存在' } });
+    if (q.has('job_id')) return r.fulfill({ json: tracePayload() });
+    if (q.get('client_id') === 'demo') return r.fulfill({ json: { matches: [fixtures.runs[0], { ...fixtures.runs[0], job_id: missingJob, request_id: 'previous-task' }] } });
+    return r.fulfill({ json: { matches: [] } });
+  });
   await context.route('**/admin/api/runs?*', r => {
     const q = new URL(r.request().url()).searchParams;
     dispatchReads.push(Object.fromEntries(q));
@@ -820,6 +828,24 @@ async function verifyTroubleshooting(browser, base) {
     await expectVisible(p, '共 1 条任务');
     await expectVisible(p, '较早的失败任务');
     assert.ok(dispatchReads.some(q => q.period === '24h' && q.status === 'error' && q.offset === '0'));
+    await p.goto(`${base}/console/runs?tab=trace&trace_q=client%3Ademo`);
+    const match = p.locator('.traceMatches').getByRole('button', { name: fixtures.runs[0].request_id, exact: true });
+    await match.click();
+    await p.locator('.tracePanel').waitFor();
+    await p.reload();
+    await p.getByRole('button', { name: '返回匹配任务' }).click();
+    await match.waitFor();
+    assert.equal(new URL(p.url()).searchParams.get('trace_q'), 'client:demo');
+    await match.click();
+    await p.locator('.tracePanel').waitFor();
+    await p.goBack();
+    await match.waitFor();
+    for (const raw of ['missing-request', missingJob]) {
+      await p.goto(`${base}/console/runs?tab=trace&trace_q=${raw}`);
+      await expectVisible(p, `没有与「${raw}」匹配的任务`);
+      assert.equal(await p.locator('.tracePanel:visible').count(), 0);
+    }
+
     assert.deepEqual(errors, []);
     console.log('✓ troubleshooting: exact diagnostic focus, missing objects, filters, tabs, reload and return context passed');
   } finally { await context.close(); }

@@ -60,15 +60,16 @@
       <el-tab-pane name="trace">
         <template #label><span><el-icon style="vertical-align:-2px"><Search /></el-icon> 追溯</span></template>
         <div class="traceLookup">
-        <el-input v-model="traceJobInput" size="default" class="mono" clearable placeholder="job_id / request_id / client:crm / thread:123 / principal:u-1" @keyup.enter="lookupJobTrace">
+          <el-input v-model="traceJobInput" size="default" class="mono" clearable placeholder="job_id / request_id / client:crm / thread:123 / principal:u-1" @keyup.enter="lookupJobTrace" @clear="clearTraceLookup">
             <template #append><el-button :loading="traceLookupLoading" @click="lookupJobTrace">追溯</el-button></template>
           </el-input>
         </div>
+        <el-button v-if="traceFrom" class="traceReturn" plain size="small" @click="returnToTraceMatches">返回匹配任务</el-button>
         <el-alert v-if="traceLookupError" :title="traceLookupError" :description="traceLookupResult || traceLookupMatches.length ? `正在展示旧快照，上次成功读取：${fmtTime(traceLoadedAt, true)}。` : '此次未取得追溯结果，请刷新重试。'" type="error" :closable="false" show-icon />
-        <el-empty v-if="!traceLookupResult && !traceLookupLoading && !traceLookupMatches.length && !traceLookupError" description="输入 job_id、request_id 或 client/thread/principal 查询一次任务" />
+        <el-empty v-if="!traceLookupResult && !traceLookupLoading && !traceLookupMatches.length && !traceLookupError" :description="traceEmptyFor ? `没有与「${traceEmptyFor}」匹配的任务` : '输入 job_id、request_id 或 client/thread/principal 查询一次任务'" />
         <el-table v-if="!traceLookupResult && traceLookupMatches.length" :data="traceLookupMatches" size="small" class="traceMatches" @row-click="openTraceMatch">
           <el-table-column label="时间" width="130"><template #default="{ row }">{{ fmtTime(row.created_at, true) }}</template></el-table-column>
-          <el-table-column prop="request_id" label="request_id" min-width="180" show-overflow-tooltip />
+          <el-table-column label="请求编号" min-width="180" show-overflow-tooltip><template #default="{ row }"><el-button link type="primary" @click.stop="openTraceMatch(row)">{{ row.request_id || row.job_id }}</el-button></template></el-table-column>
           <el-table-column prop="client_app_id" label="接入方" width="120" />
           <el-table-column prop="route_key" label="路由" width="140" show-overflow-tooltip />
           <el-table-column prop="status" label="状态" width="90"><template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain">{{ row.status }}</el-tag></template></el-table-column>
@@ -370,7 +371,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ChatLineRound, List, Search } from '@element-plus/icons-vue';
-import { api } from '../request';
+import { api, ApiError } from '../request';
 import { fmtTime } from '../util';
 import { useMe } from '../store';
 import RichText from '../components/RichText.vue';
@@ -381,7 +382,7 @@ import { cap, detailLen, shortDetail, fullDetail, fmtTools, statusType, traceTit
   partyLabel, partyVisible, partyType, whoLabel, identityTitle, type TraceEvent, type TracePayload } from '../task-trace-presentation';
 import NotificationOutboxPanel from '../components/NotificationOutboxPanel.vue';
 import { canOfferRerun, rerunHint } from '../runtime-feedback';
-import { runFilterParams, patchTaskQuery, readRunFilters, readRunsLocation, RUN_FILTER_STATUSES, runRouteKey, runsTabQuery, safeTaskReturnPath, type RunsTab } from '../task-page-location';
+import { queryText, runFilterParams, patchTaskQuery, readRunFilters, readRunsLocation, RUN_FILTER_STATUSES, runRouteKey, runsTabQuery, safeTaskReturnPath, type RunsTab } from '../task-page-location';
 
 const route = useRoute();
 const router = useRouter();
@@ -446,7 +447,8 @@ const traceJobInput = ref(initialLocation.traceQ);
 const traceLookupLoading = ref(false);
 const traceLookupResult = ref<TracePayload | null>(null);
 const traceLookupMatches = ref<any[]>([]);
-const traceLookupError = ref(''), traceLoadedAt = ref('');
+const traceLookupError = ref(''), traceLoadedAt = ref(''), traceEmptyFor = ref('');
+const traceFrom = computed(() => queryText(route.query.trace_from));
 let traceGeneration = 0, traceLoadedQuery = '', traceRequestedRaw = '';
 
 // ---- 会话视图状态 ----
@@ -718,11 +720,12 @@ async function lookupJobTrace(persist = true): Promise<void> {
   const raw = traceJobInput.value.trim();
   if (!raw) { ElMessage.error('请输入要追溯的标识'); return; }
   traceRequestedRaw = raw;
-  if (persist) void router.replace({ query: patchTaskQuery(route.query, { tab: 'trace', trace_q: raw, job: undefined }) });
+  if (persist) void router.replace({ query: patchTaskQuery(route.query, { tab: 'trace', trace_q: raw, job: undefined,
+    trace_from: raw === queryText(route.query.trace_q) ? traceFrom.value : undefined }) });
   const q = traceLookupQuery(raw);
   const generation = ++traceGeneration;
   if (q !== traceLoadedQuery) { traceLookupResult.value = null; traceLookupMatches.value = []; }
-  traceLookupLoading.value = true; traceLookupError.value = '';
+  traceLookupLoading.value = true; traceLookupError.value = ''; traceEmptyFor.value = '';
   try {
     const got = await api<TracePayload & { matches?: any[]; count?: number }>('/admin/api/runs/trace?' + q);
     if (generation !== traceGeneration) return;
@@ -733,9 +736,14 @@ async function lookupJobTrace(persist = true): Promise<void> {
     } else {
       traceLookupResult.value = null;
       traceLookupMatches.value = got.matches ?? [];
-      if (!traceLookupMatches.value.length) ElMessage.warning('没有匹配的任务');
+      if (!traceLookupMatches.value.length) traceEmptyFor.value = raw;
     }
-  } catch { if (generation === traceGeneration) traceLookupError.value = '暂时无法读取追溯结果，请刷新重试。'; }
+  } catch (error) {
+    if (generation !== traceGeneration) return;
+    if (error instanceof ApiError && error.status === 404 && error.message === 'job 不存在') {
+      traceLookupResult.value = null; traceLookupMatches.value = []; traceEmptyFor.value = raw;
+    } else traceLookupError.value = '暂时无法读取追溯结果，请刷新重试。';
+  }
   finally { if (generation === traceGeneration) traceLookupLoading.value = false; }
 }
 function traceLookupQuery(raw: string): string {
@@ -747,9 +755,16 @@ function traceLookupQuery(raw: string): string {
   else p.set('request_id', raw);
   return p.toString();
 }
-async function openTraceMatch(row: any): Promise<void> {
-  traceJobInput.value = row.job_id;
-  await lookupJobTrace();
+function openTraceMatch(row: { job_id: string }): void {
+  void router.push({ query: patchTaskQuery(route.query, { tab: 'trace', job: undefined, trace_q: row.job_id, trace_from: traceRequestedRaw }) });
+}
+function returnToTraceMatches(): void {
+  const query = patchTaskQuery(route.query, { trace_q: traceFrom.value, trace_from: undefined });
+  if (router.options.history.state.back === router.resolve({ query }).fullPath) router.back();
+  else void router.replace({ query });
+}
+function clearTraceLookup(): void {
+  void router.replace({ query: patchTaskQuery(route.query, { trace_q: undefined, trace_from: undefined, job: undefined }) });
 }
 function openTraceLookupDetail(): void {
   if (!traceLookupResult.value) return;
@@ -871,7 +886,7 @@ function applyLocation(): void {
     if (location.thread) lastOpenedThread.value = location.thread;
   }
   if (location.tab === 'trace' && location.traceQ && location.traceQ !== traceRequestedRaw) void lookupJobTrace(false);
-  else if (!location.traceQ) { traceGeneration++; traceRequestedRaw = ''; traceLoadedQuery = ''; traceLookupResult.value = null; traceLookupMatches.value = []; traceLookupError.value = ''; traceLookupLoading.value = false; }
+  else if (!location.traceQ) { traceGeneration++; traceRequestedRaw = ''; traceLoadedQuery = ''; traceEmptyFor.value = ''; traceLookupResult.value = null; traceLookupMatches.value = []; traceLookupError.value = ''; traceLookupLoading.value = false; }
   if (location.detail && (!detailOpen.value || detailJobId.value !== location.detail)) void loadDetail(location.detail);
   else if (!location.detail && detailOpen.value) { detailGeneration++; detailOpen.value = false; detailLoading.value = false; detailJobId.value = ''; }
 }
@@ -985,6 +1000,7 @@ watch(() => route.query, applyLocation);
 .tprev { margin: 3px 0 2px; font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tmeta { font-size: 11px; }
 .traceLookup { max-width: 720px; margin-bottom: 14px; }
+.traceReturn { margin-bottom: 12px; }
 .traceMatches { margin-bottom: 14px; cursor: pointer; }
 .tracePanel { border: 1px solid var(--el-border-color-lighter); border-radius: 0; padding: 14px 16px; background: var(--el-bg-color); }
 .traceHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
