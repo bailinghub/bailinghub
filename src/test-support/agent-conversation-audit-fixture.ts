@@ -112,6 +112,7 @@ export function conversationAuditFixture(options: { crossBinding?: boolean; sche
         result = [...events.values()].filter((event) => event.conversation_id === params[0]);
         if (sql.includes('(sequence=? OR event_id=?)')) result = result.filter((event: Row) => event.sequence === params[1] || event.event_id === params[2]);
         else if (sql.includes("kind='turn_start'")) result = result.filter((event: Row) => event.client_turn_id === params[1] && event.kind === 'turn_start');
+        else if (sql.includes('sequence<?')) result = result.filter((event: Row) => event.sequence < params[1]).sort((a: Row, b: Row) => b.sequence - a.sequence).slice(0, params[2]);
         else if (sql.includes('sequence>?')) result = result.filter((event: Row) => event.sequence > params[1]).sort((a: Row, b: Row) => a.sequence - b.sequence).slice(0, params[2]);
       }
     } else throw new Error(`Unexpected synthetic query: ${sql}`);

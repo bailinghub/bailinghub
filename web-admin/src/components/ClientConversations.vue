@@ -14,11 +14,14 @@
           :description="query.trim() ? '已加载的会话中没有匹配项' : '该渠道暂无已记录的会话'" />
         <button v-for="item in visibleConversations" :key="feedKey(item)" type="button" class="conversationItem"
           :aria-current="currentKey === feedKey(item) ? 'true' : undefined" @click="selectFeedItem(item)">
+          <span class="itemTop"><ConversationSourceTag :source="item.source" /><time class="muted">{{ fmtTime(item.updated_at) }}</time></span>
           <strong class="itemTitle" :title="feedTitle(item)">{{ feedTitle(item) }}</strong>
-          <span class="itemMeta muted"><span class="itemOrigin">{{ conversationSources[item.source] }}<template v-if="item.source_label && item.source_label !== conversationSources[item.source]"> · {{ item.source_label }}</template></span><time>{{ fmtTime(item.updated_at) }}</time></span>
-          <span class="itemState">{{ item.turn_count != null ? `${item.turn_count} 轮 · ` : '' }}{{ item.message_count }} 条消息</span>
+          <span class="itemMeta muted">
+            <span v-if="item.source_label && item.source_label !== conversationSources[item.source]" class="itemOrigin" :title="item.source_label">{{ item.source_label }}</span>
+            <span class="itemState">{{ item.turn_count != null ? `${item.turn_count} 轮 · ` : '' }}{{ item.message_count }} 条消息</span>
+          </span>
           <span v-if="item.kind === 'audit' && ((item.state && item.state !== 'ready') || (item.last_turn_status && item.last_turn_status !== 'completed'))" class="itemState">
-             · {{ item.state && item.state !== 'ready' ? auditStatusLabel(item.state) : turnStatusLabel(item.last_turn_status) }}
+            {{ item.state && item.state !== 'ready' ? auditStatusLabel(item.state) : turnStatusLabel(item.last_turn_status) }}
           </span>
         </button>
         <div v-if="listMore" class="pager"><el-button link :loading="listMoreLoading" @click="loadMoreConversations">加载更多对话</el-button></div>
@@ -30,15 +33,15 @@
 
     <main v-if="currentThreadId" class="channelMain" aria-label="渠道会话详情">
       <el-button class="backToList" link @click="emit('back-list')"><el-icon><ArrowLeft /></el-icon>最近会话</el-button>
-      <ChannelThread ref="channelPane" feed :thread-id="currentThreadId" :heading="channelHeading" @open-job="emit('open-job', $event)" @open-audit="(id, turn) => emit('open-audit', id, turn)" />
+      <ChannelThread ref="channelPane" feed :thread-id="currentThreadId" :heading="selectedThread?.title || ''" :source="selectedThread?.source" @open-job="emit('open-job', $event)" @open-audit="(id, turn) => emit('open-audit', id, turn)" />
     </main>
     <main v-else ref="pane" v-loading="detailLoading" class="auditPane" aria-label="客户端对话正文与授权执行">
       <el-button class="backToList" link @click="emit('back-list')"><el-icon><ArrowLeft /></el-icon>最近会话</el-button>
       <el-alert v-if="detailError" :title="detailError" type="error" :closable="false" class="notice" />
       <el-empty v-if="!conversation && !detailLoading && !detailError" :image-size="70" description="选择一条会话，查看对话与执行记录" />
       <template v-if="conversation">
-        <header class="conversationHeader">
-          <h2>{{ conversationTitle(conversation) }}</h2>
+        <header class="conversationHeader" data-reading-header>
+          <div class="detailTitle"><ConversationSourceTag source="client" /><h2 :title="conversationTitle(conversation)">{{ conversationTitle(conversation) }}</h2></div>
           <div class="headerMeta muted">{{ conversation.client_app_id }} · 最近更新 {{ fmtTime(conversation.updated_at, true) }} · 已接收 {{ conversation.turn_count }} 轮 / {{ conversation.message_count }} 条消息</div>
           <div class="headerLinks">
             <el-button link type="primary" @click="infoPanel = 'members'">关联授权（{{ conversation.member_count }}）</el-button>
@@ -48,21 +51,22 @@
         <el-alert v-if="conversation.state !== 'ready'" title="授权成员尚未全部确认，对话归档尚未就绪。" type="warning" :closable="false" class="notice" />
         <el-alert v-if="focusTurn && !turns.some(turn => turn.id === focusTurn)" :title="hasMore ? '目标轮次尚未加载，请继续加载后续记录。' : '当前已接收的记录中没有目标轮次。'" type="info" :closable="false" class="notice" />
         <el-empty v-if="!turns.length && !detailLoading" :image-size="48" description="尚未收到客户端正文或轮次记录" />
+        <div v-if="beforeSequence != null" class="historyControl"><el-button link :loading="moreLoading" :disabled="detailLoading" @click="loadEarlierEvents">加载更早记录</el-button></div>
         <section v-for="(turn, index) in turns" :key="turn.id" :data-turn-id="turn.id" class="auditTurn" :class="{ focused: focusTurn === turn.id }">
-          <div class="turnHeading"><h3 :title="turn.id">第 {{ index + 1 }} 轮</h3>
-            <span class="muted" :class="{ attention: turn.end?.status === 'failed' }">{{ turn.end ? turnStatusLabel(turn.end.status) : '尚未收到轮次结束记录' }}</span>
+          <div class="turnHeading"><h3 :title="turn.id">{{ beforeSequence == null ? `第 ${index + 1} 轮` : ('轮次 · ' + turn.id.slice(-8)) }}</h3>
+            <span class="muted" :class="{ attention: turn.end?.status === 'failed' }">{{ turn.end ? turnStatusLabel(turn.end.status) : beforeSequence != null && !turn.start ? '部分轮次记录' : '尚未收到轮次结束记录' }}</span>
             <time class="muted">{{ fmtTime(turn.start?.created_at || turn.events[0]?.created_at, true) }}</time>
           </div>
-          <div v-if="!turn.messages.some(message => message.kind === 'user_message')" class="missingText">本轮尚未收到用户正文。</div>
-          <article v-for="event in turn.messages" :key="event.event_id" class="auditMessage" :class="event.kind === 'user_message' ? 'userMessage' : 'assistantMessage'">
-            <span class="messageMeta muted">{{ event.kind === 'user_message' ? '用户' : '客户端助手' }}<time :datetime="event.created_at" :title="fmtTime(event.created_at, true)">{{ fmtTime(event.created_at, true).split(' ').pop() }}</time></span>
+          <div v-if="!turn.messages.some(message => message.kind === 'user_message')" class="missingText">{{ beforeSequence != null && !turn.start ? '本轮此前的内容可向前加载。' : '本轮尚未收到用户正文。' }}</div>
+          <article v-for="event in turn.messages" :key="event.event_id" :data-reading-id="event.event_id" class="auditMessage" :class="event.kind === 'user_message' ? 'userMessage' : 'assistantMessage'">
+            <span class="messageMeta"><strong class="actorName"><el-icon aria-hidden="true"><User v-if="event.kind === 'user_message'" /><ChatLineSquare v-else /></el-icon>{{ event.kind === 'user_message' ? '用户' : '客户端助手' }}</strong><time :datetime="event.created_at" :title="fmtTime(event.created_at, true)">{{ fmtTime(event.created_at, true).split(' ').pop() }}</time></span>
             <div v-if="typeof event.content === 'string'" class="messageText">{{ event.content || '（空消息）' }}</div>
             <div v-else class="messageText missingText">正文未上传或已不可用。</div>
           </article>
-          <div v-if="turn.end && !turn.messages.some(message => message.kind === 'assistant_message')" class="missingText">本轮已结束，但未收到客户端助手正文。</div>
+          <div v-if="turn.end && (beforeSequence == null || turn.start) && !turn.messages.some(message => message.kind === 'assistant_message')" class="missingText">本轮已结束，但未收到客户端助手正文。</div>
 
           <div v-if="turn.runs.length" class="authorizationRuns">
-            <article v-for="run in turn.runs" :key="run.event_id" class="authorizationRun" :data-run-id="run.run_id">
+            <article v-for="run in turn.runs" :key="run.event_id" class="authorizationRun" :data-run-id="run.run_id" :data-reading-id="run.event_id">
               <div class="runHead">
                 <button v-if="run.run_id && run.thread_id" type="button" class="runToggle" :aria-expanded="!!runTraces[run.run_id]?.open"
                   @click="toggleRunTrace(run)">
@@ -100,10 +104,10 @@
               </div>
             </article>
           </div>
-          <p v-else class="muted noRuns">本轮尚无已关联的授权执行记录。</p>
+          <p v-else-if="beforeSequence == null || turn.start" class="muted noRuns">本轮尚无已关联的授权执行记录。</p>
           <details v-if="!turn.runs.length" class="inlineMeta"><summary>轮次标识</summary><span class="mono">{{ turn.id }}</span></details>
         </section>
-        <footer class="pager muted">已加载 {{ turns.length }} 轮、{{ loadedMessageCount }} 条消息（{{ events.length }} 条归档事件）<span v-if="!hasMore"> · 旧历史或未同步内容可能缺失</span>
+        <footer class="pager muted">已加载 {{ turns.length }} 轮、{{ loadedMessageCount }} 条消息（{{ events.length }} 条归档事件）<span v-if="!hasMore && beforeSequence == null"> · 旧历史或未同步内容可能缺失</span>
           <div v-if="hasMore"><el-button :loading="moreLoading" @click="loadMoreEvents">加载后续记录</el-button></div>
         </footer>
       </template>
@@ -128,11 +132,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
-import { ArrowDown, ArrowLeft, ArrowRight, Collection, Search } from '@element-plus/icons-vue';
+import { computed, nextTick, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { ArrowDown, ArrowLeft, ArrowRight, Collection, Search, User, ChatLineSquare } from '@element-plus/icons-vue';
 import { api } from '../request';
 import { fmtTime } from '../util';
 import ChannelThread from './ChannelThread.vue';
+import ConversationSourceTag from './ConversationSourceTag.vue';
+import { readingPosition, restoreReadingPosition } from './conversation-reading-position';
 import { auditMemberContext, auditStatusLabel, groupAuditTurns, mergeAuditEvents, conversationSources, feedKey, feedTitle, readConversationSource } from './conversation-audit';
 import type { AuditConversation, AuditMember, AuditEvent, AuditListPage, AuditDetailPage, ConversationFeedItem, ConversationFeedPage, ConversationSource } from './conversation-audit';
 
@@ -154,11 +160,12 @@ const listCursor = ref<string | null>(null);
 const channelPane = ref<InstanceType<typeof ChannelThread> | null>(null);
 const currentThreadId = ref<number | null>(null);
 const currentKey = computed(() => currentThreadId.value ? `thread:${currentThreadId.value}` : `audit:${currentId.value}`);
-const channelHeading = computed(() => conversations.value.find(item => item.kind === 'thread' && item.thread_id === currentThreadId.value)?.title || '');
+const selectedThread = computed(() => conversations.value.find(item => item.kind === 'thread' && item.thread_id === currentThreadId.value));
 const rail = ref<HTMLElement | null>(null);
 const infoPanel = ref<'archive' | 'members' | null>(null);
 const currentId = ref(''), conversation = ref<AuditConversation | null>(null), members = ref<AuditMember[]>([]), events = ref<AuditEvent[]>([]);
 const detailLoading = ref(false), moreLoading = ref(false), hasMore = ref(false), afterSequence = ref<number | null>(0), detailError = ref(''), pane = ref<HTMLElement | null>(null);
+const beforeSequence = ref<number | null>(null);
 const runTraces = reactive<Record<string, RunTraceState>>({});
 let listGeneration = 0, detailGeneration = 0;
 const turns = computed(() => groupAuditTurns(events.value));
@@ -229,6 +236,10 @@ async function fetchFeed(offset: number, source: ConversationSource, cursor?: st
   }
 }
 function selectFeedItem(item: ConversationFeedItem): void {
+  if (feedKey(item) === currentKey.value && !props.focusTurn) {
+    if (item.kind === 'thread') channelPane.value?.scrollToLatest();
+    else restoreReadingPosition(pane.value, null, true);
+  }
   if (item.kind === 'audit' && item.conversation_id) emit('select', item.conversation_id);
   else if (item.kind === 'thread' && item.thread_id) emit('select-channel', item.thread_id);
 }
@@ -244,7 +255,7 @@ function showChannel(id: number): void {
 function resetSelection(): void {
   ++detailGeneration;
   currentThreadId.value = null; currentId.value = ''; conversation.value = null; infoPanel.value = null;
-  events.value = []; members.value = []; hasMore.value = false; afterSequence.value = 0;
+  events.value = []; members.value = []; hasMore.value = false; afterSequence.value = 0; beforeSequence.value = null;
   detailError.value = ''; detailLoading.value = false; moreLoading.value = false;
   for (const key of Object.keys(runTraces)) delete runTraces[key];
 }
@@ -276,47 +287,101 @@ async function loadMoreConversations(): Promise<void> {
 }
 function applyPage(page: AuditDetailPage): void {
   conversation.value = page.conversation; members.value = page.members;
-  events.value = mergeAuditEvents(events.value, page.events); hasMore.value = page.has_more; afterSequence.value = page.next_after_sequence;
+  events.value = mergeAuditEvents(events.value, page.events); hasMore.value = page.has_more === true; afterSequence.value = page.next_after_sequence ?? null;
 }
 async function focusLoadedTurn(): Promise<void> {
   if (!props.focusTurn) return;
   await nextTick();
   const target = [...(pane.value?.querySelectorAll<HTMLElement>('[data-turn-id]') ?? [])].find(element => element.dataset.turnId === props.focusTurn);
-  if (target && pane.value) pane.value.scrollTop += target.getBoundingClientRect().top - pane.value.getBoundingClientRect().top - 12;
+  if (target && pane.value) {
+    const header = pane.value.querySelector('header');
+    pane.value.scrollTop += target.getBoundingClientRect().top - pane.value.getBoundingClientRect().top - (header?.clientHeight ?? 0) - 10;
+  }
 }
-async function openConversation(id: string): Promise<void> {
+function readEvents(id: string, query: string) {
+  return api<AuditDetailPage>(`/admin/api/conversation-audits/${encodeURIComponent(id)}?${query}&limit=${EVENT_PAGE}`);
+}
+function priorCursor(page: AuditDetailPage): number | null {
+  return page.has_earlier && page.next_before_sequence != null ? page.next_before_sequence : null;
+}
+async function openConversation(id: string, locate = false): Promise<void> {
   const generation = ++detailGeneration;
   const same = currentId.value === id && !!conversation.value;
+  const firstLoaded = same && !locate ? events.value[0]?.sequence : undefined;
+  const lastLoaded = same && !locate ? events.value.at(-1)?.sequence : undefined;
   currentThreadId.value = null; currentId.value = id;
   if (!same) {
     conversation.value = null; events.value = []; members.value = []; hasMore.value = false; afterSequence.value = 0;
-    infoPanel.value = null;
+    beforeSequence.value = null; infoPanel.value = null;
   }
   detailLoading.value = true; moreLoading.value = false; detailError.value = '';
   for (const [key, state] of Object.entries(runTraces)) {
     if (!same || state.loading) delete runTraces[key];
   }
   try {
-    const page = await api<AuditDetailPage>(`/admin/api/conversation-audits/${encodeURIComponent(id)}?after_sequence=0&limit=${EVENT_PAGE}`);
+    const target = props.focusTurn;
+    let page = await readEvents(id, target ? 'after_sequence=0' : 'tail=1');
     if (generation !== detailGeneration) return;
-    if (same) {
-      events.value = [];
-      for (const key of Object.keys(runTraces)) delete runTraces[key];
+    let before = priorCursor(page);
+    let windowEvents = page.events;
+    // Keep the history already opened by the reader when refreshing the newest page.
+    while (!target && firstLoaded != null && before != null && before > firstLoaded) {
+      const older = await readEvents(id, 'before_sequence=' + before);
+      if (generation !== detailGeneration) return;
+      const next = priorCursor(older);
+      if (next != null && next >= before) throw new Error('归档分页位置未能核对');
+      windowEvents = [...older.events, ...windowEvents];
+      before = next;
     }
-    applyPage(page); await nextTick(); if (!same && pane.value) pane.value.scrollTop = 0; await focusLoadedTurn();
+    if (target) {
+      // Trace links open at their turn. Refreshing the same link keeps later pages the reader already opened.
+      let found = windowEvents.some(event => event.client_turn_id === target);
+      while (page.has_more && (!found || (lastLoaded != null && (windowEvents.at(-1)?.sequence ?? 0) < lastLoaded))) {
+        const cursor = page.next_after_sequence;
+        if (cursor == null) throw new Error('归档分页位置未能核对');
+        page = await readEvents(id, 'after_sequence=' + cursor);
+        if (generation !== detailGeneration) return;
+        if (page.has_more && (page.next_after_sequence == null || page.next_after_sequence <= cursor)) throw new Error('归档分页位置未能核对');
+        windowEvents = windowEvents.concat(page.events);
+        found ||= page.events.some(event => event.client_turn_id === target);
+      }
+    }
+    const position = same && !locate ? readingPosition(pane.value) : null;
+    events.value = [];
+    applyPage({ ...page, events: windowEvents }); beforeSequence.value = before;
+    await nextTick();
+    if (generation !== detailGeneration) return;
+    if (target && (locate || !same)) await focusLoadedTurn();
+    else restoreReadingPosition(pane.value, position, true);
   } catch (error) {
     if (generation === detailGeneration) detailError.value = (same ? '刷新未成功，以下为上次读取的记录。' : '') + (error as Error).message;
-  }
-  finally { if (generation === detailGeneration) detailLoading.value = false; }
+  } finally { if (generation === detailGeneration) detailLoading.value = false; }
+}
+async function loadEarlierEvents(): Promise<void> {
+  const before = beforeSequence.value;
+  if (!currentId.value || detailLoading.value || moreLoading.value || before == null) return;
+  const generation = detailGeneration;
+  moreLoading.value = true; detailError.value = '';
+  try {
+    const page = await readEvents(currentId.value, 'before_sequence=' + before);
+    if (generation !== detailGeneration) return;
+    const cursor = priorCursor(page);
+    if (cursor != null && cursor >= before) throw new Error('归档分页位置未能核对');
+    const position = readingPosition(pane.value);
+    events.value = mergeAuditEvents(events.value, page.events);
+    beforeSequence.value = cursor;
+    await nextTick();
+    if (generation === detailGeneration) restoreReadingPosition(pane.value, position, false);
+  } catch (error) { if (generation === detailGeneration) detailError.value = (error as Error).message; }
+  finally { if (generation === detailGeneration) moreLoading.value = false; }
 }
 async function loadMoreEvents(): Promise<void> {
   if (!currentId.value || detailLoading.value || moreLoading.value || !hasMore.value || afterSequence.value == null) return;
   const generation = detailGeneration;
   moreLoading.value = true; detailError.value = '';
   try {
-    const page = await api<AuditDetailPage>(`/admin/api/conversation-audits/${encodeURIComponent(currentId.value)}?after_sequence=${afterSequence.value}&limit=${EVENT_PAGE}`);
-    if (generation !== detailGeneration) return;
-    applyPage(page); await focusLoadedTurn();
+    const page = await readEvents(currentId.value, 'after_sequence=' + afterSequence.value);
+    if (generation === detailGeneration) applyPage(page);
   } catch (error) { if (generation === detailGeneration) detailError.value = (error as Error).message; }
   finally { if (generation === detailGeneration) moreLoading.value = false; }
 }
@@ -336,13 +401,13 @@ async function toggleRunTrace(run: AuditEvent): Promise<void> {
 async function refresh(): Promise<void> {
   await Promise.all([loadConversations(), currentThreadId.value ? channelPane.value?.refresh() : currentId.value ? openConversation(currentId.value) : undefined]);
 }
-watch(() => [props.selectedId, props.channelThread, activeSource.value] as const, async ([id, thread, source], previous) => {
+watch(() => [props.selectedId, props.channelThread, activeSource.value, props.focusTurn] as const, async ([id, thread, source, turn], previous) => {
   const changedSource = !!previous && previous[2] !== source;
   if (changedSource) {
     resetSelection(); conversations.value = []; listMore.value = false; listOffset.value = 0; listCursor.value = null; legacyFeed.value = false; query.value = '';
     void loadConversations();
   }
-  if (id && id !== currentId.value) await openConversation(id);
+  if (id && (id !== currentId.value || turn !== previous?.[3])) await openConversation(id, true);
   else if (thread) showChannel(thread);
   else if (!id && !thread && previous && (previous[0] || previous[1]) && !changedSource) {
     infoPanel.value = null;
@@ -353,7 +418,7 @@ watch(() => [props.selectedId, props.channelThread, activeSource.value] as const
     }
   }
 }, { immediate: true });
-watch(() => props.focusTurn, () => { void focusLoadedTurn(); });
+onBeforeUnmount(() => { ++detailGeneration; ++listGeneration; });
 onMounted(() => { void loadConversations(); });
 defineExpose({ refresh });
 </script>
@@ -380,7 +445,10 @@ h3 { font-size: 14px; }
 .conversationItem[aria-current=true] .itemTitle { color: var(--el-color-primary); }
 .conversationItem:focus-visible, .directoryEntry:focus-visible, .runToggle:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: -2px; }
 .itemTitle { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; font-size: 14px; }
-.itemMeta { margin-top: 4px; justify-content: space-between; }
+.itemTop, .detailTitle { display: flex; align-items: center; gap: 8px; }
+.itemTop { justify-content: space-between; margin-bottom: 5px; }
+.itemMeta { margin-top: 4px; }
+.itemState { flex-shrink: 0; }
 .itemMeta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .itemState { font-size: 12px; color: var(--el-text-color-secondary); }
@@ -388,7 +456,7 @@ time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .directoryEntry .el-icon:last-child { margin-left: auto; }
 .auditPane { min-width: 0; overflow: auto; padding: 0 clamp(16px, 2vw, 32px); }
 .backToList { display: none; }
-.conversationHeader { padding: 17px 0 13px; border-bottom: 1px solid var(--el-border-color); }
+.conversationHeader { position: sticky; top: 0; z-index: 1; background: var(--el-bg-color); padding: 12px 0 9px; border-bottom: 1px solid var(--el-border-color); }
 .headerMeta { margin: 5px 0; overflow-wrap: anywhere; }
 .headerLinks, .runActions, .invocation { flex-wrap: wrap; }
 .headerLinks .el-button + .el-button { margin-left: 4px; }
@@ -396,12 +464,18 @@ time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .auditTurn.focused .turnHeading h3 { color: var(--el-color-primary); }
 .turnHeading { flex-wrap: wrap; margin-bottom: 10px; }
 .turnHeading time { margin-left: auto; }
-.auditMessage { display: grid; grid-template-columns: 66px minmax(0, 1fr); gap: 8px; margin: 7px 0; align-items: baseline; }
-.messageMeta { display: flex; flex-wrap: wrap; column-gap: 6px; }
-.messageMeta time { font-size: 11px; }
-.messageText { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
-.userMessage .messageText { font-weight: 600; }
-.authorizationRuns { margin: 10px 0 0 74px; }
+.detailTitle h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.historyControl { text-align: center; padding: 6px; }
+.auditMessage { width: fit-content; max-width: 88%; margin-block: 10px; }
+.userMessage { margin-left: auto; }
+.messageMeta, .actorName { display: flex; align-items: center; gap: 5px; }
+.messageMeta { gap: 9px; margin-bottom: 4px; }
+.userMessage .messageMeta { justify-content: flex-end; }
+.actorName { font-size: 12px; color: var(--el-text-color-primary); }
+.messageMeta time { font-size: 11px; color: var(--el-text-color-secondary); }
+.messageText { border: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-light); padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.65; }
+.userMessage .messageText { background: var(--el-color-primary-light-9); border-color: var(--el-color-primary-light-7); }
+.authorizationRuns { margin: 12px 0 0; }
 .authorizationRun { border: 1px solid var(--el-border-color); }
 .authorizationRun + .authorizationRun { margin-top: 6px; }
 .runHead { background: var(--el-fill-color-lighter); }
@@ -443,7 +517,6 @@ time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 }
 @media (max-width: 550px) {
   .auditConvo { height: max(355px, calc(100dvh - 235px)); }
-  .auditMessage { grid-template-columns: minmax(0,1fr); gap: 2px; }
   .turnHeading time { font-size: 11px; }
   .runHead { flex-wrap: wrap; gap: 0; }
   .runToggle { flex-wrap: wrap; }

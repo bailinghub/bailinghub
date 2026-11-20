@@ -98,7 +98,7 @@ test('only an administrator with runs:read can read complete conversation pages'
     { kind: 'admin', via: 'session', role: 'kb_editor' },
     { kind: 'admin', via: 'session', role: 'admin', permissions: [] },
   ] as Principal[]) {
-    for (const deniedPath of [path, '/admin/api/conversation-audits', '/admin/api/conversation-audits/feed']) {
+    for (const deniedPath of [path, `${path}?tail=1`, `${path}?before_sequence=2`, '/admin/api/conversation-audits', '/admin/api/conversation-audits/feed']) {
       const denied = await admin(deniedPath, principal);
       assert.equal(denied.statusCode, 403);
       assert.doesNotMatch(denied.body, /ADMIN_ONLY_VISIBLE_TEXT/);
@@ -115,6 +115,17 @@ test('only an administrator with runs:read can read complete conversation pages'
   assert.equal(second.json().events[0].content, 'ADMIN_ONLY_VISIBLE_TEXT');
   assert.equal(second.headers['cache-control'], 'no-store');
   assert.equal((await admin(`${path}?after_sequence=-1`, viewer)).statusCode, 400);
+  const latest = (await admin(`${path}?tail=1&limit=2`, viewer)).json();
+  assert.deepEqual(latest.events.map((event: { sequence: number }) => event.sequence), [2, 3]);
+  assert.equal(latest.has_earlier, true);
+  assert.equal(latest.next_before_sequence, 2);
+  const earlier = (await admin(`${path}?before_sequence=${latest.next_before_sequence}&limit=2`, viewer)).json();
+  assert.deepEqual(earlier.events.map((event: { sequence: number }) => event.sequence), [1]);
+  assert.equal(earlier.has_earlier, false);
+  assert.equal(earlier.next_before_sequence, null);
+  for (const query of ['tail=1&before_sequence=2', 'before_sequence=2&after_sequence=1', 'tail=0', 'before_sequence=-1']) {
+    assert.equal((await admin(`${path}?${query}`, viewer)).statusCode, 400);
+  }
   const listed = await admin('/admin/api/conversation-audits?limit=1', viewer);
   assert.equal(listed.json().items[0].first_user_preview, 'ADMIN_ONLY_VISIBLE_TEXT');
   assert.equal(listed.json().items[0].message_count, 1);
@@ -152,10 +163,11 @@ test('admin feed validates source and pagination and reports a legacy Host witho
   assert.equal(success.headers['cache-control'], 'no-store');
   assert.deepEqual(success.json(), { schema: 'bailing.admin-conversation-feed.v1', items: [], has_more: false, next_offset: null });
   assert.equal((await read(store, '')).statusCode, 200);
+  assert.equal((await read(store, '?source=delivery')).statusCode, 200);
   assert.equal((await read(store, '?source=unknown')).statusCode, 400);
   assert.equal((await read(store, '?offset=-1')).statusCode, 400);
   assert.equal((await read(store, '', 'POST')).statusCode, 404);
-  assert.deepEqual(calls, [['web', 2, 17, undefined], ['all', 50, 0, undefined]]);
+  assert.deepEqual(calls, [['web', 2, 17, undefined], ['all', 50, 0, undefined], ['delivery', 50, 0, undefined]]);
   const unsupported = await read({ agentConversationAudit: {} } as ConfigStoreContract, '');
   assert.equal(unsupported.statusCode, 503);
   assert.equal(unsupported.json().error, 'conversation_feed_unavailable');

@@ -71,6 +71,7 @@ export const conversationSources = {
   client: '客户端',
   web: '网页助手',
   wecom: '企业微信',
+  delivery: '渠道送达',
   other: '其他接入',
 } as const;
 export type ConversationSource = keyof typeof conversationSources;
@@ -132,8 +133,10 @@ export interface AuditDetailPage {
   conversation: AuditConversation;
   members: AuditMember[];
   events: AuditEvent[];
-  has_more: boolean;
-  next_after_sequence: number | null;
+  has_more?: boolean;
+  next_after_sequence?: number | null;
+  has_earlier?: boolean;
+  next_before_sequence?: number | null;
 }
 
 export interface AuditTurn {

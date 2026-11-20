@@ -305,3 +305,20 @@ test('dispatch list validates filters and pagination, preserves the array respon
   assert.equal((await read('status=error')).statusCode, 503);
   assert.equal((await read('')).json()[0].job_id, VALID_JOB_ID);
 });
+
+test('thread detail accepts tail and exclusive before cursors while retaining forward paging', async () => {
+  const base = depsFor();
+  const calls: unknown[][] = [];
+  const conversations = { threadDetail: async (...args: unknown[]) => { calls.push(args); return null; } };
+  const deps = { ...base, configStore: { ...base.configStore, conversations } as ConfigStoreContract };
+  const path = '/admin/api/threads/42';
+  const get = async (query: string) => {
+    const res = new FakeResponse();
+    await handleAdminRuntimeApiFor(deps, 'GET', path, { url: path + query } as IncomingMessage, res as unknown as ServerResponse,
+      { kind: 'admin', via: 'session', role: 'viewer' });
+    return res.statusCode;
+  };
+  for (const query of ['', '?after_id=5', '?tail=1', '?before_id=10']) assert.equal(await get(query), 404);
+  for (const query of ['?tail=0', '?before_id=-2', '?after_id=1&before_id=2', '?tail=1&after_id=0']) assert.equal(await get(query), 400);
+  assert.deepEqual(calls, [[42, 0, undefined], [42, 5, undefined], [42, 0, null], [42, 0, 10]]);
+});

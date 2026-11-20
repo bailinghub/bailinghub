@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { CHANNEL_DELIVERY_MESSAGE_SQL } from './conversation-delivery-message';
 import { dt, rowClient, rowRoute } from '../../core/config/config-codec';
 import type { AgentSession, Client, Route } from '../../core/contracts/types';
 import {
@@ -10,7 +11,7 @@ import {
 
 type Auth = { session: AgentSession; client: Client };
 type Row = Record<string, any>;
-export const ADMIN_CONVERSATION_SOURCES = ['all', 'client', 'web', 'wecom', 'other'] as const;
+export const ADMIN_CONVERSATION_SOURCES = ['all', 'client', 'web', 'wecom', 'delivery', 'other'] as const;
 export type AdminConversationSource = (typeof ADMIN_CONVERSATION_SOURCES)[number];
 type FeedCursor = { at: Date; kind: 'audit' | 'thread'; id: number | string; position: number };
 
@@ -361,7 +362,7 @@ export class AgentConversationAuditRepository {
     return { items, has_more: rows.length > n, next_offset: rows.length > n ? off + n : null };
   }
 
-  /** Read-only union of visible client archives and independent incoming channel conversations. */
+  /** Read-only union of client archives, independent inbound threads and delivery-only threads. */
   async listFeedForAdmin(source: AdminConversationSource, limit = 50, offset = 0, after?: string): Promise<Row> {
     const n = Math.min(Math.max(Math.floor(limit) || 50, 1), 100);
     const off = Math.max(Math.floor(offset) || 0, 0);
@@ -374,12 +375,12 @@ export class AgentConversationAuditRepository {
     if (cursor?.kind === 'audit') {
       archiveWindow = ' AND (a.updated_at, a.conversation_id) < (?, ?)';
       archiveArgs.push(cursor.at, cursor.id);
-      threadWindow = ' WHERE t.last_active_at <= ?';
+      threadWindow = ' AND t.last_active_at <= ?';
       threadArgs.push(cursor.at);
     } else if (cursor) {
       archiveWindow = ' AND a.updated_at < ?';
       archiveArgs.push(cursor.at);
-      threadWindow = ' WHERE (t.last_active_at, t.thread_id) < (?, ?)';
+      threadWindow = ' AND (t.last_active_at, t.thread_id) < (?, ?)';
       threadArgs.push(cursor.at, cursor.id);
     }
     // Thread identity is not a substitute for a run link. A thread can contain a
@@ -392,19 +393,30 @@ export class AgentConversationAuditRepository {
          ORDER BY a.updated_at DESC, a.conversation_id DESC LIMIT ?)
       UNION ALL
       (SELECT 'thread' AS kind, CASE
-                WHEN incoming.channel LIKE 'agent:%' THEN 'client'
-                WHEN incoming.channel LIKE 'chat:%' THEN 'web'
-                WHEN incoming.channel LIKE 'wecom:%' THEN 'wecom'
+                WHEN first_message.channel LIKE 'agent:%' THEN 'client'
+                WHEN first_message.channel LIKE 'chat:%' THEN 'web'
+                WHEN first_message.channel LIKE 'wecom:%' THEN 'wecom'
                 ELSE 'other' END AS source,
-              NULL AS conversation_id, t.thread_id, incoming.id AS first_message_id, t.last_active_at AS updated_at
-         FROM bz_threads t JOIN bz_messages incoming ON incoming.id=(
+              NULL AS conversation_id, t.thread_id, first_message.id AS first_message_id, t.last_active_at AS updated_at
+         FROM bz_threads t JOIN bz_messages first_message ON first_message.id=(
            SELECT m.id FROM bz_messages m FORCE INDEX (idx_thread)
             WHERE m.thread_id=t.thread_id AND m.direction='in'
               AND (m.agent_run_id IS NULL OR NOT EXISTS (SELECT 1 FROM bz_agent_conversation_events e
                 WHERE e.run_id=m.agent_run_id AND e.thread_id=m.thread_id AND e.kind='run_link'))
-            ORDER BY m.id LIMIT 1)${threadWindow}
+            ORDER BY m.id LIMIT 1)
+        WHERE ? <> 'delivery'${threadWindow}
          HAVING ?='all' OR source=?
          ORDER BY t.last_active_at DESC, t.thread_id DESC LIMIT ?)
+      UNION ALL
+      (SELECT 'thread' AS kind, 'delivery' AS source, NULL AS conversation_id, t.thread_id,
+              (SELECT m.id FROM bz_messages m FORCE INDEX (idx_thread)
+                WHERE m.thread_id=t.thread_id AND ${CHANNEL_DELIVERY_MESSAGE_SQL}
+                ORDER BY m.id LIMIT 1) AS first_message_id, t.last_active_at AS updated_at
+         FROM bz_threads t
+        WHERE ? IN ('all','delivery')${threadWindow}
+          AND NOT EXISTS (SELECT 1 FROM bz_messages inbound WHERE inbound.thread_id=t.thread_id AND inbound.direction='in')
+       HAVING first_message_id IS NOT NULL
+        ORDER BY t.last_active_at DESC, t.thread_id DESC LIMIT ?)
     ), page AS (
       SELECT * FROM candidates ORDER BY updated_at DESC, kind ASC, conversation_id DESC, thread_id DESC LIMIT ? OFFSET ?
     )
@@ -413,7 +425,10 @@ export class AgentConversationAuditRepository {
              SELECT LEFT(e.content,96) FROM bz_agent_conversation_events e
               WHERE e.conversation_id=p.conversation_id AND e.kind='user_message' ORDER BY e.sequence LIMIT 1
            ) ELSE LEFT(m.content,96) END AS title,
-           COALESCE(a.client_app_id, ce.name, c.name, m.channel) AS source_label,
+           CASE WHEN p.source='delivery' THEN
+             CASE WHEN t.scope_key LIKE 'wecom:%:%' THEN SUBSTRING_INDEX(SUBSTRING(t.scope_key,7),':',1)
+                  ELSE '' END
+             ELSE COALESCE(a.client_app_id, ce.name, c.name, m.channel) END AS source_label,
            COALESCE(a.route_key,t.route_key) AS route_key, COALESCE(a.message_count,t.message_count) AS message_count,
            a.turn_count, a.last_turn_status, a.state, a.client_conversation_id,
            COALESCE(a.client_app_id, c.app_id, IF(p.source='client', SUBSTRING(m.channel,7), NULL)) AS client_app_id
@@ -425,7 +440,8 @@ export class AgentConversationAuditRepository {
       LEFT JOIN bz_clients c ON p.kind='thread' AND p.source IN ('client','other')
             AND c.app_id=IF(p.source='client', SUBSTRING(m.channel,7), m.channel)
       ORDER BY p.updated_at DESC, p.kind ASC, p.conversation_id DESC, p.thread_id DESC`,
-    [source, ...archiveArgs, candidateLimit, ...threadArgs, source, source, candidateLimit, n + 1, off]);
+    [source, ...archiveArgs, candidateLimit, source, ...threadArgs, source, source, candidateLimit,
+     source, ...threadArgs, candidateLimit, n + 1, off]);
     const items: Row[] = (rows as Row[]).slice(0, n).map(row => ({
       ...row, thread_id: row.thread_id == null ? null : Number(row.thread_id),
       updated_at: iso(row.updated_at), message_count: Number(row.message_count),
@@ -438,14 +454,20 @@ export class AgentConversationAuditRepository {
         ? [source, last.updated_at, last.kind, last.conversation_id ?? last.thread_id, nextOffset].join('|') : null };
   }
 
-  async detailForAdmin(conversationId: string, afterSequence = 0, limit = 100): Promise<Row | null> {
+  async detailForAdmin(conversationId: string, afterSequence = 0, limit = 100, beforeSequence?: number | null): Promise<Row | null> {
     const [rows] = await this.pool.query(`SELECT ${ADMIN_HEAD_COLUMNS} FROM bz_agent_conversation_audits a WHERE a.conversation_id=?`, [conversationId]);
     if (!rows[0]) return null;
     const n = Math.min(Math.max(Math.floor(limit) || 100, 1), 200);
     const after = Math.max(Math.floor(afterSequence) || 0, 0);
     const [members] = await this.pool.query('SELECT * FROM bz_agent_conversation_members WHERE conversation_id=? ORDER BY session_id', [conversationId]);
-    const [rowsOfEvents] = await this.pool.query('SELECT * FROM bz_agent_conversation_events WHERE conversation_id=? AND sequence>? ORDER BY sequence LIMIT ?', [conversationId, after, n + 1]);
+    const backward = beforeSequence !== undefined;
+    const [rowsOfEvents] = backward
+      ? await this.pool.query('SELECT * FROM bz_agent_conversation_events WHERE conversation_id=? AND sequence<? ORDER BY sequence DESC LIMIT ?',
+        [conversationId, beforeSequence ?? Number(rows[0].last_sequence) + 1, n + 1])
+      : await this.pool.query('SELECT * FROM bz_agent_conversation_events WHERE conversation_id=? AND sequence>? ORDER BY sequence LIMIT ?', [conversationId, after, n + 1]);
+    const hasMore = rowsOfEvents.length > n;
     const events = (rowsOfEvents as Row[]).slice(0, n).map(eventView);
+    if (backward) events.reverse();
     return {
       conversation: adminHead(rows[0]), members: (members as Row[]).map((member) => ({
         session_id: member.session_id, display_label: member.display_label, confirmed: Boolean(member.confirmed_at),
@@ -453,8 +475,10 @@ export class AgentConversationAuditRepository {
           client_app_id: member.client_app_id, client_name: member.client_name, route_key: member.route_key,
         } : {}),
         ...(member.confirmed_at ? { principal: json(member.principal_json), on_behalf_of: member.on_behalf_of } : {}),
-      })), events, has_more: rowsOfEvents.length > n,
-      next_after_sequence: events.length ? events.at(-1)!.sequence : after,
+      })), events,
+      ...(backward
+        ? { has_earlier: hasMore, next_before_sequence: hasMore ? events[0]!.sequence : null }
+        : { has_more: hasMore, next_after_sequence: events.length ? events.at(-1)!.sequence : after }),
     };
   }
 

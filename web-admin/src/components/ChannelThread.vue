@@ -2,8 +2,8 @@
   <div ref="paneRef" class="pane" :class="{ feed: feed }" v-loading="threadDataLoading" :aria-label="feed ? '渠道会话正文与轨迹' : '原记录正文与轨迹'">
     <el-alert v-if="threadDataError" :title="threadDataError" type="error" :closable="false" show-icon />
     <template v-if="threadData">
-      <div class="paneHead">
-        <h2 v-if="feed">{{ heading || threadData.messages.find(m => m.direction === 'in')?.content?.slice(0, 96) || partyLabel(threadData.thread) }}</h2>
+      <div class="paneHead" data-reading-header>
+        <div v-if="feed" class="detailTitle"><ConversationSourceTag :source="threadSource" /><h2>{{ heading || threadData.messages.find(m => m.direction === 'in')?.content?.slice(0, 96) || partyLabel(threadData.thread) }}</h2></div>
         <div class="ph1">
           <el-tag v-if="partyVisible(threadData.thread)" size="small" effect="plain" :type="partyType(threadData.thread)">{{ partyLabel(threadData.thread) }}</el-tag>
           <b class="mono" :title="identityTitle(threadData.thread)">{{ whoLabel(threadData.thread) }}</b>
@@ -20,10 +20,17 @@
       </el-collapse>
 
       <p v-if="!threadData.messages.length" class="muted">此会话暂无已记录的消息。</p>
+      <div v-if="earlierMessageId != null" class="messagePager historyControl">
+        <span v-if="pageError" role="alert">{{ pageError }}</span>
+        <el-button link :loading="moreLoading" :disabled="threadDataLoading" @click="loadEarlierMessages">加载更早消息</el-button>
+      </div>
       <div class="chat">
-        <div v-for="m in threadData.messages" :key="m.id" class="turn" :class="m.direction === 'in' ? 'fromUser' : 'fromHub'">
+        <div v-for="m in threadData.messages" :key="m.id" class="turn" :data-reading-id="m.id"
+          :class="{ fromUser: m.direction === 'in', fromHub: m.direction === 'out', deliveryMessage: isDelivery(m) }">
           <div class="bubbleWrap">
-            <div class="bMeta muted">{{ messageActorLabel(m, threadData.thread) }} · {{ fmtTime(m.created_at, true) }}</div>
+            <div class="bMeta muted"><strong class="actorName"><el-icon aria-hidden="true"><Promotion v-if="isDelivery(m)" /><User v-else-if="m.direction === 'in'" /><ChatLineSquare v-else /></el-icon>{{ messageActorLabel(m) }}</strong>
+              <span v-if="m.direction === 'in'" class="actorIdentity" :title="identityTitle(threadData.thread)">{{ whoLabel(threadData.thread) }}</span>
+              <time :datetime="m.created_at">{{ fmtTime(m.created_at, true) }}</time></div>
             <div class="bubble"><RichText :text="m.content" /></div>
             <div v-if="traceOwners.has(m.id)" class="traceLine">
               <span v-if="m.direction === 'in'" class="pendingReply muted">已显示的记录中暂无对应回复</span>
@@ -86,7 +93,7 @@
       </div>
       <footer v-if="nextMessageId || pageError || threadData.messages.length < threadData.thread.message_count" class="messagePager">
         <span class="muted">已显示 {{ threadData.messages.length }} 条消息，共记录 {{ threadData.thread.message_count }} 条。</span>
-        <span v-if="pageError" role="alert">{{ pageError }}</span>
+        <span v-if="pageError && !earlierMessageId" role="alert">{{ pageError }}</span>
         <el-button v-if="nextMessageId" :loading="moreLoading" :disabled="threadDataLoading" @click="loadMoreMessages">加载后续消息</el-button>
       </footer>
     </template>
@@ -95,14 +102,18 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import { User, ChatLineSquare, Promotion } from '@element-plus/icons-vue';
 import { api } from '../request';
+import ConversationSourceTag from './ConversationSourceTag.vue';
+import type { ConversationFeedItem } from './conversation-audit';
+import { readingPosition, restoreReadingPosition } from './conversation-reading-position';
 import { fmtTime } from '../util';
 import RichText from './RichText.vue';
 import { traceKey, threadTraceOwners } from './conversation-audit';
 import { cap, detailLen, shortDetail, fullDetail, fmtTools, statusType, traceStatusLabel, traceTitle, traceSummaryText, traceStageLabel, traceStageType, traceSeverityType,
   partyLabel, partyVisible, partyType, whoLabel, identityTitle, type TraceEvent, type TracePayload } from '../task-trace-presentation';
 
-const props = defineProps<{ threadId: number; feed?: boolean; heading?: string }>();
+const props = defineProps<{ threadId: number; feed?: boolean; heading?: string; source?: ConversationFeedItem['source'] }>();
 const emit = defineEmits<{ 'open-audit': [id: string, turn?: string]; 'open-job': [id: string] }>();
 interface AgentRunInvocation {
   job_id: string;
@@ -129,6 +140,8 @@ interface ThreadMessage {
   id: number;
   direction: 'in' | 'out';
   content: string;
+  channel?: string;
+  is_channel_delivery?: boolean;
   created_at: string;
   job_id?: string | null;
   agent_run_id?: string | null;
@@ -147,8 +160,11 @@ interface ThreadPage {
   messages: ThreadMessage[];
   has_more?: boolean;
   next_after_id?: number | null;
+  has_earlier?: boolean;
+  next_before_id?: number | null;
 }
 const threadData = ref<ThreadPage | null>(null);
+const earlierMessageId = computed(() => threadData.value?.has_earlier ? threadData.value.next_before_id : null);
 const nextMessageId = computed(() => messageCursor(threadData.value));
 const moreLoading = ref(false), pageError = ref('');
 let loadedPages = 0;
@@ -158,9 +174,25 @@ let threadLoadGeneration = 0;
 const paneRef = ref<HTMLElement | null>(null);
 // 逐轮执行轨迹缓存：job:<id> / agent-run:<id> 分开命名，避免两类 UUID 语义混淆。
 const traces = reactive<Record<string, ConversationTraceState>>({});
-function messageActorLabel(message: ThreadMessage, thread: any): string {
-  if (message.direction === 'in') return whoLabel(thread);
-  return message.agent_run_id ? '本地智能体' : '中枢';
+function channelSource(channel?: string): ConversationFeedItem['source'] {
+  if (channel?.startsWith('chat:')) return 'web';
+  if (channel?.startsWith('agent:')) return 'client';
+  if (channel?.startsWith('wecom:')) return 'wecom';
+  return 'other';
+}
+const threadSource = computed(() => props.source ?? (threadData.value?.thread.delivery_only ? 'delivery' : channelSource(threadData.value?.thread.channel)));
+function isDelivery(message: ThreadMessage): boolean {
+  return message.direction === 'out' && (message.is_channel_delivery ?? ['delivery', 'brain-send'].includes(message.channel || ''));
+}
+function messageActorLabel(message: ThreadMessage): string {
+  if (isDelivery(message)) return '渠道送达';
+  if (message.direction === 'in') {
+    const source = channelSource(message.channel || threadData.value?.thread.channel);
+    if (source === 'client' && !message.agent_run_id) return '客户端发起';
+    return source === 'other' ? '接入方发起' : '用户';
+  }
+  if (message.agent_run_id) return '本地智能体';
+  return message.channel === 'hub' ? '中枢回复' : '出站消息';
 }
 
 const traceOwners = computed(() => threadTraceOwners(threadData.value?.messages || []));
@@ -221,8 +253,31 @@ function appendPage(current: ThreadPage, next: ThreadPage, after: number): Threa
   }
   return { ...next, messages: [...current.messages, ...next.messages.filter(message => message.id > after)] };
 }
-function readPage(id: number, after?: number): Promise<ThreadPage> {
-  return api<ThreadPage>(`/admin/api/threads/${id}${after == null ? '' : '?after_id=' + after}`);
+function readPage(id: number, query = ''): Promise<ThreadPage> {
+  return api<ThreadPage>(`/admin/api/threads/${id}${query ? '?' + query : ''}`);
+}
+function prependPage(current: ThreadPage, older: ThreadPage, before: number): ThreadPage {
+  if (older.thread.thread_id !== current.thread.thread_id ||
+      (older.has_earlier && (older.next_before_id == null || older.next_before_id >= before))) {
+    throw new Error('消息分页位置未能核对');
+  }
+  return { ...current, messages: [...older.messages.filter(m => m.id < before), ...current.messages],
+    has_earlier: older.has_earlier, next_before_id: older.next_before_id };
+}
+async function loadEarlierMessages(): Promise<void> {
+  const before = earlierMessageId.value;
+  if (!before || !threadData.value || threadDataLoading.value || moreLoading.value) return;
+  const generation = threadLoadGeneration;
+  moreLoading.value = true; pageError.value = '';
+  try {
+    const older = await readPage(props.threadId, 'before_id=' + before);
+    if (generation !== threadLoadGeneration || !threadData.value) return;
+    const position = readingPosition(paneRef.value);
+    threadData.value = prependPage(threadData.value, older, before);
+    await nextTick();
+    if (generation === threadLoadGeneration) restoreReadingPosition(paneRef.value, position, false);
+  } catch { if (generation === threadLoadGeneration) pageError.value = '更早消息读取失败，请重试。'; }
+  finally { if (generation === threadLoadGeneration) moreLoading.value = false; }
 }
 async function loadMoreMessages(): Promise<void> {
   const after = nextMessageId.value;
@@ -230,7 +285,7 @@ async function loadMoreMessages(): Promise<void> {
   const generation = threadLoadGeneration;
   moreLoading.value = true; pageError.value = '';
   try {
-    const next = await readPage(props.threadId, after);
+    const next = await readPage(props.threadId, 'after_id=' + after);
     if (generation !== threadLoadGeneration || !threadData.value) return;
     threadData.value = appendPage(threadData.value, next, after);
     loadedPages++;
@@ -249,24 +304,29 @@ async function loadThread(id: number): Promise<void> {
   const openKeys = new Set(Object.keys(traces).filter(key => !isNew && traces[key].open));
   for (const key of Object.keys(traces)) if (isNew || traces[key].loading) delete traces[key];
   try {
-    let data = await readPage(id);
+    const firstLoaded = !isNew ? threadData.value?.messages[0]?.id : undefined;
+    let data = await readPage(id, props.feed ? 'tail=1' : '');
+    while (generation === threadLoadGeneration && data.has_earlier && firstLoaded != null &&
+        data.next_before_id != null && data.next_before_id > firstLoaded) {
+      const before = data.next_before_id;
+      data = prependPage(data, await readPage(id, 'before_id=' + before), before);
+    }
     let pages = 1;
     while (generation === threadLoadGeneration && pages < pagesToRefresh) {
       const after = messageCursor(data);
       if (!after) break;
-      data = appendPage(data, await readPage(id, after), after);
+      data = appendPage(data, await readPage(id, 'after_id=' + after), after);
       pages++;
     }
     if (generation !== threadLoadGeneration) return;
+    const position = isNew ? null : readingPosition(paneRef.value);
     threadData.value = data; loadedPages = pages;
     for (const key of Object.keys(traces)) delete traces[key];
     for (const message of data.messages) {
       if (traceOwners.value.has(message.id) && openKeys.has(traceKey(message))) void toggleTrace(message);
     }
-    if (isNew) {
-      await nextTick();
-      if (generation === threadLoadGeneration && paneRef.value) paneRef.value.scrollTop = props.feed ? 0 : paneRef.value.scrollHeight;
-    }
+    await nextTick();
+    if (generation === threadLoadGeneration && (isNew || props.feed)) restoreReadingPosition(paneRef.value, position, true);
   } catch {
     if (generation === threadLoadGeneration) threadDataError.value = threadData.value ? '会话读取失败，当前展示旧快照，请刷新重试。' : '未能读取此会话，请刷新重试。';
   } finally {
@@ -306,7 +366,8 @@ function retryTrace(message: ThreadMessage): void {
 function refresh(): Promise<void> { return loadThread(props.threadId); }
 watch(() => props.threadId, id => void loadThread(id), { immediate: true });
 onBeforeUnmount(() => { threadLoadGeneration++; });
-defineExpose({ refresh, loading: threadDataLoading });
+function scrollToLatest(): void { restoreReadingPosition(paneRef.value, null, true); }
+defineExpose({ refresh, scrollToLatest, loading: threadDataLoading });
 </script>
 
 <style scoped>
@@ -360,16 +421,21 @@ defineExpose({ refresh, loading: threadDataLoading });
 .messagePager [role=alert] { color: var(--el-color-danger); }
 .pendingReply { display: block; margin: 5px 0; }
 .pane.feed { padding: 0 clamp(16px, 2vw, 32px) 18px; }
-.feed .paneHead { position: static; background: transparent; padding: 17px 0 12px; margin: 0 0 4px; }
-.feed h2 { font-size: 19px; line-height: 1.5; margin: 0 0 6px; overflow-wrap: anywhere; }
+.feed .paneHead { top: 0; padding: 12px 0 9px; margin: 0 0 4px; }
+.detailTitle { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.feed h2 { font-size: 19px; line-height: 1.5; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .feed summary { cursor: pointer; }
-.feed .turn { display: block; }
-.feed .bubbleWrap { max-width: 100%; }
-.feed .chat { gap: 0; }
-.feed .turn { padding: 12px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
-.pane.feed .turn .bMeta { margin-bottom: 5px; text-align: left; }
-.pane.feed .turn .bubble { background: transparent; border: 0; padding: 0; }
-.feed .turn.fromUser .bubble { font-weight: 600; }
-.feed .traceLine { margin-top: 8px; }
+.feed .chat { gap: 16px; padding-top: 12px; }
+.feed .bubbleWrap { max-width: 88%; }
+.actorName, .bMeta { display: flex; align-items: center; gap: 5px; }
+.actorName { font-size: 12px; color: var(--el-text-color-primary); }
+.bMeta { gap: 9px; flex-wrap: wrap; margin-bottom: 4px; }
+.bMeta time { font-variant-numeric: tabular-nums; }
+.actorIdentity { overflow-wrap: anywhere; }
+.fromUser .bMeta { justify-content: flex-end; }
+.feed .bubble :deep(.rich) { font-size: 14px; }
+.deliveryMessage .actorName { color: var(--el-color-warning); }
+.feed .traceLine { margin-top: 6px; }
 .feed .tracetoggle { color: var(--el-color-primary); }
+.historyControl { margin-block: 6px; }
 </style>

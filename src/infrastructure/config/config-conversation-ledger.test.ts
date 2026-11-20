@@ -60,7 +60,7 @@ test('ConversationLedger 会话详情分别保留旧 job_id 与 Agent Client age
 
   const detail = await ledger.threadDetail(7);
   assert.ok(detail);
-  assert.match(statements[1] ?? '', /job_id,agent_run_id/);
+  assert.match(statements[1] ?? '', /m\.job_id,m\.agent_run_id/);
   assert.equal(detail.messages[0].job_id, '123e4567-e89b-42d3-a456-426614174000');
   assert.equal(detail.messages[0].agent_run_id, null);
   assert.equal(detail.messages[1].job_id, null);
@@ -73,7 +73,7 @@ test('message continuation preserves the first 1000 and follows the last display
   const ledger = new ConversationLedger(() => ({
     query: async (sql: string, [thread, afterId, limit]: number[]) => {
       assert.equal(thread, 7);
-      if (!sql.includes('FROM bz_messages WHERE thread_id=? AND id>?')) return [[{thread_id: 7, message_count: source.length, created_at:new Date(0), last_active_at:new Date(0)}]];
+      if (!sql.includes('FROM bz_messages m WHERE m.thread_id=? AND m.id>?')) return [[{thread_id: 7, message_count: source.length, created_at:new Date(0), last_active_at:new Date(0)}]];
       assert.equal(limit, 1001);
       return [source.filter(m => m.id > afterId!).slice(0, limit)];
     },
@@ -86,4 +86,30 @@ test('message continuation preserves the first 1000 and follows the last display
   assert.deepEqual(last.messages.map(row => row.id), [1020,1021]);
   assert.equal(last.has_more, false);
   assert.equal(last.next_after_id, null);
+});
+
+test('latest and earlier thread pages stay chronological without gaps even if newer messages arrive', async () => {
+  const source = Array.from({ length: 1002 }, (_, i) => ({ id: 3 * i + 1, created_at: new Date(0) }));
+  const ledger = new ConversationLedger(() => ({
+    query: async (sql: string, params: number[]) => {
+      assert.equal(params[0], 7);
+      if (sql.includes('AS delivery_only')) {
+        return [[{ thread_id: 7, created_at: new Date(0), last_active_at: new Date(0), delivery_only: 1 }]];
+      }
+      assert.match(sql, /ORDER BY m\.id DESC/);
+      assert.equal(params.at(-1), 1001);
+      const before = sql.includes('m.id<?') ? params[1]! : Infinity;
+      return [source.filter(message => message.id < before).reverse().slice(0, 1001)];
+    },
+  }));
+  const latest = (await ledger.threadDetail(7, 0, null))!;
+  assert.equal(latest.thread.delivery_only, true);
+  assert.deepEqual(latest.messages.map(m => m.id), source.slice(2).map(m => m.id));
+  assert.equal(latest.has_earlier, true);
+  assert.equal(latest.next_before_id, 7);
+  source.push({ id: 4096, created_at: new Date(0) });
+  const earlier = (await ledger.threadDetail(7, 0, latest.next_before_id!))!;
+  assert.deepEqual(earlier.messages.map(m => m.id), [1, 4]);
+  assert.equal(earlier.has_earlier, false);
+  assert.equal(earlier.next_before_id, null);
 });

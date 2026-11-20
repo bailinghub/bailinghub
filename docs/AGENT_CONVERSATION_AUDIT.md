@@ -156,7 +156,9 @@ state、member_count、confirmed_count、last_sequence、message_count、turn_co
 末轮状态初始为 null，之后是 running/completed/failed/cancelled。sequence 统计所有事件，不能当成消息数。
 管理员列表和详情的会话头还可包含 `first_user_preview`，取本归档按 sequence 排序的首条已同步用户正文的前 96 个字符。尚无用户正文时为 null，较早版本可缺少该字段。读取完整消息请使用详情的事件分页。
 
-`GET /admin/api/conversation-audits/feed?source=all&limit=50&offset=0` 返回管理后台的跨渠道会话列表（`bailing.admin-conversation-feed.v1`）。可按 `client`、`web`、`wecom` 或 `other` 筛选，结果按最近活动时间统一排序、分页。可用返回的 `next_cursor` 作为下页的 `cursor`，保持来源筛选一致。`kind=audit` 的详情使用归档 ID，`kind=thread` 的详情使用 `/admin/api/threads/:id`。线程内所有入站消息均已按 run ID 和 thread ID 关联归档时，其执行记录可从归档或原记录目录查阅。仍有独立入站消息的线程保留在列表中。
+`GET /admin/api/conversation-audits/feed?source=all&limit=50&offset=0` 返回管理后台的跨渠道会话列表（`bailing.admin-conversation-feed.v1`）。可按客户端 `client`、网页助手 `web`、企微会话 `wecom`、渠道送达 `delivery` 或其他接入方 `other` 筛选，结果按最近活动时间排序。可用返回的 `next_cursor` 作为下页的 `cursor`，保持来源筛选一致。`kind=audit` 的详情使用归档 ID，`kind=thread` 的详情使用 `/admin/api/threads/:id`。
+
+客户端归档归入 `client`。线程按首条独立入站消息判断来源，已按 run ID 和 thread ID 关联归档的入站消息跳过。全部入站消息均已归档的线程可从归档或原授权记录查阅。没有入站消息且存在实际渠道送达记录的线程归入 `delivery`。渠道送达可能来自任务结果推送、助手发送工具或成功的 `/send` 请求。列表来源本身无法确定具体触发器。
 
 `GET /admin/api/conversation-audits/:id?after_sequence=0&limit=100` 返回 schema
 `bailing.agent-conversation-audit-detail.v1`、`conversation`、`members`、`events`、has_more、next_after_sequence。
@@ -165,7 +167,9 @@ state、member_count、confirmed_count、last_sequence、message_count、turn_co
 client_name 是显示快照，不能作身份依据。旧 v1 响应可缺少这些字段，旧数据库 NULL 也不是成员系统的证明；
 界面如回退会话头，必须标注“旧记录：仅有归档头部信息”，不能冒充逐成员绑定证据。
 事件包含提交的可见字段、服务端 created_at，run_link 还有数值 thread_id。
-按 next_after_sequence 继续读后页，不受原 thread 前 1000 条消息限制。
+按 `next_after_sequence` 继续读后页。要先看最近记录，在归档或线程详情上使用 `?tail=1`。向前翻页时，归档用返回的 `next_before_sequence` 请求 `before_sequence`，线程用返回的 `next_before_id` 请求 `before_id`。每页按时间线正序返回，`has_earlier` 表示还有更早记录。`tail=1`、向前游标、向后游标每次只选一种。
+
+线程详情的 `thread.delivery_only` 表示没有入站消息且存在可核实的送达记录。`messages[].is_channel_delivery` 标明具体哪一条消息是渠道送达。例如，企微用户先收到一条推送再回复，线程来源为 `wecom`，只有推送消息带有值为 `true` 的标记。普通中枢回复和仅有通知状态的任务均不足以证明渠道已送达。
 
 旧管理员 agent-run trace 的 run、通过归属复核的工具 job trace 的 job，可选增加
 conversation_audit_id 和 client_turn_id，用于返回完整对话。

@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { send } from '../app/http';
+import { readHistoryCursor } from './admin-history-cursor';
 import { can, type Principal } from '../app/auth';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { auditUuid, ConversationAuditError } from '../core/runtime/agent-conversation-audit';
@@ -49,7 +50,9 @@ export async function handleAdminConversationAuditFor(
     } else if (path === base) {
       send(res, 200, { schema: 'bailing.agent-conversation-audit-list.v1', ...await store.agentConversationAudit.listForAdmin(number('limit', 50), number('offset', 0)) });
     } else {
-      const result = await store.agentConversationAudit.detailForAdmin(auditUuid(detail![1]), number('after_sequence', 0), number('limit', 100));
+      const cursor = readHistoryCursor(query, 'sequence');
+      if (!cursor) throw new ConversationAuditError(400, 'invalid_request', 'Invalid history cursor.');
+      const result = await store.agentConversationAudit.detailForAdmin(auditUuid(detail![1]), cursor.after, number('limit', 100), cursor.before);
       send(res, result ? 200 : 404, result ? { schema: 'bailing.agent-conversation-audit-detail.v1', ...result } : { error: 'conversation_audit_not_found' });
     }
   } catch (error) {

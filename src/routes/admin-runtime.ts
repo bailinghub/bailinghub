@@ -16,6 +16,7 @@ import { isAgentToolInvocationJob } from '../app/agent-tool-job';
 import { continueApprovalDecisionFor, supportsApprovalContinuations } from '../app/approval-continuations';
 import { classifyDeliveryDlq, replayExecutorDeliveryDlq, DeliveryReplayError } from '../app/delivery-dlq-replay';
 import { handleAdminNotificationsFor } from './admin-notifications';
+import { readHistoryCursor } from './admin-history-cursor';
 import { approvalContinuationView, consoleExecution } from './admin-runtime-ux';
 import { JOB_STATUSES, type JobStatus } from '../core/contracts/types';
 import type { RecentJobFilters } from '../infrastructure/config/config-observability-ledger';
@@ -417,11 +418,9 @@ export async function handleAdminRuntimeApiFor(
   }
   const mThread = path.match(/^\/admin\/api\/threads\/(\d+)$/);
   if (mThread && method === 'GET') {
-    const after = new URL(req.url ?? '/', 'http://x').searchParams.get('after_id');
-    if (after !== null && (!/^\d+$/.test(after) || !Number.isSafeInteger(Number(after)))) {
-      send(res, 400, { error: '无效的消息分页位置' }); return true;
-    }
-    const d = await configStore.conversations.threadDetail(Number(mThread[1]), Number(after));
+    const cursor = readHistoryCursor(new URL(req.url ?? '/', 'http://x').searchParams, 'id');
+    if (!cursor) { send(res, 400, { error: '无效的消息分页位置' }); return true; }
+    const d = await configStore.conversations.threadDetail(Number(mThread[1]), cursor.after, cursor.before);
     if (!d) { send(res, 404, { error: '会话不存在' }); return true; }
     send(res, 200, d);
     return true;
