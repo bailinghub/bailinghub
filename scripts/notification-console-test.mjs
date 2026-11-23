@@ -50,7 +50,8 @@ async function open(role) {
       perms: role === 'writer' ? ['runs:read', 'runs:write'] : ['runs:read'], capabilities: { modules: ['runs'] } } });
     if (url.pathname === '/admin/api/status') return route.fulfill({ json: { executors: [] } });
     if (url.pathname === '/admin/api/runs' || url.pathname === '/admin/api/threads') return route.fulfill({ json: [] });
-    if (url.pathname === '/admin/api/conversation-audits') return route.fulfill({ json: { items: [], has_more: false, next_offset: null } });
+    if (request.method() === 'GET' && ['/admin/api/conversation-audits', '/admin/api/conversation-audits/feed'].includes(url.pathname))
+      return route.fulfill({ json: { items: [], has_more: false, next_offset: null } });
     if (url.pathname.startsWith('/admin/api/notification-outbox')) {
       const record = { role, method: request.method(), path: url.pathname, query: Object.fromEntries(url.searchParams) };
       requests.push(record);
