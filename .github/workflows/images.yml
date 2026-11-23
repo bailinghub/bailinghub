@@ -93,22 +93,7 @@ jobs:
             echo 'image release policy returned incomplete output' >&2
             exit 1
           fi
-          source_sha="$(git rev-parse HEAD)"
-          ai_tags="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:${tag}"
-          demo_tags="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
-          if [ "$latest" = "true" ]; then
-            ai_tags="${ai_tags}"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:latest"
-            demo_tags="${demo_tags}"$'\n'"${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:latest"
-          fi
-          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
-          {
-            echo 'ai_tags<<EOF'
-            printf '%s\n' "$ai_tags"
-            echo 'EOF'
-            echo 'demo_tags<<EOF'
-            printf '%s\n' "$demo_tags"
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+          echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
@@ -118,6 +103,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push bailinghub
+        id: core_build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -125,7 +111,7 @@ jobs:
           platforms: linux/amd64
           build-args: |
             NODE_IMAGE=node:22-bookworm-slim
-          tags: ${{ steps.meta.outputs.ai_tags }}
+          tags: ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_NAMESPACE }}/bailinghub:${{ steps.meta.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ steps.meta.outputs.source_sha }}
@@ -134,6 +120,7 @@ jobs:
             org.opencontainers.image.description=BailingHub Agent control plane
 
       - name: Build and push bailing-demo-business
+        id: demo_build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ./demo/business
@@ -141,7 +128,7 @@ jobs:
           platforms: linux/amd64
           build-args: |
             NODE_IMAGE=node:22-bookworm-slim
-          tags: ${{ steps.meta.outputs.demo_tags }}
+          tags: ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_NAMESPACE }}/bailing-demo-business:${{ steps.meta.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ steps.meta.outputs.source_sha }}
@@ -149,64 +136,68 @@ jobs:
             org.opencontainers.image.licenses=Apache-2.0
             org.opencontainers.image.description=BailingHub demo business system
 
+      - name: Load the mirror script for a separately selected source revision
+        if: github.event_name == 'workflow_dispatch' && inputs.source_ref != ''
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: mirror-tools
+          sparse-checkout: scripts/copy-acr-platform-image.sh
+          sparse-checkout-cone-mode: false
+
       - name: Copy released application images to Aliyun ACR
         shell: bash
         env:
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+          MIRROR_ROOT: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref != '' && 'mirror-tools' || '.' }}
+          CORE_DIGEST: ${{ steps.core_build.outputs.digest }}
+          DEMO_DIGEST: ${{ steps.demo_build.outputs.digest }}
+          RELEASE_SHA: ${{ steps.meta.outputs.source_sha }}
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          PUSH_LATEST: ${{ steps.meta.outputs.push_latest }}
         run: |
           set -euo pipefail
-
-          retry() {
-            local attempt=1
-            local max_attempts=4
-            local delay=15
-            until "$@"; do
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                return 1
-              fi
-              echo "attempt ${attempt}/${max_attempts} failed; retrying in ${delay}s"
-              sleep "$delay"
-              attempt=$((attempt + 1))
-              delay=$((delay * 2))
-            done
-          }
-
-          login_acr() {
-            printf '%s' "$ACR_PASSWORD" | timeout 45s docker login \
-              --username "$ACR_USERNAME" \
-              --password-stdin \
-              "$ACR_REGISTRY"
-          }
-
-          pull_image() {
-            timeout 90s docker pull "$1"
-          }
-
-          push_image() {
-            local source="$1"
-            local target="$2"
-            docker tag "$source" "$target"
-            timeout 90s docker push "$target" &&
-              timeout 30s docker manifest inspect "$target" >/dev/null
-          }
-
-          retry login_acr
-
-          tag="${{ steps.meta.outputs.tag }}"
-          ai_source="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:${tag}"
-          demo_source="${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
-
-          retry pull_image "$ai_source"
-          retry pull_image "$demo_source"
-
-          retry push_image "$ai_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:${tag}"
-          retry push_image "$demo_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:${tag}"
-
-          if [ "${{ steps.meta.outputs.push_latest }}" = "true" ]; then
-            retry push_image "$ai_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:latest"
-            retry push_image "$demo_source" "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:latest"
+          if ! command -v skopeo >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y skopeo
           fi
+          for attempt in 1 2 3 4; do
+            if printf '%s' "$ACR_PASSWORD" | timeout 45s docker login \
+              --username "$ACR_USERNAME" --password-stdin "$ACR_REGISTRY"; then break; fi
+            if [[ "$attempt" == 4 ]]; then exit 1; fi
+            sleep $((15 * attempt))
+          done
+
+          targets=("$RELEASE_TAG")
+          if [[ "$PUSH_LATEST" == "true" ]]; then targets+=(latest); fi
+          for target_tag in "${targets[@]}"; do
+            for image in bailinghub bailing-demo-business; do
+              digest="$CORE_DIGEST"
+              if [[ "$image" == "bailing-demo-business" ]]; then digest="$DEMO_DIGEST"; fi
+              timeout 480s bash "$MIRROR_ROOT/scripts/copy-acr-platform-image.sh" \
+                "$GHCR_REGISTRY/$GHCR_NAMESPACE/$image" "$digest" \
+                "$ACR_REGISTRY/$ACR_NAMESPACE/$image" "$target_tag" "$RELEASE_SHA" "$RELEASE_TAG"
+            done
+          done
+
+      - name: Promote GHCR latest after both ACR mirrors are verified
+        if: steps.meta.outputs.push_latest == 'true'
+        shell: bash
+        env:
+          CORE_DIGEST: ${{ steps.core_build.outputs.digest }}
+          DEMO_DIGEST: ${{ steps.demo_build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          for image in bailinghub bailing-demo-business; do
+            digest="$CORE_DIGEST"
+            if [[ "$image" == "bailing-demo-business" ]]; then digest="$DEMO_DIGEST"; fi
+            repo="$GHCR_REGISTRY/$GHCR_NAMESPACE/$image"
+            timeout 120s docker buildx imagetools create --prefer-index=false --tag "$repo:latest" "$repo@$digest"
+            actual=$(skopeo inspect --retry-times 3 --raw "docker://$repo:latest" | sha256sum | cut -d ' ' -f 1)
+            [[ "sha256:$actual" == "$digest" ]]
+          done
 
   publish-mysql:
     name: sync mysql base image
@@ -308,42 +299,39 @@ jobs:
             --tag "$tag" \
             --requested-latest "$REQUESTED_LATEST" >> "$GITHUB_OUTPUT"
 
-      - name: Copy released application images
+      - name: Load the recovery script from the workflow revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: recovery-tools
+          sparse-checkout: scripts/restore-ghcr-version.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Restore missing versions and verify existing GHCR images
         shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.meta.outputs.tag }}
+          PUSH_LATEST: ${{ steps.meta.outputs.push_latest }}
         run: |
           set -euo pipefail
-          tag="${{ steps.meta.outputs.tag }}"
-
-          copy_image() {
-            local source="$1"
-            local target="$2"
-            local attempt=1
-            local max_attempts=4
-            local delay=15
-            until timeout 90s docker buildx imagetools create --tag "$target" "$source" && \
-              timeout 30s docker buildx imagetools inspect "$target" >/dev/null; do
-              if [ "$attempt" -ge "$max_attempts" ]; then
-                return 1
-              fi
-              echo "attempt ${attempt}/${max_attempts} failed; retrying in ${delay}s"
-              sleep "$delay"
-              attempt=$((attempt + 1))
-              delay=$((delay * 2))
+          if ! command -v skopeo >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y skopeo
+          fi
+          images=(bailinghub bailing-demo-business)
+          digests=()
+          for image in "${images[@]}"; do
+            digest=$(timeout 480s bash recovery-tools/scripts/restore-ghcr-version.sh \
+              "$ACR_REGISTRY/$ACR_NAMESPACE/$image" "$GHCR_REGISTRY/$GHCR_NAMESPACE/$image" "$RELEASE_TAG")
+            digests+=("$digest")
+          done
+          if [[ "$PUSH_LATEST" == true ]]; then
+            for i in "${!images[@]}"; do
+              repo="$GHCR_REGISTRY/$GHCR_NAMESPACE/${images[$i]}"
+              digest="${digests[$i]}"
+              timeout 120s docker buildx imagetools create --prefer-index=false --tag "$repo:latest" "$repo@$digest"
+              actual=$(skopeo inspect --retry-times 3 --raw "docker://$repo:latest" | sha256sum | cut -d ' ' -f 1)
+              [[ "sha256:$actual" == "$digest" ]]
             done
-          }
-
-          copy_image \
-            "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:${tag}" \
-            "${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:${tag}"
-          copy_image \
-            "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:${tag}" \
-            "${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:${tag}"
-
-          if [ "${{ steps.meta.outputs.push_latest }}" = "true" ]; then
-            copy_image \
-              "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailinghub:${tag}" \
-              "${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailinghub:latest"
-            copy_image \
-              "${ACR_REGISTRY}/${ACR_NAMESPACE}/bailing-demo-business:${tag}" \
-              "${GHCR_REGISTRY}/${GHCR_NAMESPACE}/bailing-demo-business:latest"
           fi
