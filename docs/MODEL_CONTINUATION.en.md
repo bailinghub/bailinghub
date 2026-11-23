@@ -26,6 +26,14 @@ Both original lookup and a repeated identical POST are protected by existing ide
 
 ## Host checkpoints
 
+### Compacting input in the same conversation
+
+Read the selected service's `context_window_tokens` from `GET /usage/v1/model/models`. This is the combined input and output window. Budget for the requested output and estimation error, including system instructions, messages, tool definitions and tool results in the input estimate. Near the limit, compact older completed work and estimate the resulting request again. Retain the goal, unfinished steps, approvals, completed action and receipt references, and valid tool-call/result pairs. Keep the full transcript and checkpoint in local storage. When the directory returns `null`, retain the host's conservative fallback.
+
+A completed model receipt can carry `response.diagnostic.code=CONTEXT_WINDOW_EXCEEDED` for a confirmed oversized input. Recognized TokenHub rejections carry `http_status=400` and `provider_code="400003"`. The optional `context_window_tokens` comes from the original operation's service configuration snapshot. Historical responses and other errors may have no diagnostic. The JSON operation, final SSE `operation` frame and read-only original lookup all use the same field. After confirming the original outcome, the host can checkpoint compaction and send the shortened request under a new `operation_id` in the same conversation. Inspect the original operation if its final receipt is missing. HTTP 400 alone, transport timeouts and free-form text provide insufficient evidence for this path. Stop automatic attempts and retain the conversation if compaction produces no reduction.
+
+### Starting the next segment
+
 Before another segment, persist the task, original operation, selected service/descriptor revision, normalized finish reason, delivered partial content, tool results and completed/remaining steps. The next segment uses a new operation, with a parent link in host-local storage; this protocol adds no parent-operation field.
 
 Carry saved valid content and tool results forward and continue unfinished work. Do not present the original user request as a brand-new unexecuted task or resend its model call. Native tool-call/result formatting and association IDs must remain valid. The host can merge display fragments or repeated prefixes without changing raw response or tool-result evidence.

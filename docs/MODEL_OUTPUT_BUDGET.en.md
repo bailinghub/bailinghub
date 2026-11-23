@@ -8,6 +8,7 @@ AIaaS model services separate the default budget for a new request from its perm
 
 | Configuration | Model descriptor | Meaning |
 | --- | --- | --- |
+| `contextWindowTokens` | `context_window_tokens` | Combined input and output window for this provider route, in tokens. The directory returns `null` when unconfigured. |
 | `maxOutputTokens` | `max_output_tokens` | Operator service ceiling, a positive integer currently bounded to 1–131072; not a vendor capability claim |
 | `defaultOutputTokens` | `default_output_tokens` | Default when a new request omits its output parameter; positive and no larger than the ceiling |
 | `outputTokenParameter` | `output_token_parameter` | Actual configured route parameter, `max_tokens` or `max_completion_tokens` |

@@ -18,6 +18,7 @@ export interface UsageAccount {
   createdAt: number;
   updatedAt: number;
 }
+export const MAX_CONTEXT_WINDOW_TOKENS = 10_000_000;
 export interface UsageServiceConfig {
   purpose?: "chat" | "tool";
   pricing?: PricingBinding;

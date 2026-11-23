@@ -8,6 +8,7 @@ AIaaS 模型服务将“新请求默认使用多少 token”和“服务最多�
 
 | 后台配置 | 模型目录 | 含义 |
 | --- | --- | --- |
+| `contextWindowTokens` | `context_window_tokens` | 当前供应商路由的输入与输出合计窗口，单位为 token。未登记时目录返回 `null` |
 | `maxOutputTokens` | `max_output_tokens` | 运营设置的服务请求上限，正整数，平台当前允许 1–131072；不是供应商模型能力声明 |
 | `defaultOutputTokens` | `default_output_tokens` | 新请求未指定输出预算时使用的默认值，正整数且不超过服务上限 |
 | `outputTokenParameter` | `output_token_parameter` | 当前供应商路由实际采用的参数：`max_tokens` 或 `max_completion_tokens` |
