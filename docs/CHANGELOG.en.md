@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.11.0.en.md).
+Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.11.1.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,14 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.11.1 - Task tracing, model context windows and verified image mirrors
+
+2026-11-23
+
+- From 0.10.1, inspect conversations by source and role, follow their authorizations and task traces, and filter dispatches by status, date and route.
+- Model services can record the combined input/output window for a verified provider route. Clients can read it from the model catalog and inspect a structured receipt for recognized context-limit rejections.
+- GHCR keeps the build index and provenance. ACR receives the verified runnable manifest for each application. This completes the distribution change following the 0.11.0 source tag. No SQL migration was added since 0.10.1. [Release notes](RELEASE_NOTES_v0.11.1.en.md) · [Upgrade guide](UPGRADE_v0.11.1.en.md)
 
 ## v0.11.0 - Cross-channel task tracing and model context windows
 
