@@ -841,7 +841,7 @@ async function verifyTroubleshooting(browser, base) {
     await failedTask.press('Tab');
     const focusedStatus = p.locator('.runsTable .jobStatusTag:focus-visible');
     assert.equal(await focusedStatus.innerText(), '执行错误');
-    assert.equal(await focusedStatus.evaluate(el => getComputedStyle(el).outlineWidth), '2px');
+    await p.waitForFunction(() => getComputedStyle(document.activeElement).outlineWidth === '2px');
     await p.getByRole('tooltip').filter({ hasText: '原始状态：error' }).waitFor();
     assert.ok(dispatchReads.some(q => q.period === '24h' && q.status === 'error' && q.offset === '0'));
     await p.goto(`${base}/console/runs?tab=trace&trace_q=client%3Ademo`);
