@@ -41,6 +41,46 @@ test('usage preserves unknown and does not add cached or reasoning subsets twice
   assert.deepEqual(verifiedUsage({ prompt_tokens: 5, completion_tokens: 2, total_tokens: 7, prompt_tokens_details: { cached_tokens: 4 }, completion_tokens_details: { reasoning_tokens: 1 } }), { inputTokens: 5, outputTokens: 2 });
 });
 
+test('only a recognized TokenHub context rejection gets a safe receipt diagnostic', async () => {
+  const base = 'https://tokenhub.tencentmaas.com/v1';
+  const raw = JSON.stringify({ error: { code: '400003', message: 'private input detail', request_id: 'private-id',
+    context_window_tokens: 17 }, diagnostic: { code: 'supplied-by-provider' } });
+  const check = async (baseUrl: string, status: number, responseBody: string, window?: number, streaming = false) => {
+    const configSnapshot = { ...config, contextWindowTokens: window };
+    const packets: Record<string, unknown>[] = [];
+    let calls = 0;
+    const result = await executeProvider({ base_url: baseUrl, api_key: 'synthetic' }, configSnapshot,
+      providerBody(input, configSnapshot, streaming), async (_url, init) => {
+        calls++;
+        assert.equal(JSON.parse(String(init?.body)).stream, streaming);
+        assert.equal(init?.redirect, 'error');
+        return new Response(responseBody, { status, headers: { 'content-type': 'application/json' } });
+      }, streaming ? async packet => { packets.push(packet); } : undefined);
+    assert.equal(result.response.body, responseBody);
+    assert.equal(result.response.status, status);
+    assert.equal(calls, 1);
+    if (streaming) assert.equal(packets.map(packet => packet.data).join(''), responseBody);
+    return result.response.diagnostic;
+  };
+  const expected = { code: 'CONTEXT_WINDOW_EXCEEDED', http_status: 400, provider_code: '400003' };
+  for (const streaming of [false, true]) {
+    assert.deepEqual(await check(base, 400, raw, 1048576, streaming), { ...expected, context_window_tokens: 1048576 });
+  }
+  for (const missingOrInvalid of [undefined, 0, -5, 1.5, 10_000_001]) {
+    assert.deepEqual(await check(base, 400, raw, missingOrInvalid), expected);
+  }
+  assert.deepEqual(await check('https://TOKENHUB.tencentmaas.com:443/v1/', 400, '{"error":{"code":400003}}'), expected);
+  for (const otherRoute of ['https://other.invalid/v1', 'https://tokenhub.tencentmaas.com.other.invalid/v1',
+    'http://tokenhub.tencentmaas.com/v1', 'https://tokenhub.tencentmaas.com:8443/v1', base + '/another']) {
+    assert.equal(await check(otherRoute, 400, raw), undefined);
+  }
+  for (const status of [200, 413, 429, 500]) assert.equal(await check(base, status, raw), undefined);
+  for (const otherBody of ['{', 'null', '{"error":{"code":"400001","message":"CodeInputTooLong 400003"}}',
+    '{"code":"400003"}', '{"error":{"code":"4000030"}}']) {
+    assert.equal(await check(base, 400, otherBody), undefined);
+  }
+});
+
 test('real HTTP provider receives only the service output bound, no automatic retry', async () => {
   let modelCalls = 0; const bodies: Record<string, unknown>[] = [];
   const server = createServer(async (req, res) => {

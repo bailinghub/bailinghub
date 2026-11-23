@@ -17,7 +17,7 @@
       <p>{{ channelsError }}</p>
       <el-button @click="load">重试读取渠道</el-button>
     </el-alert>
-    <el-empty v-else-if="!list.length" description="还没有渠道：把外部消息平台接进来从这里开始">
+    <el-empty v-else-if="!list.length" description="暂无入站渠道">
       <el-button v-if="canWrite" type="primary" @click="openCreate">添加第一个</el-button>
     </el-empty>
     <el-table v-else :data="locatedRows" empty-text="没有匹配的渠道">
@@ -74,19 +74,19 @@
     <template #header>
       <div class="head"><b>告警通知</b> <HelpTip title="告警通知是什么">
           <p>中枢<b>自身的运行告警</b>（执行器离线 / 任务失败 / 积压 / 工具源变更等）经上面的渠道推给收件人。</p>
-          <p>可按<b>事件类型分流</b>——不同的事通知不同的人 / 渠道。</p>
+          <p>可按事件类型指定收件人和渠道。通过企业微信主动推送时，需配置 AgentId 和 Secret，并将中枢出口 IP 加入应用的企业可信 IP。</p>
         </HelpTip>
         <el-button v-if="canWrite" type="primary" style="margin-left: auto" :disabled="channelsLoading || !!channelsError || !list.length" @click="openRuleCreate">新建规则</el-button></div>
     </template>
     <ListLocationBar v-model="ruleQuery" :count="locatedRules.length" :total="rules.length" :focus="ruleFocus" :return-to="listReturnTo" placeholder="搜索告警规则 / 渠道" @clear="clearRuleLocation" />
     <el-alert v-if="!channelsLoading && !channelsError && !list.length" type="warning" :closable="false" show-icon style="margin-bottom: 14px"
-      title="先在上方建一个可主动推的渠道（企业微信需填 AgentId + Secret，并把中枢出口 IP 加进该应用「企业可信 IP」），告警才有处可发。" />
+      title="尚未配置可推送告警的渠道" />
     <div v-if="rulesLoading" class="muted" role="status" style="padding: 24px">正在读取告警规则…</div>
     <el-alert v-else-if="rulesError" type="error" title="告警规则读取失败" :closable="false" show-icon>
       <p>{{ rulesError }}</p>
       <el-button @click="loadRules">重试读取告警规则</el-button>
     </el-alert>
-    <el-empty v-else-if="!rules.length" description="还没有告警规则：建一条把运行告警推给自己">
+    <el-empty v-else-if="!rules.length" description="暂无告警规则">
       <el-button v-if="canWrite" type="primary" :disabled="channelsLoading || !!channelsError || !list.length" @click="openRuleCreate">添加第一条</el-button>
     </el-empty>
     <el-table v-else :data="locatedRules" empty-text="没有匹配的告警规则">
@@ -285,13 +285,17 @@
   <el-dialog v-model="codeOpen" :title="'调用代码 · 经「' + (codeChannel?.name || '') + '」渠道主动推消息'" width="820px" class="code-dialog">
     <div class="code-context">
       <div class="code-context-main">
-        <span class="code-context-label">接入方</span>
+        <span class="code-context-label">接入方 <HelpTip title="渠道推送与接入授权">
+          <p>将本渠道加入接入方的可推渠道白名单，再使用其 Token 调用 <code>POST /send</code>。成功发送的消息会记入该用户的渠道会话历史。</p>
+          <p><code>to</code> 使用渠道原生收件人 ID（企业微信为成员 UserID），多个收件人可用数组或 <code>A|B|C</code>，合并发送只计一次限速。成功响应包含 <code>ok</code> 和 <code>job_id</code>。</p>
+          <p><code>images</code> 填图片 URL 数组，<code>files</code> 填 <code>[{url,name}]</code>。任一附件拉取或上传失败，整条返回 502。带附件时请预留上传时间。</p>
+        </HelpTip></span>
         <el-select v-if="eligibleClients.length" v-model="codeClientId" class="code-context-select" @change="fetchCodeToken">
         <el-option v-for="c in eligibleClients" :key="c.app_id" :value="c.app_id" :label="c.name + '（' + c.app_id + '）'" />
       </el-select>
         <span v-else class="muted">—</span>
       </div>
-      <div class="code-context-note">下方示例使用所选接入方 token 调 <code>POST /send</code>；消息会作为「回复方」写入该用户在本渠道的会话历史。</div>
+      <el-button link type="primary" @click="openDoc('/docs/sdk')">打开 SDK 文档</el-button>
     </div>
 
     <div v-if="codeChannel" class="channel-code-summary">
@@ -322,7 +326,7 @@
     <p v-else-if="!clientsLoaded" class="muted">正在读取接入方目录…</p>
     <el-alert v-else-if="!eligibleClients.length" type="warning" :closable="false" show-icon style="margin-bottom: 10px"
       :title="`还没有接入方被授权推送「${codeChannel?.name}」`"
-      description="先到「接入方」页编辑一个接入方，把本渠道加入它的「可推渠道白名单」，回来这里就能拿到可直接运行的代码。下面示例先用占位 token。" />
+      description="示例使用占位 Token" />
     <p v-if="codeTokenLoading" class="muted">正在读取所选接入方凭证，代码暂用占位符。</p>
     <p v-else-if="codeTokenError" class="muted">{{ codeTokenError }}</p>
     <p v-else-if="codeClientId && !s.can('clients:write')" class="muted">当前账号不能读取完整凭证；代码使用占位符。</p>
@@ -330,25 +334,16 @@
       <el-tab-pane label="HTTP / cURL" name="curl">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>HTTP 联调示例</b>
-              <p>任意语言照此请求即可；收件人使用渠道原生 id。</p>
-            </div>
+            <div><b>HTTP 联调示例</b></div>
             <el-button type="primary" @click="copyText(curlCode)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ curlCode }}</pre>
-          <div class="snippet-notes">
-            <span>把 <code>&lt;收件人id&gt;</code> 换成该渠道的用户原生 id，企业微信即成员 UserID。成功返回 <code>{"ok":true,"job_id":...}</code>。</span>
-          </div>
         </section>
       </el-tab-pane>
       <el-tab-pane label="Node.js" name="node">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>Node.js 推送示例</b>
-              <p>适合业务后端主动通知用户；图片、附件、卡片字段按需加入 payload。</p>
-            </div>
+            <div><b>Node.js 推送示例</b></div>
             <el-button type="primary" @click="copyText(nodeCode)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ nodeCode }}</pre>
@@ -357,10 +352,7 @@
       <el-tab-pane label="Python" name="python">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>Python 推送示例</b>
-              <p>适合 Python 后端、脚本任务或数据处理服务主动通知用户。</p>
-            </div>
+            <div><b>Python 推送示例</b></div>
             <el-button type="primary" @click="copyText(pythonCode)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ pythonCode }}</pre>
@@ -369,31 +361,13 @@
       <el-tab-pane label="PHP" name="php">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>PHP 推送示例</b>
-              <p>适合 ThinkPHP、Laravel 或存量 PHP 系统；带附件时要给足超时。</p>
-            </div>
+            <div><b>PHP 推送示例</b></div>
             <el-button type="primary" @click="copyText(phpCode)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ phpCode }}</pre>
         </section>
       </el-tab-pane>
     </el-tabs>
-    <div class="code-notices compact" style="margin-top: 12px">
-      <div class="code-notice info">
-        <b>富内容</b>
-        <span><code>images</code> 是图片 URL 数组，<code>files</code> 是 <code>[{url,name}]</code>；中枢拉取后上传到渠道。任一拉取或上传失败，整条 502，不会半发。</span>
-      </div>
-      <div class="code-notice info">
-        <b>多收件人</b>
-        <span><code>to</code> 可传数组或 <code>A|B|C</code>，渠道原生合并，一次调用只占一次限速。</span>
-      </div>
-      <div class="code-notice info">
-        <b>完整 SDK</b>
-        <span>Java、Go、.NET 的 <code>HubClient</code> 同样支持 <code>/send</code>；当前弹窗只放高频示例，避免代码面板过重。</span>
-        <el-button link type="primary" @click="openDoc('/docs/sdk')">打开 SDK 文档</el-button>
-      </div>
-    </div>
   </el-dialog>
 </template>
 

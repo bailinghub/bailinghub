@@ -153,7 +153,7 @@ export async function verifyTroubleshootingExtra(browser, base, mockApi, fixture
     await page.locator('.task-control-page .el-table').getByRole('button', { name: `${taskA.slice(0, 8)}…${taskA.slice(-4)}`, exact: true }).click();
     await waitFor(() => Boolean(taskReadGate === undefined), '任务详情读取未开始');
     await closeTask();
-    const refresh = page.locator('.task-heading').getByRole('button', { name: '刷新', exact: true });
+    const refresh = page.locator('.task-control-page .el-card__header').getByRole('button', { name: '刷新', exact: true });
     await waitFor(() => refresh.isEnabled(), '关闭加载中的详情后刷新仍被 loading 禁用');
     detail.released.resolve();
     await detail.finished.promise;
@@ -212,7 +212,7 @@ export async function verifyTroubleshootingExtra(browser, base, mockApi, fixture
     await visible(page, '孤立告警规则 17');
     assert.equal(await rulePanel.locator('.el-table__row').count(), 1, '告警规则精确定位不得包含 117');
     assert.equal(await page.getByText('近似告警规则 117', { exact: true }).count(), 0);
-    assert.equal(await rulePanel.getByText('还没有告警规则：建一条把运行告警推给自己', { exact: true }).count(), 0);
+    assert.equal(await rulePanel.getByText('暂无告警规则', { exact: true }).count(), 0);
     await page.reload();
     await visible(page, '孤立告警规则 17');
 
@@ -220,7 +220,7 @@ export async function verifyTroubleshootingExtra(browser, base, mockApi, fixture
     ruleReadFails = true;
     await page.reload();
     await rulePanel.locator('.el-alert--error').waitFor();
-    assert.equal(await rulePanel.getByText('还没有告警规则：建一条把运行告警推给自己', { exact: true }).count(), 0);
+    assert.equal(await rulePanel.getByText('暂无告警规则', { exact: true }).count(), 0);
     ruleReadFails = false;
     await rulePanel.getByRole('button', { name: '重试读取告警规则', exact: true }).click();
     await visible(page, '孤立告警规则 17');
@@ -231,7 +231,7 @@ export async function verifyTroubleshootingExtra(browser, base, mockApi, fixture
     await page.reload();
     await visible(page, '孤立告警规则 17');
     await page.locator('.el-card').filter({ has: page.getByText('入站渠道', { exact: true }) }).first().locator('.el-alert--error').waitFor();
-    assert.equal(await page.getByText('还没有渠道：把外部消息平台接进来从这里开始', { exact: true }).count(), 0);
+    assert.equal(await page.getByText('暂无入站渠道', { exact: true }).count(), 0);
     channelReadFails = false;
 
     // Known online workers filtered to offline are "no matches", never "no workers online".

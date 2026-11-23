@@ -1,16 +1,22 @@
 <template>
   <div class="agent-clients-page">
-    <div class="page-navigation"><div><b>本地智能体</b><span>配置接入与管理授权设备</span></div><div class="actions"><el-button v-if="me.can('clients:read') && me.hasModule('agent-tasks')" @click="router.push('/agent-tasks')">任务控制</el-button><el-radio-group v-model="pageTab"><el-radio-button value="setup">接入配置</el-radio-button><el-radio-button value="activity">设备与运行</el-radio-button></el-radio-group></div></div>
+    <div class="section-head">
+      <el-radio-group v-model="pageTab" aria-label="本地智能体视图">
+        <el-radio-button value="setup">接入配置</el-radio-button>
+        <el-radio-button value="activity">设备与运行</el-radio-button>
+      </el-radio-group>
+      <el-button v-if="me.can('clients:read') && me.hasModule('agent-tasks')" @click="router.push('/agent-tasks')">任务控制</el-button>
+    </div>
     <el-alert v-if="overviewError" type="error" :closable="false" show-icon :title="overviewError"><template #default>无法确认当前接入状态，请重试。<el-button link @click="loadOverview">重新读取</el-button></template></el-alert>
     <el-card v-if="pageTab === 'activity' && overviewLoaded && !overviewError" shadow="never">
       <template #header>
         <div class="head">
           <div>
-            <b>本地智能体</b>
+            <b>运行概览</b>
             <HelpTip title="和执行器有什么区别">
               <p><b>本地智能体</b>在本地理解用户意图、选择能力并完成多步编排；中枢继续负责业务身份、授权、审批、执行与审计。</p>
               <p><b>执行器</b>是中枢下发 Job、由本地运行时执行本地任务后回报结果。两者是独立概念。</p>
-              <p>在“配置接入”中集中设置授权入口、系统说明和工具范围；设置仍保存在原接入方与业务路由中。</p>
+              <p>在“接入配置”中集中设置授权入口、系统说明和工具范围；设置仍保存在原接入方与业务路由中。</p>
               <p>每个接入方只配置一个不绑定账号、租户或门店的业务授权入口；账号切换与租户选择由业务授权页完成。</p>
             </HelpTip>
           </div>
@@ -30,24 +36,25 @@
         <div class="metric"><span>有效授权设备</span><b>{{ int(summary.sessions?.active) }}</b><em>总会话 {{ int(summary.sessions?.total) }}</em></div>
         <div class="metric"><span>智能体运行</span><b>{{ int(summary.runs) }}</b><em>{{ int(summary.conversations) }} 个本地会话</em></div>
         <div class="metric"><span>工具调用</span><b>{{ int(summary.tool_calls) }}</b><em>审批 {{ int(approvalTotal) }} 次</em></div>
-        <div class="metric"><span>累计 Token</span><b>{{ int(summary.total_tokens) }}</b><em>由客户端公开 usage 汇总</em></div>
+        <div class="metric"><span>累计 Token <HelpTip title="Token 统计口径"><p>按所选时段内客户端公开上报的 usage 汇总。</p></HelpTip></span><b>{{ int(summary.total_tokens) }}</b></div>
         <div class="metric" :class="{ danger: Number(summary.failure_rate || 0) > 0.1 }"><span>失败率</span><b>{{ percent(summary.failure_rate) }}</b><em>{{ int(summary.failed) }} 个失败或取消</em></div>
       </div>
-    </el-card>
-
-    <el-card v-if="pageTab === 'setup'" shadow="never" class="setup-intro">
-      <div><span class="intro-kicker">从接入到业务操作</span><h2>把一个业务系统接给本地智能体</h2><p>选中下方接入方，按顺序完成授权入口、系统说明和工具范围。工作空间对应一条已有的业务路由。连接、业务授权与实际执行分别检查。</p></div>
-      <div class="intro-flow"><span>1 授权入口</span><i>→</i><span>2 系统说明</span><i>→</i><span>3 工具与审批</span><i>→</i><span>4 检查连接</span></div>
     </el-card>
 
     <el-card v-if="pageTab === 'setup'" shadow="never">
       <template #header>
         <div class="section-head">
-          <div><b>业务系统接入</b><span>在一个入口完成本地智能体配置；授权记录与用量请切换到“设备与运行”。</span></div>
+          <div>
+            <b>业务系统接入</b>
+            <HelpTip title="如何配置接入方">
+              <p>点击接入方的“配置接入”，依次设置授权入口、系统说明、工具与审批，再检查连接。每个工作空间对应一条已有的业务路由。</p>
+              <p>连接、业务授权与实际执行需分别检查。授权记录和用量可在“设备与运行”中查看。</p>
+            </HelpTip>
+          </div>
           <el-button v-if="me.can('clients:write') && me.hasModule('clients')" size="small" @click="router.push('/clients?create=1')">新建接入方</el-button>
         </div>
       </template>
-      <p v-if="pageRoute.query.workspace" class="muted">以下为允许使用工作空间 {{ pageRoute.query.workspace }} 的接入方，请选择要配置的应用。<el-button link @click="router.replace('/agent-clients')">显示全部</el-button></p>
+      <p v-if="pageRoute.query.workspace" class="muted">当前工作空间：{{ pageRoute.query.workspace }} <el-button link @click="router.replace('/agent-clients')">显示全部</el-button></p>
       <p v-if="loading" class="muted">正在读取接入配置…</p>
       <el-empty v-else-if="!overviewError && !visibleApplications.length" description="当前没有匹配的接入方，请先创建接入方并关联工作空间。" />
       <el-table v-else-if="!overviewError" :data="visibleApplications" size="small">
@@ -80,7 +87,7 @@
     <el-card v-if="pageTab === 'activity'" shadow="never">
       <template #header>
         <div class="section-head">
-          <div><b>业务授权与设备</b><span>授权名称由业务系统同步；设备名称用于区分使用端。远程撤销后需要重新登录授权。</span></div>
+          <div><b>业务授权与设备</b> <HelpTip title="授权、设备与撤销"><p>授权名称由业务系统同步，设备名称区分使用端。远程撤销后，设备需要重新登录授权。</p></HelpTip></div>
           <div class="actions">
             <el-select v-model="sessionFilter.client_app_id" clearable filterable size="small" placeholder="全部应用" style="width: 190px" @change="resetSessions">
               <el-option v-for="app in applications" :key="app.app_id" :label="app.name || app.app_id" :value="app.app_id" />
@@ -96,7 +103,7 @@
       </template>
       <el-alert v-if="sessionsError" type="error" :closable="false" :title="sessionsError"><template #default><el-button link @click="loadSessions">重新读取</el-button></template></el-alert>
       <p v-if="sessionsLoading" class="muted">正在读取授权设备…</p>
-      <el-empty v-else-if="!sessionsError && !sessions.length" description="当前筛选下没有授权设备。首次在本地客户端登录业务授权后，会在这里出现。" />
+      <el-empty v-else-if="!sessionsError && !sessions.length" description="当前筛选下没有授权设备" />
       <el-table v-else-if="!sessionsError" v-loading="sessionsLoading" :data="sessions" size="small" row-key="session_id">
         <el-table-column label="授权名称" :min-width="180">
           <template #default="{ row }"><div class="stack"><b class="subject-name">{{ subjectName(row) || '待同步' }}</b><span class="muted">{{ subjectName(row) ? '业务系统提供' : '业务系统尚未提供名称' }}</span></div></template>
@@ -126,8 +133,10 @@
     <el-dialog :model-value="Boolean(sessionDetail)" title="业务授权详情" width="min(640px, 94vw)" @update:model-value="value => { if (!value) sessionDetail = null; }">
       <template v-if="sessionDetail">
         <el-descriptions :column="1" border>
-          <el-descriptions-item label="授权名称"><span class="subject-name">{{ subjectName(sessionDetail) || '待同步' }}</span></el-descriptions-item>
-          <el-descriptions-item label="名称来源">{{ subjectName(sessionDetail) ? '业务系统提供' : '业务系统尚未提供；旧授权可由原业务系统同步名称' }}</el-descriptions-item>
+          <el-descriptions-item label="授权名称">
+            <template #label>授权名称 <HelpTip title="授权名称与标识"><p>相同名称可能对应不同授权，权限、会话及执行记录按原授权标识区分。业务系统更新名称后，历史对话保留原标签。</p></HelpTip></template>
+            <span class="subject-name">{{ subjectName(sessionDetail) || '待同步' }}</span></el-descriptions-item>
+          <el-descriptions-item label="名称来源">{{ subjectName(sessionDetail) ? '业务系统提供' : '业务系统尚未提供名称' }}</el-descriptions-item>
           <el-descriptions-item label="设备名称">{{ sessionDetail.device_label || '未命名设备' }}</el-descriptions-item>
           <el-descriptions-item label="接入应用"><code>{{ sessionDetail.client_app_id }}</code></el-descriptions-item>
           <el-descriptions-item label="授权记录"><code>{{ sessionDetail.session_id }}</code></el-descriptions-item>
@@ -136,20 +145,23 @@
           <el-descriptions-item label="工作空间">{{ sessionDetail.allowed_routes.join('、') }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ stateText(sessionDetail.state) }}</el-descriptions-item>
         </el-descriptions>
-        <p class="connection-note">名称只帮助识别授权。相同名称可能对应不同授权，权限、会话范围和执行记录仍按原授权绑定。名称更新不修改历史对话中的标签。</p>
       </template>
     </el-dialog>
 
     <AgentSetupPanel v-model="setup.open" :app-id="setup.appId" :initial-workspace="setup.workspace" :workspaces="setupWorkspaces" :overview-loading="loading" :overview-error="overviewError" @retry-overview="loadOverview" @saved="loadOverview" @connect="connectFromSetup" />
 
     <el-dialog v-model="connection.open" title="生成本地智能体连接配置" width="620px">
-      <el-alert type="info" :closable="false" show-icon title="这里只生成公开连接元数据，不包含业务 URL、业务身份、Client Token、Agent Token 或模型密钥。" />
-      <p class="connection-note"><code>connectionName</code> 只是本机连接选择器。登录时会统一打开接入方配置的业务授权页，由该页面确认当前账号与租户。</p>
-      <el-form label-position="top" class="connection-form">
+      <template #header="{ titleId, titleClass }">
+        <span :id="titleId" :class="titleClass" role="heading" aria-level="2">生成本地智能体连接配置</span>
+        <HelpTip title="连接配置包含哪些信息"><p>仅包含公开连接信息，不含业务 URL、业务身份、Client Token、Agent Token 或模型密钥。</p></HelpTip>
+      </template>
+      <el-form label-position="top">
         <el-form-item label="Hub 地址"><el-input :model-value="hubUrl" readonly class="mono" /></el-form-item>
         <div class="form-grid">
           <el-form-item label="Client App ID"><el-input :model-value="connection.app_id" readonly class="mono" /></el-form-item>
-          <el-form-item label="Connection Name"><el-input v-model="connection.name" maxlength="128" class="mono" /></el-form-item>
+          <el-form-item label="Connection Name">
+            <template #label>Connection Name <HelpTip title="本机连接名称"><p>此名称用于在本机选择连接。登录时打开业务授权页，由该页面确认账号与租户。</p></HelpTip></template>
+            <el-input v-model="connection.name" maxlength="128" class="mono" /></el-form-item>
         </div>
         <el-form-item label="工作空间（Workspace）">
           <el-select v-model="connection.workspace" style="width: 100%"><el-option v-for="workspace in connection.workspaces" :key="workspace.route" :label="workspace.name + '（' + workspace.route + '）'" :value="workspace.route" /></el-select>
@@ -319,13 +331,9 @@ onMounted(async () => {
 
 <style scoped>
 .agent-clients-page { display: grid; gap: 16px; }
-.page-navigation{display:flex;justify-content:space-between;align-items:center;gap:16px}.page-navigation b{font-size:20px}.page-navigation span{display:block;font-size:13px;color:var(--el-text-color-secondary);margin-top:7px}
-.setup-intro{border-color:var(--el-color-primary-light-7);background:linear-gradient(120deg,var(--el-color-primary-light-9),var(--el-bg-color) 70%)}
-.intro-kicker{font-size:12px;color:var(--el-color-primary);font-weight:600}.setup-intro h2{font-size:21px;margin:8px 0 10px}.setup-intro p{font-size:13px;color:var(--el-text-color-secondary);line-height:1.7;margin:0}.intro-flow{display:flex;flex-wrap:wrap;align-items:center;gap:16px;margin-top:22px;font-size:13px}.intro-flow span{padding:7px 11px;background:var(--el-bg-color);border:1px solid var(--el-border-color-lighter);border-radius:6px}.intro-flow i{font-style:normal;color:var(--el-text-color-placeholder)}
 .head, .section-head, .actions { display: flex; align-items: center; gap: 10px; }
 .head, .section-head { justify-content: space-between; }
-.section-head > div:first-child { display: flex; align-items: baseline; gap: 10px; }
-.section-head span, .muted { color: var(--el-text-color-secondary); font-size: 12px; }
+.muted { color: var(--el-text-color-secondary); font-size: 12px; }
 .overview { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
 .metric { min-width: 0; padding: 16px; border: 1px solid var(--el-border-color-lighter); border-radius: 10px; background: var(--el-fill-color-blank); }
 .metric span, .metric em { display: block; color: var(--el-text-color-secondary); font-style: normal; font-size: 12px; }
@@ -337,8 +345,6 @@ onMounted(async () => {
 .stack.right { align-items: flex-end; }
 .mono, code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
 .tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.connection-form { margin-top: 18px; }
-.connection-note { margin: 12px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.6; }
 .pagination { display: flex; justify-content: flex-end; padding-top: 14px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .code-block { margin-top: 10px; padding: 12px; overflow: auto; border-radius: 8px; background: #111827; color: #e5e7eb; }

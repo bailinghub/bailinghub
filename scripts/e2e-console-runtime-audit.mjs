@@ -78,6 +78,13 @@ async function scenario(readonly = false) {
     await page.getByRole('button', { name: '调用代码', exact: true }).click();
     await page.getByText('当前账号不能读取接入方目录；代码保留 token 占位，请由管理员核对推送授权。', { exact: true }).waitFor();
     assert.equal(await page.getByText('还没有接入方被授权推送', { exact: false }).count(), 0, 'missing directory permission is not no authorization');
+    const help = page.getByRole('button', { name: '点击查看：渠道推送与接入授权', exact: true });
+    const instructions = page.getByText('将本渠道加入接入方的可推渠道白名单', { exact: false });
+    await instructions.waitFor({ state: 'hidden' });
+    await help.click();
+    await instructions.waitFor({ state: 'visible' });
+    await help.press('Escape');
+    await instructions.waitFor({ state: 'hidden' });
     assert.equal(revealReads, 0);
     releaseFirstToken(); await context.close(); return;
   }

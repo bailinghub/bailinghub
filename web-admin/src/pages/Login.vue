@@ -19,9 +19,11 @@
         <section class="auth">
           <div class="authInner">
             <div class="cardHead">
-              <p>控制台登录</p>
-              <h2>登录{{ instanceBranding.site_name }}</h2>
-              <span>{{ signupEnabled ? '使用邮箱注册或登录账号，进入你的独立中枢控制台。' : '请输入管理员账号，进入你的中枢控制台。' }}</span>
+              <h2>{{ mode === 'signup' ? signupTitle : '登录' + instanceBranding.site_name }}</h2>
+              <HelpTip title="控制台账号">
+                <p v-if="signupEnabled">使用邮箱登录。新注册账号将获得独立控制台，接入生产业务前请确认资源额度与安全策略。</p>
+                <p v-else>使用自托管实例的管理员账号登录。首次部署后请修改管理员密码。</p>
+              </HelpTip>
             </div>
             <div v-if="signupEnabled" class="tabs" role="tablist">
               <button class="tab" :class="{ active: mode === 'login' }" type="button" @click="mode = 'login'">登录</button>
@@ -48,7 +50,6 @@
               <el-alert v-if="err" :title="err" type="error" :closable="false" style="margin-bottom: 12px" />
               <el-button type="primary" size="large" class="submit" :loading="loading" @click="signup">创建并进入控制台</el-button>
             </el-form>
-            <p class="footnote">{{ signupEnabled ? '系统会为注册账号创建独立控制台；生产接入前请确认资源额度和安全策略。' : '开源自托管实例由你自己掌控；生产环境请在首次部署后修改管理员密码。' }}</p>
           </div>
         </section>
       </section>
@@ -61,6 +62,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useMe } from '../store';
 import BrandLockup from '../components/BrandLockup.vue';
+import HelpTip from '../components/HelpTip.vue';
 import { instanceBranding } from '../branding';
 import { kernelFetch, kernelPath } from '../runtime-path';
 
@@ -257,10 +259,8 @@ h1 { margin: 0; font-size: clamp(42px, 4.1vw, 58px); line-height: 1.04; letter-s
 .authInner {
   width: min(100%, 420px);
 }
-.cardHead { margin-bottom: 26px; }
-.cardHead p { margin: 0 0 12px; color: #3fb950; font-family: var(--bz-mono); font-size: 12px; font-weight: 800; letter-spacing: .16em; }
+.cardHead { display: flex; align-items: center; gap: 6px; margin-bottom: 26px; }
 .cardHead h2 { margin: 0; font-size: 30px; line-height: 1.2; }
-.cardHead span { display: block; margin-top: 10px; color: var(--el-text-color-secondary); line-height: 1.7; }
 .tabs {
   width: 100%;
   display: grid;
@@ -291,7 +291,6 @@ h1 { margin: 0; font-size: clamp(42px, 4.1vw, 58px); line-height: 1.04; letter-s
   gap: 10px;
 }
 .submit { width: 100%; }
-.footnote { margin: 16px 0 0; color: var(--el-text-color-placeholder); font-size: 12px; line-height: 1.7; }
 @media (max-width: 980px) {
   .wrap { padding: 16px; }
   .loginShell {

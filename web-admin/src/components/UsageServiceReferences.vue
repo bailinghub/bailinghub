@@ -11,16 +11,15 @@
       <el-alert v-if="error" :title="error" type="error" :closable="false" />
       <template v-if="report">
         <el-alert
-          title="删除后，该模型会从所有套餐及客户端可选列表中移除。"
+          title="删除后，所有套餐和客户端将移除此模型"
+          description="移除最后一个模型后，对应套餐将没有可用模型。账户额度、模型凭证与历史用量会保留。"
           type="warning"
           :closable="false"
         />
-        <p class="explanation">
-          账户额度与历史用量保留。删至零个模型时，用户会看到“暂无可用模型”。
-        </p>
         <section>
           <h3>
             将更新的套餐 <small>{{ report.plans.total }} 个</small>
+            <UsageHelp title="模型服务的影响范围"><p>如只需从单个套餐移除模型，请单独编辑该套餐。已关联账户继续持有原套餐，已发出的请求仍按原模型核对和计量。</p></UsageHelp>
           </h3>
           <p v-if="!report.plans.total" class="muted">
             当前没有套餐包含此模型。
@@ -48,21 +47,8 @@
             {{ report.plans.total }} 个套餐中移除。
           </p>
         </section>
-        <p>
-          <b>{{ report.accounts.total }} 个账户关联上述套餐</b><br /><span
-            class="muted"
-            >账户仍然持有原套餐，无需逐个调整或重新开通。</span
-          >
-        </p>
-        <p>
-          <b>{{ report.requests.total }} 笔原请求记录保留</b><br /><span
-            class="muted"
-            >已发出的请求按原模型核对结果和计量，不会切换到其他模型或重复执行。</span
-          >
-        </p>
-        <p class="muted">
-          模型凭证与历史用量仍保留。若只想从某个套餐移除模型，请直接编辑该套餐。
-        </p>
+        <p><b>{{ report.accounts.total }} 个账户关联上述套餐</b></p>
+        <p><b>{{ report.requests.total }} 笔原请求记录保留</b></p>
       </template>
     </div>
     <template #footer
@@ -83,6 +69,7 @@
   </el-drawer>
 </template>
 <script setup lang="ts">
+import UsageHelp from "./UsageHelp.vue";
 import type { ServiceReferenceReport } from "../usage-management";
 defineProps<{
   modelValue: boolean;
@@ -153,11 +140,6 @@ const emit = defineEmits<{
 .muted {
   color: var(--el-text-color-secondary);
   font-size: 13px;
-}
-.explanation {
-  background: var(--el-fill-color-light);
-  padding: 12px;
-  border-radius: 8px;
 }
 @media (max-width: 600px) {
   .reference-row {

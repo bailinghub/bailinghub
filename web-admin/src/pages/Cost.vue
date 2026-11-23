@@ -5,9 +5,8 @@
         <div>
           <b>成本观测</b>
           <HelpTip title="成本观测看什么">
-            <p>这里按任务回报的 <code>usage</code> 聚合模型成本和 token，用来判断最近一段时间是否有异常消耗。</p>
-            <p>本页只读，不拦截调用。真正的硬限在「接入方」和「触发路由」的成本预算闸里配置。</p>
-            <p>执行器、业务工具或未回报 <code>usage</code> 的目标不会产生 <code>cost_usd</code>，这属于正常情况。</p>
+            <p>按任务上报的 <code>usage</code> 汇总成本和 Token。未上报用量的任务只计入任务数，实际费用以供应商账单为准。</p>
+            <p>可在「接入方预算」限制整个业务系统的消耗，或在「路由预算」限制单个业务场景的消耗。</p>
           </HelpTip>
         </div>
         <div class="actions">
@@ -52,7 +51,7 @@
       <section class="notice" :class="{ empty: !hasCost }">
         <div>
           <b>{{ headline }}</b>
-          <p>{{ headlineDesc }}</p>
+          <p v-if="headlineDesc">{{ headlineDesc }}</p>
         </div>
         <div class="notice-actions">
           <el-button size="small" @click="go('/clients')">接入方预算</el-button>
@@ -62,10 +61,7 @@
 
       <section class="section">
         <div class="section-head">
-          <div>
-            <b>按天趋势</b>
-            <span>用来判断是否有突增、持续增长或某天集中消耗。</span>
-          </div>
+          <b>按天趋势</b>
         </div>
         <el-empty v-if="!dailyRows.length" description="该窗口内没有任务记录" />
         <div v-else class="trend">
@@ -83,10 +79,7 @@
       <section class="breakdown">
         <div class="section panel">
           <div class="section-head">
-            <div>
-              <b>调度目标消耗</b>
-              <span>定位是哪个模型或执行目标产生费用。</span>
-            </div>
+            <b>调度目标消耗</b>
           </div>
           <el-empty v-if="!targetRows.length" description="还没有目标成本数据" />
           <el-table v-else :data="targetRows" size="small" empty-text="无数据">
@@ -109,10 +102,7 @@
 
         <div class="section panel">
           <div class="section-head">
-            <div>
-              <b>触发路由消耗</b>
-              <span>定位是哪个业务场景产生费用。</span>
-            </div>
+            <b>触发路由消耗</b>
           </div>
           <el-empty v-if="!routeRows.length" description="还没有路由成本数据" />
           <el-table v-else :data="routeRows" size="small" empty-text="无数据">
@@ -129,18 +119,6 @@
               <template #default="{ row }">{{ usd(row.cost_usd) }}</template>
             </el-table-column>
           </el-table>
-        </div>
-      </section>
-
-      <section class="section guide">
-        <div>
-          <b>成本治理边界</b>
-          <p>观测页负责看趋势和归因；预算闸负责拦截新任务；模型侧账单仍以模型服务商账单为准。</p>
-        </div>
-        <div class="guide-grid">
-          <div><span>接入方预算</span><p>限制某个业务系统整体消耗，适合按调用方控成本。</p></div>
-          <div><span>路由预算</span><p>限制某个 AI 场景消耗，适合按业务场景控成本。</p></div>
-          <div><span>未记录 usage</span><p>执行器或目标未上报 usage 时，只能统计任务数，不会计入美元成本。</p></div>
         </div>
       </section>
     </div>
@@ -185,12 +163,11 @@ const headline = computed(() => {
   return `主要消耗来自 ${topRoute.value?.route || topTarget.value?.target || '当前窗口任务'}`;
 });
 const headlineDesc = computed(() => {
-  if (!total.value.jobs) return '业务系统触发路由后，这里会开始展示成本趋势和消耗归因。';
-  if (!hasCost.value) return '通常是执行器目标、业务工具调用，或模型没有回报 usage。可以先用任务页查看运行链路是否正常。';
+  if (!total.value.jobs || !hasCost.value) return '';
   const parts = [];
   if (topRoute.value) parts.push(`路由「${topRoute.value.route}」消耗 ${usd(topRoute.value.cost_usd)}`);
   if (topTarget.value) parts.push(`目标「${topTarget.value.target}」消耗 ${usd(topTarget.value.cost_usd)}`);
-  return parts.join('，') + '。';
+  return parts.join('，');
 });
 
 async function load(): Promise<void> {
@@ -241,11 +218,7 @@ onMounted(load);
   background: var(--el-fill-color-lighter);
 }
 .metric:last-child { border-right: 0; }
-.metric span,
-.section-head span,
-.guide p,
-.guide-grid p { color: var(--el-text-color-secondary); }
-.metric span { display: block; font-size: 12px; }
+.metric span { display: block; font-size: 12px; color: var(--el-text-color-secondary); }
 .metric b { display: block; margin-top: 8px; font-size: 25px; line-height: 1.15; font-family: var(--bz-mono); }
 .metric.primary b { color: var(--el-color-primary); }
 .metric em { display: block; margin-top: 6px; color: var(--el-text-color-placeholder); font-size: 12px; font-style: normal; }
@@ -272,8 +245,6 @@ onMounted(load);
   background: var(--el-bg-color);
 }
 .section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
-.section-head b { display: block; margin-bottom: 3px; }
-.section-head span { font-size: 12px; }
 .trend { display: grid; gap: 8px; }
 .day-row {
   display: grid;
@@ -291,24 +262,12 @@ onMounted(load);
 .panel { min-width: 0; }
 .share { height: 7px; background: var(--el-fill-color-light); }
 .share span { display: block; height: 100%; background: var(--el-color-primary); }
-.guide {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  gap: 18px;
-}
-.guide p { margin: 6px 0 0; font-size: 13px; }
-.guide-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.guide-grid div { padding-left: 12px; border-left: 2px solid var(--el-border-color); }
-.guide-grid span { font-weight: 650; }
-.guide-grid p { margin-top: 5px; line-height: 1.6; }
 .muted { color: var(--el-text-color-secondary); }
 @media (max-width: 1100px) {
   .overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric:nth-child(2) { border-right: 0; }
   .metric:nth-child(-n + 2) { border-bottom: 1px solid var(--el-border-color-lighter); }
-  .breakdown,
-  .guide,
-  .guide-grid { grid-template-columns: 1fr; }
+  .breakdown { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .head,

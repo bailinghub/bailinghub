@@ -24,6 +24,8 @@ import { handleAdminBrandingApiFor } from './admin-branding';
 import { handleAdminAgentClientsApiFor } from './admin-agent-clients';
 import { handleAdminAgentTasksApiFor } from './admin-agent-tasks';
 import { handleAdminUsageApiFor } from './admin-usage';
+import { resolveLlmCredential } from '../core/runtime/credential-resolver';
+import { providerModelContext } from '../modules/usage/model-context';
 import { handleAdminDemoDatasetApiFor, type DemoDatasetServiceContract } from './admin-demo-dataset';
 import { refreshTargets, type TargetRegistry } from '../core/targets/registry';
 import type { AppConfig } from '../core/config/config';
@@ -96,7 +98,10 @@ export async function handleAdminApiFor(deps: AdminApiDeps, method: string, path
     return true;
   }
   if (path === '/admin/api/usage' || path.startsWith('/admin/api/usage/')) {
-    return handleAdminUsageApiFor(configStore.usage ?? null, method, path, req, res, principal);
+    return handleAdminUsageApiFor(configStore.usage ?? null, method, path, req, res, principal, async (name, model) => {
+      const ref = await resolveLlmCredential(name, deps.cfg, { get: id => configStore.credentials.get(id) });
+      return providerModelContext(ref?.credential ?? null, model);
+    });
   }
   if (deps.demoDataset && await handleAdminDemoDatasetApiFor(
     { demoDataset: deps.demoDataset, refreshTargets: deps.refreshTargets },

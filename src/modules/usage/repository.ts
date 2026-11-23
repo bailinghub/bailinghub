@@ -4,6 +4,7 @@ import { outputBudgetPolicy } from './output-budget';
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool, PoolConnection, RowDataPacket } from "mysql2/promise";
 import type { CreateUsageAccountInput, UsageAccount, UsageActor, UsageActorValidator, UsageService, UsageServiceConfig } from "./contracts";
+import { MAX_CONTEXT_WINDOW_TOKENS } from "./contracts";
 import { integer, assertKnownFields } from "./validation";
 import { usageAssert } from "./errors";
 import { UsageBackgroundWork } from './background-work';
@@ -492,7 +493,7 @@ export class UsageRepository {
     if (i.config.pricing !== undefined) validatePricingBinding(i.config.pricing);
     if (i.config.pricing) usageAssert(i.config.pricing.kind === (i.config.purpose === "tool" ? "image" : "chat"), "USAGE_INVALID_INPUT", "参考价格类型与服务用途不一致。", 400);
     if (i.config.contextWindowTokens !== undefined)
-      integer(i.config.contextWindowTokens, "contextWindowTokens", 1, 10000000);
+      integer(i.config.contextWindowTokens, "contextWindowTokens", 1, MAX_CONTEXT_WINDOW_TOKENS);
     if (i.config.inputModalities !== undefined)
       usageAssert(Array.isArray(i.config.inputModalities) && i.config.inputModalities.includes('text')
         && i.config.inputModalities.every(value => ['text', 'image'].includes(value))

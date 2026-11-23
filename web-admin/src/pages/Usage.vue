@@ -5,7 +5,6 @@
         <div class="page-title">
           <b>用户与用量</b>
           <UsageHelp title="用户与用量说明">
-            <p v-if="editing">编辑套餐时，左侧配置模型、倍率与额度，右侧预览用户看到的套餐。返回箭头回到套餐列表，保存后配置才会生效。</p>
             <p>套餐售价与周期额度分别填写：额度包一次获得与售价等额的消费额度；周期套餐每次重置为指定周期额度，不按售价自动平分。实际用量按绑定的 OpenRouter 参考价格计算，再乘套餐统一倍率。支付、开通与汇率由业务侧处理。</p>
             <p>计费模型选填：留空按调用模型标识精确匹配 OpenRouter，填写后优先使用指定标识；不改变模型调用地址或凭证。多个参考端点需明确选择。</p>
             <p>周期套餐按每周期额度估算，额度包按整包额度估算。每个模型均假设独占该额度，已计入统一倍率，不平均分配、不可相加。对话按输入∶输出 3∶1、未命中缓存估算，实际按真实用量结算；图片按报价档位展示。</p>
@@ -174,7 +173,7 @@
                 ><el-button v-if="canWrite" link type="danger" :disabled="blocked" @click="deletePlan(row)">删除</el-button></template
               ></el-table-column
             ><template #empty
-              >还没有 用量套餐。新建套餐后，再为指定账户开通。</template
+              >暂无用量套餐</template
             ></el-table
           >
         </template>
@@ -234,15 +233,13 @@
                     更多选项 <span class="muted">开通状态</span>
                   </summary>
                   <div class="advanced-content">
-                    <el-form-item label="是否允许新开通"
-                      ><el-switch
+                    <el-form-item label="是否允许新开通">
+                      <template #label>是否允许新开通 <UsageHelp title="套餐更新何时生效"><p>暂停开通不影响已有账户。保存后的模型列表对已有账户立即生效。额度和有效期只用于后续开通。</p></UsageHelp></template>
+                      <el-switch
                         v-model="form.active"
                         active-text="允许开通"
                         inactive-text="暂停开通"
                     /></el-form-item>
-                    <p class="muted">
-                      暂停开通不影响已有账户。模型列表更新即时生效，额度与有效期配置只用于以后开通。
-                    </p>
                   </div>
                 </details>
               </section>
@@ -254,9 +251,7 @@
                 show-icon
               />
               <div class="form-footer">
-                <span class="muted"
-                  >保存模型列表后，已有账户刷新即可看到；新账户仍需开通套餐。</span
-                ><el-button
+                <el-button
                   type="primary"
                   native-type="submit"
                   :loading="saving"
@@ -266,7 +261,7 @@
               </div>
             </el-form>
             <aside class="preview panel">
-              <div class="preview-eyebrow">用户侧说明预览</div>
+              <div class="preview-eyebrow">用户侧说明预览 <UsageHelp title="套餐扣费规则"><p>所有对话模型与工具共用一份额度，按参考费用乘套餐倍率扣除。用量可能延迟更新，产生少量超额。额度不足时停止新请求，已接纳的回复会完成。</p></UsageHelp></div>
               <h3>{{ form.label || "未命名套餐" }}</h3>
               <p class="muted">
                 {{ form.mode === "periodic" ? "本期剩余" : "可用积分" }}
@@ -308,13 +303,8 @@
                   >
                 </div>
               </div>
-              <ul>
-                <li>按参考费用乘套餐统一倍率扣除。</li>
-                <li>所有对话模型与工具共用一份额度。</li>
-                <li>当前模型回复完成后，额度不足再停止新请求。</li>
-              </ul>
               <p class="preview-note">
-                用量可能稍晚更新，允许少量超出。{{
+                {{
                   form.mode === "periodic"
                     ? "本期剩余额度不累积到下一期。"
                     : "未用积分在套餐有效期内可用。"
@@ -402,13 +392,7 @@
           ><div class="section-heading">
             <div>
               <h2>{{ summary.grant?.label || "尚未开通套餐" }}</h2>
-              <p>
-                {{
-                  summary.grant
-                    ? grantStatus(summary)
-                    : "开通后即可使用套餐内模型。"
-                }}
-              </p>
+              <p v-if="summary.grant">{{ grantStatus(summary) }}</p>
             </div>
             <div class="actions">
               <el-button @click="loadDetail">刷新用量</el-button
@@ -429,7 +413,7 @@
             :closable="false"
             :title="
               accountModelIds.length
-                ? '可用模型跟随套餐更新，共享本账户的剩余额度。'
+                ? `当前可用模型和工具：${accountModelIds.length} 个`
                 : '该套餐暂无可用模型或工具；原额度、重置和到期时间保持不变。'
             "
             :description="`所属套餐：${summary.plan?.label || summary.grant.label} · ${summary.grant.planId}。当前模型：${accountModelIds.map(serviceLabel).join('、') || '暂无可用模型或工具'}。`"
@@ -494,8 +478,7 @@
           <section class="operator-accounting">
             <div class="section-heading">
               <div>
-                <h3>运营计量</h3>
-                <p>美元消耗与供应商原始用量分别记录。</p>
+                <h3>运营计量 <UsageHelp title="运营计量口径"><p>美元消耗与供应商原始用量分别记录。收到用量后会更新待计量请求。</p></UsageHelp></h3>
               </div>
             </div>
             <template v-if="summary.grant">
@@ -517,7 +500,7 @@
                 <div>
                   <span>待计量请求</span
                   ><strong>{{ number(summary.pendingRequests) }}</strong
-                  ><small>用量到账后更新</small>
+                  ><small>笔</small>
                 </div>
               </div>
 
@@ -564,8 +547,7 @@
             >
             <div class="section-heading">
               <div>
-                <h3>最近的模型请求</h3>
-                <p>只读取用量和原请求状态，不重新执行模型或业务操作。</p>
+                <h3>最近的模型请求 <UsageHelp title="查看原请求"><p>这里只读取用量和原请求的状态，不重新执行模型或业务操作。</p></UsageHelp></h3>
               </div>
             </div>
             <el-alert v-if="!billingReady" title="原请求计量明细在配套计费内核更新后可查看。当前套餐余额与有效期保持不变。" type="info" :closable="false" />
@@ -802,6 +784,19 @@
           </el-form-item>
         </div>
         <el-form-item label="服务用途"><el-radio-group v-model="serviceForm.purpose" @change="changePurpose"><el-radio-button value="chat">对话模型</el-radio-button><el-radio-button value="tool">模型工具</el-radio-button></el-radio-group></el-form-item>
+        <el-form-item v-if="serviceForm.purpose === 'chat'">
+          <template #label>上下文窗口（tokens）<UsageHelp title="上下文窗口">
+            <p>客户端根据这个输入与输出的合计窗口压缩会话。按实际调用的凭证和模型查询，可以为当前服务设置更小的值。</p>
+            <p v-if="contextMetadata?.source_url"><a :href="contextMetadata.source_url" target="_blank" rel="noopener noreferrer">查看供应商规格</a></p>
+          </UsageHelp></template>
+          <div class="context-field">
+            <el-input-number v-model="contextWindow" data-testid="context-window" :min="1" :max="10000000" :precision="0" :controls="false" placeholder="自动获取或填写" />
+            <span v-if="serviceForm.credential && serviceForm.model" class="muted" data-testid="context-window-status" role="status">
+              {{ contextStatus }}
+              <el-button v-if="contextLookupFailed" link @click="loadContextWindow">重试</el-button>
+            </span>
+          </div>
+        </el-form-item>
         <div v-if="serviceForm.purpose === 'chat' || serviceForm.tool.capability === 'image_generation'" class="panel form-section">
           <el-form-item label="计费模型（选填）"><el-select v-model="serviceForm.referenceModel" filterable allow-create clearable default-first-option :loading="pricingLoading" :placeholder="serviceForm.model ? `留空使用 ${serviceForm.model}` : '留空使用调用模型标识'" @change="changeReferenceModel"><el-option v-for="m in priceModels" :key="m.id" :value="m.id" :label="`${m.label} · ${m.id}`"/></el-select></el-form-item>
           <div class="reference-match"><span>价格匹配：{{ effectiveReferenceModel || '请先选择调用模型' }}</span><el-button link type="primary" :loading="endpointsLoading" :disabled="!effectiveReferenceModel" @click="loadPriceEndpoints(true)">同步参考价格</el-button></div>
@@ -854,13 +849,7 @@
                 </el-form-item>
               </template>
             </template>
-            <el-form-item
-              ><template #label>上下文窗口 <UsageHelp title="上下文窗口"><p>填写模型支持的上下文 Token 数，0 表示未登记。</p></UsageHelp></template
-              ><el-input-number
-                v-model="serviceForm.contextWindowTokens"
-                :min="0"
-                :max="10000000" /></el-form-item
-            ><el-form-item label="模型输入能力"
+            <el-form-item label="模型输入能力"
               ><el-select v-model="serviceForm.modalities"
                 ><el-option value="unknown" label="未登记" /><el-option
                   value="text"
@@ -1654,12 +1643,57 @@ const serviceDefaults = () => ({
   providerScope: "",
   active: true,
   ...newBudgetForm(),
-  contextWindowTokens: 0,
   modalities: "unknown",
   timeoutSeconds: 120,
   maxInputBytes: 8388608,
 });
 const serviceForm = reactive(serviceDefaults());
+let openedService: Service | undefined;
+interface ContextMetadata { context_window_tokens: number | null; source_url: string | null }
+const contextMetadata = ref<ContextMetadata>();
+const contextOverride = ref<number>();
+const contextLoading = ref(false);
+const contextLookupFailed = ref(false);
+let contextQuery = 0;
+function validWindow(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 10000000;
+}
+const registeredWindow = computed(() => {
+  // A locally registered number is a suggestion only when other services on this exact route agree.
+  const values = new Set(services.value
+    .filter(s => (s.config.purpose ?? 'chat') === 'chat' && s.config.credential === serviceForm.credential
+      && s.config.model === serviceForm.model && !(serviceRevision.value && s.id === serviceForm.id))
+    .map(s => s.config.contextWindowTokens).filter(validWindow));
+  return values.size === 1 ? [...values][0] : undefined;
+});
+const contextWindow = computed({
+  get: () => contextOverride.value ?? contextMetadata.value?.context_window_tokens ?? registeredWindow.value,
+  set: (value: number | undefined) => { contextOverride.value = validWindow(value) ? value : undefined; },
+});
+const contextStatus = computed(() => {
+  if (contextLoading.value) return "正在查询规格…";
+  const limit = contextMetadata.value?.context_window_tokens;
+  if (limit) return `供应商上限 ${limit.toLocaleString('en-US')}`;
+  if (contextLookupFailed.value) return "未取得供应商规格";
+  if (!contextOverride.value && registeredWindow.value) return "参考同凭证、同模型的已登记值";
+  return "供应商窗口待核实";
+});
+async function loadContextWindow() {
+  const query = ++contextQuery;
+  const credential = serviceForm.credential.trim(), model = serviceForm.model.trim();
+  contextMetadata.value = undefined;
+  contextLookupFailed.value = false;
+  contextLoading.value = serviceOpen.value && serviceForm.purpose === 'chat' && !!credential && !!model;
+  if (!contextLoading.value) return;
+  try {
+    const result = await api<ContextMetadata>(`${base}/model-context?${new URLSearchParams({credential, model})}`);
+    if (query === contextQuery && validWindow(result.context_window_tokens)) contextMetadata.value = result;
+  } catch {
+    if (query === contextQuery) contextLookupFailed.value = true;
+  } finally {
+    if (query === contextQuery) contextLoading.value = false;
+  }
+}
 const priceModels = ref<PriceModel[]>([]), priceEndpoints = ref<PriceEndpoint[]>([]);
 const pricingLoading = ref(false), endpointsLoading = ref(false), pricingError = ref(''), priceFetchedAt = ref(0), pricingStale = ref(false);
 let modelPriceSequence = 0, endpointPriceSequence = 0;
@@ -1695,6 +1729,8 @@ async function loadPriceEndpoints(sync = false) {
   finally {if(sequence === endpointPriceSequence) endpointsLoading.value = false;}
 }
 function changeCallingModel() {
+  contextOverride.value = undefined;
+  void loadContextWindow();
   if (serviceForm.budgetMode === "explicit") clearVerifiedBudgetRoute(serviceForm);
   if (!serviceForm.referenceModel.trim()) changeReferenceModel();
 }
@@ -1703,7 +1739,15 @@ function changeOutputParameter() {
   if (serviceForm.outputTokenParameter === "max_completion_tokens" && serviceForm.outputBudgetScope === "final_answer") serviceForm.outputBudgetScope = "";
 }
 function changeReferenceModel() {serviceForm.referenceEndpoint = ''; void loadPriceEndpoints();}
-function changePurpose() {serviceForm.pricingKind = serviceForm.purpose === 'chat' ? 'chat':'image'; serviceForm.referenceModel = ''; serviceForm.referenceEndpoint = ''; void loadPriceModels(); void loadPriceEndpoints();}
+function changePurpose() {
+  contextOverride.value = undefined;
+  void loadContextWindow();
+  serviceForm.pricingKind = serviceForm.purpose === 'chat' ? 'chat' : 'image';
+  serviceForm.referenceModel = '';
+  serviceForm.referenceEndpoint = '';
+  void loadPriceModels();
+  void loadPriceEndpoints();
+}
 function changeToolCapability() {const kind = serviceForm.tool.capability; if(kind !== 'image_generation') {serviceForm.tool.adapter = 'pending';serviceForm.referenceModel = '';serviceForm.referenceEndpoint = '';void loadPriceEndpoints();} serviceForm.tool.outputs = [kind === 'video_generation' ? 'video':kind === 'speech_generation'?'audio':'image'];}
 const serviceCredentials = ref<ServiceCredential[]>([]),
   credentialsLoading = ref(false),
@@ -1817,6 +1861,8 @@ function openReferencePlan(id: string) {
   openPlan(plan);
 }
 function openService(service?: Service) {
+  openedService = service;
+  contextOverride.value = service?.config.contextWindowTokens || undefined;
   serviceRevision.value = service?.revision || 0;
   Object.assign(
     serviceForm,
@@ -1835,7 +1881,6 @@ function openService(service?: Service) {
           providerScope: service.config.providerScope,
           active: service.state === "active",
           ...readBudgetForm(service.config),
-          contextWindowTokens: service.config.contextWindowTokens || 0,
           modalities: service.config.inputModalities
             ? service.config.inputModalities.includes("image")
               ? "text_image"
@@ -1848,6 +1893,7 @@ function openService(service?: Service) {
   );
   serviceError.value = "";
   serviceOpen.value = true;
+  void loadContextWindow();
   void loadServiceCredentials();
   void loadPriceModels();
   void loadPriceEndpoints();
@@ -1886,8 +1932,28 @@ async function saveService() {
       maxInputBytes: serviceForm.maxInputBytes,
       timeoutMs: serviceForm.timeoutSeconds * 1000,
     };
-    if (serviceForm.contextWindowTokens > 0)
-      config.contextWindowTokens = serviceForm.contextWindowTokens;
+    if (serviceForm.purpose === 'chat') {
+      if (contextLoading.value) throw new Error('正在查询上下文窗口，请稍后保存。');
+      const window = contextWindow.value;
+      const limit = contextMetadata.value?.context_window_tokens;
+      if (limit && window && window > limit)
+        throw new Error(`上下文窗口超过供应商上限 ${limit.toLocaleString('en-US')} tokens。`);
+      const legacyUnknown = openedService?.state === 'active' && (openedService.config.purpose ?? 'chat') === 'chat'
+        && openedService.config.credential === config.credential && openedService.config.model === config.model
+        && !openedService.config.contextWindowTokens;
+      if (!window && serviceForm.active && !legacyUnknown)
+        throw new Error('请填写已核实的上下文窗口，或先停用服务再保存。');
+      const defaultOutput = config.defaultOutputTokens ?? config.maxOutputTokens;
+      const sameBudget = openedService?.state === 'active' && openedService.config.credential === config.credential
+        && openedService.config.model === config.model && openedService.config.contextWindowTokens === window
+        && (openedService.config.defaultOutputTokens ?? openedService.config.maxOutputTokens) === defaultOutput;
+      if (serviceForm.active && window && defaultOutput >= window && !sameBudget)
+        throw new Error('默认输出预算须小于上下文窗口，以便为输入保留空间。');
+      if (window) config.contextWindowTokens = window;
+    } else if (openedService?.config.purpose === 'tool' && openedService.config.credential === config.credential
+      && openedService.config.model === config.model && openedService.config.contextWindowTokens) {
+      config.contextWindowTokens = openedService.config.contextWindowTokens;
+    }
     if (serviceForm.modalities !== "unknown")
       config.inputModalities =
         serviceForm.modalities === "text_image" ? ["text", "image"] : ["text"];
@@ -2321,24 +2387,6 @@ code {
   gap: 7px;
   margin-top: 10px;
 }
-.preview ul {
-  list-style: none;
-  padding: 18px 0 0;
-  margin: 20px 0 0;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-.preview li {
-  position: relative;
-  padding: 0 0 12px 18px;
-  font-size: 12px;
-  line-height: 1.8;
-}
-.preview li::before {
-  content: "✓";
-  position: absolute;
-  left: 0;
-  color: var(--el-color-primary);
-}
 .preview-note {
   font-size: 11px;
   line-height: 1.8;
@@ -2346,6 +2394,7 @@ code {
   margin: 6px 0 0;
 }
 .form-footer {
+  justify-content: flex-end;
   padding: 5px 0 12px;
 }
 .pending {
@@ -2433,6 +2482,7 @@ code {
 .usage-config-drawer .form-grid {
   grid-template-columns: minmax(0, 1fr);
 }
+.context-field { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
 .billing-notice {
   display: flex;
   align-items: center;

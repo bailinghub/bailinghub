@@ -86,12 +86,12 @@
         <el-card shadow="never" class="block" v-loading="dsLoading">
           <template #header>
             <div class="card-head">
-              <span><b>数据源</b> <HelpTip title="数据源是什么"><p>中枢<b>定时拉业务库</b>，自动同步成文档。</p></HelpTip></span>
+              <span><b>数据源</b> <HelpTip title="数据源是什么"><p>中枢定时从业务库拉取数据并同步为文档。业务系统也可以使用入库 API 主动推送，详见开发文档。</p></HelpTip></span>
               <el-button v-if="s.can('kb:write')" type="primary" plain @click="openDsForm()">+ 添加数据源</el-button>
             </div>
           </template>
           <el-alert v-if="dsError" :title="dsError" type="error" :closable="false" show-icon><el-button link @click="loadDs">重试</el-button></el-alert>
-          <el-empty v-else-if="!dsLoading && !dsList.length" description="暂无数据源——业务库内容也可由业务系统主动推送（见开发文档）" :image-size="50" />
+          <el-empty v-else-if="!dsLoading && !dsList.length" description="暂无数据源" :image-size="50" />
           <el-table v-else-if="dsList.length" :data="dsList">
             <el-table-column label="数据源" min-width="260" show-overflow-tooltip>
               <template #default="{ row }">
@@ -310,7 +310,7 @@
           <el-input v-model="dsForm.title_field" placeholder="标题字段，如 title" style="flex: 1" class="mono" />
         </div>
         <el-input v-model="dsForm.content_template" type="textarea" :rows="4" class="mono" style="margin-top: 8px"
-          placeholder="${content}&#10;&#10;（可混排，如：## 适用范围&#10;${scope}）" />
+          placeholder="${content}" />
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="调度" name="schedule">
@@ -325,7 +325,7 @@
       </el-tabs>
     </el-form>
     <div v-if="dsPreview" class="ds-preview">
-      <div class="muted" style="margin-bottom: 6px">预览（前 3 行渲染效果，确认后再保存）：</div>
+      <div class="muted" style="margin-bottom: 6px">预览（前 3 行）</div>
       <div v-for="(d, i) in dsPreview" :key="i" class="hit">
         <div class="hit-head"><code class="srckey">{{ d.source_key }}</code><b style="font-size:12px">{{ d.title }}</b></div>
         <pre class="hit-content">{{ d.content }}</pre>

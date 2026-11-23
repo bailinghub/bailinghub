@@ -1,6 +1,6 @@
 <template>
-  <el-container class="shell" :class="{ 'token-console': route.path === '/usage' || route.path === '/usage-access', 'mobile-nav-open': mobileNavOpen }">
-    <button v-if="mobileNavOpen && (route.path === '/usage' || route.path === '/usage-access')" class="mobile-nav-shade" aria-label="关闭导航" @click="mobileNavOpen = false" />
+  <el-container class="shell" :class="{ 'compact-navigation': compactNavigation, 'task-console': route.path === '/runs', 'mobile-nav-open': mobileNavOpen }">
+    <button v-if="mobileNavOpen && compactNavigation" class="mobile-nav-shade" aria-label="关闭导航" @click="mobileNavOpen = false" />
     <el-aside width="220px" class="aside">
       <BrandLockup class="brand" />
       <el-menu ref="menuRef" :default-active="activeMenuPath" :default-openeds="defaultOpeneds" router class="menu" @open="rememberGroupOpen" @close="rememberGroupClose">
@@ -22,7 +22,7 @@
 
     <el-container>
       <el-header class="topbar" height="52px">
-        <el-button v-if="route.path === '/usage' || route.path === '/usage-access'" class="mobile-nav-toggle" text :aria-expanded="mobileNavOpen" @click="mobileNavOpen = !mobileNavOpen">菜单</el-button>
+        <el-button v-if="compactNavigation" class="mobile-nav-toggle" text :aria-expanded="mobileNavOpen" @click="mobileNavOpen = !mobileNavOpen">菜单</el-button>
         <span class="page-title">{{ route.meta.title }}</span>
         <span class="spacer" />
         <span class="health" :class="{ bad: healthy === false, pending: healthy === null }" title="仅表示服务连接状态；运行就绪情况请查看系统状态">{{ healthy === null ? '连接检查中' : healthy ? '服务在线' : '服务连接异常' }}</span>
@@ -85,6 +85,7 @@ import BrandLockup from '../components/BrandLockup.vue';
 
 const s = useMe();
 const route = useRoute();
+const compactNavigation = computed(() => ['/runs', '/usage', '/usage-access'].includes(route.path));
 const mobileNavOpen = ref(false);
 watch(() => route.path, () => { mobileNavOpen.value = false; });
 const router = useRouter();
@@ -225,12 +226,10 @@ async function onCmd(cmd: string): Promise<void> {
   font-weight: 700;
   color: var(--el-text-color-primary);
   background: transparent;
-  border-left: 3px solid transparent;
 }
 .menu :deep(.primary-item.is-active) {
   background: rgba(63, 185, 80, .18);
   color: var(--el-color-primary);
-  border-left-color: rgba(63, 185, 80, .78);
 }
 .menu :deep(.menu-group) { margin: 0 0 14px; }
 .menu :deep(.el-sub-menu__title) {
@@ -242,7 +241,6 @@ async function onCmd(cmd: string): Promise<void> {
   letter-spacing: .02em;
   color: var(--el-text-color-placeholder);
   background: transparent;
-  border-left: 3px solid transparent;
 }
 .menu :deep(.el-sub-menu__title:hover) {
   background: transparent;
@@ -264,7 +262,6 @@ async function onCmd(cmd: string): Promise<void> {
   padding-left: 20px !important;
   font-size: 14px;
   color: var(--el-text-color-secondary);
-  border-left: 3px solid transparent;
 }
 .menu :deep(.el-menu-item:hover),
 .menu :deep(.el-menu-item.is-active) {
@@ -273,7 +270,6 @@ async function onCmd(cmd: string): Promise<void> {
 }
 .menu :deep(.el-menu-item.is-active) {
   font-weight: 650;
-  border-left-color: rgba(63, 185, 80, .78);
 }
 .menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title) {
   color: var(--el-text-color-secondary);
@@ -314,14 +310,16 @@ async function onCmd(cmd: string): Promise<void> {
 .main { width: 100%; padding: 24px 28px; }
 .mobile-nav-toggle,.mobile-nav-shade { display: none; }
 @media(max-width:600px) {
-  .token-console > .aside { display:none; position:fixed; inset:0 auto 0 0; z-index:2201; }
-  .token-console.mobile-nav-open > .aside { display:flex; }
-  .token-console > .el-container { min-width:0; }
-  .token-console .main { padding:20px 16px; }
-  .token-console .topbar { gap:8px; padding:0 12px; }
-  .token-console .topbar .health,.token-console .topbar .top-action { display:none; }
-  .token-console .topbar .user { max-width:110px; overflow:hidden; white-space:nowrap; }
-  .token-console .mobile-nav-toggle { display:inline-flex; padding:0; }
-  .token-console .mobile-nav-shade { display:block; position:fixed; inset:0; z-index:2200; border:0; background:rgba(0,0,0,.5); }
+  .compact-navigation > .aside { display:none; position:fixed; inset:0 auto 0 0; z-index:2201; }
+  .compact-navigation.mobile-nav-open > .aside { display:flex; }
+  .compact-navigation > .el-container { min-width:0; }
+  .compact-navigation .main { padding:20px 16px; }
+  .compact-navigation .topbar { gap:8px; padding:0 12px; }
+  .compact-navigation .topbar .health { display:none; }
+  .compact-navigation:not(.task-console) .topbar .top-action { display:none; }
+  .task-console .topbar .top-action { font-size:12px; white-space:nowrap; }
+  .compact-navigation .topbar .user { max-width:110px; overflow:hidden; white-space:nowrap; }
+  .compact-navigation .mobile-nav-toggle { display:inline-flex; padding:0; }
+  .compact-navigation .mobile-nav-shade { display:block; position:fixed; inset:0; z-index:2200; border:0; background:rgba(0,0,0,.5); }
 }
 </style>

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
+import { CHANNEL_DELIVERY_MESSAGE_SQL } from './conversation-delivery-message';
 import { dt, rowClient, rowRoute } from '../../core/config/config-codec';
 import type { AgentSession, Client, Route } from '../../core/contracts/types';
 import {
-  assertAuditMemberActive, auditError, auditHash, auditIdentityHash,
+  assertAuditMemberActive, auditError, auditHash, auditIdentityHash, auditUuid, ConversationAuditError,
   CONVERSATION_AUDIT_MAX_BYTES, CONVERSATION_AUDIT_MAX_EVENTS,
   type CreateConversationAuditInput, type ConversationAuditEventInput,
   type CreateCrossBindingConversationAuditInput,
@@ -10,6 +11,22 @@ import {
 
 type Auth = { session: AgentSession; client: Client };
 type Row = Record<string, any>;
+export const ADMIN_CONVERSATION_SOURCES = ['all', 'client', 'web', 'wecom', 'delivery', 'other'] as const;
+export type AdminConversationSource = (typeof ADMIN_CONVERSATION_SOURCES)[number];
+type FeedCursor = { at: Date; kind: 'audit' | 'thread'; id: number | string; position: number };
+
+function readFeedCursor(raw: string, source: AdminConversationSource): FeedCursor {
+  const parts = raw.split('|');
+  const [issuedFor, time, kind, id, position] = parts;
+  const at = new Date(time ?? '');
+  if (parts.length !== 5 || issuedFor !== source || !time || !Number.isFinite(at.getTime()) ||
+      at.toISOString() !== time || !position || !/^\d+$/.test(position) || !Number.isSafeInteger(Number(position)) ||
+      !id || (kind !== 'audit' && (kind !== 'thread' || !/^[1-9]\d*$/.test(id) || !Number.isSafeInteger(Number(id))))) {
+    throw new ConversationAuditError(400, 'invalid_request', 'Invalid conversation feed cursor.');
+  }
+  return { at, kind, id: kind === 'audit' ? auditUuid(id) : Number(id), position: Number(position) };
+}
+
 const SESSION_COLUMNS = 'session_id,client_app_id,device_label,principal_json,on_behalf_of,allowed_routes,created_at,access_expires_at,refresh_expires_at,revoked_at';
 
 function json(value: unknown): any {
@@ -37,6 +54,18 @@ function head(row: Row): Row {
     last_sequence: Number(row.last_sequence), message_count: Number(row.message_count), turn_count: Number(row.turn_count),
     last_turn_status: row.last_turn_status ?? null, created_at: iso(row.created_at), updated_at: iso(row.updated_at),
   };
+}
+
+// Admin-only projection. The primary key (conversation_id, sequence) scopes the
+// lookup to this archive and orders it in the same sequence as the transcript.
+const ADMIN_HEAD_COLUMNS = `a.*, (
+  SELECT LEFT(e.content, 96) FROM bz_agent_conversation_events e
+  WHERE e.conversation_id = a.conversation_id AND e.kind = 'user_message'
+  ORDER BY e.sequence LIMIT 1
+) AS first_user_preview`;
+
+function adminHead(row: Row): Row {
+  return { ...head(row), first_user_preview: row.first_user_preview ?? null };
 }
 
 function eventView(row: Row): Row {
@@ -324,28 +353,132 @@ export class AgentConversationAuditRepository {
   async listForAdmin(limit = 50, offset = 0): Promise<Row> {
     const n = Math.min(Math.max(Math.floor(limit) || 50, 1), 100);
     const off = Math.max(Math.floor(offset) || 0, 0);
-    const [rows] = await this.pool.query('SELECT * FROM bz_agent_conversation_audits ORDER BY updated_at DESC,conversation_id DESC LIMIT ? OFFSET ?', [n + 1, off]);
-    const items = (rows as Row[]).slice(0, n).map(head);
+    const [rows] = await this.pool.query(`SELECT ${ADMIN_HEAD_COLUMNS} FROM (
+      SELECT conversation_id, updated_at FROM bz_agent_conversation_audits
+      ORDER BY updated_at DESC, conversation_id DESC LIMIT ? OFFSET ?
+    ) page JOIN bz_agent_conversation_audits a ON a.conversation_id = page.conversation_id
+    ORDER BY page.updated_at DESC, page.conversation_id DESC`, [n + 1, off]);
+    const items = (rows as Row[]).slice(0, n).map(adminHead);
     return { items, has_more: rows.length > n, next_offset: rows.length > n ? off + n : null };
   }
 
-  async detailForAdmin(conversationId: string, afterSequence = 0, limit = 100): Promise<Row | null> {
-    const [rows] = await this.pool.query('SELECT * FROM bz_agent_conversation_audits WHERE conversation_id=?', [conversationId]);
+  /** Read-only union of client archives, independent inbound threads and delivery-only threads. */
+  async listFeedForAdmin(source: AdminConversationSource, limit = 50, offset = 0, after?: string): Promise<Row> {
+    const n = Math.min(Math.max(Math.floor(limit) || 50, 1), 100);
+    const off = Math.max(Math.floor(offset) || 0, 0);
+    const cursor = after === undefined ? null : readFeedCursor(after, source);
+    if (cursor && off) throw new ConversationAuditError(400, 'invalid_request', 'Choose cursor or offset pagination.');
+    const candidateLimit = Math.min(Number.MAX_SAFE_INTEGER, off + n + 1);
+    // At identical times archives precede threads; within each kind IDs descend.
+    let archiveWindow = '', threadWindow = '';
+    const archiveArgs: unknown[] = [], threadArgs: unknown[] = [];
+    if (cursor?.kind === 'audit') {
+      archiveWindow = ' AND (a.updated_at, a.conversation_id) < (?, ?)';
+      archiveArgs.push(cursor.at, cursor.id);
+      threadWindow = ' AND t.last_active_at <= ?';
+      threadArgs.push(cursor.at);
+    } else if (cursor) {
+      archiveWindow = ' AND a.updated_at < ?';
+      archiveArgs.push(cursor.at);
+      threadWindow = ' AND (t.last_active_at, t.thread_id) < (?, ?)';
+      threadArgs.push(cursor.at, cursor.id);
+    }
+    // Thread identity is not a substitute for a run link. A thread can contain a
+    // mixture of archived and unarchived runs. Keep it if any incoming message
+    // remains independent; use that message for its title and channel.
+    const [rows] = await this.pool.query(`WITH candidates AS (
+      (SELECT 'audit' AS kind, 'client' AS source, a.conversation_id, NULL AS thread_id,
+              NULL AS first_message_id, a.updated_at
+         FROM bz_agent_conversation_audits a WHERE ? IN ('all','client')${archiveWindow}
+         ORDER BY a.updated_at DESC, a.conversation_id DESC LIMIT ?)
+      UNION ALL
+      (SELECT 'thread' AS kind, CASE
+                WHEN first_message.channel LIKE 'agent:%' THEN 'client'
+                WHEN first_message.channel LIKE 'chat:%' THEN 'web'
+                WHEN first_message.channel LIKE 'wecom:%' THEN 'wecom'
+                ELSE 'other' END AS source,
+              NULL AS conversation_id, t.thread_id, first_message.id AS first_message_id, t.last_active_at AS updated_at
+         FROM bz_threads t JOIN bz_messages first_message ON first_message.id=(
+           SELECT m.id FROM bz_messages m FORCE INDEX (idx_thread)
+            WHERE m.thread_id=t.thread_id AND m.direction='in'
+              AND (m.agent_run_id IS NULL OR NOT EXISTS (SELECT 1 FROM bz_agent_conversation_events e
+                WHERE e.run_id=m.agent_run_id AND e.thread_id=m.thread_id AND e.kind='run_link'))
+            ORDER BY m.id LIMIT 1)
+        WHERE ? <> 'delivery'${threadWindow}
+         HAVING ?='all' OR source=?
+         ORDER BY t.last_active_at DESC, t.thread_id DESC LIMIT ?)
+      UNION ALL
+      (SELECT 'thread' AS kind, 'delivery' AS source, NULL AS conversation_id, t.thread_id,
+              (SELECT m.id FROM bz_messages m FORCE INDEX (idx_thread)
+                WHERE m.thread_id=t.thread_id AND ${CHANNEL_DELIVERY_MESSAGE_SQL}
+                ORDER BY m.id LIMIT 1) AS first_message_id, t.last_active_at AS updated_at
+         FROM bz_threads t
+        WHERE ? IN ('all','delivery')${threadWindow}
+          AND NOT EXISTS (SELECT 1 FROM bz_messages inbound WHERE inbound.thread_id=t.thread_id AND inbound.direction='in')
+       HAVING first_message_id IS NOT NULL
+        ORDER BY t.last_active_at DESC, t.thread_id DESC LIMIT ?)
+    ), page AS (
+      SELECT * FROM candidates ORDER BY updated_at DESC, kind ASC, conversation_id DESC, thread_id DESC LIMIT ? OFFSET ?
+    )
+    SELECT p.kind, p.source, p.conversation_id, p.thread_id, p.updated_at,
+           CASE WHEN p.kind='audit' THEN (
+             SELECT LEFT(e.content,96) FROM bz_agent_conversation_events e
+              WHERE e.conversation_id=p.conversation_id AND e.kind='user_message' ORDER BY e.sequence LIMIT 1
+           ) ELSE LEFT(m.content,96) END AS title,
+           CASE WHEN p.source='delivery' THEN
+             CASE WHEN t.scope_key LIKE 'wecom:%:%' THEN SUBSTRING_INDEX(SUBSTRING(t.scope_key,7),':',1)
+                  ELSE '' END
+             ELSE COALESCE(a.client_app_id, ce.name, c.name, m.channel) END AS source_label,
+           COALESCE(a.route_key,t.route_key) AS route_key, COALESCE(a.message_count,t.message_count) AS message_count,
+           a.turn_count, a.last_turn_status, a.state, a.client_conversation_id,
+           COALESCE(a.client_app_id, c.app_id, IF(p.source='client', SUBSTRING(m.channel,7), NULL)) AS client_app_id
+      FROM page p
+      LEFT JOIN bz_agent_conversation_audits a ON a.conversation_id=p.conversation_id
+      LEFT JOIN bz_threads t ON t.thread_id=p.thread_id
+      LEFT JOIN bz_messages m ON m.id=p.first_message_id
+      LEFT JOIN bz_chat_entries ce ON p.source='web' AND ce.entry_key=SUBSTRING(m.channel,6)
+      LEFT JOIN bz_clients c ON p.kind='thread' AND p.source IN ('client','other')
+            AND c.app_id=IF(p.source='client', SUBSTRING(m.channel,7), m.channel)
+      ORDER BY p.updated_at DESC, p.kind ASC, p.conversation_id DESC, p.thread_id DESC`,
+    [source, ...archiveArgs, candidateLimit, source, ...threadArgs, source, source, candidateLimit,
+     source, ...threadArgs, candidateLimit, n + 1, off]);
+    const items: Row[] = (rows as Row[]).slice(0, n).map(row => ({
+      ...row, thread_id: row.thread_id == null ? null : Number(row.thread_id),
+      updated_at: iso(row.updated_at), message_count: Number(row.message_count),
+      turn_count: row.turn_count == null ? null : Number(row.turn_count),
+    }));
+    const last = items.at(-1);
+    const nextOffset = rows.length > n ? (cursor?.position ?? off) + n : null;
+    return { items, has_more: nextOffset !== null, next_offset: nextOffset,
+      next_cursor: nextOffset !== null && last
+        ? [source, last.updated_at, last.kind, last.conversation_id ?? last.thread_id, nextOffset].join('|') : null };
+  }
+
+  async detailForAdmin(conversationId: string, afterSequence = 0, limit = 100, beforeSequence?: number | null): Promise<Row | null> {
+    const [rows] = await this.pool.query(`SELECT ${ADMIN_HEAD_COLUMNS} FROM bz_agent_conversation_audits a WHERE a.conversation_id=?`, [conversationId]);
     if (!rows[0]) return null;
     const n = Math.min(Math.max(Math.floor(limit) || 100, 1), 200);
     const after = Math.max(Math.floor(afterSequence) || 0, 0);
     const [members] = await this.pool.query('SELECT * FROM bz_agent_conversation_members WHERE conversation_id=? ORDER BY session_id', [conversationId]);
-    const [rowsOfEvents] = await this.pool.query('SELECT * FROM bz_agent_conversation_events WHERE conversation_id=? AND sequence>? ORDER BY sequence LIMIT ?', [conversationId, after, n + 1]);
+    const backward = beforeSequence !== undefined;
+    const [rowsOfEvents] = backward
+      ? await this.pool.query('SELECT * FROM bz_agent_conversation_events WHERE conversation_id=? AND sequence<? ORDER BY sequence DESC LIMIT ?',
+        [conversationId, beforeSequence ?? Number(rows[0].last_sequence) + 1, n + 1])
+      : await this.pool.query('SELECT * FROM bz_agent_conversation_events WHERE conversation_id=? AND sequence>? ORDER BY sequence LIMIT ?', [conversationId, after, n + 1]);
+    const hasMore = rowsOfEvents.length > n;
     const events = (rowsOfEvents as Row[]).slice(0, n).map(eventView);
+    if (backward) events.reverse();
     return {
-      conversation: head(rows[0]), members: (members as Row[]).map((member) => ({
+      conversation: adminHead(rows[0]), members: (members as Row[]).map((member) => ({
         session_id: member.session_id, display_label: member.display_label, confirmed: Boolean(member.confirmed_at),
         ...(Number(rows[0].membership_version) === 2 ? {
           client_app_id: member.client_app_id, client_name: member.client_name, route_key: member.route_key,
         } : {}),
         ...(member.confirmed_at ? { principal: json(member.principal_json), on_behalf_of: member.on_behalf_of } : {}),
-      })), events, has_more: rowsOfEvents.length > n,
-      next_after_sequence: events.length ? events.at(-1)!.sequence : after,
+      })), events,
+      ...(backward
+        ? { has_earlier: hasMore, next_before_sequence: hasMore ? events[0]!.sequence : null }
+        : { has_more: hasMore, next_after_sequence: events.length ? events.at(-1)!.sequence : after }),
     };
   }
 

@@ -1,7 +1,14 @@
 import { dtAt, traceSeverityValue, traceStageValue } from '../../core/config/config-codec';
-import type { Job, TraceSeverity, TraceStage } from '../../core/contracts/types';
+import type { Job, JobStatus, TraceSeverity, TraceStage } from '../../core/contracts/types';
 import type { ControlPlaneOperationalMetricsSnapshot } from '../../core/observability/openmetrics';
 import { rowToJob } from '../../core/state/state-codec';
+
+export interface RecentJobFilters {
+  status?: JobStatus;
+  routeKey?: string;
+  period?: '24h' | '7d';
+  before?: { createdAt: number; jobId: string };
+}
 
 export interface JobAuditView {
   ts: string;
@@ -107,17 +114,38 @@ export class ObservabilityLedger {
   }
 
   async listRecentJobs(limit = 50, offset = 0): Promise<any[]> {
-    const n = Math.min(Math.max(Number(limit) || 50, 1), 200);
+    return this.listFilteredJobs(limit, offset, {});
+  }
+
+  async listFilteredJobs(limit: number, offset: number, filters: RecentJobFilters): Promise<any[]> {
+    const n = Math.min(Math.max(Math.floor(Number(limit) || 50), 1), 200);
     const off = Math.max(Math.floor(Number(offset) || 0), 0);
+    const where: string[] = [];
+    const params: (string | number)[] = [];
+    const routeKey = "JSON_UNQUOTE(JSON_EXTRACT(dispatch,'$.route_key'))";
+    if (filters.status) { where.push('status=?'); params.push(filters.status); }
+    if (filters.routeKey) { where.push(routeKey + '=?'); params.push(filters.routeKey); }
+    if (filters.period) {
+      where.push('created_at BETWEEN DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR) AND UTC_TIMESTAMP()');
+      params.push(filters.period === '24h' ? 24 : 168);
+    }
+    if (filters.before) {
+      const time = dtAt(filters.before.createdAt);
+      where.push('(created_at < ? OR (created_at = ? AND job_id < ?))');
+      params.push(time, time, filters.before.jobId);
+    }
     const [rows] = await this.pool.query(
       'SELECT job_id,request_id,status,target,profile,project,source,client_app_id,session_id,input_preview,' +
-        'JSON_UNQUOTE(JSON_EXTRACT(dispatch,"$.route_key")) AS route_key,' +
+        routeKey + ' AS route_key,' +
         'JSON_UNQUOTE(JSON_EXTRACT(dispatch,"$.route_name")) AS route_name,' +
         'JSON_UNQUOTE(JSON_EXTRACT(metadata,"$.visitor_uid")) AS visitor_uid,' +
         'JSON_UNQUOTE(JSON_EXTRACT(metadata,"$.thread_id")) AS thread_id,' +
         'JSON_UNQUOTE(JSON_EXTRACT(result,"$.report.severity")) AS severity,' +
+        "CASE WHEN status IN ('error','rejected') THEN error END AS error_preview," +
         'COALESCE(JSON_UNQUOTE(JSON_EXTRACT(result,"$.report.summary")), LEFT(JSON_UNQUOTE(JSON_EXTRACT(result,"$.text")),200)) AS summary,' +
-        `created_at,updated_at FROM bz_jobs ORDER BY created_at DESC LIMIT ${n} OFFSET ${off}`,
+        'created_at,updated_at FROM bz_jobs ' + (where.length ? 'WHERE ' + where.join(' AND ') : '') +
+        ' ORDER BY created_at DESC,job_id DESC LIMIT ? OFFSET ?',
+      [...params, n, filters.before ? 0 : off],
     );
     return rows as any[];
   }

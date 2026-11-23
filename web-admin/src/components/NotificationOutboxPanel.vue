@@ -1,6 +1,5 @@
 <template>
   <div class="notification-panel" v-loading="loading">
-    <p class="field-hint">查看已保存的通知与补发进度。重新发送只处理通知，原业务任务不会再次执行。</p>
     <div class="filters">
       <el-select v-model="kind" aria-label="通知类型" style="width:160px" @change="reset">
         <el-option v-for="item in kinds" :key="item.value" :value="item.value" :label="item.label" />
@@ -10,6 +9,10 @@
         <el-option v-for="(label, value) in statusLabels" :key="value" :value="value" :label="label" />
       </el-select>
       <el-button :loading="loading" @click="load">刷新通知</el-button>
+      <HelpTip title="通知状态与补发">
+        <p>「已处理」表示通知已交给执行器或已完成发送。收件方是否已读需要单独确认。</p>
+        <p>补发只处理这条通知。送达结果未知时，请先核对收件方，避免重复发送。</p>
+      </HelpTip>
     </div>
     <el-alert v-if="error" :title="error" type="warning" :closable="false" show-icon />
     <template v-else-if="data">
@@ -40,7 +43,6 @@
         </el-table-column>
       </el-table>
       <el-pagination v-model:current-page="page" :page-size="20" :total="data.total" layout="total, prev, pager, next" @current-change="persistFilters" />
-      <p class="field-hint">“通知已处理”包括交给通知执行器继续发送，不代表收件人已阅读。结果不明时，请先核对收件方；重新发送可能造成重复消息。</p>
     </template>
   </div>
 </template>
@@ -48,6 +50,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import HelpTip from './HelpTip.vue';
 import { ElMessage } from 'element-plus/es/components/message/index';
 import { ElMessageBox } from 'element-plus/es/components/message-box/index';
 import { api } from '../request';

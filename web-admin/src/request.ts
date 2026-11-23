@@ -2,6 +2,10 @@
 import { router } from './router';
 import { kernelFetch } from './runtime-path';
 
+export class ApiError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
+
 export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { ...(opts.headers as Record<string, string> | undefined) };
   if (opts.body && !headers['content-type']) headers['content-type'] = 'application/json';
@@ -12,7 +16,7 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
   }
   if (!r.ok) {
     const j = (await r.json().catch(() => ({}))) as { error?: string };
-    throw new Error(j.error || `HTTP ${r.status}`);
+    throw new ApiError(r.status, j.error || `HTTP ${r.status}`);
   }
   return r.json() as Promise<T>;
 }

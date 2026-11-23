@@ -9,7 +9,7 @@
     </template>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link :disabled="listLoading" @click="load">重新读取</el-button></el-alert>
     <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
-    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有凭证：llm 路由与知识库都需要先配一把">
+    <el-empty v-if="!listLoading && !listError && !list.length" description="暂无模型凭证">
       <el-button v-if="canWrite" type="primary" @click="openCreate">添加第一把</el-button>
     </el-empty>
     <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">

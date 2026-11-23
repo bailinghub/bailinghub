@@ -1,5 +1,5 @@
 import type { ResolvedLlmCredential } from '../../core/runtime/credential-resolver';
-import type { UsageServiceConfig } from './contracts';
+import { MAX_CONTEXT_WINDOW_TOKENS, type UsageServiceConfig } from './contracts';
 import { UsageError, usageAssert } from './errors';
 import { readProviderExchange } from './provider-stream';
 import { resolveOutputBudget } from './output-budget';
@@ -130,12 +130,30 @@ export function verifiedUsage(value: unknown): ProviderResult['usage'] {
   if (value.total_tokens !== undefined && (!tokenCount(value.total_tokens) || value.total_tokens !== Number(value.prompt_tokens) + Number(value.completion_tokens))) return undefined;
   return { inputTokens: Number(value.prompt_tokens), outputTokens: Number(value.completion_tokens) };
 }
+// TokenHub returns its pre-generation rejection as JSON, including for streaming requests.
+// Classify only at dispatch, where the actual destination and frozen service configuration are known.
+function tokenHubContextDiagnostic(endpoint: string, exchange: JsonObject, window: number | undefined) {
+  if (endpoint !== 'https://tokenhub.tencentmaas.com/v1/chat/completions' || exchange.status !== 400
+    || exchange.format !== 'json' || typeof exchange.body !== 'string') return;
+  let payload: unknown;
+  try { payload = JSON.parse(exchange.body); } catch { return; }
+  if (!object(payload) || !object(payload.error)
+    || (payload.error.code !== '400003' && payload.error.code !== 400003)) return;
+  return { code: 'CONTEXT_WINDOW_EXCEEDED', http_status: 400, provider_code: '400003',
+    ...(typeof window === 'number' && Number.isSafeInteger(window) && window > 0 && window <= MAX_CONTEXT_WINDOW_TOKENS
+      ? { context_window_tokens: window } : {}) };
+}
+
 /** Transport completion and model semantics are separate. The local adapter owns the latter. */
 export async function executeProvider(credential: ResolvedLlmCredential, config: UsageServiceConfig, body: JsonObject, fetcher: typeof fetch = fetch,
   onProvider?: (packet: JsonObject) => Promise<void>): Promise<ProviderResult> {
   const signal = AbortSignal.timeout(config.timeoutMs);
-  const response = await fetcher(providerUrl(credential, 'chat/completions'), { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json', authorization: `Bearer ${credential.api_key}` }, body: JSON.stringify(body), signal });
+  const endpoint = providerUrl(credential, 'chat/completions');
+  const response = await fetcher(endpoint, { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json', authorization: `Bearer ${credential.api_key}` }, body: JSON.stringify(body), signal });
   // HTTP error bodies are also returned to the local provider adapter. Do not
   // retry them or mistake a transport-complete error response for a missing body.
-  return readProviderExchange(response, onProvider, signal);
+  const result = await readProviderExchange(response, onProvider, signal);
+  const diagnostic = tokenHubContextDiagnostic(endpoint, result.response, config.contextWindowTokens);
+  if (diagnostic) result.response.diagnostic = diagnostic;
+  return result;
 }

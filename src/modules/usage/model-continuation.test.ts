@@ -107,3 +107,30 @@ test('transport uncertainty remains original-ID recovery and is not an automatic
   const repeated = await runModelRequest(h.deps, h.actor, original);
   assert.equal(repeated.result_state, 'unknown'); assert.equal(h.bodies.length, 1);
 });
+
+test('context rejection is recoverable with its dispatch-time window and does not replay the original operation', async () => {
+  const h = fixture(), original = h.input('context-rejection');
+  const service = (await h.deps.usage.getService('model'))!;
+  service.config.contextWindowTokens = 1048576;
+  h.deps.cfg.llmCredentials.synthetic.base_url = 'https://tokenhub.tencentmaas.com/v1';
+  let calls = 0;
+  const raw = '{"error":{"code":"400003","message":"synthetic input too long"}}';
+  h.deps.fetcher = async () => { calls++; return new Response(raw, { status: 400 }); };
+  const first = await runModelRequest(h.deps, h.actor, original);
+  const diagnostic = { code: 'CONTEXT_WINDOW_EXCEEDED', provider_code: '400003', http_status: 400, context_window_tokens: 1048576 };
+  assert.deepEqual(first.response?.diagnostic, diagnostic);
+  assert.equal(first.response?.body, raw);
+  assert.equal(first.result_state, 'complete');
+  assert.equal(first.billing_state, 'pending');
+  assert.equal(first.usage, null);
+  service.config.contextWindowTokens = 8192;
+  service.revision++;
+  h.deps.cfg.llmCredentials.synthetic.base_url = 'https://another.invalid/v1';
+  const saved = (await h.ledger.findRequest(h.actor, original.operation_id))!;
+  assert.deepEqual(h.ledger.view(saved).response?.diagnostic, diagnostic);
+  assert.deepEqual((await runModelRequest(h.deps, h.actor, original)).response, first.response);
+  assert.equal(calls, 1);
+  const expired = h.ledger.view(saved, saved.createdAt + 8 * 86400000);
+  assert.equal(expired.response, undefined);
+  assert.equal(expired.response_expired, true);
+});

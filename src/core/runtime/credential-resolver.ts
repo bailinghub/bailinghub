@@ -27,15 +27,15 @@ function usableDbCredential(c: Credential | null): ResolvedLlmCredential | null 
 export async function resolveLlmCredential(
   name: string,
   cfg: Pick<AppConfig, 'llmCredentials'>,
-  store?: CredentialStoreLike | null,
+  store?: (Pick<CredentialStoreLike, 'get'> & Partial<Pick<CredentialStoreLike, 'touch'>>) | null,
 ): Promise<ResolvedCredentialRef | null> {
   const credName = String(name ?? '').trim();
   if (!credName) return null;
-  const fileCred = cfg.llmCredentials[credName] as ResolvedLlmCredential | undefined;
+  const fileCred = Object.hasOwn(cfg.llmCredentials, credName) ? cfg.llmCredentials[credName] : undefined;
   if (fileCred) return { name: credName, source: 'config', credential: fileCred };
   const dbCred = usableDbCredential(store ? await store.get(credName).catch(() => null) : null);
   if (!dbCred) return null;
-  void store?.touch(credName).catch(() => { /* 观测字段 */ });
+  void store?.touch?.(credName).catch(() => { /* 观测字段 */ });
   return { name: credName, source: 'db', credential: dbCred };
 }
 

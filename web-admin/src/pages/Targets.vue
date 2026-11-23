@@ -27,7 +27,6 @@
               <el-tag v-if="row.stateless" size="small" effect="plain">无状态</el-tag>
               <el-tag v-if="row.needs_project" size="small" effect="plain" type="warning">需项目目录</el-tag>
             </div>
-            <span class="muted">{{ row.kind === 'inhub' ? '中枢进程内执行，无需执行器认领。' : '任务进入 DB 队列，由外部执行器长轮询认领。' }}</span>
           </div>
         </template>
       </el-table-column>
@@ -36,7 +35,6 @@
           <div class="target-stack">
             <template v-if="row.kind === 'inhub'">
               <span class="muted">中枢内置适配器</span>
-              <span class="muted">不依赖执行器在线状态</span>
             </template>
             <template v-else>
               <div class="tagline">

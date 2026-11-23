@@ -2,17 +2,15 @@
   <el-card shadow="never">
     <template #header>
       <div class="head"><b>聊天入口</b> <HelpTip title="聊天入口是什么">
-          <p>网页聊天组件的公开插座：建入口绑一条路由 → 拿一行 <code>script</code> 贴进任何网页；背后是 LLM 还是执行器智能体，入口无感。</p>
+          <p>将聊天入口绑定到一条路由，再把嵌入脚本加入业务网页。</p>
+          <p>“匿名预览”不会继承中枢后台登录状态。所有需主体的工具，包括只读查询和写操作，都不会向匿名访客开放。</p>
+          <p>业务身份票据由已登录业务系统的后端签发。可在「上手向导」运行 Smoke 验证内置演示链路。</p>
         </HelpTip>
         <el-button v-if="canWrite" type="primary" style="margin-left: auto" @click="openCreate">新建入口</el-button></div>
     </template>
-    <el-alert class="preview-boundary" type="info" show-icon :closable="false">
-      <template #title>“匿名预览”不会继承中枢后台登录状态，也不会自动携带业务身份票据。</template>
-      <p>所有标记为“需主体（subject.required）”的工具，包括只读查询和写操作，都不会向 Agent 暴露。业务身份应由已登录的业务系统后端签发；内置演示链路请在“上手向导”手动运行 Smoke。</p>
-    </el-alert>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link :disabled="listLoading" @click="load">重新读取</el-button></el-alert>
     <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
-    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有聊天入口：绑一条触发路由即可生成可嵌入的网页聊天组件">
+    <el-empty v-if="!listLoading && !listError && !list.length" description="暂无聊天入口">
       <el-button v-if="canWrite" type="primary" @click="openCreate">新建第一个</el-button>
     </el-empty>
     <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
@@ -239,21 +237,6 @@
 
   <!-- 嵌入代码 -->
   <el-dialog v-model="embedOpen" :title="'嵌入代码 · ' + embedRow?.name" width="820px" class="code-dialog">
-    <div class="code-notices compact">
-      <div class="code-notice info">
-        <b>entry_key 可公开</b>
-        <span>页面源码可见是预期行为；防滥用依靠 Origin 白名单、按 IP 限速和入口停用。</span>
-      </div>
-      <div class="code-notice warning">
-        <b>匿名访问边界</b>
-        <span>不带 <code>data-ticket</code> 时（包括控制台“匿名预览”），不会继承中枢后台登录状态。所有需主体工具，包括只读查询和写操作，都不会向 Agent 暴露。</span>
-      </div>
-      <div class="code-notice info" v-if="embedRow?.ticket_client">
-        <b>支持业务身份票据</b>
-        <span>仅当已登录业务系统的后端签发短票，并在业务页面输出 <code>data-ticket</code> 时，组件才携带可信业务身份。</span>
-      </div>
-    </div>
-
     <div v-if="embedRow" class="embed-entry-summary">
       <div>
         <span>入口</span>
@@ -266,12 +249,12 @@
         <em>{{ routeName(embedRow.route_key) }}</em>
       </div>
       <div>
-        <span>站点边界</span>
+        <span>站点边界 <HelpTip title="站点边界"><p><code>entry_key</code> 可公开。可通过 Origin 白名单、IP 限速和入口启停管理访问。</p></HelpTip></span>
         <b>{{ originSummary(embedRow) }}</b>
         <em>{{ embedRow.rate_limit_per_min }}/分/IP</em>
       </div>
       <div>
-        <span>访客身份</span>
+        <span>访客身份 <HelpTip title="访客身份"><p>匿名访问无法使用需主体工具。业务后端签发票据，并通过 <code>data-ticket</code> 传给组件后，访客才携带业务身份。</p></HelpTip></span>
         <b>{{ embedRow.ticket_client ? '支持业务身份票据' : '仅匿名访问' }}</b>
         <em>{{ embedRow.ticket_client || '未配置业务身份票据签发方' }}</em>
       </div>
@@ -281,10 +264,7 @@
       <el-tab-pane label="网页嵌入" name="script">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>页面组件代码</b>
-              <p>贴到任意页面的 <code>&lt;/body&gt;</code> 前，页面右下角会出现聊天气泡。</p>
-            </div>
+            <div><b>页面组件代码</b> <HelpTip title="页面组件代码"><p>将脚本放在网页的 <code>&lt;/body&gt;</code> 前。</p></HelpTip></div>
             <el-button type="primary" @click="copy(embedScript)">复制代码</el-button>
           </div>
           <pre class="snippet-code compact">{{ embedScript }}</pre>
@@ -294,10 +274,7 @@
       <el-tab-pane label="匿名预览链接" name="demo">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>在线匿名预览页</b>
-              <p>无需嵌入页面，仅验证聊天组件、公开问答和无需主体的工具；该页不携带业务身份。</p>
-            </div>
+            <div><b>在线匿名预览页</b> <HelpTip title="在线匿名预览页"><p>此页可以测试公开问答和无需主体的工具。</p></HelpTip></div>
             <el-button type="primary" @click="copy(demoUrl)">复制链接</el-button>
           </div>
           <pre class="snippet-code compact">{{ demoUrl }}</pre>
@@ -307,26 +284,17 @@
       <el-tab-pane label="接口直调" name="api">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>聊天接口示例</b>
-              <p>不用网页组件、自己做 UI 时按这个接口收发消息。</p>
-            </div>
+            <div><b>聊天接口示例</b> <HelpTip title="聊天接口示例"><p>自建 UI 可使用这些接口。查询结果使用 <code>/chat/&lt;入口&gt;/result/&lt;job_id&gt;</code>。</p></HelpTip></div>
             <el-button type="primary" @click="copy(curlText)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ curlText }}</pre>
-          <div class="snippet-notes">
-            <span>聊天任务结果只能走 <code>/chat/&lt;入口&gt;/result/&lt;job_id&gt;</code>，不能用接入方 token 调 <code>/jobs/&lt;id&gt;</code>。</span>
-          </div>
         </section>
       </el-tab-pane>
 
       <el-tab-pane v-if="embedRow?.ticket_client" label="业务身份票据" name="ticket">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>业务身份票据生成</b>
-              <p>业务后端在自己的用户登录态里执行，接入方 token 永不进入前端；任选一种语言实现同一签名算法。</p>
-            </div>
+            <div><b>业务身份票据生成</b> <HelpTip title="业务身份票据生成"><p>在业务后端按已登录用户签发票据，接入方 Token 仅保存在服务端。访客 UID 将通过 <code>metadata.visitor_uid</code> 传给业务工具。</p></HelpTip></div>
             <el-button type="primary" @click="copy(ticketCode)">复制代码</el-button>
           </div>
           <el-tabs v-model="ticketTab" class="code-subtabs">
@@ -335,11 +303,7 @@
             <el-tab-pane label="PHP" name="php" />
           </el-tabs>
           <pre class="snippet-code">{{ ticketCode }}</pre>
-          <div class="snippet-notes">
-            <span>带票据的访客会成为可信身份，uid 会进入 <code>metadata.visitor_uid</code> 并透传给业务工具。</span>
-            <span>Java、Go、.NET 也提供同等票据签发 helper，完整用法见官网 SDK 文档。</span>
-            <el-button link type="primary" @click="openDoc('/docs/sdk')">打开 SDK 文档</el-button>
-          </div>
+          <el-button link type="primary" @click="openDoc('/docs/sdk')">打开 SDK 文档</el-button>
         </section>
       </el-tab-pane>
     </el-tabs>
@@ -347,7 +311,7 @@
 
   <!-- 评价记录：包含有用/没用/文字反馈，供运营回看回答质量 -->
   <el-drawer v-model="ratingsOpen" :title="'评价记录 · ' + ratingsRow?.name" size="920px">
-    <el-empty v-if="!ratings.length" description="还没有评价：访客在组件里点「有用 / 没用 / 反馈」后在这里汇总" />
+    <el-empty v-if="!ratings.length" description="暂无访客评价" />
     <el-table v-else :data="ratings" size="small">
       <el-table-column label="评价" width="70">
         <template #default="{ row }">
@@ -401,7 +365,7 @@
       <span v-if="pageGuard.dirty.value" class="muted" style="margin-left:12px">有未保存修改</span>
     </el-form>
     <el-divider />
-    <el-empty v-if="!pageRules.length" description="还没有页面登记：上面加一条 URL 模式 → 页面说明" />
+    <el-empty v-if="!pageRules.length" description="暂无页面登记" />
     <el-table v-else :data="pageRules" size="small">
       <el-table-column label="URL 模式" min-width="150"><template #default="{ row }"><code class="mono">{{ row.url_pattern }}</code></template></el-table-column>
       <el-table-column label="页面" min-width="120"><template #default="{ row }"><b>{{ row.page_name || '-' }}</b><div class="muted mono">{{ row.page_key }}</div></template></el-table-column>
@@ -742,8 +706,6 @@ onMounted(load);
 
 <style scoped>
 .head { display: flex; align-items: center; gap: 10px; }
-.preview-boundary { margin-bottom: 14px; }
-.preview-boundary p { margin: 6px 0 0; line-height: 1.65; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .row2 { display: flex; gap: 12px; }
 .position-config {

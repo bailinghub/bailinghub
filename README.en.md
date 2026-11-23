@@ -29,13 +29,11 @@ You choose which business APIs become available. BailingHub connects the convers
   <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
 </picture>
 
-## v0.10.1: Preserve explicit false and low declarations
+## v0.11.0 · Cross-channel task tracing and model context windows
 
-Business-side SDK generators preserve explicit readonly, idempotency and risk values. Core gives explicit values precedence over the GET fallback. Unspecified fields remain omitted; non-readonly operations without risk still default to medium. PHP7/PHP8 packages gain per-file and actual-generator verification, with matching corrections in the other language generators.
+Find a conversation by channel, distinguish user and assistant messages, and follow the associated task to its execution trace. Filter dispatches by status, time and exact route. In model service settings, supported provider routes prefill the combined context window. Hosts can read that limit from the model catalog and recognize a confirmed oversized input from the final receipt.
 
-This patch is **Core 0.10.1**. ACC **1.0.6 / declaration version: 1**, MCP / Agent Client SDK **0.8.0** and DSH **0.8.0** remain unchanged. There is **no new SQL relative to 0.10.0**. Business owners should review regenerated declarations, especially explicit low write operations previously omitted and explicit false on GET. Approval, authentication and final business authority remain unchanged.
-
-[Release notes](docs/RELEASE_NOTES_v0.10.1.en.md) · [Upgrade guide](docs/UPGRADE_v0.10.1.en.md) · [Business integration](docs/INTEGRATION.en.md) · [Previous release](docs/RELEASE_NOTES_v0.10.0.en.md)
+[Release notes](docs/RELEASE_NOTES_v0.11.0.en.md) · [Upgrade guide](docs/UPGRADE_v0.11.0.en.md) · [Previous release](docs/RELEASE_NOTES_v0.10.1.en.md)
 
 ## Operate the System by Conversation
 
@@ -125,7 +123,7 @@ To explore before installing, use the [online experience](https://trial.bailingh
 To run the complete disposable loop locally:
 
 ```bash
-git clone --branch v0.10.1 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.11.0 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -214,7 +212,7 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
 - [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.
 - [English Documentation Map](docs/README.en.md) — the complete public documentation index.
-- [Changelog](docs/CHANGELOG.en.md) and [v0.10.1](docs/RELEASE_NOTES_v0.10.1.en.md) — current release changes and upgrade notes.
+- [Changelog](docs/CHANGELOG.en.md) and [v0.11.0](docs/RELEASE_NOTES_v0.11.0.en.md) — current release changes and upgrade notes.
 
 ## Feedback and Ecosystem
 

@@ -183,11 +183,8 @@
             >
             <el-button v-if="canWrite && selected.state === 'archived'" :disabled="blocked" @click="restoreAccount(selected)">恢复至账户列表</el-button>
           </div>
-          <p class="muted">
-            停用账户会停止新的模型请求，已发生的用量仍保留原归属。账户成员资格不授予任何业务系统权限。
-          </p>
           <div class="section-heading">
-            <h3>账户成员</h3>
+            <h3>账户成员 <UsageHelp title="账户成员与权限"><p>成员资格用于共享模型额度，业务权限仍由业务系统管理。停用账户会停止新请求，原有用量归属不变。</p></UsageHelp></h3>
             <el-button
               v-if="canWrite && selected.state !== 'archived' && selected.kind === 'organization'"
               :disabled="blocked"
@@ -346,7 +343,7 @@
               placeholder="可信登录交换结果中的 user_id"
           /></el-form-item>
           <p class="muted">
-            加入后即可共用“{{ selected?.label }}”的已开通额度。
+            目标账户：{{ selected?.label }}
           </p></template
         >
         <el-alert

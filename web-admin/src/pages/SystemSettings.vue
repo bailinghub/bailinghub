@@ -8,7 +8,6 @@
       title="实例外观由上级平台统一管理"
     >
       <template #default>
-        <span>当前控制台继续读取同一套品牌契约，但本地实例不再拥有写权限，避免平台与实例双写。</span>
         <el-button v-if="management.management_url" link type="primary" @click="openManagement">前往平台管理</el-button>
       </template>
     </el-alert>
@@ -17,7 +16,7 @@
       <template #header>
         <div class="head">
           <div>
-            <b>实例外观</b> <HelpTip title="实例外观"><p>设置自托管控制台的名称、搜索摘要和登录页文案。配置保存在数据库中，升级代码不会覆盖。</p></HelpTip>
+            <b>实例外观</b> <HelpTip title="实例外观"><p>设置控制台名称、搜索摘要和登录页文案。上级平台接管外观时，本页只读。</p></HelpTip>
           </div>
           <el-button :loading="loading" :disabled="saving || imageReading" @click="load">刷新</el-button>
         </div>

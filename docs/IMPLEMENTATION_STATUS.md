@@ -6,10 +6,10 @@
 
 ## 版本与阅读口径
 
-- 正式发行基线：[v0.10.1](https://github.com/bailinghub/bailinghub/releases/tag/v0.10.1)，对应 [v0.10.1 源码 Tag](https://github.com/bailinghub/bailinghub/tree/v0.10.1)。下表机制均包含在该版本中，各次修复仍标注首次发行版本；不代表默认安装后已启用所有可选功能。
+- 正式发行基线：[v0.11.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.11.0)，对应 [v0.11.0 源码 Tag](https://github.com/bailinghub/bailinghub/tree/v0.11.0)。下表机制均包含在该版本中，各次修复仍标注首次发行版本；不代表默认安装后已启用所有可选功能。
 - 历史基线：[v0.9.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.0)，对应提交 [`dae5260ede6565080d21e94ae63d52f3a7d23556`](https://github.com/bailinghub/bailinghub/tree/dae5260ede6565080d21e94ae63d52f3a7d23556)。原 Tag 的异步关闭缺口在后文保留；源码、npm、镜像和具体部署应分别核验，不能从新版文档推导旧制品已修复。
 - 表中的测试链接是**公开测试代码及其检查范围**，不是本页重新执行所得的通过记录。单元测试、模拟供应商响应、MySQL 集成测试和完整 demo 验证分别说明各自覆盖的条件。未执行或跳过的测试不能写成已通过，也不能据此把已有机制写成“计划实现”。
-- 版本发行内容与升级前提以 [v0.10.1 说明](RELEASE_NOTES_v0.10.1.md) 和 [升级指南](UPGRADE_v0.10.1.md) 为准。适配客户端、应用迁移、模型凭据、存储和具体业务授权仍需各自配置、验证。
+- 版本发行内容与升级前提以 [v0.11.0 说明](RELEASE_NOTES_v0.11.0.md) 和 [升级指南](UPGRADE_v0.11.0.md) 为准。适配客户端、应用迁移、模型凭据、存储和具体业务授权仍需各自配置、验证。
 
 ## 能力归属与发行状态
 
@@ -41,7 +41,7 @@ Core 默认是一个组织的管理与审计域。不同 Client、route 或工�
 
 ### 公开 demo 与独立复现任务卡
 
-[Docker Demo](DEMO.md) 与 [独立验证任务卡](INDEPENDENT_VALIDATION.md) 提供从 v0.10.1 安装、基础体检到 `npm run demo:e2e` 的公开路径。其订单、工单、退款和故障工具均为仓库 demo 数据；不需要真实模型 Key、客户接口或生产凭据。
+[Docker Demo](DEMO.md) 与 [独立验证任务卡](INDEPENDENT_VALIDATION.md) 提供从 v0.11.0 安装、基础体检到 `npm run demo:e2e` 的公开路径。其订单、工单、退款和故障工具均为仓库 demo 数据；不需要真实模型 Key、客户接口或生产凭据。
 
 任务卡要求记录服务、控制台、匿名预览边界、基础体检和完整业务闭环的具体结果。README 的 demo 图像与动画展示同一公开样例，不能当作客户采用证据。任务卡存在也不意味着已有外部开发者完成验证；报告结果应保留验证者实际版本、环境、检查项和失败范围。
 

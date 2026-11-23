@@ -249,6 +249,11 @@ Each header includes `conversation_id`, `client_archive_id`,
 `last_turn_status`, `created_at` and `updated_at`. The last turn status is initially
 null, then `running`, `completed`, `failed` or `cancelled`. Sequences count all
 event kinds and must not be displayed as message counts.
+Admin list and detail headers can also include `first_user_preview`, the first 96 characters of this archive’s earliest synced user message in sequence order. It is null until a user message is present and may be absent on older versions. Read the paginated detail events for the full message.
+
+`GET /admin/api/conversation-audits/feed?source=all&limit=50&offset=0` returns the admin conversation feed (`bailing.admin-conversation-feed.v1`). Filter by `client`, `web`, `wecom`, `delivery` or `other`. Results share one recent-activity order. Continue with the returned `next_cursor` in the `cursor` parameter, using the same source filter. Open `kind=audit` items by archive ID and `kind=thread` items via `/admin/api/threads/:id`.
+
+Client archives appear under `client`. A thread takes its source from the earliest inbound message that lacks a verified archive link for its run and thread IDs. If all inbound messages are archived, the archive and the original-record directory provide access to the execution evidence. A thread with no inbound messages and at least one recorded channel delivery appears under `delivery`. Task result notifications, the assistant's channel-send tool and successful `/send` requests can each generate a delivery. The source alone does not identify a specific trigger.
 
 `GET /admin/api/conversation-audits/:id?after_sequence=0&limit=100` returns schema
 `bailing.agent-conversation-audit-detail.v1`, `conversation` (the header),
@@ -262,8 +267,9 @@ The cross-binding extension optionally adds `client_app_id`, `client_name` and
 omit these fields, and legacy database NULL values do not prove a member binding.
 A UI falling back to the header must explicitly mark it as legacy header-only
 information, not evidence of separately recorded member systems and routes.
-Read the next page using `next_after_sequence`; no fixed first-1000-message cutoff
-is imposed. Responses use `Cache-Control: no-store`.
+Read the next page using `next_after_sequence`. To start with the latest records, request `?tail=1` on either detail endpoint. For earlier records, pass the returned `next_before_sequence` as `before_sequence` on archives, or `next_before_id` as `before_id` on threads. Each page is returned in timeline order and `has_earlier` indicates whether older records remain. Use one paging mode per request (tail, before or after). Archive responses use `Cache-Control: no-store`.
+
+`thread.delivery_only` is true when the thread has no inbound messages and contains a verified delivery. Each message carries its own `is_channel_delivery` flag. For example, if a WeCom user receives a notification and replies, the thread source is `wecom` and only the notification has `is_channel_delivery: true`. Ordinary Hub replies and notification status alone do not establish channel delivery.
 
 Existing administrator agent-run traces add optional
 `run.conversation_audit_id` / `run.client_turn_id`; verified tool job traces add

@@ -27,13 +27,11 @@
 
 在线体验环境只用于了解产品和配置方式。请勿上传生产凭据、敏感数据或接入真实业务；正式使用请自行部署开源版。
 
-## v0.10.1：明确声明的 false 和 low 不再丢失
+## v0.11.0 · 多渠道任务追溯与模型上下文管理
 
-业务侧 SDK 生成声明时保留显式只读、幂等与风险值；Core 消费时让显式值优先于 GET 缺省信号。未设置字段继续省略，非只读操作未设置 risk 时仍为 medium。PHP7/PHP8 配套包增加逐文件与实际生成器校验，其他语言生成器同步修正。
+从最近会话辨认渠道和消息角色，沿关联任务查看原授权与执行轨迹，按状态、时间和路由定位失败任务。模型服务配置可按支持的供应商路由预填上下文窗口，宿主可从模型目录读取上限，并从原单回执识别已确认的输入超限。
 
-本轮为 **Core 0.10.1** 补丁；ACC 规范 **1.0.6 / 声明 version: 1**、MCP / Agent Client SDK **0.8.0**、DSH **0.8.0** 保持。相对 0.10.0 **无新增 SQL**。业务负责人应核对重新生成的声明，尤其是此前被省略的显式 low 写操作和 GET 的显式 false；审批、鉴权与最终业务权限不变。
-
-[版本说明](docs/RELEASE_NOTES_v0.10.1.md) · [升级指南](docs/UPGRADE_v0.10.1.md) · [业务接入](docs/第三方对接指南.md) · [上一版本](docs/RELEASE_NOTES_v0.10.0.md)
+[版本说明](docs/RELEASE_NOTES_v0.11.0.md) · [升级指南](docs/UPGRADE_v0.11.0.md) · [上一版本](docs/RELEASE_NOTES_v0.10.1.md)
 
 ## 适合哪些团队
 
@@ -115,7 +113,7 @@
 在本机启动中枢、MySQL、Demo 业务系统、工具源、路由和接入方：
 
 ```bash
-git clone --branch v0.10.1 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.11.0 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -199,7 +197,7 @@ BailingHub Core 是独立服务，只通过稳定网络契约与业务系统协�
 | 集中开启本地智能体与工具 | [四步配置指南](docs/LOCAL_AGENT_SETUP.md) · [系统说明](docs/AGENT_SYSTEM_INFO.md) |
 | 查 API 与边界契约 | [HTTP 契约](docs/CONTRACT.md) · [Client API](docs/CLIENT_API.md) |
 | 理解架构与长期取舍 | [架构](docs/ARCHITECTURE.md) · [项目愿景](VISION.md) |
-| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.10.1](docs/RELEASE_NOTES_v0.10.1.md) |
+| 查看版本变化 | [CHANGELOG](docs/CHANGELOG.md) · [v0.11.0](docs/RELEASE_NOTES_v0.11.0.md) |
 
 完整中英文文档地图见 [docs/README.md](docs/README.md)。公共 API、SDK、Schema、Docker Demo 与代码标识保持语言中立。
 

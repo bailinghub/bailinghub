@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { dt, rowThreadHead } from '../../core/config/config-codec';
+import { CHANNEL_DELIVERY_MESSAGE_SQL } from './conversation-delivery-message';
 import type { Route } from '../../core/contracts/types';
 
 export interface SessionResolution {
@@ -197,27 +198,42 @@ export class ConversationLedger {
     return (rows as any[]).map(rowThreadHead);
   }
 
-  async threadDetail(threadId: number): Promise<{ thread: any; messages: any[] } | null> {
+  async threadDetail(threadId: number, afterId = 0, beforeId?: number | null): Promise<{
+    thread: any; messages: any[]; has_more?: boolean; next_after_id?: number | null; has_earlier?: boolean; next_before_id?: number | null;
+  } | null> {
     const [trows] = await this.pool.query(
+      `SELECT head.*, (head.channel IS NULL AND EXISTS (
+         SELECT 1 FROM bz_messages m WHERE m.thread_id=head.thread_id AND ${CHANNEL_DELIVERY_MESSAGE_SQL}
+       )) AS delivery_only FROM (` +
       'SELECT t.thread_id,t.route_key,t.scope_key,t.principal_id,t.message_count,t.created_at,t.last_active_at,t.summary,' +
         'r.name AS route_name,' +
         "(SELECT m.channel FROM bz_messages m WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS channel," +
         "(SELECT c.name FROM bz_clients c JOIN bz_messages m ON (m.channel=c.app_id OR m.channel=CONCAT('agent:',c.app_id)) WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS client_name," +
         "(SELECT e.name FROM bz_chat_entries e JOIN bz_messages m ON m.channel=CONCAT('chat:',e.entry_key) WHERE m.thread_id=t.thread_id AND m.direction='in' ORDER BY m.id DESC LIMIT 1) AS entry_name " +
-        'FROM bz_threads t LEFT JOIN bz_routes r ON r.route_key=t.route_key WHERE t.thread_id=? LIMIT 1',
+        'FROM bz_threads t LEFT JOIN bz_routes r ON r.route_key=t.route_key WHERE t.thread_id=? LIMIT 1) AS head',
       [threadId],
     );
     const t = (trows as any[])[0];
     if (!t) return null;
-    const [mrows] = await this.pool.query(
-      'SELECT id,direction,channel,principal_id,job_id,agent_run_id,content,created_at FROM bz_messages WHERE thread_id=? ORDER BY id ASC LIMIT 1000',
-      [threadId],
-    );
-    const messages = (mrows as any[]).map((m) => ({
+    const pageSize = 1000;
+    const backward = beforeId !== undefined;
+    const sql = `SELECT m.id,m.direction,m.channel,m.principal_id,m.job_id,m.agent_run_id,m.content,m.created_at,
+      (${CHANNEL_DELIVERY_MESSAGE_SQL}) AS is_channel_delivery FROM bz_messages m WHERE m.thread_id=?`;
+    const window = backward
+      ? (beforeId === null ? ' ORDER BY m.id DESC' : ' AND m.id<? ORDER BY m.id DESC')
+      : ' AND m.id>? ORDER BY m.id ASC';
+    const params = beforeId === null ? [threadId] : [threadId, beforeId ?? afterId];
+    const [mrows] = await this.pool.query(sql + window + ' LIMIT ?', [...params, pageSize + 1]);
+    const hasMore = mrows.length > pageSize;
+    const messages = (mrows as any[]).slice(0, pageSize).map((m) => ({
       id: Number(m.id), direction: m.direction, channel: m.channel, principal_id: m.principal_id ?? null,
+      is_channel_delivery: Number(m.is_channel_delivery) === 1,
       job_id: m.job_id ?? null, agent_run_id: m.agent_run_id ?? null,
       content: m.content, created_at: new Date(m.created_at).toISOString(),
     }));
-    return { thread: { ...rowThreadHead(t), summary: t.summary ?? null }, messages };
+    if (backward) messages.reverse();
+    return { thread: { ...rowThreadHead(t), summary: t.summary ?? null, delivery_only: Number(t.delivery_only) === 1 }, messages,
+      ...(backward ? { has_earlier: hasMore, next_before_id: hasMore ? messages[0]!.id : null }
+        : { has_more: hasMore, next_after_id: hasMore ? messages[messages.length - 1]!.id : null }) };
   }
 }

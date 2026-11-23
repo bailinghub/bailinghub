@@ -1,8 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { send } from '../app/http';
+import { readHistoryCursor } from './admin-history-cursor';
 import { can, type Principal } from '../app/auth';
 import type { ConfigStoreContract } from '../infrastructure/config/configstore';
 import { auditUuid, ConversationAuditError } from '../core/runtime/agent-conversation-audit';
+
+import { ADMIN_CONVERSATION_SOURCES, type AdminConversationSource } from '../infrastructure/config/config-agent-conversation-audit-repository';
 
 export async function handleAdminConversationAuditFor(
   store: ConfigStoreContract | null, method: string, path: string,
@@ -15,8 +18,9 @@ export async function handleAdminConversationAuditFor(
     return true;
   }
   res.setHeader('cache-control', 'no-store');
+  const feed = path === `${base}/feed`;
   const detail = path.match(/^\/admin\/api\/conversation-audits\/([0-9a-f-]{36})$/i);
-  if (method !== 'GET' || (path !== base && !detail)) {
+  if (method !== 'GET' || (path !== base && !feed && !detail)) {
     send(res, 404, { error: 'not_found' });
     return true;
   }
@@ -32,10 +36,23 @@ export async function handleAdminConversationAuditFor(
       if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) throw new ConversationAuditError(400, 'invalid_request', 'Pagination requires non-negative safe integers.');
       return Number(value);
     };
-    if (path === base) {
+    if (feed) {
+      const source = query.get('source') ?? 'all';
+      if (!ADMIN_CONVERSATION_SOURCES.includes(source as AdminConversationSource)) {
+        throw new ConversationAuditError(400, 'invalid_request', 'Unknown conversation source.');
+      }
+      if (!store.agentConversationAudit.listFeedForAdmin) {
+        send(res, 503, { error: 'conversation_feed_unavailable' });
+        return true;
+      }
+      send(res, 200, { schema: 'bailing.admin-conversation-feed.v1',
+        ...await store.agentConversationAudit.listFeedForAdmin(source as AdminConversationSource, number('limit', 50), number('offset', 0), query.get('cursor') ?? undefined) });
+    } else if (path === base) {
       send(res, 200, { schema: 'bailing.agent-conversation-audit-list.v1', ...await store.agentConversationAudit.listForAdmin(number('limit', 50), number('offset', 0)) });
     } else {
-      const result = await store.agentConversationAudit.detailForAdmin(auditUuid(detail![1]), number('after_sequence', 0), number('limit', 100));
+      const cursor = readHistoryCursor(query, 'sequence');
+      if (!cursor) throw new ConversationAuditError(400, 'invalid_request', 'Invalid history cursor.');
+      const result = await store.agentConversationAudit.detailForAdmin(auditUuid(detail![1]), cursor.after, number('limit', 100), cursor.before);
       send(res, result ? 200 : 404, result ? { schema: 'bailing.agent-conversation-audit-detail.v1', ...result } : { error: 'conversation_audit_not_found' });
     }
   } catch (error) {
