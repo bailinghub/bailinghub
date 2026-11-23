@@ -22,6 +22,7 @@ await page.route('**/admin/api/**',async r=>{
   if(p==='/admin/api/status')return r.fulfill({json:{executors:[]}});
   if(p==='/admin/api/demo-dataset/status')return r.fulfill({json:{imported:false}});
   if(p==='/admin/api/credentials')return r.fulfill({json:[{name:'synthetic-provider',kind:'llm',default_model:'synthetic-chat'},{name:'other-provider',kind:'llm',default_model:'synthetic-other'}]});
+  if(method==='GET' && p==='/admin/api/usage/model-context')return r.fulfill({json:{context_window_tokens:null,source_url:null}});
   if(p==='/admin/api/usage/billing/plans')return r.fulfill({json:{items:[],billing_ready:true,period_allowance_supported:true}});
   if(p==='/admin/api/usage/accounts')return r.fulfill({json:{items:[],next_cursor:null}});
   if(p==='/admin/api/usage/services'){

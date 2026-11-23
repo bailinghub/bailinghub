@@ -12,15 +12,26 @@ import { usageAssert } from '../modules/usage/errors';
 import { getUsageIdentity, usageFields, usageKey, usageString } from '../modules/usage/identity';
 import { USAGE_CAPABILITIES, usageHttpError, usagePage, usageRequestKey, usageRevision } from '../modules/usage/http';
 import type { UsageRepository } from '../modules/usage/repository';
+import type { ModelContextSpec } from '../modules/usage/model-context';
 
 /** Console uses domain services too; ordinary usage credentials never gain admin permissions. */
 export async function handleAdminUsageApiFor(repository: UsageRepository | null | undefined, method: string, path: string,
-  req: IncomingMessage, res: ServerResponse, principal: Principal): Promise<boolean> {
+  req: IncomingMessage, res: ServerResponse, principal: Principal,
+  lookupModelContext?: (credential: string, model: string) => Promise<ModelContextSpec>): Promise<boolean> {
   if (path !== '/admin/api/usage' && !path.startsWith('/admin/api/usage/')) return false;
   try {
     usageAssert(principal.kind === 'admin' && can(principal, method === 'GET' ? 'usage:read' : 'usage:write'), 'USAGE_FORBIDDEN', '当前账号没有用户与用量管理权限。', 403);
     if (path === '/admin/api/usage' && method === 'GET') { send(res, 200, { ...USAGE_CAPABILITIES, supported: Boolean(repository && await getUsageIdentity(repository).ready() && await getBillingRepository(repository).ready()) }); return true; }
     usageAssert(repository, 'USAGE_UNSUPPORTED', '此实例尚未配置用量模块。', 503);
+    if (path === '/admin/api/usage/model-context') {
+      usageAssert(can(principal, 'usage:issuers'), 'USAGE_FORBIDDEN', '查询供应商规格需要模型服务管理权限。', 403);
+      if (method !== 'GET') { send(res, 405, { error: 'method_not_allowed' }); return true; }
+      const query = new URL(req.url ?? path, 'http://bailing.local').searchParams;
+      const credential = usageString(query.get('credential'), 'credential', 128);
+      const model = usageString(query.get('model'), 'model', 191);
+      usageAssert(lookupModelContext, 'USAGE_UNSUPPORTED', '模型规格查询不可用。', 503);
+      send(res, 200, await lookupModelContext(credential, model)); return true;
+    }
     const identity = getUsageIdentity(repository), url = new URL(req.url ?? path, 'http://bailing.local');
     usageAssert(await identity.ready(), 'USAGE_UNSUPPORTED', '用量模块尚未就绪，请核对版本与迁移。', 503);
     if (await handleAdminBillingUsage(repository, method, path, req, res, principal)) return true;
