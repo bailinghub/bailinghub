@@ -12,7 +12,7 @@ For the current integration contract, use:
 
 ## Recording Rules
 
-Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.10.1.en.md).
+Lead each release with a familiar business-assistant or enterprise-service scenario: the previous problem, changed behavior, affected users and developers, upgrade steps, observable checks and limits. Keep English and Chinese facts aligned and distinguish additions, fixes and existing features. See [the release scenario notes](RELEASE_NOTES_v0.11.0.en.md).
 
 Each public version should describe:
 
@@ -21,6 +21,15 @@ Each public version should describe:
 - database schema changes;
 - validation commands;
 - related docs.
+
+## v0.11.0 - Cross-channel task tracing and model context windows
+
+2026-11-23
+
+- Operators can filter recent conversations by source, read messages by role and inspect the original authorization or associated task. Dispatch filters run on the server, and opening a trace preserves the results list.
+- Known task statuses have consistent labels. Keyboard focus exposes the raw value, and unknown statuses remain readable. Configuration and task forms place optional guidance alongside the relevant field.
+- Selecting a credential and invocation model can prefill its verified combined token window. The saved service limit is available in the account's model catalog. Final model receipts can carry a structured diagnostic for a confirmed TokenHub context-length rejection.
+- Upgrade from Core 0.10.1 without a new SQL migration. Check an existing trace, model registration and catalog entry after upgrading. [Release notes](RELEASE_NOTES_v0.11.0.en.md) · [Upgrade guide](UPGRADE_v0.11.0.en.md)
 
 ## v0.10.1 - Explicit business declarations and Core precedence
 
