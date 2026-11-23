@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { jobStatusLabel } from '../../../web-admin/src/task-trace-presentation';
 import { runFilterParams, patchTaskQuery, readOutboxLocation, readRunFilters, readRunsLocation, RUN_FILTER_STATUSES, runsTabQuery, safeTaskReturnPath } from '../../../web-admin/src/task-page-location';
 
 test('task tabs restore canonical and legacy links without a job stealing an explicit delivery tab', () => {
@@ -42,4 +43,10 @@ test('dispatch filters are sent to the server, including routes outside the load
   assert.deepEqual(Object.fromEntries(runFilterParams(filters)), { status: 'error', route_key: 'orders & returns', period: '24h' });
   assert.equal(runFilterParams(readRunFilters({})).toString(), '');
   assert.deepEqual(Object.fromEntries(runFilterParams(readRunFilters({ run_period: '7d' }))), { period: '7d' });
+});
+
+test('job status labels cover the job lifecycle and preserve unknown raw values', () => {
+  assert.deepEqual(RUN_FILTER_STATUSES.map(jobStatusLabel), ['等待执行', '执行中', '已派发', '已完成', '执行错误', '已拒绝']);
+  for (const status of [undefined, null, ' ', '']) assert.equal(jobStatusLabel(status), '未记录');
+  for (const status of ['paused', 'completed', 'constructor', 'toString', '__proto__']) assert.equal(jobStatusLabel(status), status);
 });

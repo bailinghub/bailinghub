@@ -23,7 +23,7 @@
       <el-tab-pane name="runs">
         <template #label><span><el-icon style="vertical-align:-2px"><List /></el-icon> 调度流</span></template>
         <div class="run-filters">
-          <el-select v-model="runFilters.status" aria-label="任务状态筛选" placeholder="全部状态" style="width:170px" @change="persistRunFilters"><el-option value="" label="全部状态" /><el-option v-for="status in RUN_FILTER_STATUSES" :key="status" :value="status" :label="`${runStatusLabels[status]} · ${status}`" /></el-select>
+          <el-select v-model="runFilters.status" aria-label="任务状态筛选" placeholder="全部状态" style="width:170px" @change="persistRunFilters"><el-option value="" label="全部状态" /><el-option v-for="status in RUN_FILTER_STATUSES" :key="status" :value="status" :label="`${jobStatusLabel(status)} · ${status}`" /></el-select>
           <el-select v-model="runFilters.route" aria-label="任务路由筛选" style="width:240px" filterable allow-create clearable placeholder="全部路由（输入精确标识）" @change="persistRunFilters"><el-option v-for="key in runRouteOptions" :key="key" :value="key" :label="key" /></el-select>
           <el-select v-model="runFilters.period" aria-label="任务时间筛选" style="width:150px" @change="persistRunFilters"><el-option value="all" label="全部时间" /><el-option value="24h" label="最近 24 小时" /><el-option value="7d" label="最近 7 天" /></el-select>
           <el-button v-if="hasRunFilters" @click="clearRunFilters">清除筛选</el-button>
@@ -46,7 +46,7 @@
             <span v-if="row.target" class="muted runCellLine">{{ row.target }}</span>
           </template></el-table-column>
           <el-table-column label="状态" width="95"><template #default="{ row }">
-            <el-tag :type="statusType(row.status)" effect="plain" :title="row.status">{{ runStatusLabels[row.status] || row.status || '未记录' }}</el-tag>
+            <JobStatusTag :status="row.status" />
           </template></el-table-column>
           <el-table-column label="结果 / 异常摘要" min-width="180"><template #default="{ row }">
             <div class="runCellLine" :class="{ errorText: row.error_preview }" :title="row.error_preview || row.summary">{{ row.error_preview || row.summary || '—' }}</div>
@@ -73,7 +73,7 @@
           <el-table-column label="请求编号" min-width="180" show-overflow-tooltip><template #default="{ row }"><el-button link type="primary" @click.stop="openTraceMatch(row)">{{ row.request_id || row.job_id }}</el-button></template></el-table-column>
           <el-table-column prop="client_app_id" label="接入方" width="120" />
           <el-table-column prop="route_key" label="路由" width="140" show-overflow-tooltip />
-          <el-table-column prop="status" label="状态" width="90"><template #default="{ row }"><el-tag :type="statusType(row.status)" effect="plain">{{ row.status }}</el-tag></template></el-table-column>
+          <el-table-column prop="status" label="状态" width="90"><template #default="{ row }"><JobStatusTag :status="row.status" /></template></el-table-column>
           <el-table-column prop="input_preview" label="输入" min-width="220" show-overflow-tooltip />
         </el-table>
         <div v-if="traceLookupResult" v-loading="traceLookupLoading" class="tracePanel">
@@ -83,7 +83,7 @@
               <div class="muted mono">request: {{ traceLookupJob.request_id || '—' }}</div>
             </div>
             <div class="traceHeadTags">
-              <el-tag :type="statusType(traceLookupJob.status)" effect="plain">{{ traceLookupJob.status }}</el-tag>
+              <JobStatusTag :status="traceLookupJob.status" />
               <el-tag effect="plain" type="info">{{ traceLookupJob.target }}</el-tag>
               <el-tag v-if="traceLookupJob.client_app_id" effect="plain" type="success">{{ traceLookupJob.client_app_id }}</el-tag>
               <el-tag v-if="traceLookupSummary.error_count" effect="plain" type="danger">{{ traceLookupSummary.error_count }} 错误</el-tag>
@@ -196,7 +196,7 @@
       <div class="detailHero">
         <div class="detailHeroMain">
           <div class="detailTags">
-            <el-tag :type="statusType(detail.status)" effect="plain">{{ detail.status }}</el-tag>
+            <JobStatusTag :status="detail.status" />
             <el-tag effect="plain" type="info">{{ detail.target }}</el-tag>
             <el-tag v-if="detail.client_app_id" effect="plain" type="success">{{ detail.client_app_id }}</el-tag>
             <el-tag v-if="detail.attempts" effect="plain" type="warning">重试 {{ detail.attempts }}</el-tag>
@@ -373,9 +373,10 @@ import { fmtTime } from '../util';
 import { useMe } from '../store';
 import RichText from '../components/RichText.vue';
 import HelpTip from '../components/HelpTip.vue';
+import JobStatusTag from '../components/JobStatusTag.vue';
 import ClientConversations from '../components/ClientConversations.vue';
 import ChannelThread from '../components/ChannelThread.vue';
-import { cap, detailLen, shortDetail, fullDetail, fmtTools, statusType, traceTitle, traceSummaryText, traceStageLabel, traceStageType, traceSeverityType,
+import { cap, detailLen, shortDetail, fullDetail, fmtTools, jobStatusLabel, traceTitle, traceSummaryText, traceStageLabel, traceStageType, traceSeverityType,
   partyLabel, partyVisible, partyType, whoLabel, identityTitle, type TraceEvent, type TracePayload } from '../task-trace-presentation';
 import NotificationOutboxPanel from '../components/NotificationOutboxPanel.vue';
 import { canOfferRerun, rerunHint } from '../runtime-feedback';
@@ -413,7 +414,6 @@ const conversationSource = computed(() => typeof route.query.conversation_source
 const clientConversations = ref<InstanceType<typeof ClientConversations> | null>(null);
 const list = ref<any[]>([]);
 const runFilters = reactive(readRunFilters(route.query));
-const runStatusLabels: Record<string, string> = { queued: '等待执行', running: '执行中', dispatched: '已派发', done: '已完成', error: '执行错误', rejected: '已拒绝' };
 const hasRunFilters = computed(() => Boolean(runFilters.status || runFilters.route || runFilters.period !== 'all'));
 const knownRunRoutes = ref<string[]>([]);
 const runRouteOptions = computed(() => [...new Set([...knownRunRoutes.value, ...(runFilters.route ? [runFilters.route] : [])])].sort());

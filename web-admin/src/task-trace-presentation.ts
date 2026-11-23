@@ -24,12 +24,19 @@ export function statusType(st: string): 'success' | 'danger' | 'info' | 'warning
   if (st === 'running' || st === 'dispatched' || st === 'preparing' || st === 'context_ready') return 'warning';
   return 'info';
 }
+const jobStatusLabels: Record<string, string> = {
+  queued: '等待执行', dispatched: '已派发', running: '执行中', done: '已完成', error: '执行错误', rejected: '已拒绝',
+};
+const traceStatusLabels: Record<string, string> = {
+  ...jobStatusLabels,
+  completed: '已完成', failed: '失败', cancelled: '已取消', preparing: '准备中', context_ready: '上下文已就绪',
+};
+export function jobStatusLabel(status?: string | null): string {
+  const raw = typeof status === 'string' ? status.trim() : '';
+  return Object.hasOwn(jobStatusLabels, raw) ? jobStatusLabels[raw]! : raw || '未记录';
+}
 export function traceStatusLabel(st: string): string {
-  const labels: Record<string, string> = {
-    queued: '等待执行', dispatched: '已派发', running: '执行中', done: '已完成', error: '执行错误', rejected: '已拒绝',
-    completed: '已完成', failed: '失败', cancelled: '已取消', preparing: '准备中', context_ready: '上下文已就绪',
-  };
-  return labels[st] || st;
+  return Object.hasOwn(traceStatusLabels, st) ? traceStatusLabels[st]! : st;
 }
 // 显示安全上限：审计要全量可追溯，但极端大内容（如几 MB 响应）整段塞进 DOM 会卡；
 // 200K 字符够覆盖正常审计内容，超出才尾部标注（真实留存在后端审计，这里只是展示护栏）。
