@@ -6,8 +6,10 @@ This directory contains public documentation for the open-source BailingHub proj
 
 | Document | Purpose |
 |---|---|
-| [Release notes](RELEASE_NOTES_v0.11.0.en.md) · [Chinese](RELEASE_NOTES_v0.11.0.md) | v0.11.0 task tracing, model context windows and structured rejection receipts. |
-| [Upgrade guide](UPGRADE_v0.11.0.en.md) · [Chinese](UPGRADE_v0.11.0.md) | Upgrade from 0.10.1 and check existing conversations and model service registrations. |
+| [Release notes](RELEASE_NOTES_v0.11.1.en.md) · [Chinese](RELEASE_NOTES_v0.11.1.md) | Task tracing, model context windows and verifiable image mirrors. |
+| [Upgrade guide](UPGRADE_v0.11.1.en.md) · [Chinese](UPGRADE_v0.11.1.md) | Upgrade from 0.10.1 and verify the running image and existing records. |
+| [v0.11.0 source notes](RELEASE_NOTES_v0.11.0.en.md) · [Chinese](RELEASE_NOTES_v0.11.0.md) | v0.11.0 task tracing, model context windows and structured rejection receipts. |
+| [v0.11.0 source guide](UPGRADE_v0.11.0.en.md) · [Chinese](UPGRADE_v0.11.0.md) | Upgrade from 0.10.1 and check existing conversations and model service registrations. |
 | [RELEASE_NOTES_v0.10.1.en.md](RELEASE_NOTES_v0.10.1.en.md) · [Chinese](RELEASE_NOTES_v0.10.1.md) | v0.10.1: explicit declaration values, Core precedence and companion-package verification. |
 | [UPGRADE_v0.10.1.en.md](UPGRADE_v0.10.1.en.md) · [Chinese](UPGRADE_v0.10.1.md) | No new SQL; generator/consumer pairing, full declaration diffs and rollback boundaries. |
 | [RELEASE_NOTES_v0.10.0.en.md](RELEASE_NOTES_v0.10.0.en.md) · [Chinese](RELEASE_NOTES_v0.10.0.md) | v0.10.0: on-demand knowledge, console consistency, larger arguments and model budgets. |

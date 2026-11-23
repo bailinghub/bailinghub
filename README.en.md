@@ -29,11 +29,13 @@ You choose which business APIs become available. BailingHub connects the convers
   <img src="assets/readme-product-overview.en.svg" width="100%" alt="BailingHub connects conversational entry points to governed business capabilities while the business system remains the authority">
 </picture>
 
-## v0.11.0 · Cross-channel task tracing and model context windows
+## v0.11.1 · Cross-channel task tracing and model context windows
 
 Find a conversation by channel, distinguish user and assistant messages, and follow the associated task to its execution trace. Filter dispatches by status, time and exact route. In model service settings, supported provider routes prefill the combined context window. Hosts can read that limit from the model catalog and recognize a confirmed oversized input from the final receipt.
 
-[Release notes](docs/RELEASE_NOTES_v0.11.0.en.md) · [Upgrade guide](docs/UPGRADE_v0.11.0.en.md) · [Previous release](docs/RELEASE_NOTES_v0.10.1.en.md)
+The GHCR build index includes provenance. The ACR mirror serves the verified `linux/amd64` image for the same version.
+
+[Release notes](docs/RELEASE_NOTES_v0.11.1.en.md) · [Upgrade guide](docs/UPGRADE_v0.11.1.en.md) · [Previous release](docs/RELEASE_NOTES_v0.10.1.en.md)
 
 ## Operate the System by Conversation
 
@@ -123,7 +125,7 @@ To explore before installing, use the [online experience](https://trial.bailingh
 To run the complete disposable loop locally:
 
 ```bash
-git clone --branch v0.11.0 --depth 1 https://github.com/bailinghub/bailinghub.git
+git clone --branch v0.11.1 --depth 1 https://github.com/bailinghub/bailinghub.git
 cd bailinghub
 export BAILING_TOKEN="${BAILING_TOKEN:-$(openssl rand -hex 32)}"
 docker compose up --build
@@ -212,7 +214,7 @@ Run separate BailingHub deployments for mutually isolated organizations. A `clie
 - [HTTP Contract](docs/CONTRACT.en.md) — stable network and identity boundaries.
 - [Architecture](docs/ARCHITECTURE.en.md) — runtime layers and dependency direction.
 - [English Documentation Map](docs/README.en.md) — the complete public documentation index.
-- [Changelog](docs/CHANGELOG.en.md) and [v0.11.0](docs/RELEASE_NOTES_v0.11.0.en.md) — current release changes and upgrade notes.
+- [Changelog](docs/CHANGELOG.en.md) and [v0.11.1](docs/RELEASE_NOTES_v0.11.1.en.md) — current release changes and upgrade notes.
 
 ## Feedback and Ecosystem
 

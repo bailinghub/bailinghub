@@ -6,10 +6,10 @@ This index separates **ownership, release availability, public evidence, and lim
 
 ## Version and evidence conventions
 
-- Formal release baseline: [v0.11.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.11.0), with the [v0.11.0 source Tag](https://github.com/bailinghub/bailinghub/tree/v0.11.0). The table's mechanisms are included in this release; versioned fixes retain their first-release identities. This does not mean that every optional feature is enabled by a default installation.
+- Formal release baseline: [v0.11.1](https://github.com/bailinghub/bailinghub/releases/tag/v0.11.1), with the [v0.11.1 source Tag](https://github.com/bailinghub/bailinghub/tree/v0.11.1). The table's mechanisms are included in this release; versioned fixes retain their first-release identities. This does not mean that every optional feature is enabled by a default installation.
 - Historical baseline: [v0.9.0](https://github.com/bailinghub/bailinghub/releases/tag/v0.9.0), commit [`dae5260ede6565080d21e94ae63d52f3a7d23556`](https://github.com/bailinghub/bailinghub/tree/dae5260ede6565080d21e94ae63d52f3a7d23556). Its asynchronous shutdown gap remains documented below. Verify source, npm, images, and deployments separately; updated documentation does not fix old artifacts.
 - Test links identify **public test source and the conditions it checks**, not passing runs newly produced by this page. Unit tests, simulated provider responses, MySQL integration tests, and the complete demo have different scopes. Skipped or unexecuted tests are not passing evidence, and do not make an existing mechanism a planned feature.
-- Use the [v0.11.0 release notes](RELEASE_NOTES_v0.11.0.en.md) and [upgrade guide](UPGRADE_v0.11.0.en.md) for release contents and prerequisites. Compatible clients, application migrations, provider credentials, storage, and business authorization still require their own configuration and acceptance.
+- Use the [v0.11.1 release notes](RELEASE_NOTES_v0.11.1.en.md) and [upgrade guide](UPGRADE_v0.11.1.en.md) for release contents and prerequisites. Compatible clients, application migrations, provider credentials, storage, and business authorization still require their own configuration and acceptance.
 
 ## Ownership and release availability
 
@@ -41,7 +41,7 @@ Simulated provider responses establish adapter/protocol behavior for the specifi
 
 ### Public demo and independent reproduction task
 
-The [Docker demo](DEMO.en.md) and [independent validation task](INDEPENDENT_VALIDATION.en.md) provide a public path from installing v0.11.0 through smoke checks and `npm run demo:e2e`. Orders, tickets, refunds, and failure tools use repository demo data. Real model keys, customer APIs, and production credentials are unnecessary.
+The [Docker demo](DEMO.en.md) and [independent validation task](INDEPENDENT_VALIDATION.en.md) provide a public path from installing v0.11.1 through smoke checks and `npm run demo:e2e`. Orders, tickets, refunds, and failure tools use repository demo data. Real model keys, customer APIs, and production credentials are unnecessary.
 
 The task requires concrete results for service startup, console access, anonymous-preview boundaries, smoke checks, and the complete business loop. The README's images and animation show that same public fixture, not customer adoption. Publishing a task card does not establish that an external developer completed it. Reports should retain the actual version, environment, checks, and failure scope.
 

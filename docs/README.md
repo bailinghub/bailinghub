@@ -8,8 +8,10 @@
 
 | 文档 | 用途 |
 |---|---|
-| [版本说明](RELEASE_NOTES_v0.11.0.md) · [English](RELEASE_NOTES_v0.11.0.en.md) | v0.11.0 多渠道任务追溯、模型上下文窗口与超限回执。 |
-| [升级指南](UPGRADE_v0.11.0.md) · [English](UPGRADE_v0.11.0.en.md) | 从 0.10.1 升级并核对已有会话和模型服务配置。 |
+| [版本说明](RELEASE_NOTES_v0.11.1.md) · [English](RELEASE_NOTES_v0.11.1.en.md) | 多渠道任务追溯、模型上下文窗口与镜像分发校验。 |
+| [升级指南](UPGRADE_v0.11.1.md) · [English](UPGRADE_v0.11.1.en.md) | 从 0.10.1 升级，核对运行镜像、已有任务和模型配置。 |
+| [v0.11.0 源码说明](RELEASE_NOTES_v0.11.0.md) · [English](RELEASE_NOTES_v0.11.0.en.md) | v0.11.0 多渠道任务追溯、模型上下文窗口与超限回执。 |
+| [v0.11.0 源码升级说明](UPGRADE_v0.11.0.md) · [English](UPGRADE_v0.11.0.en.md) | 从 0.10.1 升级并核对已有会话和模型服务配置。 |
 | [RELEASE_NOTES_v0.10.1.md](RELEASE_NOTES_v0.10.1.md) · [English](RELEASE_NOTES_v0.10.1.en.md) | v0.10.1：声明显式值保留、Core 优先级与实际配套包校验。 |
 | [UPGRADE_v0.10.1.md](UPGRADE_v0.10.1.md) · [English](UPGRADE_v0.10.1.en.md) | 无新增 SQL；生成器/消费者配套、全量声明差异及回退边界。 |
 | [RELEASE_NOTES_v0.10.0.md](RELEASE_NOTES_v0.10.0.md) · [English](RELEASE_NOTES_v0.10.0.en.md) | v0.10.0：知识按需读取、后台交互、大参数与模型预算。 |
