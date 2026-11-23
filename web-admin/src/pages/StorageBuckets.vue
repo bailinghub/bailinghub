@@ -10,7 +10,7 @@
     </template>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link :disabled="listLoading" @click="load">重新读取</el-button></el-alert>
     <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
-    <el-empty v-if="!listLoading && !listError && !list.length" description="未登记外部存储时，聊天入口会默认使用服务器本地存储">
+    <el-empty v-if="!listLoading && !listError && !list.length" description="暂无已登记的存储桶，当前默认使用服务器本地存储">
       <el-button v-if="canWrite" type="primary" @click="openCreate">添加外部存储</el-button>
     </el-empty>
     <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">

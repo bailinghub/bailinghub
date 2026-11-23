@@ -9,7 +9,7 @@
     </template>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
     <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
-    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有工具源：业务系统在自己的 OpenAPI 上声明 x-agent-capability 后，把 spec 注册进来">
+    <el-empty v-if="!listLoading && !listError && !list.length" description="暂无工具源">
       <el-button @click="openDocs('tools')">查看开发文档</el-button>
       <el-button v-if="s.can('tools:write')" type="primary" @click="openCreate">注册第一个</el-button>
     </el-empty>
@@ -188,8 +188,15 @@
         <el-input-number v-model="form.auto_refresh_min" :min="0" :max="1440" :step="5" />
       </el-form-item>
       <el-form-item v-else>
-        <template #label>{{ fieldTitle('spec_json', 'OpenAPI 文档') }} <HelpTip :title="fieldTitle('spec_json', 'OpenAPI 文档')"><p>{{ editing ? fieldDesc('spec_json') : '含 x-agent-capability 契约的 OpenAPI 3.x JSON 或 YAML；保存后统一归一化。' }}</p></HelpTip></template>
-        <el-input v-model="form.spec_json" type="textarea" :rows="8" class="mono" placeholder="openapi: 3.0.0\npaths:\n  /records/list:\n    get:\n      x-agent-capability:\n        version: 1\n        enabled: true\n        scope: records.read" />
+        <template #label>{{ fieldTitle('spec_json', 'OpenAPI 文档') }} <HelpTip :title="fieldTitle('spec_json', 'OpenAPI 文档')">
+          <p>{{ editing ? fieldDesc('spec_json') : '支持 OpenAPI 3.x JSON 或 YAML。请在业务操作上声明 x-agent-capability。' }}</p>
+          <p>操作声明示例</p>
+          <pre class="mono">x-agent-capability:
+  version: 1
+  enabled: true
+  scope: records.read</pre>
+        </HelpTip></template>
+        <el-input v-model="form.spec_json" type="textarea" :rows="8" class="mono" placeholder="粘贴 OpenAPI JSON 或 YAML" />
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="治理" name="governance">
@@ -244,7 +251,7 @@
         <el-select v-model="form.embed_credential" clearable filterable placeholder="留空 = 不开工具检索" style="width: 100%" @change="onEmbedCred">
           <el-option v-for="c in embCreds" :key="c.name" :value="c.name" :label="c.name + '（' + (c.default_model || '?') + '）'" />
         </el-select>
-        <div v-if="!embCreds.length" class="muted hint">还没有可向量化的凭证——先去「模型凭证」加一把（用途含向量化）</div>
+        <div v-if="!embCreds.length" class="muted hint">暂无可用的向量化凭证</div>
       </el-form-item>
       <el-form-item v-if="form.embed_credential" label="向量模型"><el-input v-model="form.embed_model" placeholder="如 text-embedding-v4" class="mono" /></el-form-item>
       <el-form-item v-if="form.embed_credential" label="向量维度"><el-input-number v-model="form.embed_dim" :min="64" :max="4096" :step="256" /></el-form-item>
@@ -286,12 +293,12 @@
           <el-input v-model="retrieveQ" clearable size="small" placeholder="语义召回预演：输入用户可能问的话" style="max-width: 320px" @keyup.enter="runRetrieveTest" />
           <el-button type="primary" size="small" :loading="retrieving" @click="runRetrieveTest">召回预演</el-button>
         </template>
-        <span v-else class="muted">（该工具源未开启检索，仅文本筛选可用）</span>
+        <span v-else class="muted">语义检索未开启</span>
       </div>
       <div class="debug-call">
         <div class="debug-head">
           <b>调试调用</b>
-          <span class="muted">走中枢同款签名材料真实请求业务源站；高风险/审批工具默认只展示阻断原因，不直接执行。</span>
+          <HelpTip title="调试调用"><p>验证使用中枢签名向业务源站发起真实请求。高风险或需要审批的工具默认阻断，可在提交处选择是否允许实调。</p></HelpTip>
         </div>
         <el-row :gutter="8">
           <el-col :span="8">
@@ -316,25 +323,25 @@
           </span>
         </div>
         <div v-if="debugMode === 'form'" class="debug-param-grid">
-          <div v-if="!debugParamRows.length" class="muted debug-empty">该工具无入参，点击“实调验证”即可发起请求。</div>
+          <div v-if="!debugParamRows.length" class="muted debug-empty">该工具无入参</div>
           <div v-for="p in debugParamRows" :key="p.name" class="debug-param">
             <div class="debug-param-label">
-              <code>{{ p.name }}</code>
+              <code>{{ p.name }}</code><HelpTip v-if="p.desc" :title="p.name"><p>{{ p.desc }}</p></HelpTip>
               <el-tag size="small" effect="plain" type="info">{{ p.loc }}</el-tag>
               <el-tag v-if="p.required" size="small" effect="plain" type="danger">必填</el-tag>
             </div>
-            <el-select v-if="p.enum?.length" v-model="debugParamValues[p.name]" clearable filterable size="small" :placeholder="p.desc || p.type">
+            <el-select v-if="p.enum?.length" v-model="debugParamValues[p.name]" clearable filterable size="small" :placeholder="p.type">
               <el-option v-for="x in p.enum" :key="String(x)" :label="String(x)" :value="String(x)" />
             </el-select>
             <el-switch v-else-if="p.type === 'boolean'" v-model="debugParamValues[p.name]" active-value="true" inactive-value="false" />
             <el-input-number v-else-if="p.type === 'number' || p.type === 'integer'" v-model="debugParamValues[p.name]" size="small" style="width: 100%" />
             <el-input v-else-if="p.type === 'array' || p.type === 'object'" v-model="debugParamValues[p.name]" size="small" class="mono" :placeholder="p.type === 'array' ? '[...]' : '{...}'" />
-            <el-input v-else v-model="debugParamValues[p.name]" size="small" class="mono" :placeholder="p.desc || p.type" />
-            <div v-if="p.desc" class="muted debug-param-desc">{{ p.desc }}</div>
+            <el-input v-else v-model="debugParamValues[p.name]" size="small" class="mono" :placeholder="p.type" />
           </div>
         </div>
         <el-input v-else v-model="debugArgs" type="textarea" :rows="4" class="mono debug-json" placeholder='{"id":1}' />
         <div class="debug-actions">
+          <span class="muted">真实业务请求</span>
           <el-checkbox v-model="debugAllowRisky" size="small">允许实调高风险/审批工具</el-checkbox>
           <el-button size="small" @click="syncDebugJsonFromForm">生成 JSON</el-button>
           <el-button v-if="s.can('tools:write')" type="primary" size="small" :loading="debugLoading" @click="runDebugInvoke">实调验证</el-button>
@@ -361,8 +368,8 @@
       <!-- 召回预演结果：绿=分数≥阈值会被内联给模型，灰=低于阈值仅 search_tools 可能补上 -->
       <div v-if="retrieveHits.length" class="retrieve-result">
         <div class="muted" style="margin-bottom: 6px">
-          针对「<b>{{ lastRetrieveQ }}</b>」的召回排序（<el-tag size="small" type="success" effect="plain">绿</el-tag> = 分数 ≥ 阈值 {{ retrieveMinScore }}，会被内联给大脑；<el-tag size="small" type="info" effect="plain">灰</el-tag> = 低于阈值，仅模型主动 search_tools 时才可能补上）。
-          相关工具分数偏低 / 排得靠后 → 在它的 summary/描述里补上用户常说的词来调优。
+          「<b>{{ lastRetrieveQ }}</b>」召回结果 · 阈值 {{ retrieveMinScore }}
+          <HelpTip title="召回结果"><p>绿色分数达到阈值，对应工具会直接提供给模型。灰色分数低于阈值，模型仍可通过 <code>search_tools</code> 查找。可以调整工具描述使其匹配用户的常用表述。</p></HelpTip>
         </div>
         <div class="rh-list">
           <div v-for="h in retrieveHits" :key="h.name" class="rh-row" :class="{ below: h.score < retrieveMinScore }">
@@ -371,14 +378,17 @@
           </div>
         </div>
       </div>
-      <div class="muted" style="margin-bottom: 8px">共 {{ previewTools.length }} 个工具可被路由 allow 白名单引用（按 scope 匹配）<span v-if="previewFilter">，筛选出 <b>{{ filteredTools.length }}</b> 个</span>。<b>点行首箭头看完整详情</b>——业务侧注解派生出的全部内容（参数 schema / 治理参数 / 给 AI 的原文）都在这里核对，不用翻业务代码：</div>
+      <div class="muted" style="margin-bottom: 8px">
+        共 {{ previewTools.length }} 个工具<span v-if="previewFilter"> · 筛选结果 {{ filteredTools.length }} 个</span>
+        <HelpTip title="工具清单"><p>路由按权限范围（scope）引用工具。展开一行可核对提供给 AI 的说明、参数位置、类型和治理规则。</p></HelpTip>
+      </div>
       <el-table :data="filteredTools" size="small" row-key="name">
         <el-table-column type="expand">
           <template #default="{ row }">
             <div class="tool-detail">
-              <div class="td-sec">给 AI 的完整描述（summary + 何时用 + 返回 + 示例参数，AI 据此判断何时调用）</div>
+              <div class="td-sec">给 AI 的完整描述</div>
               <div class="td-text">{{ row.description }}</div>
-              <div class="td-sec">参数 schema（AI 按此传参；位置 = 中枢转发时放 query 还是 body）</div>
+              <div class="td-sec">参数 schema</div>
               <el-table v-if="paramRows(row).length" :data="paramRows(row)" size="small">
                 <el-table-column label="参数" width="150"><template #default="{ row: p }"><code>{{ p.name }}</code></template></el-table-column>
                 <el-table-column label="位置" width="64" prop="loc" />
@@ -386,7 +396,7 @@
                 <el-table-column label="必填" width="56"><template #default="{ row: p }">{{ p.required ? '是' : '' }}</template></el-table-column>
                 <el-table-column label="说明" min-width="180"><template #default="{ row: p }">{{ p.desc || '—' }}</template></el-table-column>
               </el-table>
-              <div v-else class="muted">无参数（GET 允许零参数；写接口无参数不会派生到这里）</div>
+              <div v-else class="muted">无参数</div>
               <div class="td-sec">治理参数</div>
               <div class="td-text">
                 超时 {{ row.timeout_ms ? row.timeout_ms + ' ms（ACC execution.timeout_ms 覆盖）' : '跟随工具源全局' }}
@@ -397,11 +407,11 @@
               <div class="muted">业务声明：{{ row.rate_limit ? row.rate_limit.count + ' 次/' + rateWindowLabel[row.rate_limit.window] : row.rate_limit_per_min ? row.rate_limit_per_min + ' 次/分钟' : '未声明限额' }}。生效来源：{{ ({ declaration: '业务声明', provider_default: '中枢默认策略', tool_override: '指定工具覆盖' } as any)[row.effective_rate_limit?.source] || '业务声明' }}。</div>
               <el-button v-if="s.can('tools:write')" text type="primary" @click="editLimitsFromPreview">设置限额</el-button>
               <template v-if="row.confirm_prompt">
-                <div class="td-sec">审批通知话术（ACC approval.prompt，{参数名} 由实参填充后发给审批人）</div>
+                <div class="td-sec">审批通知话术 · approval.prompt</div>
                 <div class="td-text">{{ row.confirm_prompt }}</div>
               </template>
               <template v-if="row.confirm_when?.length">
-                <div class="td-sec">参数级确认规则（ACC approval.when，命中后本次调用进入审批）</div>
+                <div class="td-sec">参数级确认规则 · approval.when</div>
                 <pre class="block">{{ JSON.stringify(row.confirm_when, null, 2) }}</pre>
               </template>
             </div>
@@ -410,6 +420,7 @@
         <el-table-column label="工具" min-width="170"><template #default="{ row }"><code>{{ row.name }}</code><div class="muted">{{ row.method }} {{ row.path }}</div></template></el-table-column>
         <el-table-column label="权限范围" width="170"><template #default="{ row }"><code>{{ row.scope }}</code></template></el-table-column>
         <el-table-column label="风险/标记" width="170">
+          <template #header>风险/标记 <HelpTip title="风险与审批"><p>高风险、需要确认或命中条件确认的调用会先进入审批。审批时可核对原调用快照。</p></HelpTip></template>
           <template #default="{ row }">
             <el-tag size="small" effect="plain" :type="row.risk === 'high' ? 'danger' : row.risk === 'medium' ? 'warning' : 'success'">{{ row.risk }}</el-tag>
             <el-tag v-if="row.confirm_required" size="small" type="danger" effect="plain" style="margin-left: 2px">需确认</el-tag>
@@ -421,10 +432,9 @@
         </el-table-column>
         <el-table-column prop="description" label="说明" min-width="160" show-overflow-tooltip />
       </el-table>
-      <div class="muted" style="margin-top: 8px">注：risk=high、「需确认」或命中「条件确认」的工具调用会先冻结为审批意图；业务侧或控制台兜底批准后，任务按原调用快照自动重跑执行。</div>
     </template>
     <template v-if="previewSkipped.length">
-      <div class="muted" style="margin: 14px 0 6px">以下接口被跳过（不会暴露给 AI）：</div>
+      <div class="muted" style="margin: 14px 0 6px">已跳过的接口</div>
       <div v-for="s in previewSkipped" :key="s.path" class="skipped mono">{{ s.path }} — {{ s.reason }}</div>
     </template>
   </el-drawer>
@@ -1128,7 +1138,6 @@ watch(previewOpen, (value) => {
 .debug-param { border: 1px solid var(--el-border-color-lighter); border-radius: 0; padding: 8px; min-width: 0; background: var(--el-fill-color-light); }
 .debug-param-label { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; min-width: 0; }
 .debug-param-label code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.debug-param-desc { margin-top: 4px; line-height: 1.45; }
 .debug-empty { grid-column: 1 / -1; padding: 8px 0; }
 .debug-json { margin-top: 8px; }
 .debug-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }

@@ -368,7 +368,11 @@ async function verifyCallSnippets(page, base) {
     await page.goto(`${base}/console/routes`);
     await page.getByRole('button', { name: '调用代码', exact: true }).first().click();
     const dialog = page.getByRole('dialog', { name: /调用代码/ });
-    await expectVisible(page, '运行前配置完整 Token');
+    await dialog.getByRole('button', { name: '前往接入方' }).waitFor();
+    const tokenHelp = dialog.getByRole('button', { name: '点击查看：调用凭证' });
+    await tokenHelp.click();
+    await expectVisible(page, '从「接入方」复制该接入方的完整 Token');
+    await tokenHelp.press('Escape');
     await expectVisible(page, '1 个接入方可调用');
     for (const language of ['HTTP / cURL', 'Node.js', 'Python', 'PHP', 'Agent 触发']) {
       await dialog.getByRole('tab', { name: language, exact: true }).click();
@@ -379,9 +383,9 @@ async function verifyCallSnippets(page, base) {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: '编辑', exact: true }).first().click();
     await expectVisible(page, '执行行为提示');
-    await expectVisible(page, '仅提示词约束；工具授权与审批');
     await page.getByRole('button', { name: '点击查看：执行行为提示', exact: true }).click();
     await expectVisible(page, '此项是提示词约束，不是强制授权或沙箱');
+    await page.getByRole('button', { name: '点击查看：执行行为提示', exact: true }).press('Escape');
     await page.getByRole('button', { name: '取消', exact: true }).click();
     console.log('✓ snippets: environment token, enabled clients and visible permission boundary passed');
   } finally { fixtures.clients.pop(); }
@@ -618,8 +622,11 @@ async function verifyOnboardingAndForms(browser, base) {
     await p.waitForURL('**/setup?flow=agent');
     assert.deepEqual(await p.locator('.stepTop > b').allTextContents(), ['登记业务工具源', '准备工作空间（业务路由）', '创建接入方并关联路由', '配置业务授权与工具范围', '在本地客户端登录并验证']);
     assert.equal(await p.locator('.modelNote').count(), 0);
+    const workspaceHelp = p.getByRole('button', { name: '点击查看：准备工作空间（业务路由）' });
+    await workspaceHelp.click();
     await expectVisible(p, '新建时仍需绑定真实调度目标');
     await expectVisible(p, '中枢模型目标（llm）需要模型凭证');
+    await workspaceHelp.press('Escape');
     routeReadFails = true;
     await p.getByRole('button', { name: '刷新', exact: true }).click();
     await expectVisible(p, '读取失败');
@@ -882,8 +889,11 @@ try {
   await expectVisible(page, '通过 3');
 
   await page.getByRole('menuitem', { name: '聊天入口' }).click();
+  const chatHelp = page.getByRole('button', { name: '点击查看：聊天入口是什么' });
+  await chatHelp.click();
   await expectVisible(page, '“匿名预览”不会继承中枢后台登录状态');
   await expectVisible(page, '包括只读查询和写操作');
+  await chatHelp.press('Escape');
   await expectVisible(page, '支持业务身份票据：demo-app');
   await expectVisible(page, '匿名预览');
 
@@ -981,7 +991,10 @@ try {
   await expectVisible(page, '把员工资料改成新的姓名');
   await page.locator('.tracetoggle').filter({ hasText: '执行轨迹' }).first().click();
   await expectVisible(page, '本地智能体编排');
+  const agentTraceHelp = rawPanel.getByRole('button', { name: '点击查看：本地智能体执行轨迹' }).first();
+  await agentTraceHelp.click();
   await expectVisible(page, '隐藏推理不会上传');
+  await agentTraceHelp.press('Escape');
   await expectVisible(page, '中枢治理');
   await expectVisible(page, 'staff_edit');
   if (await page.getByText('未挂工具', { exact: true }).count()) {

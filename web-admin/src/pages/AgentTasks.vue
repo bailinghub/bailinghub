@@ -1,15 +1,25 @@
 <template>
   <div class="task-control-page">
-    <header class="task-heading">
-      <div><div class="eyebrow">本地智能体 / 运行边界</div><h1>任务控制</h1><p>为一项连续业务任务固定授权范围、累计写预算和同时执行数量。</p></div>
-      <div class="actions"><el-button v-if="returnPath" @click="router.push(returnPath)">返回来源页面</el-button><el-button @click="router.push('/agent-clients')">智能体客户端</el-button><el-button :loading="listLoading || detailLoading" @click="refresh">刷新</el-button><el-button v-if="canWrite" type="primary" @click="openCreate">{{ createAttempt ? '继续原创建' : '创建受控任务' }}</el-button></div>
-    </header>
-    <el-card shadow="never" class="explanation">
-      <div class="explanation-grid"><div><b>例如：更新项目资料，再核对执行结果</b><p>明确选定业务系统的原授权、工作空间、本地会话及工具。保留各系统原有权限与审批。</p></div><div><b>累计写预算 ≠ 每分钟限流</b><p>按业务写调用计数，包含待确认的预留；不是处理的数据条数，也不是成功次数。读取不扣写预算，仍受并发限制。</p></div><div><b>暂停只阻止新的派发</b><p>已获许可的调用仍可能完成。继续不补充预算、不执行或重放业务；取消不会撤回已产生的变化。</p></div></div>
-    </el-card>
-    <el-alert v-if="listError" type="error" :closable="false" :title="listError" show-icon />
     <el-card shadow="never">
-      <template #header><div class="section-heading"><b>已创建的任务</b><span class="muted">范围与预算创建后固定 · 点击任务查看原调用</span></div></template>
+      <template #header>
+        <div class="section-heading">
+          <div>
+            <b>已创建的任务</b>
+            <HelpTip title="任务范围、预算与控制">
+              <p>创建时固定原授权、工作空间、本地会话、工具与预算，保留各业务系统原有权限与审批。点击任务可查看关联的原调用。</p>
+              <p>写预算按整个任务的写调用次数累计，包含待确认的预留。一次调用处理多条数据也只计一次；读取不扣写预算，仍受并发限制。</p>
+              <p>暂停只阻止新派发，已获许可的调用仍可能完成。继续不会补充预算、执行或重放业务，取消不会撤回已产生的变化。</p>
+            </HelpTip>
+          </div>
+          <div class="actions">
+            <el-button v-if="returnPath" @click="router.push(returnPath)">返回来源页面</el-button>
+            <el-button @click="router.push('/agent-clients')">本地智能体</el-button>
+            <el-button :loading="listLoading || detailLoading" @click="refresh">刷新</el-button>
+            <el-button v-if="canWrite" type="primary" @click="openCreate">{{ createAttempt ? '继续原创建' : '创建受控任务' }}</el-button>
+          </div>
+        </div>
+      </template>
+      <el-alert v-if="listError" type="error" :closable="false" :title="listError" show-icon />
       <el-table v-loading="listLoading" :data="tasks" row-key="task_id" @row-click="row => openDetail(row.task_id)">
         <el-table-column label="任务" min-width="160"><template #default="{ row }"><el-button link type="primary" @click.stop="openDetail(row.task_id)">{{ shortId(row.task_id) }}</el-button><div class="muted">{{ time(row.created_at) }}</div></template></el-table-column>
         <el-table-column label="固定范围" min-width="190"><template #default="{ row }"><b>{{ row.members.length }} 个成员</b><div class="muted">{{ [...new Set(row.members.map((m: Member) => m.workspace))].join(' · ') }}</div></template></el-table-column>
@@ -17,7 +27,7 @@
         <el-table-column label="累计写调用" min-width="160"><template #default="{ row }"><b>{{ row.counters.write_reserved + row.counters.write_consumed }} / {{ limitText(row.policy.max_write_calls) }}</b><div class="muted">预留 {{ row.counters.write_reserved }} · 已派发 {{ row.counters.write_consumed }}</div></template></el-table-column>
         <el-table-column label="执行中 / 并发上限" width="150"><template #default="{ row }">{{ row.counters.active_permits }} / {{ row.policy.max_concurrent }}</template></el-table-column>
         <el-table-column label="截止时间" min-width="165"><template #default="{ row }">{{ time(row.policy.expires_at, '不设截止') }}</template></el-table-column>
-        <template #empty><span>{{ listError ? '未能取得任务列表，请重试。' : '还没有受控任务。创建前请先确认客户端支持任务绑定。' }}</span></template>
+        <template #empty><span>{{ listError ? '未能取得任务列表，请重试。' : '暂无受控任务。' }}</span></template>
       </el-table>
       <div v-if="nextTaskCursor" class="load-more"><el-button :loading="listLoading" @click="loadTasks(true)">加载更多</el-button></div>
     </el-card>
@@ -26,31 +36,61 @@
       <el-alert v-if="createAttempt" type="warning" :closable="false" show-icon title="已保留原创建请求。重试会核对同一请求，不会换一个请求重复创建。" />
       <el-alert v-if="catalogError" type="info" :closable="false" :title="catalogError" />
       <el-form label-position="top" class="creation-form" :disabled="creating || Boolean(createAttempt)" @submit.prevent="saveCreate">
-        <div class="section-heading"><h2>1. 固定业务范围</h2><el-button :disabled="members.length >= 64" @click="addMember">添加授权成员</el-button></div>
-        <p class="muted">仅同一中枢。每个成员需对应客户端选中的原授权和真实本地会话 ID；不能填写显示名称代替标识。</p>
+        <div class="section-heading">
+          <h2>固定业务范围 <HelpTip title="如何选择授权成员"><p>成员必须来自同一中枢，使用客户端选中的原授权与本地会话 ID。手工填写时请使用原始标识。</p></HelpTip></h2>
+          <el-button :disabled="members.length >= 64" @click="addMember">添加授权成员</el-button>
+        </div>
         <article v-for="(member, index) in members" :key="member.key" class="member-editor">
           <div class="section-heading"><b>成员 {{ index + 1 }}</b><div class="actions"><el-switch v-model="member.manual" active-text="手工填写标识" /><el-button v-if="members.length > 1" link type="danger" @click="members.splice(index, 1)">移除</el-button></div></div>
           <el-form-item v-if="!member.manual" label="原业务授权">
-            <el-select v-model="member.session_id" filterable placeholder="按业务授权名称、设备或 Session 选择" @change="id => selectSession(member, id)">
+            <template #label>原业务授权 <HelpTip title="原业务授权"><p>可按授权名称、设备或 Session 查找。保存的是所选授权的 Session ID。</p><p v-if="!catalogError && !catalogLoading">已载入 {{ sessions.length }} / {{ sessionTotal }} 个有效授权。</p></HelpTip></template>
+            <el-select v-model="member.session_id" filterable placeholder="选择或搜索授权" @change="id => selectSession(member, id)">
               <el-option v-for="session in sessions" :key="session.session_id" :value="session.session_id" :label="sessionLabel(session)" />
             </el-select>
-            <div class="field-note">名称仅帮助识别；保存的是原 Session。{{ sessions.length }} / {{ sessionTotal }} 个有效授权已加载。<el-button v-if="sessions.length < sessionTotal" link :loading="catalogLoading" @click="loadSessions(true)">加载更多</el-button></div>
+            <div v-if="catalogLoading || sessions.length < sessionTotal" class="catalog-status">
+              <span>{{ catalogLoading ? '正在读取授权…' : `已载入 ${sessions.length} / ${sessionTotal} 个有效授权` }}</span>
+              <el-button v-if="sessions.length < sessionTotal" link :loading="catalogLoading" @click="loadSessions(true)">加载更多</el-button>
+            </div>
+            <span v-else-if="!catalogError && !sessions.length" class="catalog-status">暂无有效授权</span>
+            <details v-if="member.session_id || member.client_app_id" :key="member.session_id" class="authorization-ids">
+              <summary>授权标识</summary>
+              <dl>
+                <dt>Agent Session ID</dt><dd><code>{{ member.session_id || '—' }}</code></dd>
+                <dt>接入方 Client App ID</dt><dd><code>{{ member.client_app_id || '—' }}</code></dd>
+              </dl>
+            </details>
           </el-form-item>
           <div class="form-grid">
-            <el-form-item label="Agent Session ID"><el-input v-model="member.session_id" :readonly="!member.manual" placeholder="原授权的 UUID" /></el-form-item>
-            <el-form-item label="接入方 Client App ID"><el-input v-model="member.client_app_id" :readonly="!member.manual" maxlength="64" placeholder="例如 business-app" /></el-form-item>
+            <template v-if="member.manual">
+              <el-form-item label="Agent Session ID"><el-input v-model="member.session_id" placeholder="原授权的 UUID" /></el-form-item>
+              <el-form-item label="接入方 Client App ID"><el-input v-model="member.client_app_id" maxlength="64" placeholder="例如 business-app" /></el-form-item>
+            </template>
             <el-form-item label="工作空间 Workspace"><el-input v-if="member.manual" v-model="member.workspace" maxlength="64" placeholder="原授权允许的工作空间" /><el-select v-else v-model="member.workspace" placeholder="明确选择工作空间"><el-option v-for="workspace in workspaceChoices(member)" :key="workspace.route" :label="`${workspace.name || workspace.route}（${workspace.route}）`" :value="workspace.route" /></el-select></el-form-item>
-            <el-form-item label="本地会话 ID"><el-input v-model="member.client_conversation_id" maxlength="128" placeholder="从客户端宿主取得，区分于 Session ID" /></el-form-item>
+            <el-form-item label="本地会话 ID">
+              <template #label>本地会话 ID <HelpTip title="本地会话标识"><p>填写客户端宿主提供的会话 ID。它与原业务授权的 Agent Session ID 分别记录。</p></HelpTip></template>
+              <el-input v-model="member.client_conversation_id" maxlength="128" placeholder="客户端会话 ID" />
+            </el-form-item>
           </div>
-          <el-form-item label="允许的精确工具名称"><el-input v-model="member.tools" type="textarea" :rows="2" placeholder="每行一个或用逗号分隔，例如 product_update、inventory_read；不接受 *" /><div class="field-note">填写此目标真实存在的工具名。任务范围只收窄权限，不会开通工具或绕过审批。</div></el-form-item>
+          <el-form-item label="允许的精确工具名称">
+            <template #label>允许的精确工具名称 <HelpTip title="工具名称与范围"><p>填写目标已有的工具名，每行一个或用逗号分隔，不支持通配符 *。任务只能收窄已有授权，原审批规则仍然生效。</p></HelpTip></template>
+            <el-input v-model="member.tools" type="textarea" :rows="2" placeholder="例如 product_update, inventory_read" />
+          </el-form-item>
         </article>
-        <h2>2. 设置累计预算与并发</h2>
+        <h2>预算与并发</h2>
         <div class="form-grid policy-grid">
-          <el-form-item label="累计写调用预算"><el-select v-model="writeMode"><el-option value="bounded" label="限制累计写调用次数" /><el-option value="readonly" label="0 次：仅允许读取" /><el-option value="unlimited" label="不限累计写调用次数" /></el-select><el-input-number v-if="writeMode === 'bounded'" v-model="writeLimit" :min="1" :max="1000000000" :precision="0" placeholder="填写次数" /></el-form-item>
-          <el-form-item label="同时执行上限"><el-input-number v-model="concurrent" :min="1" :max="10000" :precision="0" /><div class="field-note">读取和写入共同占用。结果未知时继续占用，不自动再执行。</div></el-form-item>
-          <el-form-item label="截止时间（可空）"><el-input v-model="expires" type="datetime-local" clearable /><div class="field-note">留空即不设截止。按浏览器本地时区填写，保存为 UTC。</div></el-form-item>
+          <el-form-item class="write-budget" label="累计写调用预算">
+            <template #label>累计写调用预算 <HelpTip title="写预算如何计算"><p>每次写调用计一次，待确认的调用先预留预算。读取只占并发。</p></HelpTip></template>
+            <el-select v-model="writeMode"><el-option value="bounded" label="限制累计写调用次数" /><el-option value="readonly" label="0 次：仅允许读取" /><el-option value="unlimited" label="不限累计写调用次数" /></el-select><el-input-number v-if="writeMode === 'bounded'" v-model="writeLimit" :min="1" :max="1000000000" :precision="0" placeholder="填写次数" /></el-form-item>
+          <el-form-item label="同时执行上限">
+            <template #label>同时执行上限 <HelpTip title="并发占用"><p>读取和写入共同占用并发数。结果未知时仍占用名额，系统不会自动重新执行。</p></HelpTip></template>
+            <el-input-number v-model="concurrent" :min="1" :max="10000" :precision="0" />
+          </el-form-item>
+          <el-form-item label="截止时间（可空）">
+            <template #label>截止时间（可空） <HelpTip title="截止时间与时区"><p>按浏览器本地时区填写，保存为 UTC。留空表示不设截止时间。</p></HelpTip></template>
+            <el-input v-model="expires" type="datetime-local" clearable />
+          </el-form-item>
         </div>
-        <div class="enrollment-notice"><b>此设置会持续约束所选原授权</b><p>创建成功后，这些 Agent Session 在所有本地会话中都必须绑定明确的受控任务；省略任务将不能访问业务。取消当前任务也不会恢复不受任务约束的访问。客户端需先具备任务绑定能力，已有其他会话也需安排对应任务。</p><el-checkbox v-model="stickyAck">我已确认客户端支持任务绑定，并理解原授权在其他会话中的持续约束。</el-checkbox></div>
+        <div class="enrollment-notice"><b>此设置会持续约束所选原授权</b><p>创建后，所有使用这些授权的会话都须绑定任务才能访问业务。取消任务后，此约束仍然有效。</p><el-checkbox v-model="stickyAck">我已确认客户端支持任务绑定，并理解原授权在其他会话中的持续约束。</el-checkbox></div>
       </el-form>
       <el-alert v-if="formError" type="error" :closable="false" show-icon :title="formError" />
       <template #footer><el-button :disabled="creating" @click="createOpen = false">{{ createAttempt ? '稍后继续' : '取消' }}</el-button><el-button type="primary" :loading="creating" :disabled="!createAttempt && !stickyAck" @click="saveCreate">{{ createAttempt ? '重试原创建请求' : '确认范围并创建' }}</el-button></template>
@@ -62,15 +102,15 @@
       <div v-loading="detailLoading" class="detail-body">
         <template v-if="detail">
           <div class="section-heading"><div><el-tag :type="stateType(detail)" effect="plain">{{ stateText(detail) }}</el-tag><code class="task-id">{{ detail.task_id }}</code></div><el-button :loading="detailLoading" @click="loadDetail(detail.task_id)">刷新快照</el-button></div>
-          <p class="muted">更新于 {{ time(detail.updated_at) }} · 控制修订 {{ detail.revision }} · 记录序号 {{ detail.ledger_sequence }}。此快照不是派发许可。</p>
-          <div class="detail-metrics"><div><span>累计写调用 / 预算</span><b>{{ detail.counters.write_reserved + detail.counters.write_consumed }} / {{ limitText(detail.policy.max_write_calls) }}</b><small>预留 {{ detail.counters.write_reserved }} · 已确认派发 {{ detail.counters.write_consumed }}</small></div><div><span>执行中 / 并发上限</span><b>{{ detail.counters.active_permits }} / {{ detail.policy.max_concurrent }}</b><small>包含结果未知、尚未结算的许可</small></div><div><span>截止时间</span><b class="date-value">{{ time(detail.policy.expires_at, '不设截止') }}</b><small>{{ detail.members.length }} 个固定成员</small></div></div>
+          <p class="muted">更新于 {{ time(detail.updated_at) }} · 控制修订 {{ detail.revision }} · 记录序号 {{ detail.ledger_sequence }} <HelpTip title="任务快照"><p>快照反映最近一次读取的状态，实际派发时仍须取得许可。</p></HelpTip></p>
+          <div class="detail-metrics"><div><span>累计写调用 / 预算</span><b>{{ detail.counters.write_reserved + detail.counters.write_consumed }} / {{ limitText(detail.policy.max_write_calls) }}</b><small>预留 {{ detail.counters.write_reserved }} · 已确认派发 {{ detail.counters.write_consumed }}</small></div><div><span>执行中 / 并发上限 <HelpTip title="执行中许可"><p>计数包含结果未知、尚未结算的许可。</p></HelpTip></span><b>{{ detail.counters.active_permits }} / {{ detail.policy.max_concurrent }}</b></div><div><span>截止时间</span><b class="date-value">{{ time(detail.policy.expires_at, '不设截止') }}</b><small>{{ detail.members.length }} 个固定成员</small></div></div>
           <el-alert v-if="detail.state === 'blocked'" type="warning" :closable="false" title="原成员身份或授权核验未通过。请先处理原因，再暂停并重新核验；不能移除成员后继续。" />
           <el-alert v-if="detail.state === 'cancelled'" type="info" :closable="false" title="任务已取消，不能继续。原调用回执仍可核对，已发生的业务变化不会撤回。" />
-          <div v-if="canWrite" class="control-panel"><div><b>控制后续派发</b><p>暂停保留在途调用；继续不补预算、不执行待办；取消不可恢复，也不回滚业务。</p></div><div class="actions"><el-button :disabled="controlBusy || !detailVerified || !['active', 'blocked'].includes(detail.state)" @click="control('pause')">暂停</el-button><el-button type="primary" plain :disabled="controlBusy || !detailVerified || detail.state !== 'paused' || expired(detail)" @click="control('resume')">继续</el-button><el-button type="danger" plain :disabled="controlBusy || !detailVerified || detail.state === 'cancelled'" @click="control('cancel')">取消任务</el-button></div></div>
+          <div v-if="canWrite" class="control-panel"><div><b>控制后续派发</b> <HelpTip title="控制操作的影响"><p>暂停会保留在途调用。继续后可以派发新调用，剩余预算不变。取消不可恢复，已经发生的业务变化会保留。</p></HelpTip></div><div class="actions"><el-button :disabled="controlBusy || !detailVerified || !['active', 'blocked'].includes(detail.state)" @click="control('pause')">暂停</el-button><el-button type="primary" plain :disabled="controlBusy || !detailVerified || detail.state !== 'paused' || expired(detail)" @click="control('resume')">继续</el-button><el-button type="danger" plain :disabled="controlBusy || !detailVerified || detail.state === 'cancelled'" @click="control('cancel')">取消任务</el-button></div></div>
           <h2>固定的业务范围</h2>
           <article v-for="(member, index) in detail.members" :key="`${member.session_id}:${member.workspace}:${member.client_conversation_id}`" class="member-snapshot"><div class="section-heading"><b>成员 {{ index + 1 }} · {{ member.client_app_id }} / {{ member.workspace }}</b></div><dl><dt>原授权 Session</dt><dd><code>{{ member.session_id }}</code></dd><dt>本地会话</dt><dd><code>{{ member.client_conversation_id }}</code></dd><dt>精确工具</dt><dd><el-tag v-for="tool in member.allowed_tools" :key="tool" type="info" effect="plain">{{ tool }}</el-tag></dd></dl></article>
-          <div class="binding-note"><b>交给客户端宿主的任务标识</b><p>宿主读取任务并核对全部已选原授权后绑定。任务 ID 不替代业务授权，也不交给模型自行选择。</p><el-button size="small" @click="copyTaskId">复制任务 ID</el-button></div>
-          <h2>原调用记录</h2><p class="muted">这里只读取关联和执行状态，不查询业务正文，也不会继续或重新派发调用。已派发不代表业务成功。</p>
+          <div class="binding-note"><span><b>客户端任务标识</b> <HelpTip title="客户端如何绑定任务"><p>宿主读取任务并核对全部原授权后绑定。任务 ID 不能替代业务授权，应由宿主选择。</p></HelpTip></span><el-button size="small" @click="copyTaskId">复制任务 ID</el-button></div>
+          <h2>原调用记录 <HelpTip title="如何核对原调用"><p>这里只读取关联和执行状态，不查询业务正文或重新派发。已派发的调用仍需核对业务结果。</p></HelpTip></h2>
           <el-alert v-if="invocations.some(row => row.outcome === 'unknown' || row.permit_state === 'unknown')" type="warning" :closable="false" title="存在结果未知的原调用：先查看原 Job 或复制标识核对业务结果；继续任务不会重试这些调用。" />
           <el-alert v-if="selectedInvocation && !invocations.some(row => row.invocation_id === selectedInvocation)" type="info" :closable="false" title="所选原调用尚未出现在当前快照中，可继续加载原调用记录核对。" />
           <el-table :data="invocations" size="small" row-key="invocation_id" :expand-row-keys="selectedInvocation ? [selectedInvocation] : []" @expand-change="selectInvocation">
@@ -80,7 +120,7 @@
             <el-table-column label="执行许可" width="100"><template #default="{ row }">{{ permitText(row.permit_state) }}</template></el-table-column>
             <el-table-column label="派发结果" min-width="150"><template #default="{ row }">{{ outcomeText(row.outcome) }}<div class="muted">{{ row.terminal ? '原操作已结束' : '原操作未结束' }}</div></template></el-table-column>
             <el-table-column label="核对原调用" width="150"><template #default="{ row }"><el-button v-if="row.job_id && me.can('runs:read') && me.hasModule('runs')" link type="primary" @click="viewInvocationJob(row)">查看原 Job</el-button><el-button link @click="copyInvocation(row)">复制原调用标识</el-button></template></el-table-column>
-            <template #empty>尚无关联调用。创建任务本身不会执行业务。</template>
+            <template #empty>暂无关联调用</template>
           </el-table>
           <div v-if="nextInvocationCursor" class="load-more"><el-button :loading="detailLoading" @click="loadDetail(detail.task_id, true)">加载更多原调用</el-button></div>
         </template>
@@ -93,6 +133,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import HelpTip from '../components/HelpTip.vue';
 import { api } from '../request';
 import { kernelMountPath } from '../runtime-path';
 import { useMe } from '../store';
@@ -294,33 +335,37 @@ watch(() => route.query.task, applyTaskLocation);
 <style scoped>
 .task-control-page { display: grid; gap: 18px; }
 :global(.bailing-task-create-body) { max-height: 74vh; overflow-y: auto; padding-right: 8px; }
-.task-heading, .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
-.task-heading h1 { margin: 5px 0; font-size: 25px; letter-spacing: -.4px; }
-.task-heading p, .explanation p, .control-panel p, .binding-note p { color: var(--el-text-color-secondary); margin: 7px 0 0; line-height: 1.7; }
-.eyebrow { color: var(--el-color-primary); font-size: 12px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
 .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .actions :deep(.el-button + .el-button) { margin-left: 0; }
-.explanation-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
-.explanation-grid b { font-size: 14px; }.explanation-grid p { font-size: 13px; }
-.muted, .field-note { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.7; }
-.field-note { margin-top: 5px; width: 100%; }
+.muted, .catalog-status { color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.7; }
+.catalog-status { display: flex; align-items: center; gap: 8px; margin-top: 4px; width: 100%; }
 .creation-form h2, .detail-body h2 { font-size: 16px; margin: 22px 0 12px; }
 .member-editor, .member-snapshot { border: 1px solid var(--el-border-color-light); padding: 18px; margin-top: 12px; }
-.member-editor > .section-heading { margin-bottom: 15px; }
+.creation-form > .section-heading h2 { margin: 0; }
+.creation-form :deep(.el-form-item) { margin-bottom: 14px; }
+.member-editor { padding: 14px 16px; }
+.member-editor > .section-heading { margin-bottom: 10px; }
+.member-editor > .el-form-item:last-child { margin-bottom: 0; }
+.authorization-ids { width: 100%; margin-top: 5px; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.6; }
+.authorization-ids summary { width: fit-content; cursor: pointer; }
+.authorization-ids dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 6px 0 0; }
+.authorization-ids dd { margin: 0; color: var(--el-text-color-regular); overflow-wrap: anywhere; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 18px; }
 .creation-form :deep(.el-select), .creation-form :deep(.el-date-editor) { width: 100%; }
-.creation-form :deep(.el-input-number) { margin-top: 8px; }
-.policy-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.enrollment-notice { background: var(--el-color-warning-light-9); border-left: 3px solid var(--el-color-warning); padding: 16px 18px; margin: 12px 0 18px; }
+.policy-grid { grid-template-columns: minmax(0, 1.5fr) minmax(0, .75fr) minmax(0, 1fr); }
+.write-budget :deep(.el-form-item__content) { gap: 6px; }
+.write-budget :deep(.el-select) { flex: 1 1 154px; }
+.write-budget :deep(.el-input-number) { width: 118px; max-width: 100%; }
+.enrollment-notice { background: var(--el-color-warning-light-9); border: 1px solid var(--el-color-warning-light-7); padding: 12px 16px; margin: 0 0 4px; }
 .enrollment-notice p { line-height: 1.7; font-size: 13px; margin: 8px 0; }
 .enrollment-notice :deep(.el-checkbox) { white-space: normal; height: auto; align-items: start; }.enrollment-notice :deep(.el-checkbox__label) { white-space: normal; }
 .detail-body { display: grid; gap: 14px; }.detail-body h2 { margin-bottom: 0; }.detail-body > .muted { margin: 0; }
 .task-id { margin-left: 12px; overflow-wrap: anywhere; }
 .detail-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--el-border-color-light); }
 .detail-metrics > div { display: grid; gap: 7px; padding: 18px; }.detail-metrics b { font-size: 24px; }.detail-metrics span,.detail-metrics small { color: var(--el-text-color-secondary); }.detail-metrics b.date-value { font-size: 16px; }
-.control-panel, .binding-note { padding: 16px; background: var(--el-fill-color-light); }.control-panel { display: flex; justify-content: space-between; align-items: center; gap: 20px; }.control-panel p,.binding-note p { font-size: 12px; }.binding-note .el-button { margin-top: 10px; }
+.control-panel, .binding-note { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 16px; background: var(--el-fill-color-light); }
 .member-snapshot { margin: 0; }.member-snapshot dl,.invocation-ids { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 9px; margin: 14px 0 0; font-size: 13px; }.invocation-ids { padding: 0 18px 16px; }.member-snapshot dt,.invocation-ids dt { color: var(--el-text-color-secondary); }.member-snapshot dd,.invocation-ids dd { margin: 0; overflow-wrap: anywhere; }.member-snapshot dd .el-tag { margin: 0 7px 5px 0; }
 .load-more { padding-top: 16px; text-align: center; }
-@media (max-width: 1050px) { .task-heading { align-items: start; flex-direction: column; }.explanation-grid { grid-template-columns: 1fr; gap: 16px; } }
 @media (max-width: 680px) { .form-grid,.policy-grid,.detail-metrics { grid-template-columns: 1fr; }.control-panel,.section-heading { flex-wrap: wrap; }.task-id { display: block; margin: 8px 0; } }
 </style>

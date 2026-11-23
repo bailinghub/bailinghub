@@ -60,13 +60,14 @@
       <el-tab-pane name="trace">
         <template #label><span><el-icon style="vertical-align:-2px"><Search /></el-icon> 追溯</span></template>
         <div class="traceLookup">
-          <el-input v-model="traceJobInput" size="default" class="mono" clearable placeholder="job_id / request_id / client:crm / thread:123 / principal:u-1" @keyup.enter="lookupJobTrace" @clear="clearTraceLookup">
+          <el-input v-model="traceJobInput" size="default" class="mono" clearable aria-label="追溯标识" placeholder="任务、请求或关联对象标识" @keyup.enter="lookupJobTrace" @clear="clearTraceLookup">
             <template #append><el-button :loading="traceLookupLoading" @click="lookupJobTrace">追溯</el-button></template>
           </el-input>
+          <HelpTip title="追溯标识"><p>直接输入 job_id 或 request_id。按关联对象查询时，在标识前添加前缀，例如 <code>client:crm</code>、<code>thread:123</code> 或 <code>principal:u-1</code>。</p></HelpTip>
         </div>
         <el-button v-if="traceFrom" class="traceReturn" plain size="small" @click="returnToTraceMatches">返回匹配任务</el-button>
         <el-alert v-if="traceLookupError" :title="traceLookupError" :description="traceLookupResult || traceLookupMatches.length ? `正在展示旧快照，上次成功读取：${fmtTime(traceLoadedAt, true)}。` : '此次未取得追溯结果，请刷新重试。'" type="error" :closable="false" show-icon />
-        <el-empty v-if="!traceLookupResult && !traceLookupLoading && !traceLookupMatches.length && !traceLookupError" :description="traceEmptyFor ? `没有与「${traceEmptyFor}」匹配的任务` : '输入 job_id、request_id 或 client/thread/principal 查询一次任务'" />
+        <el-empty v-if="!traceLookupResult && !traceLookupLoading && !traceLookupMatches.length && !traceLookupError" :description="traceEmptyFor ? `没有与「${traceEmptyFor}」匹配的任务` : '输入标识后查看匹配任务'" />
         <el-table v-if="!traceLookupResult && traceLookupMatches.length" :data="traceLookupMatches" size="small" class="traceMatches" @row-click="openTraceMatch">
           <el-table-column label="时间" width="130"><template #default="{ row }">{{ fmtTime(row.created_at, true) }}</template></el-table-column>
           <el-table-column label="请求编号" min-width="180" show-overflow-tooltip><template #default="{ row }"><el-button link type="primary" @click.stop="openTraceMatch(row)">{{ row.request_id || row.job_id }}</el-button></template></el-table-column>
@@ -158,7 +159,7 @@
     <div ref="recordContents" class="recordContents">
       <div class="recordTools">
         <el-button v-if="curThread" size="small" data-record-list @click="backToRecordDirectory">返回记录列表</el-button>
-        <span v-else class="muted">按最近活动排序，筛选当前已加载的记录。</span>
+        <HelpTip v-else title="筛选授权与接入记录">记录按最近活动排序，搜索范围为当前已加载的记录。</HelpTip>
         <el-button size="small" :loading="curThread ? rawTranscript?.loading : threadsLoading" @click="refreshRecords">刷新记录</el-button>
       </div>
       <div v-show="!curThread" class="rail" aria-label="原记录列表">
@@ -243,7 +244,7 @@
           <template #title>
             <div class="detailSectionTitle">
               <b>完整链路</b>
-              <span class="muted">{{ detailTraceCount }} 步 · 按入口、上下文、执行、送达归组</span>
+              <span class="muted">{{ detailTraceCount }} 步</span>
             </div>
           </template>
           <div class="chainGroups">
@@ -251,7 +252,7 @@
               <div class="chainGroupHead">
                 <div>
                   <b>{{ g.label }}</b>
-                  <span class="muted">{{ g.hint }}</span>
+                  <HelpTip :title="g.label">{{ g.hint }}</HelpTip>
                 </div>
                 <div class="chainGroupTags">
                   <el-tag size="small" effect="plain" :type="detailGroupType(g)">{{ g.events.length }} 步</el-tag>
@@ -286,10 +287,9 @@
           <template #title>
             <div class="detailSectionTitle">
               <b>输入与上下文</b>
-              <span class="muted">{{ inputParty.label }}、页面、知识、工具、模型请求</span>
             </div>
           </template>
-          <div class="detailSubhead">{{ inputParty.label }} <span class="muted">{{ inputParty.sub }} · 原始触发内容，未装配</span></div>
+          <div class="detailSubhead">{{ inputParty.label }} <span class="muted">{{ inputParty.sub }}</span></div>
           <div class="richbox compact"><RichText :text="rawInput" /></div>
           <div v-if="pageCtx" class="pagectx">
             <span class="muted">发起页面：</span>
@@ -312,7 +312,7 @@
               <div v-else class="muted nokb">未注入知识</div>
             </div>
             <div>
-              <div class="detailSubhead">工具注入 <span class="muted">本次实际暴露给模型的工具</span></div>
+              <div class="detailSubhead">工具注入 <HelpTip title="工具注入">本次任务实际提供给模型的工具。渐进模式下，首轮提供目录，模型按需读取工具定义。</HelpTip></div>
               <div class="muted toolsum">{{ toolsSummary }}</div>
               <div v-if="llmReq" class="toolinject">
                 <el-tag size="small" :type="toolModeType" effect="plain">{{ toolModeLabel }}</el-tag>
@@ -321,7 +321,6 @@
                 <div v-if="injectedTools.length" class="injtags">
                   <el-tag v-for="n in injectedTools" :key="n" size="small" effect="plain" class="mono injtag">{{ n }}</el-tag>
                 </div>
-                <div v-else-if="llmReq.tool_mode === 'progressive'" class="muted" style="margin-top: 4px">首轮只给工具目录，模型经 find_tools 按需取定义</div>
                 <div v-else-if="llmReq.tool_mode === 'none'" class="muted" style="margin-top: 4px">本路由未挂工具源，纯对话生成</div>
               </div>
               <div v-else class="muted toolsum">该任务无运行期工具注入记录</div>
@@ -330,7 +329,7 @@
 
           <el-collapse class="coll">
             <el-collapse-item title="系统提示词">
-              <div class="muted sectionHint">{{ llmReq ? '实际发给大脑的完整版，含中枢运行期拼接内容' : '配置原文；该任务无运行期 llm_request 记录' }}</div>
+              <div class="muted sectionHint">{{ llmReq ? '运行时实际提示词' : '配置原文（缺少运行时记录）' }}</div>
               <pre class="block sm">{{ actualSystemPrompt || '（未配置）' }}</pre>
             </el-collapse-item>
             <el-collapse-item :title="'完整组装 prompt（' + assembledLen + ' 字符）'">
@@ -343,7 +342,6 @@
           <template #title>
             <div class="detailSectionTitle">
               <b>AI 回复</b>
-              <span class="muted">最终返回给用户或业务侧的内容</span>
             </div>
           </template>
           <div class="richbox"><RichText :text="resultText" /></div>
@@ -353,12 +351,11 @@
           <template #title>
             <div class="detailSectionTitle">
               <b>原始快照</b>
-              <span class="muted">metadata / dispatch，深度排障时使用</span>
             </div>
           </template>
-          <div class="detailSubhead">metadata <span class="muted">触发方、聊天层、身份、线程、业务字段</span></div>
+          <div class="detailSubhead">metadata <HelpTip title="任务元数据">记录触发方、会话身份、线程和业务字段。</HelpTip></div>
           <pre class="block">{{ cap(JSON.stringify(detail.metadata || {}, null, 2)) }}</pre>
-          <div class="detailSubhead">dispatch <span class="muted">派发时落定的大脑、工具、送达快照</span></div>
+          <div class="detailSubhead">dispatch <HelpTip title="派发快照">记录任务派发时使用的模型、工具和送达配置。</HelpTip></div>
           <pre class="block">{{ cap(JSON.stringify(detail.dispatch || {}, null, 2)) }}</pre>
         </el-collapse-item>
       </el-collapse>
@@ -999,7 +996,7 @@ watch(() => route.query, applyLocation);
 .trow1 .tcount { margin-left: auto; flex: none; }
 .tprev { margin: 3px 0 2px; font-size: 12px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tmeta { font-size: 11px; }
-.traceLookup { max-width: 720px; margin-bottom: 14px; }
+.traceLookup { display: flex; align-items: center; gap: 6px; max-width: 720px; margin-bottom: 14px; }
 .traceReturn { margin-bottom: 12px; }
 .traceMatches { margin-bottom: 14px; cursor: pointer; }
 .tracePanel { border: 1px solid var(--el-border-color-lighter); border-radius: 0; padding: 14px 16px; background: var(--el-bg-color); }

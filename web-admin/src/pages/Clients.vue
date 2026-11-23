@@ -10,7 +10,7 @@
     </template>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
     <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :return-to="listReturnTo" @clear="clearListLocation" />
-    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有接入方：业务系统接入前先在这里发一把钥匙">
+    <el-empty v-if="!listLoading && !listError && !list.length" description="暂无接入方">
       <el-button v-if="s.can('clients:write')" type="primary" @click="openCreate">发第一把</el-button>
     </el-empty>
     <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
@@ -88,7 +88,7 @@
   </el-card>
 
   <el-drawer v-model="open" :title="editing ? '编辑接入方' : '新建接入方'" size="440px" :before-close="formGuard.beforeClose">
-    <el-alert v-if="resumedDraft" title="已恢复尚未保存的接入方配置，请选择需要授权的路由后保存。草稿只保留在当前页面会话中。" type="info" :closable="false" style="margin-bottom:12px" />
+    <el-alert v-if="resumedDraft" title="已恢复尚未保存的接入方配置。草稿仅保存在当前页面会话中。" type="info" :closable="false" style="margin-bottom:12px" />
     <el-form label-position="top" :disabled="saving || !s.can('clients:write')">
       <el-form-item>
         <template #label>{{ fieldTitle('app_id', 'AppID') }} <span v-if="fieldRequired('app_id')" class="field-required">*</span> <HelpTip :title="fieldTitle('app_id', 'AppID')">

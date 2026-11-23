@@ -5,7 +5,7 @@
       <div class="head">
         <b>执行器接入令牌</b> <HelpTip title="执行器接入令牌是什么">
           <p>外部执行器接入中枢的专用凭证，只能用于 claim/result/heartbeat，不具备后台账号能力。</p>
-          <p>令牌按 target 白名单授权，可轮换、可停用、可审计。执行器实例只会认领它被授权的调度目标。</p>
+          <p>令牌按 target 白名单授权。将完整令牌交给受信智能体，或用于 <code>executor.mjs</code> 的 <code>--token</code> 参数。可在此轮换或停用令牌。</p>
         </HelpTip>
         <el-button style="margin-left: auto" :loading="tkLoading" @click="loadTokens">刷新令牌</el-button>
         <el-button v-if="canWrite" type="primary" @click="openCreate">签发令牌</el-button>
@@ -50,7 +50,7 @@
           </el-popconfirm>
         </template>
       </el-table-column>
-      <template #empty><div v-if="tkLoading" class="muted" style="padding: 14px">正在读取令牌…</div><div v-else-if="tokenError" class="muted" style="padding: 14px">未取得令牌列表，请点击「刷新令牌」重试。</div><div v-else-if="tokenQuery || tokenFocus" class="muted" style="padding: 14px">没有匹配的令牌，请调整或清除筛选。</div><div v-else class="muted" style="padding: 14px">还没有执行器令牌。<template v-if="canWrite">点「签发令牌」建一个；把完整令牌交给受信智能体，或填入 <code>executor.mjs</code> 的 <code>--token</code>。</template><template v-else>请由有执行器管理权限的账号签发。</template></div></template>
+      <template #empty><div v-if="tkLoading" class="muted" style="padding: 14px">正在读取令牌…</div><div v-else-if="tokenError" class="muted" style="padding: 14px">未取得令牌列表，请点击「刷新令牌」重试。</div><div v-else-if="tokenQuery || tokenFocus" class="muted" style="padding: 14px">没有匹配的令牌，请调整或清除筛选。</div><div v-else class="muted" style="padding: 14px">还没有执行器令牌。<template v-if="!canWrite">当前账号无签发权限。</template></div></template>
     </el-table>
   </el-card>
 
@@ -130,6 +130,7 @@
         <b>在线执行器</b> <HelpTip title="在线执行器 / 池模型">
           <p>认领并执行任务的 worker 进程。一个 target 可由多个执行器组成「<b>池</b>」（谁先抢到谁干，等价可互换）。</p>
           <p>模型：<b>路由 → 一个 target（能力 / 队列）→ 服务它的执行器池</b>。执行器声明「我接哪些 target、能跑哪些 profile」，中枢把任务派给在线且有能力的池成员。</p>
+          <p>接入时先注册 executor 类型的调度目标并绑定路由，再签发对应令牌。可在「触发路由 → 调用代码 → 执行器接入」复制接入引导。</p>
           <p>要让不同机器干不同的事 → 用不同 <code>target</code> 或不同 <code>profile</code>，<b>不是</b>堆进同一个 target。</p>
         </HelpTip>
         <el-button style="margin-left: auto" :loading="loading" @click="load">刷新</el-button>
@@ -199,7 +200,7 @@
         <div v-if="loading" class="muted" style="padding: 16px">正在读取执行器…</div>
         <div v-else-if="loadError" class="muted" style="padding: 16px">执行器列表读取失败，请点击「刷新」重试。</div>
         <div v-else-if="instanceQuery || instanceFocus || executorState || targetFilter" class="muted" style="padding: 16px">没有匹配的执行器，请调整或清除筛选。</div>
-        <div v-else class="muted" style="padding: 16px">还没有执行器在线。请先注册 executor 类型调度目标并让路由选择它，再由有管理权限的账号签发对应令牌；最后到「触发路由 → 调用代码 → 执行器接入」复制完整说明发给智能体。</div>
+        <div v-else class="muted" style="padding: 16px">还没有执行器在线。</div>
       </template>
     </el-table>
   </el-card>

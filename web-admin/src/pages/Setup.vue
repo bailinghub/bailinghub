@@ -4,7 +4,7 @@
       <template #header>
         <div class="head">
           <span><b>接入向导</b> <HelpTip title="接入向导是什么">
-            <p>先选择要完成的任务，再按配置之间的依赖逐步接入。</p>
+            <p>业务系统调用 AI 时，中枢调度模型或执行器。本地智能体操作业务系统时，客户端运行模型，通过业务登录授权连接中枢工具。</p>
             <p>「已配置」只说明已保存相应配置；模型、业务鉴权、工具及真实执行结果需要单独验证。读取失败和无权查看不会被当成没有配置。</p>
             <p>内置演示只验证演示链路，不代表你的业务系统已经接通；不会自动发起任务。</p>
           </HelpTip></span>
@@ -14,15 +14,15 @@
 
       <div class="flowChoices" role="group" aria-label="选择接入任务">
         <button type="button" :class="{ selected: flow === 'business' }" :aria-pressed="flow === 'business'" @click="selectFlow('business')">
-          <b>让业务系统调用 AI</b><span>业务后端发起任务，由中枢调度模型或执行器，再查看结果。</span>
+          <b>让业务系统调用 AI</b>
         </button>
         <button type="button" :class="{ selected: flow === 'agent' }" :aria-pressed="flow === 'agent'" @click="selectFlow('agent')">
-          <b>让本地智能体操作业务系统</b><span>客户端运行模型，通过业务登录授权连接中枢工具；先准备可复用的业务路由。</span>
+          <b>让本地智能体操作业务系统</b>
         </button>
       </div>
 
       <div class="nextPanel">
-        <div class="nextMain"><span class="muted">{{ showDemoJourney ? '先体验内置演示（可选）' : '下一步' }}</span><b>{{ nextTitle }}</b><p>{{ nextDetail }}</p></div>
+        <div class="nextMain"><span class="muted">{{ showDemoJourney ? '先体验内置演示（可选）' : '下一步' }}</span><b>{{ nextTitle }}</b><p v-if="nextDetail">{{ nextDetail }}</p></div>
         <div class="nextActions">
           <template v-if="showDemoJourney">
             <el-button v-if="smoke?.run?.job_id && canViewRuns" type="primary" @click="viewSmokeTask">查看演示任务</el-button>
@@ -40,12 +40,11 @@
       <el-alert v-if="demoActionError" :title="demoActionError" type="error" :closable="false" show-icon class="notice" />
       <el-alert v-if="smokeError" title="演示验证结果获取失败" :description="smokeError" type="error" :closable="false" show-icon class="notice" />
 
-      <div class="progressLine"><b>业务配置准备 {{ configurationProgress }}</b><span>已配置不等于已验证；最后一步请发起真实调用。</span></div>
-      <p v-if="demoStatus?.imported" class="field-hint">下方只统计真实业务配置，内置演示资源单独展示。</p>
+      <div class="progressLine"><b>业务配置准备 {{ configurationProgress }}</b><HelpTip title="配置进度">仅统计真实业务配置。请在最后一步发起真实调用，核对执行结果。</HelpTip></div>
       <div class="steps">
         <section v-for="(item, index) in steps" :key="item.key" class="step" :class="item.status">
-          <div class="stepTop"><span class="num">{{ index + 1 }}</span><b>{{ item.title }}</b><el-tag size="small" effect="plain" :type="tagType(item.status)">{{ statusLabel(item.status) }}</el-tag></div>
-          <p>{{ item.detail }}</p>
+          <div class="stepTop"><span class="num">{{ index + 1 }}</span><b>{{ item.title }}</b><HelpTip v-if="isStepGuide(item)" :title="item.title">{{ item.detail }}</HelpTip><el-tag size="small" effect="plain" :type="tagType(item.status)">{{ statusLabel(item.status) }}</el-tag></div>
+          <p v-if="!isStepGuide(item)">{{ item.detail }}</p>
           <div v-if="flow === 'agent' && item.key === 'routes' && item.status === 'missing'" class="actions">
             <el-button v-if="me.can('targets:read') && me.hasModule('targets')" size="small" @click="router.push('/targets')">查看调度目标</el-button>
             <el-button v-if="me.can('credentials:read') && me.hasModule('credentials')" size="small" @click="router.push('/credentials')">查看模型凭证</el-button>
@@ -56,28 +55,27 @@
       </div>
 
       <div v-if="flow === 'business'" class="modelNote">
-        <div><b>模型凭证（按执行方式配置）</b><p>{{ credentialDetail }}</p></div>
+        <div><b>模型凭证</b><HelpTip title="何时配置模型凭证">中枢调用模型时需要模型凭证。外部执行器使用自身环境。保存凭证后，请通过实际路由调用验证。</HelpTip><p>{{ credentialDetail }}</p></div>
         <el-button v-if="me.can('credentials:read') && me.hasModule('credentials')" size="small" @click="router.push('/credentials')">查看模型凭证</el-button>
       </div>
-      <div class="verificationNote"><b>验证后到哪里查看？</b><span>{{ flow === 'business' ? '业务调用返回任务编号（job_id）后，到「任务」核对执行结果与执行记录（trace）。演示成功不能代替这一步。' : '在「本地智能体」查看设备授权和运行记录，核对刚才的只读动作；连接配置生成成功不代表业务授权已完成。' }}</span><el-button v-if="flow === 'business' && canViewRuns" link type="primary" @click="router.push('/runs')">查看任务</el-button></div>
+      <div v-if="flow === 'business' && canViewRuns" class="verificationNote"><el-button link type="primary" @click="router.push('/runs')">查看任务</el-button></div>
     </el-card>
 
     <el-card v-if="smoke" shadow="never" class="smokePanel">
-      <template #header><div class="head"><b>本次演示验证结果</b><el-tag effect="plain" :type="verifiedDemo ? 'success' : 'warning'">{{ verifiedDemo ? '演示调用已完成' : '尚未完成演示验证' }}</el-tag><el-button size="small" :loading="smokeLoading" :disabled="busy || !demoStatus?.imported" @click="runSmoke">重新运行</el-button></div></template>
-      <p class="field-hint">{{ verifiedDemo ? '本次只验证内置演示路由。请继续核对任务中的实际输出，再按上方路径接入业务。' : '检查无失败项也不一定代表调用成功：还需演示任务状态为 done，并取得可追溯记录。请查看下方明细。' }}</p>
+      <template #header><div class="head"><b>本次演示验证结果</b><HelpTip title="演示验证的范围">演示任务需执行完成并取得可追溯记录。请在接入自己的业务后单独验证实际输出。</HelpTip><el-tag effect="plain" :type="verifiedDemo ? 'success' : 'warning'">{{ verifiedDemo ? '演示调用已完成' : '尚未完成演示验证' }}</el-tag><el-button size="small" :loading="smokeLoading" :disabled="busy || !demoStatus?.imported" @click="runSmoke">重新运行</el-button></div></template>
       <div class="smokeMeta"><span>通过 {{ smoke.pass }} / 跳过 {{ smoke.skip }} / 失败 {{ smoke.fail }}</span><span v-if="smoke.run?.status">任务状态：{{ smoke.run.status }}</span><el-button v-if="smoke.run?.job_id && canViewRuns" link type="primary" @click="viewSmokeTask">查看任务</el-button></div>
       <el-table :data="smoke.checks" size="small" max-height="300"><el-table-column label="状态" width="80"><template #default="{ row }"><el-tag size="small" effect="plain" :type="row.status === 'pass' ? 'success' : row.status === 'fail' ? 'danger' : 'info'">{{ row.status === 'pass' ? '通过' : row.status === 'fail' ? '失败' : '跳过' }}</el-tag></template></el-table-column><el-table-column prop="name" label="检查项" min-width="190" /><el-table-column prop="detail" label="说明" min-width="240" show-overflow-tooltip /></el-table>
     </el-card>
 
     <el-collapse class="demoOptions">
       <el-collapse-item title="内置演示（可选）" name="demo">
-        <p>使用确定性演示目标，无需购买模型算力。导入只写配置；运行演示验证 才会发起真实演示任务。它不验证本地智能体登录，也不替代真实业务验收。</p>
         <el-alert v-if="resources.demo.status !== 'ready'" :type="resources.demo.status === 'error' ? 'error' : 'info'" :title="resources.demo.error || '正在读取演示配置…'" :closable="false" />
         <p v-else-if="!demoStatus?.available">此实例未开放演示数据导入，可直接按上方路径配置业务。</p>
         <div class="actions">
           <el-button v-if="demoAvailable && demoCanManage" :loading="demoLoading" :disabled="busy" @click="importDemo">{{ demoStatus?.imported ? '刷新演示数据' : '导入演示数据' }}</el-button>
           <el-button v-if="demoStatus?.imported && me.can('audit:read')" :loading="smokeLoading" :disabled="busy" @click="runSmoke">运行演示验证</el-button>
           <el-button v-if="demoStatus?.imported && demoCanManage" :loading="demoCleanupLoading" :disabled="busy" @click="clearDemo">清理演示数据</el-button>
+          <HelpTip v-if="demoAvailable" title="内置演示">演示使用内置执行目标，无需外部模型算力。导入只写入配置，点击「运行演示验证」才会发起演示任务。</HelpTip>
           <span v-if="demoAvailable && !demoCanManage" class="field-hint">导入或清理需要目标、工具源、路由和接入方的管理权限。</span>
         </div>
       </el-collapse-item>
@@ -129,19 +127,21 @@ const nextTitle = computed(() => showDemoJourney.value
   ? verifiedDemo.value ? '演示调用已完成，查看任务后接入真实业务' : demoStatus.value?.imported ? '演示数据已导入，运行演示验证' : '先导入演示配置，再手动运行验证'
   : nextStep.value?.title || '按所选路径验证真实调用');
 const nextDetail = computed(() => {
-  if (!showDemoJourney.value) return nextStep.value?.detail || '';
-  if (smokeLoading.value) return '正在运行本次演示验证，请等待任务与检查结果。';
-  if (verifiedDemo.value) return '已生成真实演示任务与可追溯记录。这只证明本次演示调用完成；你的业务模型、工具和授权需要另行验证。';
-  if (smoke.value) return '本次演示尚未满足成功条件。请先查看任务状态与下方检查明细，再决定是否重试。';
-  return demoStatus.value?.imported ? '使用内置演示主体发起真实调用并生成任务与执行记录（trace）。导入不等于验证通过；运行由你手动发起。' : '先用不依赖外部模型的演示链路认识任务与执行记录（trace）。也可以直接开始业务配置。';
+  if (!showDemoJourney.value) return '';
+  if (smokeLoading.value) return '正在运行演示验证…';
+  if (smoke.value && !verifiedDemo.value) return '尚未通过验证，请查看下方检查明细。';
+  return '';
 });
 const credentialDetail = computed(() => {
   const item = resources.value.credentials;
   if (item.status !== 'ready') return item.error || '正在读取模型凭证…';
   const count = item.data?.filter((credential) => credential.enabled).length ?? 0;
-  return count ? `已保存 ${count} 个已启用凭证，尚不能据此确认模型可用。请在实际路由调用中验证。` : '尚无已启用的模型凭证。使用中枢模型时再添加；外部执行器使用自身环境，不必为完成向导添加无关凭证。';
+  return count ? `已启用 ${count} 个凭证` : '暂无已启用凭证';
 });
 
+function isStepGuide(item: SetupStep): boolean {
+  return item.status === 'missing' || item.status === 'optional' || item.status === 'verify';
+}
 function selectFlow(value: OnboardingFlow): void { void router.replace({ query: { ...pageRoute.query, flow: value } }); }
 function startBusiness(): void { demoFocus.value = false; selectFlow('business'); }
 function openDocs(): void { openDoc('/docs'); }
@@ -246,7 +246,7 @@ onUnmounted(() => window.removeEventListener('bailing-demo-dataset-imported', on
 </script>
 
 <style scoped>
-.setup{display:flex;flex-direction:column;gap:16px}.head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.headActions{margin-left:auto;display:flex;align-items:center;gap:8px}.flowChoices{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}.flowChoices button{padding:16px;text-align:left;font:inherit;color:var(--el-text-color-primary);background:var(--el-bg-color);border:1px solid var(--el-border-color);cursor:pointer}.flowChoices button.selected{border-color:var(--el-color-primary);background:var(--el-color-primary-light-9)}.flowChoices button:focus-visible{outline:2px solid var(--el-color-primary);outline-offset:2px}.flowChoices b,.flowChoices span{display:block}.flowChoices b{font-size:16px;margin-bottom:8px}.flowChoices span{font-size:13px;line-height:1.6;color:var(--el-text-color-secondary)}.nextPanel{display:flex;align-items:center;gap:20px;padding:18px;margin-bottom:18px;border:1px solid var(--el-border-color-lighter);background:var(--el-fill-color-light)}.nextMain{flex:1;min-width:0}.nextMain b{display:block;font-size:18px;margin:7px 0}.nextMain p{margin:0;line-height:1.7;color:var(--el-text-color-regular)}.nextActions,.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.nextActions{justify-content:flex-end;max-width:360px}.notice{margin-bottom:14px}.progressLine{display:flex;align-items:baseline;gap:14px;margin-bottom:14px;flex-wrap:wrap}.progressLine span,.field-hint{font-size:12px;line-height:1.7;color:var(--el-text-color-secondary)}.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.step{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--el-border-color-lighter)}.step.error{border-color:var(--el-color-danger-light-5)}.stepTop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.stepTop b{flex:1;font-size:14px}.num{color:var(--el-text-color-secondary);font-size:12px}.step p{margin:0;line-height:1.7;color:var(--el-text-color-regular);font-size:13px;flex:1}.modelNote{display:flex;align-items:center;gap:16px;margin-top:18px;padding:14px;border:1px solid var(--el-border-color-lighter)}.modelNote div{flex:1}.modelNote p{margin:6px 0 0;font-size:13px;line-height:1.7;color:var(--el-text-color-secondary)}.verificationNote{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-top:16px;font-size:13px;line-height:1.7}.verificationNote span{color:var(--el-text-color-secondary);flex:1;min-width:220px}.smokeMeta{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:13px}.demoOptions p{font-size:13px;line-height:1.7;color:var(--el-text-color-secondary)}.muted{color:var(--el-text-color-secondary);font-size:12px}
+.setup{display:flex;flex-direction:column;gap:16px}.head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.headActions{margin-left:auto;display:flex;align-items:center;gap:8px}.flowChoices{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}.flowChoices button{padding:16px;text-align:left;font:inherit;color:var(--el-text-color-primary);background:var(--el-bg-color);border:1px solid var(--el-border-color);cursor:pointer}.flowChoices button.selected{border-color:var(--el-color-primary);background:var(--el-color-primary-light-9)}.flowChoices button:focus-visible{outline:2px solid var(--el-color-primary);outline-offset:2px}.flowChoices b{font-size:16px}.nextPanel{display:flex;align-items:center;gap:20px;padding:18px;margin-bottom:18px;border:1px solid var(--el-border-color-lighter);background:var(--el-fill-color-light)}.nextMain{flex:1;min-width:0}.nextMain b{display:block;font-size:18px;margin:7px 0}.nextMain p{margin:0;line-height:1.7;color:var(--el-text-color-regular)}.nextActions,.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.nextActions{justify-content:flex-end;max-width:360px}.notice{margin-bottom:14px}.progressLine{display:flex;align-items:baseline;gap:14px;margin-bottom:14px;flex-wrap:wrap}.field-hint{font-size:12px;line-height:1.7;color:var(--el-text-color-secondary)}.steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.step{display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--el-border-color-lighter)}.step.error{border-color:var(--el-color-danger-light-5)}.stepTop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.stepTop b{flex:1;font-size:14px}.num{color:var(--el-text-color-secondary);font-size:12px}.step p{margin:0;line-height:1.7;color:var(--el-text-color-regular);font-size:13px;flex:1}.modelNote{display:flex;align-items:center;gap:16px;margin-top:18px;padding:14px;border:1px solid var(--el-border-color-lighter)}.modelNote div{flex:1}.modelNote p{margin:6px 0 0;font-size:13px;line-height:1.7;color:var(--el-text-color-secondary)}.verificationNote{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-top:16px;font-size:13px;line-height:1.7}.smokeMeta{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px;font-size:13px}.demoOptions p{font-size:13px;line-height:1.7;color:var(--el-text-color-secondary)}.muted{color:var(--el-text-color-secondary);font-size:12px}
 @media(max-width:1100px){.steps{grid-template-columns:repeat(2,minmax(0,1fr))}.nextPanel{align-items:flex-start;flex-direction:column}.nextActions{max-width:none;justify-content:flex-start}}
 @media(max-width:760px){.steps,.flowChoices{grid-template-columns:1fr}.modelNote{align-items:flex-start;flex-direction:column}.headActions{margin-left:0}}
 </style>

@@ -14,7 +14,7 @@
         <details v-else class="ph2 muted"><summary>会话标识</summary><div class="mono">Thread：{{ threadData.thread.thread_id }}</div><div class="mono">Scope：{{ threadData.thread.scope_key }}</div></details>
       </div>
       <el-collapse v-if="threadData.thread.summary" class="coll summcoll">
-        <el-collapse-item title="记忆层滚动摘要（更早的对话已折叠进这里，装配上下文时注入）">
+        <el-collapse-item title="历史对话摘要">
           <pre class="block">{{ cap(threadData.thread.summary) }}</pre>
         </el-collapse-item>
       </el-collapse>
@@ -44,14 +44,14 @@
               <div v-if="traces[traceKey(m)]?.open" class="tracebox" v-loading="traces[traceKey(m)]?.loading">
                 <template v-if="traces[traceKey(m)]?.detail">
                   <div class="tmeta2">
-                    <el-tag v-if="isAgentTrace(traceKey(m))" size="small" type="primary" effect="plain">本地智能体编排</el-tag>
+                    <template v-if="isAgentTrace(traceKey(m))">
+                      <el-tag size="small" type="primary" effect="plain">本地智能体编排</el-tag>
+                      <HelpTip title="本地智能体执行轨迹">客户端负责规划和工具选择，隐藏推理不会上传。中枢记录可核验的工具调用、审批与执行结果。</HelpTip>
+                    </template>
                     <el-tag size="small" :title="traces[traceKey(m)].detail.status" :type="statusType(traces[traceKey(m)].detail.status)" effect="plain">{{ traceStatusLabel(traces[traceKey(m)].detail.status) }}</el-tag>
                     <span v-if="traceModel(traceKey(m))" class="mono muted">{{ traceModel(traceKey(m)) }}</span>
                     <span v-if="traceDuration(traceKey(m))" class="muted">{{ (traceDuration(traceKey(m)) / 1000).toFixed(1) }}s</span>
                     <span v-if="traceTokenCount(traceKey(m))" class="muted">{{ traceTokenCount(traceKey(m)) }} tok</span>
-                  </div>
-                  <div v-if="isAgentTrace(traceKey(m))" class="agentTraceHint">
-                    本地智能体负责理解、规划和工具选择；隐藏推理不会上传。以下只展示中枢可验证的运行边界、ACC 工具治理、审批与结果。
                   </div>
                   <el-button v-if="traces[traceKey(m)].detail.conversation_audit_id" size="small" plain type="primary" class="traceDetailBtn" @click="emit('open-audit', traces[traceKey(m)].detail.conversation_audit_id, traces[traceKey(m)].detail.client_turn_id)">查看客户端完整对话</el-button>
                   <div v-if="isAgentTrace(traceKey(m)) && traces[traceKey(m)].summary?.partial" class="agentTracePartial">
@@ -109,6 +109,7 @@ import type { ConversationFeedItem } from './conversation-audit';
 import { readingPosition, restoreReadingPosition } from './conversation-reading-position';
 import { fmtTime } from '../util';
 import RichText from './RichText.vue';
+import HelpTip from './HelpTip.vue';
 import { traceKey, threadTraceOwners } from './conversation-audit';
 import { cap, detailLen, shortDetail, fullDetail, fmtTools, statusType, traceStatusLabel, traceTitle, traceSummaryText, traceStageLabel, traceStageType, traceSeverityType,
   partyLabel, partyVisible, partyType, whoLabel, identityTitle, type TraceEvent, type TracePayload } from '../task-trace-presentation';
@@ -383,8 +384,8 @@ defineExpose({ refresh, scrollToLatest, loading: threadDataLoading });
 	.auditcoll :deep(.el-collapse-item__header) { font-family: var(--bz-mono); font-size: 11px; height: auto; line-height: 1.6; padding: 2px 0; border-bottom: none; color: var(--el-text-color-secondary); white-space: nowrap; overflow: hidden; }
 	.auditcoll :deep(.el-collapse-item__content) { padding-bottom: 6px; }
 	.auditcoll :deep(.el-collapse-item__wrap) { border-bottom: none; }
-.pane { flex: 1; overflow-y: auto; padding: 14px 18px; min-width: 0; }
-.paneHead { position: sticky; top: -14px; background: var(--el-bg-color); padding: 4px 0 10px; margin: -4px 0 6px; border-bottom: 1px solid var(--el-border-color-lighter); z-index: 1; }
+.pane { --pane-inset: 18px; flex: 1; overflow-y: auto; padding: 0 var(--pane-inset) 14px; min-width: 0; }
+.paneHead { position: sticky; top: 0; background: var(--el-bg-color); padding: 14px var(--pane-inset) 10px; margin: 0 calc(-1 * var(--pane-inset)) 6px; border-bottom: 1px solid var(--el-border-color-lighter); z-index: 1; }
 .ph1 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .ph2 { margin-top: 4px; word-break: break-all; }
 .ph1 { overflow-wrap: anywhere; }
@@ -408,7 +409,6 @@ defineExpose({ refresh, scrollToLatest, loading: threadDataLoading });
 .tracebox { margin-top: 6px; padding: 10px 12px; border: 1px dashed var(--el-border-color); border-radius: 0; background: var(--el-fill-color-blank); }
 .traceDetailBtn { margin-top: 4px; height: 26px; padding: 0 10px; }
 .tmeta2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
-.agentTraceHint { margin: 6px 0 9px; padding: 7px 9px; background: var(--el-color-primary-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
 .agentTracePartial { margin: 6px 0 9px; padding: 7px 9px; background: var(--el-color-warning-light-9); color: var(--el-text-color-regular); font-size: 12px; line-height: 1.55; }
 .agentInvocations { display: flex; flex-direction: column; gap: 5px; margin: 7px 0 10px; }
 .agentInvocation { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; min-height: 28px; padding: 4px 7px; border: 1px solid var(--el-border-color-lighter); background: var(--el-fill-color-light); }
@@ -420,8 +420,8 @@ defineExpose({ refresh, scrollToLatest, loading: threadDataLoading });
 .messagePager { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px; margin: 16px 0 4px; }
 .messagePager [role=alert] { color: var(--el-color-danger); }
 .pendingReply { display: block; margin: 5px 0; }
-.pane.feed { padding: 0 clamp(16px, 2vw, 32px) 18px; }
-.feed .paneHead { top: 0; padding: 12px 0 9px; margin: 0 0 4px; }
+.pane.feed { --pane-inset: clamp(16px, 2vw, 32px); padding-bottom: 18px; }
+.feed .paneHead { padding-block: 12px 9px; margin-bottom: 4px; }
 .detailTitle { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .feed h2 { font-size: 19px; line-height: 1.5; margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .feed summary { cursor: pointer; }

@@ -454,9 +454,9 @@ time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 .itemState { font-size: 12px; color: var(--el-text-color-secondary); }
 .directoryEntry { width: 100%; display: flex; align-items: center; gap: 8px; padding: 13px 14px; font-weight: 600; border-top: 1px solid var(--el-border-color); }
 .directoryEntry .el-icon:last-child { margin-left: auto; }
-.auditPane { min-width: 0; overflow: auto; padding: 0 clamp(16px, 2vw, 32px); }
+.auditPane { --pane-inset: clamp(16px, 2vw, 32px); min-width: 0; overflow: auto; padding: 0 var(--pane-inset); }
 .backToList { display: none; }
-.conversationHeader { position: sticky; top: 0; z-index: 1; background: var(--el-bg-color); padding: 12px 0 9px; border-bottom: 1px solid var(--el-border-color); }
+.conversationHeader { position: sticky; top: 0; z-index: 1; background: var(--el-bg-color); padding: 12px var(--pane-inset) 9px; margin-inline: calc(-1 * var(--pane-inset)); border-bottom: 1px solid var(--el-border-color); }
 .headerMeta { margin: 5px 0; overflow-wrap: anywhere; }
 .headerLinks, .runActions, .invocation { flex-wrap: wrap; }
 .headerLinks .el-button + .el-button { margin-left: 4px; }
@@ -512,7 +512,7 @@ time { flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .channelMain { flex: 1; }
   .backToList { display: inline-flex; margin-top: 10px; }
   .conversationHeader { padding-top: 6px; }
-  .auditPane { padding-inline: 12px; }
+  .auditPane { --pane-inset: 12px; }
   .authorizationRuns { margin-left: 0; }
 }
 @media (max-width: 550px) {

@@ -11,7 +11,7 @@
     <el-alert v-if="returnToClient" title="接入方草稿已临时保留，创建路由后可返回继续授权。刷新浏览器会丢失这份草稿。" type="info" :closable="false" show-icon style="margin-bottom:12px"><el-button link type="primary" @click="returnToClientDraft">返回接入方草稿</el-button></el-alert>
     <el-alert v-if="listError" :title="listError" type="error" :closable="false" show-icon><el-button link @click="load">重试读取</el-button></el-alert>
     <ListLocationBar v-model="listQuery" :count="locatedRows.length" :total="list.length" :focus="listFocus" :related-focus="relatedFocus" :return-to="listReturnTo" @clear="clearListLocation" />
-    <el-empty v-if="!listLoading && !listError && !list.length" description="还没有路由：业务系统的每个触发场景对应一条路由">
+    <el-empty v-if="!listLoading && !listError && !list.length" description="暂无触发路由">
       <el-button v-if="s.can('routes:write')" type="primary" @click="openCreate">建第一条</el-button>
     </el-empty>
     <el-table v-else v-loading="listLoading" :data="locatedRows" :empty-text="listQuery || listFocus ? '没有匹配的对象，请调整或清除筛选' : '暂无数据'">
@@ -134,7 +134,6 @@
               <el-option v-for="mname in g.models" :key="mname" :value="mname" :label="g.tag ? mname + '  · ' + g.tag : mname" />
             </el-option-group>
           </el-select>
-          <div v-if="curCredProviderFree" class="field-hint">该平台模型很多/需准确 ID，列表仅常用建议，可手填——记得带 <code>org/</code> 前缀（如 <code>qwen/…</code>、<code>anthropic/…</code>）</div>
         </el-form-item>
         <el-form-item>
           <template #label>系统提示词 <HelpTip title="系统提示词（可选）">
@@ -164,14 +163,14 @@
                 :label="c.name + (c.default_model ? '（默认模型 ' + c.default_model + '）' : '')" :disabled="!c.enabled" />
             </el-select>
           </el-form-item>
-          <el-form-item label="图片模型">
+          <el-form-item>
+            <template #label>图片模型 <HelpTip v-if="visCredProviderFree" title="图片模型 ID"><p>可手填平台提供的完整模型 ID，例如 OpenRouter 的 <code>org/model</code>。</p></HelpTip></template>
             <el-select v-model="vis.model" filterable allow-create clearable default-first-option class="mono" style="width: 100%"
               :placeholder="visCredDefaultModel ? '留空 = 用凭证默认：' + visCredDefaultModel : '选图片理解模型，或手填准确 ID'">
               <el-option-group v-for="g in visionModelGroups" :key="g.label" :label="g.label">
                 <el-option v-for="mname in g.models" :key="mname" :value="mname" :label="g.tag ? mname + '  · ' + g.tag : mname" />
               </el-option-group>
             </el-select>
-            <div v-if="visCredProviderFree" class="field-hint">该平台模型多/需准确 ID，列表仅常用建议，可手填——记得带 <code>org/</code> 前缀</div>
           </el-form-item>
           <el-form-item>
             <template #label>接入方式 <HelpTip title="图片怎么交给大脑">
@@ -225,14 +224,14 @@
                   :label="c.name + (c.default_model ? '（默认模型 ' + c.default_model + '）' : '')" :disabled="!c.enabled" />
               </el-select>
             </el-form-item>
-            <el-form-item label="语音模型">
+            <el-form-item>
+              <template #label>语音模型 <HelpTip v-if="voiceCredProviderFree" title="语音模型 ID"><p>可手填平台提供的完整模型 ID，例如 OpenRouter 的 <code>org/model</code>。</p></HelpTip></template>
               <el-select v-model="voice.model" filterable allow-create clearable default-first-option class="mono" style="width: 100%"
                 :placeholder="voiceCredDefaultModel ? '留空 = 用凭证默认：' + voiceCredDefaultModel : '选语音模型，或手填准确 ID'">
                 <el-option-group v-for="g in voiceModelGroups" :key="g.label" :label="g.label">
                   <el-option v-for="mname in g.models" :key="mname" :value="mname" :label="g.tag ? mname + '  · ' + g.tag : mname" />
                 </el-option-group>
               </el-select>
-              <div v-if="voiceCredProviderFree" class="field-hint">该平台模型多/需准确 ID，列表仅常用建议，可手填——记得带 <code>org/</code> 前缀</div>
             </el-form-item>
           </template>
           <el-form-item>
@@ -267,14 +266,14 @@
                   :label="c.name + (c.default_model ? '（默认模型 ' + c.default_model + '）' : '')" :disabled="!c.enabled" />
               </el-select>
             </el-form-item>
-            <el-form-item label="文件模型">
+            <el-form-item>
+              <template #label>文件模型 <HelpTip v-if="fileCredProviderFree" title="文件模型 ID"><p>可手填平台提供的完整模型 ID，例如 OpenRouter 的 <code>org/model</code>。</p></HelpTip></template>
               <el-select v-model="fileInput.model" filterable allow-create clearable default-first-option class="mono" style="width: 100%"
                 :placeholder="fileCredDefaultModel ? '留空 = 用凭证默认：' + fileCredDefaultModel : '选文件/长文档模型，或手填准确 ID'">
                 <el-option-group v-for="g in fileModelGroups" :key="g.label" :label="g.label">
                   <el-option v-for="mname in g.models" :key="mname" :value="mname" :label="g.tag ? mname + '  · ' + g.tag : mname" />
                 </el-option-group>
               </el-select>
-              <div v-if="fileCredProviderFree" class="field-hint">该平台模型多/需准确 ID，列表仅常用建议，可手填——记得带 <code>org/</code> 前缀</div>
             </el-form-item>
           </template>
           <el-form-item>
@@ -305,7 +304,6 @@
           <el-option value="readwrite" label="常规读写（提示词约束）" />
           <el-option value="full" label="不附加行为限制" />
         </el-select>
-        <div class="field-hint">仅提示词约束；工具授权与审批在「工具治理」配置。</div>
       </el-form-item>
       <el-form-item v-if="form.target !== 'llm'">
         <template #label>{{ routeFieldTitle('profile', '角色档') }} <HelpTip :title="routeFieldTitle('profile', '角色档')">
@@ -313,7 +311,7 @@
           <p>执行器侧可选的角色档（profile），比如结构化输出、某类专业任务模板。它管“以什么角色、按什么 schema 干活”，<b>跟上面的「执行行为提示」是两回事</b>。</p>
           <p><b>非必填，留空即可。</b>下拉里是服务当前 target 的在线执行器自报的档，也可手填。执行器是否支持 profile，由该执行器自己的适配器决定。</p>
         </HelpTip></template>
-        <el-select v-model="form.profile" filterable allow-create clearable default-first-option style="width: 100%" placeholder="留空即可（实验性，后续并入云端 skill）">
+        <el-select v-model="form.profile" filterable allow-create clearable default-first-option style="width: 100%" placeholder="选择或填写角色档（可选）">
           <el-option v-for="p in profileOptions" :key="p.name" :value="p.name" :label="p.name + (p.by.length ? ` · 来自 ${p.by.join('、')}` : '（手填 · 本 target 在线池暂未上报此档）')" />
         </el-select>
       </el-form-item>
@@ -321,7 +319,7 @@
         <template #label>{{ routeFieldTitle('session_policy', '会话连续性') }} <span class="scope-tag">· 仅 /run API 触发</span> <span v-if="routeFieldRequired('session_policy')" class="field-required">*</span> <HelpTip :title="routeFieldTitle('session_policy', '会话连续性')">
           <p>{{ routeFieldDesc('session_policy', '仅 /run API 直接触发生效，控制业务触发多次调用是否接续同一会话。') }}</p>
           <p>控制<b>用 /run API 触发本路由</b>时，多次调用之间要不要接续同一会话：</p>
-          <p><code>new</code> 每次独立；<code>per_key</code> 按 metadata 某字段值各自续聊；<code>fixed</code> 全路由共用一条常驻会话；<code>passthrough</code> 会话 id 由业务侧在 /run 里直接给，中枢只转发、不持有任何 id。</p>
+          <p><code>new</code> 每次独立；<code>per_key</code> 按 metadata 某字段值各自续聊；<code>fixed</code> 全路由共用一条常驻会话；<code>passthrough</code> 会话 id 由业务侧在 /run 里直接给，中枢转发该 ID，未提供时新建会话。</p>
           <p><b>聊天入口与渠道入站不读此项</b>——它们天然按访客/用户各自续聊，多会话用聊天 body 的 <code>thread_id</code> 切分。</p>
         </HelpTip>
           <el-tooltip v-if="sessionPolicyBindings.inert" placement="top" effect="dark"
@@ -331,9 +329,9 @@
         </template>
         <el-select v-model="form.session_policy" style="width: 100%">
           <el-option value="new" label="new（每次新会话，默认）" />
-          <el-option value="per_key" label="per_key（按 metadata 某字段值各自一会话续聊，id 中枢自动保管）" />
-          <el-option value="fixed" label="fixed（本路由所有任务进同一常驻会话）" />
-          <el-option value="passthrough" label="passthrough（会话 id 由业务侧 /run 直接给，中枢只转发；不给则新建）" />
+          <el-option value="per_key" label="per_key（按字段值续聊）" />
+          <el-option value="fixed" label="fixed（全路由共用会话）" />
+          <el-option value="passthrough" label="passthrough（业务侧提供会话 ID）" />
         </el-select>
       </el-form-item>
       <el-form-item v-if="form.session_policy === 'per_key'">
@@ -345,9 +343,9 @@
       <el-form-item v-if="form.session_policy === 'passthrough'">
         <template #label>{{ routeFieldTitle('session_key_field', '会话 ID 字段') }} <HelpTip :title="routeFieldTitle('session_key_field', '会话 ID 字段')">
           <p>{{ routeFieldDesc('session_key_field', '从 metadata 中读取该字段作为会话键。') }}</p>
+          <p>业务调用 <code>/run</code> 时携带 <code>metadata.{{ form.session_key_field || 'session_id' }}</code> 即可接续该会话，省略则新建会话。业务系统自行维护这个 ID。</p>
         </HelpTip></template>
         <el-input v-model="form.session_key_field" placeholder="留空即用 session_id" class="mono" />
-        <div class="muted hint">业务每次 /run 带 <code>metadata.{{ form.session_key_field || 'session_id' }}</code> = 续那个会话；不带 = 新开一个。中枢不存、不管这个 id，主权全在业务侧。</div>
       </el-form-item>
       <el-form-item v-if="form.session_policy === 'fixed'">
         <template #label>{{ routeFieldTitle('session_fixed_id', '固定会话 ID') }} <HelpTip :title="routeFieldTitle('session_fixed_id', '固定会话 ID')">
@@ -385,7 +383,7 @@
       <el-collapse><el-collapse-item title="本地智能体运行设置（高级）" name="agent-runtime">
       <el-form-item>
         <template #label>本地 Agent Runtime <HelpTip title="本地 Agent Runtime">
-          <p>日常接入请使用“本地智能体 → 接入配置”。以下是同一工作空间的底层设置。</p>
+          <p>日常接入请使用“本地智能体 → 接入配置”。补充指令和从路由系统提示词提取的内容会一起下发给本地 Agent。</p>
           <p>开启后，已通过业务网页授权的本地 Agent 可以读取本路由的安全运行档、会话记忆和按需工具定义，并在本地完成编排。</p>
           <p>它仍复用 <code>tools.agent_direct</code> 的工具授权与审批治理；这里只配置本地编排补充指令和每轮主动披露数量，不会返回模型凭证或工具源密钥。</p>
         </HelpTip></template>
@@ -394,7 +392,7 @@
       <template v-if="agentClient.enabled">
         <el-form-item label="本地编排补充指令">
           <el-input v-model="agentClient.instructions" type="textarea" :rows="4" maxlength="20000" show-word-limit
-            placeholder="可选：仅给本地 Agent 的补充规则；路由系统提示词会安全抽取并一并下发" @input="agentClient.configured = true" />
+            placeholder="输入本地 Agent 的补充规则（可选）" @input="agentClient.configured = true" />
         </el-form-item>
         <el-form-item>
           <template #label>每轮主动工具数 <HelpTip title="每轮主动工具数"><p>每轮只返回最相关的完整 typed tools；其余授权能力可通过搜索按需发现，避免全量 schema 撑大上下文。</p></HelpTip></template>
@@ -461,16 +459,16 @@
         </el-select>
       </el-form-item>
       <el-form-item label="允许租户">
-        <el-select v-model="au.tenants" multiple filterable allow-create default-first-option style="width: 100%" placeholder="空 = 不限制租户；值来自 metadata.principal.tenant" />
+        <el-select v-model="au.tenants" multiple filterable allow-create default-first-option style="width: 100%" placeholder="留空不限租户" />
       </el-form-item>
       <el-form-item label="允许角色">
-        <el-select v-model="au.roles" multiple filterable allow-create default-first-option style="width: 100%" placeholder="空 = 不限制角色；值来自 metadata.principal.roles" />
+        <el-select v-model="au.roles" multiple filterable allow-create default-first-option style="width: 100%" placeholder="留空不限角色" />
       </el-form-item>
       <el-form-item label="允许主体">
-        <el-select v-model="au.principals" multiple filterable allow-create default-first-option style="width: 100%" placeholder="空 = 不限制主体；值来自 metadata.principal.id" />
+        <el-select v-model="au.principals" multiple filterable allow-create default-first-option style="width: 100%" placeholder="留空不限主体" />
       </el-form-item>
       <el-form-item label="允许受众类型">
-        <el-select v-model="au.audiences" multiple filterable allow-create default-first-option style="width: 100%" placeholder="空 = 不限制受众；如 employee / customer / admin" />
+        <el-select v-model="au.audiences" multiple filterable allow-create default-first-option style="width: 100%" placeholder="留空不限受众" />
       </el-form-item>
         </el-tab-pane>
         <el-tab-pane label="知识" name="knowledge">
@@ -499,7 +497,8 @@
           <el-radio value="doc">整篇</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item v-if="kn.kb_ids.length" label="最低相关度（低于此分的命中直接丢弃，0~1）">
+      <el-form-item v-if="kn.kb_ids.length">
+        <template #label>最低相关度 <HelpTip title="最低相关度"><p>取值范围为 0 到 1。低于此分数的命中会被过滤。</p></HelpTip></template>
         <el-input-number v-model="kn.min_score" :min="0" :max="1" :step="0.05" :precision="2" />
       </el-form-item>
       <el-form-item v-if="kn.kb_ids.length && kn.inject === 'doc'" label="整篇篇数上限">
@@ -522,9 +521,9 @@
           <p>自定义渠道 = 已注册的 <code>*-notify</code> 执行器承接。</p>
           <p>聊天入口触发：首跑同步回复、不投递；<b>审批意图通过后的重跑走本送达回流</b>。</p>
         </HelpTip></template>
-        <el-select v-model="dv.type" filterable allow-create clearable style="width: 100%" placeholder="不推送（业务方自己轮询或无需结果）">
-          <el-option value="webhook" label="webhook（中枢签名 POST 到业务回调地址）" />
-          <el-option value="channel" label="渠道直推（中枢内置：任务跑完自动经渠道推给指定用户，无需执行器）" />
+        <el-select v-model="dv.type" filterable allow-create clearable style="width: 100%" placeholder="不推送">
+          <el-option value="webhook" label="webhook（签名回调）" />
+          <el-option value="channel" label="渠道直推" />
           <el-option v-for="n in notifyChannels" :key="n.value" :value="n.value" :label="n.label" />
         </el-select>
       </el-form-item>
@@ -573,7 +572,7 @@
         </HelpTip></span>
         <el-button @click="addToolSource">添加工具源</el-button>
       </div>
-      <div v-if="!tl.sources.length" class="muted tool-sources-empty">未挂载业务工具源；该路由仍可只使用模型、知识库或执行器。</div>
+      <div v-if="!tl.sources.length" class="muted tool-sources-empty">未挂载业务工具源</div>
       <div v-for="(source, index) in tl.sources" :key="source.form_key" class="tool-source-editor">
         <div class="tool-source-editor__head"><b>工具源 {{ index + 1 }}</b><el-button link type="danger" @click="removeToolSource(index)">移除</el-button></div>
         <el-form-item label="工具源">
@@ -588,7 +587,7 @@
             <p><b><code>*</code> 全部放行</b>：免维护——工具源以后新增接口自动对本路由生效，不用再回中枢加 scope。代价是新工具会自动暴露，<b>但写操作仍受逐工具治理</b>（标「需主体」的匿名访客看不到、标 high/需确认的仍先形成审批意图），安全闸不因 <code>*</code> 失效。自部署、工具源可信时推荐用它。</p>
           </HelpTip></template>
           <el-select v-model="source.allow" multiple filterable allow-create style="width: 100%" placeholder="选择放行的 scope" :loading="source.scopesLoading">
-            <el-option value="*" label="*（全部放行 —— 工具源新增接口自动生效，免维护；写工具仍受逐工具风险/主体治理）" />
+            <el-option value="*" label="* 全部放行（含后续新增工具）" />
             <el-option v-for="sc in source.scopeOptions" :key="sc.scope" :value="sc.scope" :label="sc.scope + '（' + sc.names.join(' / ') + '）'" />
           </el-select>
         </el-form-item>
@@ -599,9 +598,9 @@
             <p>业务系统侧无需关心此名字——它收到的是 <code>X-Bailing-On-Behalf-Of</code> 头里的用户 ID 值（票据 uid 原样透传）。标「需主体」的工具拿不到主体不会暴露给 AI。</p>
           </HelpTip></template>
           <el-select v-model="source.subject_field" filterable allow-create clearable default-first-option style="width: 100%"
-            placeholder="留空 = visitor_uid（聊天入口的登录身份自动可用）">
-            <el-option value="visitor_uid" label="visitor_uid —— 聊天入口的票据身份（默认值，可不填）" />
-            <el-option value="operator_uid" label="operator_uid —— API 触发常用约定（调用方 metadata 带同名字段）" />
+            placeholder="默认 visitor_uid">
+            <el-option value="visitor_uid" label="visitor_uid（聊天身份，默认）" />
+            <el-option value="operator_uid" label="operator_uid（API 操作人）" />
           </el-select>
         </el-form-item>
       </div>
@@ -624,7 +623,7 @@
         <el-alert v-if="form.permission === 'readonly'" class="agent-direct-alert" type="warning" :closable="false" show-icon
           title="当前路由权限档为只读；即使列出写 operationId，运行时也不会暴露写工具。" />
         <div v-if="agentDirectToolOptions.length" class="agent-direct-catalog-summary">
-          已从当前工具源读取 {{ agentDirectToolOptions.length }} 个 operationId：{{ agentDirectReadonlyCount }} 个只读自动继承，{{ agentDirectWriteOptions.length }} 个写操作可精确授权。
+          当前工具 {{ agentDirectToolOptions.length }} 个 · 只读 {{ agentDirectReadonlyCount }} 个 · 可授权写操作 {{ agentDirectWriteOptions.length }} 个
         </div>
         <el-form-item>
           <template #label>允许的写操作 <HelpTip title="本地 Agent 写操作白名单">
@@ -732,12 +731,18 @@
   <el-dialog v-model="codeOpen" :title="'调用代码 · ' + (codeRoute?.name || codeRoute?.route_key || '')" width="860px" class="code-dialog">
     <div class="code-context">
       <div class="code-context-main">
-        <span class="code-context-label">接入方</span>
+        <span class="code-context-label">接入方 <HelpTip title="调用凭证">
+          <p>从「接入方」复制该接入方的完整 Token，在服务端设置环境变量 <code>BAILING_CLIENT_TOKEN</code>。送达 webhook 也使用同一 Token 验签。</p>
+          <p>取值需要接入方管理权限。列表中的掩码不能代替 Token，请勿将密钥放进网页、代码仓库或 Agent 对话。</p>
+        </HelpTip></span>
         <el-select v-model="codeClientId" class="code-context-select">
           <el-option v-for="c in eligibleClients" :key="c.app_id" :value="c.app_id" :label="c.name + '（' + c.app_id + '）'" />
         </el-select>
       </div>
-      <div class="code-context-note">示例从运行环境读取 <code>BAILING_CLIENT_TOKEN</code>，不包含密钥。送达 webhook 验签也应使用同一接入方的完整 Token。</div>
+      <div>
+        <el-button link type="primary" @click="router.push('/clients')">前往接入方</el-button>
+        <el-button link type="primary" @click="openDoc('/docs/sdk')">打开 SDK 文档</el-button>
+      </div>
     </div>
 
     <div v-if="codeRoute" class="code-route-summary">
@@ -770,35 +775,19 @@
     <div v-if="eligibleClients.length > 1 || codeRoute?.delivery?.type === 'channel'" class="code-notices">
       <div v-if="eligibleClients.length > 1" class="code-notice warning">
         <b>接入方需要确认</b>
-        <span>当前有 {{ eligibleClients.length }} 个接入方可调用本路由，复制前确认示例属于「{{ codeClientId }}」。</span>
+        <span>本次示例使用 {{ codeClientId }}</span>
       </div>
       <div v-if="codeRoute?.delivery?.type === 'channel'" class="code-notice success">
         <b>渠道直推已开启</b>
         <span v-if="codeRoute.delivery.to_field">触发时 metadata 需要带 <code>{{ codeRoute.delivery.to_field }}</code>，任务完成后会经「{{ codeRoute.delivery.channel }}」自动推给该用户。</span>
-        <span v-else>当前固定推给「{{ codeRoute.delivery.to || '未配置收件人' }}」。需要按调用动态指定收件人时，到路由送达配置里填写“收件人字段”。</span>
+        <span v-else>固定收件人：{{ codeRoute.delivery.to || '未配置' }}</span>
       </div>
     </div>
-    <div class="code-notices compact">
-      <div class="code-notice warning">
-        <b>运行前配置完整 Token</b>
-        <span>到「接入方」找到 {{ codeClientId }}，点击「复制完整」，再将完整值配置为运行代码的终端或服务端环境变量 <code>BAILING_CLIENT_TOKEN</code>。不要使用列表中的掩码，也不要放进浏览器前端或代码仓库；取值需要接入方管理权限。</span>
-        <el-button link type="primary" @click="router.push('/clients')">前往接入方</el-button>
-      </div>
-      <div class="code-notice info">
-        <b>完整 SDK</b>
-        <span>本弹窗保留 HTTP / Node.js / Python / PHP 的高频示例；Java、Go、.NET 与任意语言接入见官网 SDK 文档。</span>
-        <el-button link type="primary" @click="openDoc('/docs/sdk')">打开 SDK 文档</el-button>
-      </div>
-    </div>
-
     <el-tabs v-model="codeTab" class="code-tabs">
       <el-tab-pane label="HTTP / cURL" name="curl">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>HTTP 联调示例</b>
-              <p>这是最小协议契约；任意语言按这个请求即可触发路由。</p>
-            </div>
+            <div><b>HTTP 联调示例</b></div>
             <el-button type="primary" @click="copyText(curlCode)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ curlCode }}</pre>
@@ -807,10 +796,7 @@
       <el-tab-pane label="Node.js" name="node">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>Node.js 触发示例</b>
-              <p>放在业务事件点调用；设置短超时，避免中枢异常拖慢业务主流程。</p>
-            </div>
+            <div><b>Node.js 触发示例</b> <HelpTip title="Node.js 触发示例"><p>在业务事件中调用时可设置短超时，避免阻塞主流程。</p></HelpTip></div>
             <el-button type="primary" @click="copyText(nodeCode)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ nodeCode }}</pre>
@@ -819,10 +805,7 @@
       <el-tab-pane label="Python" name="python">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>Python 触发示例</b>
-              <p>适合 Python 后端、脚本服务或数据任务系统接入。</p>
-            </div>
+            <div><b>Python 触发示例</b></div>
             <el-button type="primary" @click="copyText(pythonCode)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ pythonCode }}</pre>
@@ -831,10 +814,7 @@
       <el-tab-pane label="PHP" name="php">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>PHP 触发示例</b>
-              <p>适合 ThinkPHP、Laravel 或存量 PHP 系统；失败只记日志，不阻塞业务主流程。</p>
-            </div>
+            <div><b>PHP 触发示例</b></div>
             <el-button type="primary" @click="copyText(phpCode)">复制代码</el-button>
           </div>
           <pre class="snippet-code">{{ phpCode }}</pre>
@@ -843,33 +823,19 @@
       <el-tab-pane label="Agent 触发" name="skill">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>给 Agent 的触发说明</b>
-              <p>把这段交给受信 agent，让它知道何时、如何触发本路由。</p>
-            </div>
+            <div><b>给 Agent 的触发说明</b> <HelpTip title="给 Agent 的触发说明"><p>复制的说明不含密钥。请在受信运行环境中配置 Token，不要在对话中提供密钥。</p></HelpTip></div>
             <el-button type="primary" @click="copyText(skillCode)">复制说明</el-button>
           </div>
           <pre class="snippet-code">{{ skillCode }}</pre>
-          <div class="snippet-notes">
-            <span>说明不包含密钥。由用户在受信运行环境设置完整 Token；不要让 Agent 索取、回显或记录密钥。</span>
-          </div>
         </section>
       </el-tab-pane>
       <el-tab-pane v-if="codeTargetIsExecutor" label="执行器接入" name="exec">
         <section class="snippet-card">
           <div class="snippet-head">
-            <div>
-              <b>给 Agent 的执行器接入引导</b>
-              <p>这里只复制本次连接参数；完整流程由版本化 Skill 承载，支持原生 Skill 或普通 Markdown 阅读。</p>
-            </div>
+            <div><b>给 Agent 的执行器接入引导</b> <HelpTip title="给 Agent 的执行器接入引导"><p>到「执行器」页签发指定目标的令牌，在本机输入。执行器使用出站长轮询，无需公网 IP 或开放入站端口。完整流程见引导中的 Skill。</p></HelpTip></div>
             <el-button type="primary" @click="copyText(execCode)">复制引导</el-button>
           </div>
           <pre class="snippet-code tall">{{ execCode }}</pre>
-          <div class="snippet-notes">
-            <span>这段引导不包含令牌；Agent 应让你在本机安全输入，不能要求把令牌粘贴进对话。</span>
-            <span>执行器 token 请在「执行器」页签发，按 target 授权、可吊销、可审计。</span>
-            <span>出站长轮询即可工作，内网机器不需要公网 IP，也不需要开放端口。</span>
-          </div>
         </section>
       </el-tab-pane>
     </el-tabs>
@@ -1036,7 +1002,6 @@ const curCred = computed(() => credOptions.value.find((c) => c.name === llm.cred
 const curCredDefaultModel = computed(() => curCred.value?.default_model ?? '');
 // 选了凭证 → 按其 base_url 反查平台，给「模型」下拉常用建议；聚合平台标记可手填。
 const curCredProviderId = computed(() => detectProvider(curCred.value?.base_url ?? ''));
-const curCredProviderFree = computed(() => LLM_PROVIDERS.find((p) => p.id === curCredProviderId.value)?.freeModel ?? false);
 const routeModelGroups = computed(() => {
   const p = LLM_PROVIDERS.find((x) => x.id === curCredProviderId.value);
   if (!p) return [] as Array<{ label: string; tag?: string; models: string[] }>;
@@ -1900,8 +1865,6 @@ watch(() => route.query.create, (create) => { if (create === '1') openCreate(); 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.field-hint { margin-top: 4px; font-size: 12px; line-height: 1.6; color: var(--el-text-color-secondary); }
-.field-hint code { font-family: var(--bz-mono); font-size: 11px; background: var(--el-fill-color-light); padding: 1px 4px; }
 @media (max-width: 900px) {
   .code-route-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .code-route-summary > div:nth-child(2) { border-right: 0; }

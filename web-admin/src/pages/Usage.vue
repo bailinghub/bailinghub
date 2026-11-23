@@ -5,7 +5,6 @@
         <div class="page-title">
           <b>用户与用量</b>
           <UsageHelp title="用户与用量说明">
-            <p v-if="editing">编辑套餐时，左侧配置模型、倍率与额度，右侧预览用户看到的套餐。返回箭头回到套餐列表，保存后配置才会生效。</p>
             <p>套餐售价与周期额度分别填写：额度包一次获得与售价等额的消费额度；周期套餐每次重置为指定周期额度，不按售价自动平分。实际用量按绑定的 OpenRouter 参考价格计算，再乘套餐统一倍率。支付、开通与汇率由业务侧处理。</p>
             <p>计费模型选填：留空按调用模型标识精确匹配 OpenRouter，填写后优先使用指定标识；不改变模型调用地址或凭证。多个参考端点需明确选择。</p>
             <p>周期套餐按每周期额度估算，额度包按整包额度估算。每个模型均假设独占该额度，已计入统一倍率，不平均分配、不可相加。对话按输入∶输出 3∶1、未命中缓存估算，实际按真实用量结算；图片按报价档位展示。</p>
@@ -174,7 +173,7 @@
                 ><el-button v-if="canWrite" link type="danger" :disabled="blocked" @click="deletePlan(row)">删除</el-button></template
               ></el-table-column
             ><template #empty
-              >还没有 用量套餐。新建套餐后，再为指定账户开通。</template
+              >暂无用量套餐</template
             ></el-table
           >
         </template>
@@ -234,15 +233,13 @@
                     更多选项 <span class="muted">开通状态</span>
                   </summary>
                   <div class="advanced-content">
-                    <el-form-item label="是否允许新开通"
-                      ><el-switch
+                    <el-form-item label="是否允许新开通">
+                      <template #label>是否允许新开通 <UsageHelp title="套餐更新何时生效"><p>暂停开通不影响已有账户。保存后的模型列表对已有账户立即生效。额度和有效期只用于后续开通。</p></UsageHelp></template>
+                      <el-switch
                         v-model="form.active"
                         active-text="允许开通"
                         inactive-text="暂停开通"
                     /></el-form-item>
-                    <p class="muted">
-                      暂停开通不影响已有账户。模型列表更新即时生效，额度与有效期配置只用于以后开通。
-                    </p>
                   </div>
                 </details>
               </section>
@@ -254,9 +251,7 @@
                 show-icon
               />
               <div class="form-footer">
-                <span class="muted"
-                  >保存模型列表后，已有账户刷新即可看到；新账户仍需开通套餐。</span
-                ><el-button
+                <el-button
                   type="primary"
                   native-type="submit"
                   :loading="saving"
@@ -266,7 +261,7 @@
               </div>
             </el-form>
             <aside class="preview panel">
-              <div class="preview-eyebrow">用户侧说明预览</div>
+              <div class="preview-eyebrow">用户侧说明预览 <UsageHelp title="套餐扣费规则"><p>所有对话模型与工具共用一份额度，按参考费用乘套餐倍率扣除。用量可能延迟更新，产生少量超额。额度不足时停止新请求，已接纳的回复会完成。</p></UsageHelp></div>
               <h3>{{ form.label || "未命名套餐" }}</h3>
               <p class="muted">
                 {{ form.mode === "periodic" ? "本期剩余" : "可用积分" }}
@@ -308,13 +303,8 @@
                   >
                 </div>
               </div>
-              <ul>
-                <li>按参考费用乘套餐统一倍率扣除。</li>
-                <li>所有对话模型与工具共用一份额度。</li>
-                <li>当前模型回复完成后，额度不足再停止新请求。</li>
-              </ul>
               <p class="preview-note">
-                用量可能稍晚更新，允许少量超出。{{
+                {{
                   form.mode === "periodic"
                     ? "本期剩余额度不累积到下一期。"
                     : "未用积分在套餐有效期内可用。"
@@ -402,13 +392,7 @@
           ><div class="section-heading">
             <div>
               <h2>{{ summary.grant?.label || "尚未开通套餐" }}</h2>
-              <p>
-                {{
-                  summary.grant
-                    ? grantStatus(summary)
-                    : "开通后即可使用套餐内模型。"
-                }}
-              </p>
+              <p v-if="summary.grant">{{ grantStatus(summary) }}</p>
             </div>
             <div class="actions">
               <el-button @click="loadDetail">刷新用量</el-button
@@ -429,7 +413,7 @@
             :closable="false"
             :title="
               accountModelIds.length
-                ? '可用模型跟随套餐更新，共享本账户的剩余额度。'
+                ? `当前可用模型和工具：${accountModelIds.length} 个`
                 : '该套餐暂无可用模型或工具；原额度、重置和到期时间保持不变。'
             "
             :description="`所属套餐：${summary.plan?.label || summary.grant.label} · ${summary.grant.planId}。当前模型：${accountModelIds.map(serviceLabel).join('、') || '暂无可用模型或工具'}。`"
@@ -494,8 +478,7 @@
           <section class="operator-accounting">
             <div class="section-heading">
               <div>
-                <h3>运营计量</h3>
-                <p>美元消耗与供应商原始用量分别记录。</p>
+                <h3>运营计量 <UsageHelp title="运营计量口径"><p>美元消耗与供应商原始用量分别记录。收到用量后会更新待计量请求。</p></UsageHelp></h3>
               </div>
             </div>
             <template v-if="summary.grant">
@@ -517,7 +500,7 @@
                 <div>
                   <span>待计量请求</span
                   ><strong>{{ number(summary.pendingRequests) }}</strong
-                  ><small>用量到账后更新</small>
+                  ><small>笔</small>
                 </div>
               </div>
 
@@ -564,8 +547,7 @@
             >
             <div class="section-heading">
               <div>
-                <h3>最近的模型请求</h3>
-                <p>只读取用量和原请求状态，不重新执行模型或业务操作。</p>
+                <h3>最近的模型请求 <UsageHelp title="查看原请求"><p>这里只读取用量和原请求的状态，不重新执行模型或业务操作。</p></UsageHelp></h3>
               </div>
             </div>
             <el-alert v-if="!billingReady" title="原请求计量明细在配套计费内核更新后可查看。当前套餐余额与有效期保持不变。" type="info" :closable="false" />
@@ -2321,24 +2303,6 @@ code {
   gap: 7px;
   margin-top: 10px;
 }
-.preview ul {
-  list-style: none;
-  padding: 18px 0 0;
-  margin: 20px 0 0;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-.preview li {
-  position: relative;
-  padding: 0 0 12px 18px;
-  font-size: 12px;
-  line-height: 1.8;
-}
-.preview li::before {
-  content: "✓";
-  position: absolute;
-  left: 0;
-  color: var(--el-color-primary);
-}
 .preview-note {
   font-size: 11px;
   line-height: 1.8;
@@ -2346,6 +2310,7 @@ code {
   margin: 6px 0 0;
 }
 .form-footer {
+  justify-content: flex-end;
   padding: 5px 0 12px;
 }
 .pending {

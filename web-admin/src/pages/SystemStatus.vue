@@ -5,7 +5,7 @@
         <b>系统状态</b> <HelpTip title="系统状态是什么">
           <p>展示当前中枢代码版本、运行时、数据库迁移账本、对外契约版本和配置体检结果。</p>
           <p>运行检查与 <code>/readyz</code> 使用同一检查逻辑，检查实际状态库和配置库的连接、迁移文件及校验值；不代表完整物理表结构或业务链路验证。</p>
-          <p>配置体检会检查路由、目标、接入方、渠道、工具源、知识库、执行器令牌、工具源授权探针等跨配置引用，帮助定位“能保存但跑不通”的问题。</p>
+          <p>配置体检会检查路由、目标、接入方、渠道等对象的跨配置引用。错误可能导致对应对象不可用，提醒不一定影响运行。</p>
         </HelpTip>
         <el-button size="small" :loading="loading" style="margin-left: auto" @click="load">刷新</el-button>
       </div>
@@ -16,20 +16,18 @@
         title="运行检查读取失败" :description="readinessError" class="statusAlert" />
       <el-alert v-else-if="readiness" :type="readiness.ready ? 'success' : 'error'" :closable="false" show-icon
         :title="readiness.ready ? '运行检查通过' : '运行检查未通过'"
-        :description="`检查时间：${fmtTime(readiness.checked_at, true)} · 状态库与配置库的连接、迁移文件及校验值检查`" class="statusAlert" />
+        :description="`检查时间：${fmtTime(readiness.checked_at, true)}`" class="statusAlert" />
       <div v-else class="field-hint">{{ loading ? '正在检查运行状态…' : '尚未取得运行检查结果' }}</div>
       <div v-if="readiness && readinessError" class="field-hint">以下为 {{ fmtTime(readiness.checked_at, true) }} 的旧快照，不能代表当前状态。</div>
       <div v-if="readiness" class="field-hint">
         数据库连接：{{ checkLabel(readiness.checks.database) }}；迁移文件与校验值：{{ checkLabel(readiness.checks.migrations.status) }}<span v-if="readiness.checks.migrations.pending">（{{ readiness.checks.migrations.pending }} 个文件待应用）</span>。
-        此检查不验证完整物理表结构或外部模型、工具的业务可用性。
       </div>
       <el-alert v-if="versionError" type="error" :closable="false" show-icon title="版本与配置库账本读取失败"
         :description="versionError + (versionAt ? `；以下保留 ${fmtTime(versionAt, true)} 的旧快照` : '')" class="statusAlert" />
       <el-alert v-if="diagError" type="error" :closable="false" show-icon title="配置体检读取失败"
         :description="diagError + (diagAt ? `；以下保留 ${fmtTime(diagAt, true)} 的旧快照` : '')" class="statusAlert" />
       <el-alert v-else-if="diag && !diag.ok" :type="diag.errors ? 'error' : 'warning'" :closable="false" show-icon
-        :title="`配置体检：${diag.errors} 个错误 / ${diag.warnings} 个提醒`"
-        description="错误项通常会导致对应路由、入口或执行器不可用；提醒项不一定阻断运行。" class="statusAlert" />
+        :title="`配置体检：${diag.errors} 个错误 / ${diag.warnings} 个提醒`" class="statusAlert" />
       <div v-else-if="diag" class="field-hint">配置体检通过：未发现错误或提醒。检查时间：{{ fmtTime(diagAt, true) }}</div>
 
       <div class="statusGrid">
@@ -46,7 +44,7 @@
         <div class="statusBox">
           <span class="muted">最新已应用</span>
           <b><code>{{ data?.migrations.latest_applied || '—' }}</code></b>
-          <em>{{ !data ? '尚未读取' : data.migrations.pending.length ? `${data.migrations.pending.length} 个待应用` : '账本文件名齐备，运行状态以上方检查为准' }}</em>
+          <em>{{ !data ? '尚未读取' : data.migrations.pending.length ? `${data.migrations.pending.length} 个待应用` : '账本文件名齐备' }}</em>
         </div>
       </div>
 
